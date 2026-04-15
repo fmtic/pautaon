@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-5">
+      <div class="card shadow border-0">
+
+        <div class="card-header {{ 'bg-warning text-dark' if first_login else 'bg-primary text-white' }}">
+          <h5 class="mb-0">
+            <i class="bi bi-shield-lock me-2"></i>
+            {{ 'Defina sua Senha — Primeiro Acesso' if first_login else 'Alterar Senha' }}
+          </h5>
+        </div>
+
+        <div class="card-body p-4">
+
+          {% if first_login %}
+          <div class="alert alert-warning border-0 mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            Você está usando a senha padrão do sistema. Defina uma senha pessoal para continuar.
+          </div>
+          {% endif %}
+
+          <form action="{{ url_for('auth.trocar_senha') }}" method="POST" id="formSenha">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="mb-3">
+              <label class="form-label fw-bold">Nova Senha</label>
+              <input type="password" name="nova_senha" id="novaSenha"
+                     class="form-control" placeholder="Mínimo 8 caracteres"
+                     required minlength="8" autocomplete="new-password">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold">Confirmar Nova Senha</label>
+              <input type="password" name="confirma_senha" id="confirmaSenha"
+                     class="form-control" placeholder="Repita a senha"
+                     required minlength="8" autocomplete="new-password">
+              <div id="matchMsg" class="form-text"></div>
+            </div>
+
+            {# ── Checklist de requisitos ── #}
+            <div class="p-3 bg-light rounded border mb-4">
+              <p class="small fw-bold text-muted text-uppercase mb-2">Requisitos da senha</p>
+              <ul class="list-unstyled mb-0 small" id="requisitos">
+                <li id="req-len">  <i class="bi bi-x-circle-fill text-danger me-1"></i> Mínimo 8 caracteres</li>
+                <li id="req-upper"><i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 letra maiúscula</li>
+                <li id="req-lower"><i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 letra minúscula</li>
+                <li id="req-num">  <i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 número</li>
+                <li id="req-spec"> <i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 caractere especial (!@#$%...)</li>
+              </ul>
+            </div>
+
+            <button type="submit" id="btnSalvar"
+                    class="btn {{ 'btn-warning' if first_login else 'btn-primary' }} w-100 fw-bold" disabled>
+              <i class="bi bi-check-circle me-1"></i> Salvar e Continuar
+            </button>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const campo    = document.getElementById('novaSenha');
+  const confirma = document.getElementById('confirmaSenha');
+  const btn      = document.getElementById('btnSalvar');
+  const matchMsg = document.getElementById('matchMsg');
+
+  const checks = {
+    'req-len':   s => s.length >= 8,
+    'req-upper': s => /[A-Z]/.test(s),
+    'req-lower': s => /[a-z]/.test(s),
+    'req-num':   s => /\d/.test(s),
+    'req-spec':  s => /[!@#$%^&*()\-_=+\[\]{};:'",.<>?/\\|`~]/.test(s),
+  };
+
+  function atualizar() {
+    const s = campo.value;
+    let ok = true;
+
+    for (const [id, fn] of Object.entries(checks)) {
+      const li   = document.getElementById(id);
+      const pass = fn(s);
+      li.innerHTML = pass
+        ? `<i class="bi bi-check-circle-fill text-success me-1"></i>${li.textContent.trim()}`
+        : `<i class="bi bi-x-circle-fill text-danger me-1"></i>${li.textContent.trim()}`;
+      if (!pass) ok = false;
+    }
+
+    const match = confirma.value && s === confirma.value;
+    if (confirma.value) {
+      matchMsg.textContent = match ? '✔ Senhas coincidem' : '✘ Senhas não coincidem';
+      matchMsg.className   = match ? 'form-text text-success' : 'form-text text-danger';
+    } else {
+      matchMsg.textContent = '';
+    }
+
+    btn.disabled = !(ok && match);
+  }
+
+  campo.addEventListener('input', atualizar);
+  confirma.addEventListener('input', atualizar);
+})();
+</script>
+{% endblock %}

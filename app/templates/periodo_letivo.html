@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+
+  {# ── Cabeçalho ── #}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-0">Períodos Letivos</h2>
+      <p class="text-muted small mb-0">Gerencie os períodos e suas turmas.</p>
+    </div>
+    <a href="{{ url_for('registros.periodo_letivo_novo') }}" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>Novo Período
+    </a>
+  </div>
+
+  {# ── Filtro de ano ── #}
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <span class="text-muted small fw-bold text-uppercase">Filtrar por ano:</span>
+    <div class="btn-group btn-group-sm" role="group">
+      {% for ano in anos %}
+      <a href="{{ url_for('registros.periodo_letivo', ano=ano) }}"
+         class="btn {{ 'btn-primary' if ano == ano_filtro else 'btn-outline-secondary' }}">
+        {{ ano }}
+      </a>
+      {% endfor %}
+      {% if not anos %}
+      <span class="text-muted small ms-2">Nenhum período cadastrado.</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Tabela ── #}
+  {% if not periodos %}
+  <div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    Nenhum período letivo encontrado para <strong>{{ ano_filtro }}</strong>.
+  </div>
+  {% else %}
+  <div class="card shadow-sm border-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light text-muted small text-uppercase">
+          <tr>
+            <th class="ps-3">Nome</th>
+            <th>Início</th>
+            <th>Fim</th>
+            <th>Centro de Custo</th>
+            <th class="text-center">Estimativa</th>
+            <th class="text-center">Enturmados</th>
+            <th class="text-center">Status</th>
+            <th class="text-center pe-3">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in periodos %}
+          <tr class="{{ 'opacity-60' if not p.ativo }}">
+            <td class="ps-3 fw-semibold">
+              {% if not p.ativo %}
+              {# Período inativo: nome clicável leva às turmas em modo consulta #}
+              <a href="{{ url_for('registros.turma') }}?periodo_id={{ p.id }}"
+                 class="text-secondary text-decoration-none"
+                 title="Consultar turmas deste período (somente leitura)">
+                <i class="bi bi-folder2-open me-1 opacity-50"></i>{{ p.nome }}
+              </a>
+              {% else %}
+              {{ p.nome }}
+              {% endif %}
+            </td>
+            <td>{{ p.data_inicio.strftime('%d/%m/%Y') }}</td>
+            <td>{{ p.data_fim.strftime('%d/%m/%Y') }}</td>
+            <td class="text-muted small">{{ p.centro_custo or '—' }}</td>
+            <td class="text-center">{{ p.estimativa_alunos }}</td>
+            <td class="text-center">{{ p.alunos_enturmados() }}</td>
+            <td class="text-center">
+              {% if p.ativo %}
+              <span class="badge bg-success">Ativo</span>
+              {% else %}
+              <span class="badge bg-secondary">Inativo</span>
+              {% endif %}
+            </td>
+            <td class="text-center pe-3">
+              <div class="d-flex gap-1 justify-content-center flex-wrap">
+                {% if p.ativo %}
+                <a href="{{ url_for('registros.periodo_letivo_editar', id=p.id) }}"
+                   class="btn btn-sm btn-outline-primary">Editar</a>
+                <a href="{{ url_for('registros.periodo_letivo_calendario', id=p.id) }}"
+                   class="btn btn-sm btn-outline-dark" title="Calendário de dias sem aula">
+                  <i class="bi bi-calendar-x"></i>
+                </a>
+                <a href="{{ url_for('registros.periodo_letivo_inativar', id=p.id) }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   onclick="return confirm('Inativar o período {{ p.nome }}? Todos os lançamentos ficarão bloqueados.')">
+                   Inativar</a>
+                {% else %}
+                <a href="{{ url_for('registros.periodo_letivo_calendario', id=p.id) }}"
+                   class="btn btn-sm btn-outline-secondary" title="Consultar calendário">
+                  <i class="bi bi-calendar-x"></i>
+                </a>
+                <a href="{{ url_for('registros.periodo_letivo_ativar', id=p.id) }}"
+                   class="btn btn-sm btn-outline-success">Reativar</a>
+                {% endif %}
+                <a href="{{ url_for('registros.periodo_letivo_relatorio_certificado', id=p.id) }}"
+                   class="btn btn-sm btn-outline-info">Certificados</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

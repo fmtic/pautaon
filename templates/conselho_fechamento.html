@@ -1,0 +1,175 @@
+{% extends "base.html" %} {% block styles %} {{ super() }}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/conselho.css') }}?v=1"
+/>
+{% endblock %} {% block content %}
+<div id="conteudo-impressao">
+  <div class="container-fluid mb-5">
+    {# Cabeçalho com botões — some todo na impressão #}
+    <div
+      class="d-flex justify-content-between align-items-center mb-4 d-print-none"
+    >
+      <h2 class="fw-bold">
+        <i class="bi bi-mortarboard me-2"></i>Conselho da Turma - Fechamento
+      </h2>
+      <div>
+        <button onclick="prepararImpressao()" class="btn btn-dark">
+          <i class="bi bi-printer me-2"></i>Imprimir
+        </button>
+        <button
+          onclick="exportTableToCSV('{{ turma.nome }}.csv')"
+          class="btn btn-outline-success"
+        >
+          <i class="bi bi-file-earmark-excel me-2"></i>Exportar .CSV
+        </button>
+        <button onclick="salvarFechamento()" class="btn btn-primary">
+          <i class="bi bi-save me-2"></i>Salvar Fechamento
+        </button>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body bg-light rounded">
+        <div class="row">
+          <div class="col-4">
+            <p class="mb-1 text-muted small text-uppercase fw-bold">
+              Turma / Programa
+            </p>
+            <p class="mb-0 fw-bold">{{ turma.nome }} | {{ turma.programa }}</p>
+          </div>
+          <div class="col-4 text-center border-start border-end">
+            <p class="mb-1 text-muted small text-uppercase fw-bold">
+              Professor
+            </p>
+            <p class="mb-0">
+              {{ turma.professor.name if turma.professor else 'Não atribuído' }}
+            </p>
+          </div>
+          <div class="col-4 text-end">
+            <p class="mb-1 text-muted small text-uppercase fw-bold">
+              Dias / Horário
+            </p>
+            <p class="mb-0">
+              {{ turma.dias_semana }} | {{ turma.hora_inicio }} às {{
+              turma.hora_fim }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table
+          id="tabelaFechamento"
+          class="table table-hover align-middle mb-0"
+        >
+          <thead class="table-dark">
+            <tr class="small text-center">
+              <th class="text-start ps-4">Aluno</th>
+              <th>Conceitos (%)</th>
+              <th>Presença</th>
+              <th>Falta</th>
+              {# Removido d-print-none — agora aparece na impressão #}
+              <th>Situação Final</th>
+              <th>Próxima Turma</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in dados %}
+            <tr>
+              <td class="ps-3">
+                <div class="d-flex align-items-center">
+                  <img
+                    src="{{ url_for('static', filename='uploads/fotos/' ~ item.obj.foto_path) if item.obj.foto_path else url_for('static', filename='img/default.png') }}"
+                    class="rounded-circle me-3 border"
+                    width="45"
+                    height="45"
+                    style="object-fit: cover"
+                  />
+                  <div>
+                    <div class="fw-bold">
+                      {{ item.obj.nome_social or item.obj.nome }}
+                    </div>
+                    <small class="text-muted"
+                      >{{ item.obj.nivel }} | {{ item.obj.idade }} anos</small
+                    >
+                  </div>
+                </div>
+              </td>
+              <td class="text-center small">
+                <span class="badge bg-success">A: {{ item.percs.A }}%</span>
+                <span class="badge bg-primary">B: {{ item.percs.B }}%</span>
+                <span class="badge bg-info">C: {{ item.percs.C }}%</span>
+                <span class="badge bg-warning text-dark"
+                  >D: {{ item.percs.D }}%</span
+                >
+                <span class="badge bg-danger">F: {{ item.percs.F }}%</span>
+                <span class="badge bg-secondary">J: {{ item.percs.J }}%</span>
+              </td>
+              <td class="text-center fw-bold text-success">
+                {{ item.presenca }}%
+              </td>
+              <td class="text-center fw-bold text-danger">{{ item.falta }}%</td>
+
+              {# Situação Final: select visível na tela, span visível na
+              impressão #}
+              <td class="text-center">
+                <select
+                  class="form-select form-select-sm border-primary d-print-none situacao-select"
+                >
+                  <option value="APROVADO">Aprovado</option>
+                  <option value="REPROVADO_POR_FALTA">
+                    Reprovado por Falta
+                  </option>
+                  <option value="EVADIDO">Evadido</option>
+                  <option value="DESISTENTE">Desistente</option>
+                  <option value="EMPREGADO">Empregado</option>
+                </select>
+                <span class="d-none d-print-inline situacao-texto fw-semibold"
+                  >Aprovado</span
+                >
+              </td>
+
+              {# Próxima Turma: mesma lógica #}
+              <td class="text-center">
+                <select
+                  class="form-select form-select-sm border-secondary d-print-none proxima-select"
+                >
+                  {% for opt in opcoes_turma %}
+                  <option value="{{ opt }}">{{ opt }}</option>
+                  {% endfor %}
+                </select>
+                <span
+                  class="d-none d-print-inline proxima-texto fw-semibold"
+                ></span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Rodapé de auditoria — só aparece na impressão #}
+    <div
+      class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted"
+    >
+      <div class="d-flex justify-content-between">
+        <span><strong>Impresso por:</strong> {{ current_user.name }}</span>
+        <span><strong>Data/Hora:</strong> <span id="print-date"></span></span>
+        <span><strong>URL:</strong> {{ request.url }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %} {{ super() }}
+<script src="/static/js/conselho.js"></script>
+<script>
+  // Preenche data/hora do rodapé
+  document.getElementById("print-date").innerText = new Date().toLocaleString(
+    "pt-BR",
+  );
+</script>
+{% endblock %}

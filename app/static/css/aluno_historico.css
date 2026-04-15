@@ -1,0 +1,115 @@
+/* ── Reset e base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9.5pt;
+  color: #000;
+  background: #fff;
+  padding: 1.5cm 2cm;
+}
+
+/* ── Botões (só tela) ── */
+.btn-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.btn-bar button {
+  padding: 5px 16px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 10pt;
+}
+.btn-bar button:hover { background: #e0e0e0; }
+
+/* ── Cabeçalho ── */
+.ficha-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 2px solid #000;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.ficha-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+}
+.ficha-logo img { height: 44px; }
+.sys-name { font-size: 12pt; font-weight: 700; }
+.sys-sub  { font-size: 8pt; color: #555; }
+
+.ficha-titulo { flex: 1; }
+.ficha-titulo h1 { font-size: 14pt; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.ficha-titulo p  { font-size: 9pt; color: #444; margin-top: 2px; }
+
+/* ── Seções ── */
+.secao { margin-bottom: 16px; }
+.secao-titulo {
+  font-size: 10pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  border-bottom: 1px solid #000;
+  padding-bottom: 3px;
+  margin-bottom: 8px;
+}
+
+/* ── Grid de campos ── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 16px;
+}
+.campo { display: flex; flex-direction: column; }
+.label { font-size: 7.5pt; text-transform: uppercase; color: #555; font-weight: 700; }
+.valor { font-size: 9.5pt; border-bottom: 1px dotted #aaa; padding-bottom: 1px; }
+
+/* ── Tabela ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+th, td {
+  border: 1px solid #555;
+  padding: 4px 5px;
+  vertical-align: top;
+}
+th {
+  background: #f0f0f0;
+  font-weight: 700;
+  text-align: left;
+  font-size: 8pt;
+  text-transform: uppercase;
+}
+.text-center { text-align: center; }
+tr.inativo { color: #777; }
+.inativo-label { color: #999; font-style: italic; }
+.vazio { color: #777; font-style: italic; padding: 8px 0; }
+
+/* ── Rodapé ── */
+.rodape {
+  margin-top: 20px;
+  padding-top: 6px;
+  border-top: 1px solid #aaa;
+  display: flex;
+  justify-content: space-between;
+  font-size: 8pt;
+  color: #555;
+}
+
+/* ── Impressão ── */
+@media print {
+  @page { size: landscape; margin: 1cm 1.5cm; }
+  body  { padding: 0; font-size: 8.5pt; }
+  .no-print { display: none !important; }
+  th { background: #e8e8e8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+}

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h2 class="fw-bold mb-0"><i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i>Relatório de Frequência</h2>
+    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm d-print-none">
+        <i class="bi bi-printer me-1"></i> Imprimir
+    </button>
+</div>
+
+<!-- Filtros -->
+<div class="card mb-4 p-3 shadow-sm border-0 d-print-none">
+    <form method="GET" action="/frequencia_relatorio" class="row g-3 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-4">
+            <label class="form-label small fw-bold">Turma</label>
+            <select name="turma" class="form-select form-select-sm" required>
+                <option value="">Selecione a Turma</option>
+                {% for t in turmas %}
+                <option value="{{ t.id }}" {% if turma_id|string==t.id|string %}selected{% endif %}>
+                    {{ t.nome }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-bold">Data Início</label>
+            <input type="date" name="inicio" class="form-control form-control-sm" value="{{ inicio or '' }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-bold">Data Fim</label>
+            <input type="date" name="fim" class="form-control form-control-sm" value="{{ fim or '' }}">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">
+                <i class="bi bi-search me-1"></i> FILTRAR
+            </button>
+        </div>
+    </form>
+</div>
+
+{% if turma_id %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3">
+        <h5 class="mb-0 fw-bold">
+            Turma: <span class="text-primary">{{ turma_selecionada.nome }}</span>
+            {% if inicio or fim %}
+            <small class="text-muted ms-2" style="font-size: 0.8rem;">
+                Período: {{ inicio or 'Início' }} até {{ fim or 'Hoje' }}
+            </small>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr class="small text-uppercase text-muted">
+                    <th class="ps-4">Aluno</th>
+                    <th class="text-center">Total Aulas</th>
+                    <th class="text-center">Presenças</th>
+                    <th class="text-center">Frequência (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in dados %}
+                <tr>
+                    <td class="ps-4 fw-bold">{{ d.nome }}</td>
+                    <td class="text-center">{{ d.total }}</td>
+                    <td class="text-center text-success fw-bold">{{ d.presencas }}</td>
+                    <td class="text-center">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <div class="progress w-50 me-2" style="height: 6px;">
+                                <div class="progress-bar {% if d.percentual < 75 %}bg-danger{% elif d.percentual < 90 %}bg-warning{% else %}bg-success{% endif %}"
+                                    role="progressbar" style="width: {{ d.percentual }}%"></div>
+                            </div>
+                            <span class="fw-bold {% if d.percentual < 75 %}text-danger{% endif %}">{{ d.percentual
+                                }}%</span>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center py-4 text-muted">Nenhum registro de frequência encontrado para
+                        este período.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info border-0 shadow-sm">
+    <i class="bi bi-info-circle me-2"></i> Selecione uma turma e o período desejado para gerar o relatório de
+    frequência.
+</div>
+{% endif %}
+
+{% endblock %}

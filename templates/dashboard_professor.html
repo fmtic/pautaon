@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-2">
+    <h2 class="mb-4">Painel do Professor</h2>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card bg-dark text-white shadow-sm border-0">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 opacity-75">Minhas Turmas Ativas</h6>
+                    <h2 class="card-title fw-bold mb-0">{{ turmas|length }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card bg-success text-white shadow-sm border-0">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 opacity-75">Total de Alunos sob minha Gestão</h6>
+                    <h2 class="card-title fw-bold mb-0">{{ total_alunos }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light fw-bold">Meu Cronograma Semanal</div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Turma</th>
+                                <th>Dias de Aula</th>
+                                <th>Horário</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for turma in turmas %}
+                            <tr>
+                                <td><strong>{{ turma.nome }}</strong></td>
+                                <td>
+                                    {# Lógica idêntica ao seu listar_turmas #}
+                                    {% if turma.dias_semana %}
+                                    {% for dia in turma.dias_semana.split(', ') %}
+                                    <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
+                                    {% endfor %}
+                                    {% else %}
+                                    <span class="text-muted">Não informado</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {# Ajustado para usar as variáveis corretas do seu banco #}
+                                    {% if turma.hora_inicio and turma.hora_fim %}
+                                    {{ turma.hora_inicio }} às {{ turma.hora_fim }}
+                                    {% else %}
+                                    <span class="text-muted small">Horário pendente</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Nenhuma turma vinculada.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100 border-start border-success border-4">
+                <div class="card-body text-center d-flex flex-column justify-content-center">
+                    <i class="bi bi-journal-check fs-1 text-success mb-3"></i>
+                    <h5>Lançar Frequência</h5>
+                    <p class="text-muted small">Acesse as pautas das suas turmas para registrar as aulas de hoje.</p>
+                    <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-success w-100">Abrir Pauta</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

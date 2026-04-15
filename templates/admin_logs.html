@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fas fa-history text-primary"></i> Auditoria do Sistema</h2>
+        <span class="badge bg-secondary">{{ pagination.total }} registros encontrados</span>
+    </div>
+
+    <form action="{{ url_for('auth.limpar_logs_antigos') }}" method="POST"
+        onsubmit="return confirm('Deseja realmente excluir todos os logs com mais de 30 dias?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+            <i class="fas fa-trash-alt me-1"></i> Limpar logs +30 dias
+        </button>
+    </form>
+
+    <div class="card mb-4 shadow-sm border-0 bg-light">
+        <div class="card-body">
+            <form method="GET" class="row g-2">
+                <div class="col-md-3">
+                    <input type="text" name="usuario" class="form-control" placeholder="Usuário..."
+                        value="{{ request.args.get('usuario', '') }}">
+                </div>
+                <div class="col-md-3">
+                    <select name="acao" class="form-select">
+                        <option value="">Todas as Ações</option>
+                        <option value="Login" {% if request.args.get('acao')=='Login' %}selected{% endif %}>Login
+                        </option>
+                        <option value="Edição" {% if request.args.get('acao')=='Edição' %}selected{% endif %}>Edição
+                        </option>
+                        <option value="Exclusão" {% if request.args.get('acao')=='Exclusão' %}selected{% endif %}>
+                            Exclusão</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="date" name="data" class="form-control" value="{{ request.args.get('data', '') }}">
+                </div>
+                <div class="col-md-3 d-flex">
+                    <button type="submit" class="btn btn-primary w-100 me-1">Filtrar</button>
+                    <a href="{{ url_for('auth.ver_logs') }}" class="btn btn-outline-secondary">Limpar</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive shadow-sm rounded">
+        <table class="table table-hover align-middle bg-white">
+            <thead class="table-dark">
+                <tr>
+                    <th>Data/Hora</th>
+                    <th>Usuário</th>
+                    <th>Ação</th>
+                    <th>Detalhes</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td class="small">{{ log.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td><strong>{{ log.usuario_nome }}</strong></td>
+                    <td>
+                        {% if 'Login' in log.acao %}<span class="badge bg-success">Login</span>
+                        {% elif 'Exclusão' in log.acao %}<span class="badge bg-danger">Exclusão</span>
+                        {% elif 'Edição' in log.acao %}<span class="badge bg-warning text-dark">Edição</span>
+                        {% else %}<span class="badge bg-info text-dark">{{ log.acao }}</span>{% endif %}
+                    </td>
+                    <td class="small">{{ log.detalhes }}</td>
+                    <td class="text-muted small">{{ log.ip }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if pagination.has_prev %}
+            <li class="page-item">
+                {% set args = request.args.to_dict() %}
+                {% set _ = args.update({'page': pagination.prev_num}) %}
+                <a class="page-link" href="{{ url_for('auth.ver_logs', **args) }}">Anterior</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+            {% endif %}
+
+            <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages
+                    }}</span></li>
+
+            {% if pagination.has_next %}
+            <li class="page-item">{% set args = request.args.to_dict() %}
+                {% set _ = args.update({'page': pagination.next_num}) %}
+                <a class="page-link" href="{{ url_for('auth.ver_logs', **args) }}">Próxima</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">Próxima</span></li>
+            {% endif %}
+        </ul>
+    </nav>
+</div>
+{% endblock %}

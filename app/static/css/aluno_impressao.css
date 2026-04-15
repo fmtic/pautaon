@@ -1,0 +1,75 @@
+      @media print {
+        @page {
+            size: portrait;
+            margin: 1cm; /* Margem opcional para evitar cortes em impressoras comuns */
+        }
+        .no-print {
+          display: none !important;
+        }
+        body {
+          background: #fff !important;
+          color: #000 !important;
+          font-family: "Times New Roman", serif;
+        }
+        .card {
+          border: 1px solid #000 !important;
+        }
+        .badge {
+          border: 1px solid #000 !important;
+          color: #000 !important;
+        }
+      }
+      body {
+        background: #f8f9fa;
+        font-family: "Inter", sans-serif;
+      }
+      .print-container {
+        max-width: 800px;
+        margin: 20px auto;
+        background: #fff;
+        padding: 40px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .header-logo {
+        width: 120px;
+        height: 120px;
+        object-fit: contain;
+      }
+      .student-photo {
+        width: 120px;
+        height: 120px;
+        object-fit: cover;
+        border: 1px solid #ddd;
+      }
+      .section-title {
+        background: #f0f0f0;
+        padding: 5px 10px;
+        font-weight: bold;
+        text-transform: uppercase;
+        border-bottom: 2px solid #333;
+        margin-top: 20px;
+        font-size: 0.9rem;
+      }
+      .data-row {
+        display: flex;
+        border-bottom: 1px solid #eee;
+        padding: 5px 0;
+      }
+      .data-label {
+        width: 180px;
+        font-weight: bold;
+        font-size: 0.85rem;
+        color: #555;
+      }
+      .data-value {
+        flex: 1;
+        font-size: 0.9rem;
+      }
+      .signature-box {
+        border-top: 1px solid #000;
+        width: 250px;
+        text-align: center;
+        padding-top: 5px;
+        margin-top: 50px;
+        font-size: 0.8rem;
+      }

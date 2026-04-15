@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold"><i class="bi bi-gear-fill text-primary me-2"></i>Gerenciar Perguntas</h2>
+        <button type="button" class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalPergunta"
+            onclick="limparFormulario()">
+            <i class="bi bi-plus-lg me-2"></i>Nova Pergunta
+        </button>
+    </div>
+
+    {% for etapa, lista_perguntas in perguntas_agrupadas.items() %}
+    <div class="card shadow-sm border-0 mb-4 overflow-hidden">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
+            <h5 class="mb-0 text-uppercase fw-bold"><i class="bi bi-calendar-check me-2"></i>Etapa: {{ etapa }}</h5>
+            <span class="badge bg-primary rounded-pill">{{ lista_perguntas|length }} Perguntas</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 10%">Foco</th>
+                        <th style="width: 50%">Pergunta</th>
+                        <th style="width: 25%">Opções</th>
+                        <th style="width: 15%" class="text-end px-4">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in lista_perguntas %}
+                    <tr>
+                        <td>
+                            <span class="badge {{ 'bg-info text-dark' if p.tipo == 'TURMA' else 'bg-secondary' }}">
+                                {{ 'Turma' if p.tipo == 'TURMA' else 'Aluno' }}
+                            </span>
+                        </td>
+                        <td class="fw-bold text-dark">{{ p.texto }}</td>
+                        <td>
+                            {% if p.opcoes %}
+                            <div class="d-flex flex-wrap gap-1">
+                                {% for opt in p.opcoes.split(' | ') %}
+                                <span class="badge border text-dark fw-normal bg-white" style="font-size: 0.75rem;">{{
+                                    opt }}</span>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted small"><em>Texto livre</em></span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end px-4">
+                            <button class="btn btn-sm btn-outline-warning border-0"
+                                onclick="editarPergunta('{{ p.id }}', '{{ p.etapa }}', '{{ p.tipo }}', '{{ p.texto }}', '{{ p.opcoes }}')">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <a href="{{ url_for('conselho.excluir_pergunta', id=p.id) }}"
+                                class="btn btn-sm btn-outline-danger border-0"
+                                onclick="return confirm('Deseja excluir esta pergunta?')">
+                                <i class="bi bi-trash3"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info text-center shadow-sm">
+        <i class="bi bi-info-circle me-2"></i>Nenhuma pergunta cadastrada.
+    </div>
+    {% endfor %}
+</div>
+
+<div class="modal fade" id="modalPergunta" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form action="{{ url_for('conselho.salvar_pergunta') }}" method="POST" class="modal-content">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalTitulo">Nova Pergunta</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" id="pergunta_id">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Etapa</label>
+                        <select name="etapa" id="pergunta_etapa" class="form-select">
+                            <option value="INICIAL">INICIAL</option>
+                            <option value="PERCURSO">PERCURSO</option>
+                            <option value="FINAL">FINAL</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Foco da Pergunta</label>
+                        <select name="tipo" id="pergunta_tipo" class="form-select">
+                            <option value="ALUNO">Individual (Aluno)</option>
+                            <option value="TURMA">Geral (Turma)</option>
+                        </select>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">Texto da Pergunta</label>
+                        <textarea name="texto" id="pergunta_texto" class="form-control" rows="2" required></textarea>
+                    </div>
+                    <div class="col-12 mb-3">
+                        <label class="form-label fw-bold">Opções de Resposta</label>
+                        <div id="container-opcoes" class="mb-2"></div>
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="adicionarCampoResposta()">
+                            <i class="bi bi-plus-circle me-1"></i> Adicionar Opção
+                        </button>
+                    </div>
+                    <input type="hidden" name="opcoes" id="pergunta_opcoes_final">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success px-4">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/conselho.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="text-primary fw-bold mb-0">Conselho de Classe</h2>
+            <p class="text-muted small">Avaliação Geral da Turma: <strong>{{ turma.nome }}</strong></p>
+        </div>
+        <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Voltar ao Painel
+        </a>
+    </div>
+
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card shadow-sm mb-5 border-0 border-start border-primary border-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 text-primary fw-bold">Avaliação Geral da Turma</h5>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold text-muted small">Selecione a Etapa do Conselho</label>
+                    <select class="form-select border-primary shadow-sm"
+                        onchange="location.href='{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}?etapa=' + this.value">
+                        <option value="INICIAL" {% if etapa_atual=='INICIAL' %}selected{% endif %}>1. Etapa Inicial
+                        </option>
+                        <option value="PERCURSO" {% if etapa_atual=='PERCURSO' %}selected{% endif %}>2. Etapa de
+                            Percurso</option>
+                        <option value="FINAL" {% if etapa_atual=='FINAL' %}selected{% endif %}>3. Etapa Final</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="card-body bg-light">
+                <div class="row">
+                    {% for pergunta in perguntas if pergunta.tipo == 'TURMA' %}
+                    <div class="col-md-6 mb-3">
+                        <div class="p-3 bg-white rounded border h-100 shadow-sm">
+                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ pergunta.texto }}</label>
+
+                            {% if pergunta.opcoes %}
+                            <div class="mb-2">
+                                {% for opcao in pergunta.opcoes.split(' | ') %}
+                                <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
+                                    style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
+                                    onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = '{{ opcao }}'">
+                                    {{ opcao }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+
+                            <textarea name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
+                                class="form-control" rows="3"
+                                placeholder="Digite sua observação...">{{ respostas.get('None_' ~ pergunta.id, '') }}</textarea>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mb-5">
+            <button type="submit" class="btn btn-primary btn-lg px-5 shadow">
+                <i class="bi bi-save me-2"></i> Gravar Avaliação Final
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

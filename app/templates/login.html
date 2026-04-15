@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | pautaon</title>
+  <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='img/logo_resumida.png') }}"
+    type="image/png">
+  <style>
+    body {
+      /* Degradê Azul Profissional */
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      height: 100vh;
+    }
+
+    .login-card {
+      border: none;
+      border-radius: 15px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      /* Sombra mais profunda para destacar */
+    }
+
+    .btn-login {
+      /* Botão combinando com o fundo azul */
+      background: #1e3c72;
+      border: none;
+      padding: 12px;
+      font-weight: bold;
+      transition: all 0.3s;
+    }
+
+    .btn-login:hover {
+      background: #162a50;
+      /* Azul mais escuro no hover */
+      transform: translateY(-2px);
+    }
+
+    /* Cor do ícone da logo combinando */
+    .text-primary {
+      color: #1e3c72 !important;
+    }
+
+    /* Estilo para os inputs */
+    .input-group-text {
+      background: #f8f9fa;
+      /* Fundo leve para o ícone */
+      border-right: none;
+      color: #1e3c72;
+    }
+
+    .form-control {
+      border-left: none;
+      padding: 10px;
+    }
+
+    .form-control:focus {
+      box-shadow: none;
+      border-color: #dee2e6;
+    }
+
+    /* Cor de foco para o input-group */
+    .input-group:focus-within {
+      box-shadow: 0 0 0 0.25rem rgba(30, 60, 114, 0.25);
+      border-radius: 0.375rem;
+    }
+  </style>
+</head>
+
+<body class="d-flex align-items-center justify-content-center">
+
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-md-4">
+        <div class="card login-card p-4">
+          <div class="text-center mb-4">
+            <img src="{{ url_for('static', filename='img/logo_textual_transparente.png') }}" alt="Pauta On"
+              class="img-fluid mb-3" style="max-height: 90px;">
+            <!-- <h4 class="fw-bold">Pauta Online</h4> -->
+            <p class="text-muted small">Entre com suas credenciais</p>
+          </div>
+
+          {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+          {% for category, message in messages %}
+          <div class="alert alert-{{ category }} py-2 small text-center border-0 shadow-sm" role="alert">
+            {{ message }}
+          </div>
+          {% endfor %}
+          {% endif %}
+          {% endwith %}
+
+          <form method="POST" action="/login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="mb-3">
+              <label class="form-label small fw-bold">E-mail</label>
+              <div class="input-group">
+                <span class="input-group-text text-muted"><i class="fas fa-envelope"></i></span>
+                <input name="email" type="email" class="form-control" placeholder="exemplo@email.com" required>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="form-label small fw-bold">Senha</label>
+              <div class="input-group">
+                <span class="input-group-text text-muted"><i class="fas fa-lock"></i></span>
+                <input name="password" type="password" class="form-control" placeholder="••••••••" required>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-login w-100 text-white shadow-sm">
+              ACESSAR SISTEMA
+            </button>
+          </form>
+
+          <div class="text-center mt-4">
+            <small class="text-muted">© 2026 pautaon - Impacto | Educação | Gestão</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

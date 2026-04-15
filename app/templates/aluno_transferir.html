@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-warning text-dark">
+                    <h4 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Transferir Aluno</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Informações do Aluno -->
+                    <div class="row mb-4">
+                        <div class="col-md-2 text-center">
+                            <div class="rounded bg-light overflow-hidden shadow-sm d-inline-block"
+                                style="width: 80px; height: 100px; border: 1px solid #ddd;">
+                                {% if aluno.foto_path %}
+                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}"
+                                    class="w-100 h-100 object-fit-cover">
+                                {% else %}
+                                <div class="d-flex align-items-center justify-content-center h-100">
+                                    <i class="bi bi-person text-muted fs-2"></i>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-10">
+                            <h5 class="mb-1">{{ aluno.nome }}</h5>
+                            <p class="text-muted mb-1">Matrícula: {{ aluno.matricula }}</p>
+                            <p class="text-muted mb-0">CPF: {{ aluno.cpf or 'Não informado' }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Turmas Atuais -->
+                    <div class="mb-4">
+                        <h6 class="text-primary">Turmas Atuais do Aluno:</h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for turma in turmas_aluno %}
+                            <span class="badge bg-info text-dark">{{ turma.nome }}</span>
+                            {% else %}
+                            <span class="text-muted">Nenhuma turma ativa</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <form method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="turma_origem" class="form-label fw-bold">Turma de Origem *</label>
+                                    <select class="form-select" id="turma_origem" name="turma_origem" required>
+                                        <option value="">Selecione...</option>
+                                        {% for turma in turmas_aluno %}
+                                        <option value="{{ turma.id }}">{{ turma.nome }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="turma_destino" class="form-label fw-bold">Turma de Destino *</label>
+                                    <select class="form-select" id="turma_destino" name="turma_destino" required>
+                                        <option value="">Selecione...</option>
+                                        {% for turma in turmas_ativas %}
+                                        <option value="{{ turma.id }}">{{ turma.nome }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="observacoes" class="form-label fw-bold">Observações</label>
+                            <textarea class="form-control" id="observacoes" name="observacoes" rows="3"
+                                placeholder="Observações sobre a transferência (opcional)"></textarea>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Regra de Transferência:</strong> O aluno permanecerá na pauta da turma de origem
+                            para fins históricos, mas não poderá mais receber frequência nessa turma. Na turma de
+                            destino, poderá receber frequência normalmente.
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-warning fw-bold">
+                                <i class="bi bi-arrow-left-right me-1"></i> CONFIRMAR TRANSFERÊNCIA
+                            </button>
+                            <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i> Cancelar
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Validação para impedir seleção da mesma turma
+    document.getElementById('turma_origem').addEventListener('change', validarTurmas);
+    document.getElementById('turma_destino').addEventListener('change', validarTurmas);
+
+    function validarTurmas() {
+        const origem = document.getElementById('turma_origem').value;
+        const destino = document.getElementById('turma_destino').value;
+
+        if (origem && destino && origem === destino) {
+            alert('A turma de origem e destino devem ser diferentes!');
+            document.getElementById('turma_destino').value = '';
+        }
+    }
+</script>
+{% endblock %}

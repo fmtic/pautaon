@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2 class="mb-4">Lançamento de Aula</h2>
+
+<form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="card mb-4 p-3">
+
+        <div class="row g-3">
+
+            <div class="col-md-6">
+                <label class="form-label">Turma</label>
+                <select name="turma" class="form-select" onchange="window.location='?turma=' + this.value">
+
+                    <option value="">Selecione</option>
+
+                    {% for t in turmas %}
+                    <option value="{{ t.id }}" {% if turma_id==t.id|string %}selected{% endif %}>
+                        {{ t.nome }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Data</label>
+                <select name="data" class="form-select">
+                    <option value="">Selecione</option>
+
+                    {% for d in datas %}
+                    <option value="{{ d }}" {% if data==d %}selected{% endif %}>
+                        {{ d }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="card p-3">
+
+        <h5 class="mb-3">Frequência</h5>
+
+        <table class="table table-striped align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Aluno</th>
+                    <th class="text-center">Presente</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for aluno in alunos %}
+                <tr>
+                    <td>{{ aluno.nome }}</td>
+                    <td class="text-center">
+                        <select name="aluno_{{ aluno.id }}" class="form-select conceito-select"
+                            onchange="colorirSelect(this)">
+
+                            <option value="">-</option>
+
+                            <option value="A" {% if frequencias.get(aluno.id)=='A' %}selected{% endif %}>A</option>
+                            <option value="B" {% if frequencias.get(aluno.id)=='B' %}selected{% endif %}>B</option>
+                            <option value="C" {% if frequencias.get(aluno.id)=='C' %}selected{% endif %}>C</option>
+                            <option value="D" {% if frequencias.get(aluno.id)=='D' %}selected{% endif %}>D</option>
+                            <option value="F" {% if frequencias.get(aluno.id)=='F' %}selected{% endif %}>F</option>
+                            <option value="J" {% if frequencias.get(aluno.id)=='J' %}selected{% endif %}>J</option>
+
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+    </div>
+
+    <div class="mt-3">
+        <button class="btn btn-success">Salvar</button>
+    </div>
+
+</form>
+
+{% endblock %}

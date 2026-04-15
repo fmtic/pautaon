@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="fw-bold mb-0">
+    <i class="bi bi-people me-2 text-primary"></i>Gerenciar Alunos
+  </h2>
+  {% if not is_readonly %}
+  <a href="/aluno/novo" class="btn btn-primary fw-bold shadow-sm">
+    <i class="bi bi-person-plus me-1"></i> CADASTRAR ALUNO
+  </a>
+  {% endif %}
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3 text-primary" style="font-size: 0.9rem;">
+      <i class="bi bi-search me-2"></i>FILTRAR ALUNOS
+    </h6>
+    <form action="{{ url_for('registros.gerenciar_alunos') }}" method="GET" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Nome do Aluno</label>
+        <input type="text" name="nome" class="form-control form-control-sm" placeholder="Nome..." value="{{ search_nome }}" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Matrícula</label>
+        <input type="text" name="matricula" class="form-control form-control-sm" placeholder="00001.2026" value="{{ search_matr }}" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">CPF</label>
+        <input type="text" name="cpf" class="form-control form-control-sm mask-cpf" placeholder="000.000.000-00" value="{{ search_cpf }}" />
+      </div>
+      
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Faixa Etária (Anos)</label>
+        <div class="input-group input-group-sm">
+          <input type="number" name="idade_min" class="form-control" placeholder="Min" value="{{ search_idade_min }}">
+          <span class="input-group-text px-1" style="font-size: 0.65rem;">a</span>
+          <input type="number" name="idade_max" class="form-control" placeholder="Max" value="{{ search_idade_max }}">
+        </div>
+      </div>
+
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm fw-bold flex-grow-1" style="font-size: 0.75rem;">
+          <i class="bi bi-search me-1"></i> PESQUISAR
+        </button>
+        <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-secondary btn-sm fw-bold px-3" style="font-size: 0.75rem;" title="Limpar Filtros">
+          <i class="bi bi-eraser-fill me-1"></i> LIMPAR
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row mb-3 px-2">
+  <div class="col-md-6">
+    <small class="text-muted">Mostrando <strong>{{ pagination.items|length }}</strong> de <strong>{{ pagination.total }}</strong> alunos</small>
+  </div>
+  <div class="col-md-6 text-end">
+    <span class="me-3"><strong class="text-primary">{{ total_alunos }}</strong> <small class="text-muted text-uppercase">Matrículas</small></span>
+    <span><strong class="text-success">{{ total_enturmados }}</strong> <small class="text-muted text-uppercase">Enturmados</small></span>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr class="small text-uppercase text-muted text-center">
+          <th class="ps-3" style="width: 110px;">Matrícula</th>
+          <th class="ps-2" style="width: 70px;">Foto</th>
+          <th style="min-width: 280px;">Nome Completo</th>
+          <th class="text-center" style="width: 100px;">Idade</th>
+          <th class="text-center" style="width: 160px;">Turma</th>
+          <th class="text-center" style="width: 110px;">Docs</th>
+          <th class="text-center pe-3" style="width: 130px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in pagination.items %}
+        <tr>
+          <td class="text-center fw-medium">
+            <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank" class="text-decoration-none text-primary fw-bold">
+              {{ aluno.matricula or '-' }}
+            </a>
+          </td>
+
+          <td class="text-center">
+            <div class="d-flex justify-content-center">
+              <div class="rounded bg-light overflow-hidden shadow-sm" style="width: 42px; height: 56px; border: 1px solid #ddd">
+                {% if aluno.foto_path %}
+                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}" class="w-100 h-100 object-fit-cover" />
+                {% else %}
+                <div class="d-flex align-items-center justify-content-center h-100">
+                  <i class="bi bi-person text-muted fs-4"></i>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+
+          <td>
+            <a href="{{ url_for('registros.imprimir_aluno', id=aluno.id) }}" target="_blank" class="text-decoration-none text-dark d-block">
+              <div class="fw-bold">{{ aluno.nome }}</div>
+              {% if aluno.nome_social and aluno.nome_social != '-' %}
+              <small class="text-muted">Social: {{ aluno.nome_social }}</small>
+              {% endif %}
+            </a>
+          </td>
+
+          <td class="text-center">
+            {% if aluno.idade_calculada != '?' %}
+              {% set idade = aluno.idade_calculada %}
+              {% if idade <= 12 %} {% set color_class='bg-danger-subtle text-danger border-danger-subtle' %}
+              {% elif idade < 18 %} {% set color_class='bg-warning-subtle text-warning-emphasis border-warning-subtle' %}
+              {% else %} {% set color_class='bg-primary-subtle text-primary border-primary-subtle' %} {% endif %}
+              <span class="badge {{ color_class }} border" style="font-size: 0.75rem; padding: 0.4em 0.8em">
+                {{ idade }} anos
+              </span>
+            {% else %}
+              <span class="badge bg-light text-muted border" style="font-size: 0.75rem; padding: 0.4em 0.8em">- anos</span>
+            {% endif %}
+          </td>
+
+          <td class="text-center">
+            <div class="d-flex flex-wrap gap-1 justify-content-center">
+              {% for turma in aluno.turmas %}
+                <span class="badge bg-info text-dark" style="font-size: 0.7rem">{{ turma.nome }}</span>
+              {% else %}
+                <span class="badge bg-light text-muted border" style="font-size: 0.7rem">-</span>
+              {% endfor %}
+            </div>
+          </td>
+
+          <td class="text-center">
+            <div class="d-flex gap-2 justify-content-center flex-wrap">
+              {% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
+              {% set docs = edu.get('doc_entregue', {}) %}
+              {% set mat_folder = aluno.matricula.replace('.', '_') if aluno.matricula else 'sem_matricula' %}
+              
+              {# Mapeamento de documentos conforme seu original #}
+              {% set docs_map = [
+                ('doc_aluno', 'RG / CPF', 'bi-person-badge', 'text-primary'),
+                ('doc_residencia', 'Comprovante de Residência', 'bi-house-door', 'text-info'),
+                ('doc_declaracao', 'Declaração Escolar', 'bi-journal-check', 'text-warning'),
+                ('doc_atestado', 'Atestado de Saúde', 'bi-file-medical', 'text-danger'),
+                ('doc_termo', 'Termo de Imagem', 'bi-image', 'text-purple'),
+                ('doc_responsavel', 'Documento do Responsável', 'bi-people', 'text-success'),
+                ('doc_laudo', 'Laudo Médico', 'bi-file-medical-fill', 'text-danger')
+              ] %}
+
+              {% set ns = namespace(found=false) %}
+              {% for doc_id, label, icon, color in docs_map %}
+                {% if docs.get(doc_id) and docs.get(doc_id) not in [False, 'false', '0', '', None] %}
+                  <a href="{{ url_for('static', filename='uploads/documentos/' + mat_folder + '/' + doc_id + '.pdf') }}"
+                     target="_blank" title="{{ label }}" class="{{ color }}" style="font-size: 0.95rem;">
+                    <i class="bi {{ icon }}"></i>
+                  </a>
+                  {% set ns.found = true %}
+                {% endif %}
+              {% endfor %}
+
+              {% if not ns.found %}
+                <span class="badge bg-light text-muted border" style="font-size: 0.7rem;">Nenhum</span>
+              {% endif %}
+            </div>
+          </td>
+
+          <td class="text-center pe-3">
+            {% if not is_readonly %}
+            <div class="btn-group btn-group-sm gap-1">
+              <a href="/aluno/editar/{{ aluno.id }}" class="btn btn-sm btn-outline-primary py-1 px-2" title="Editar">
+                <i class="bi bi-pencil" style="font-size: 0.85rem;"></i>
+              </a>
+              <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id) }}" class="btn btn-sm btn-outline-warning py-1 px-2" title="Transferir">
+                <i class="bi bi-arrow-left-right" style="font-size: 0.85rem;"></i>
+              </a>
+              <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2" onclick="return confirm('Excluir aluno?');" title="Excluir">
+                <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+              </a>
+            </div>
+            {% else %}
+            <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}"
+               target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
+              <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-4 pb-4">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+        <a class="page-link border-0 shadow-sm mx-1 rounded" href="{{ url_for('registros.gerenciar_alunos', page=pagination.prev_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
+          <i class="bi bi-chevron-left"></i> Anterior
+        </a>
+      </li>
+      <li class="page-item active"><span class="page-link border-0 shadow-sm mx-1 rounded">Página {{ pagination.page }} de {{ pagination.pages }}</span></li>
+      <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+        <a class="page-link border-0 shadow-sm mx-1 rounded" href="{{ url_for('registros.gerenciar_alunos', page=pagination.next_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
+          Próximo <i class="bi bi-chevron-right"></i>
+        </a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/calcularIdade.js') }}"></script>
+<script src="{{ url_for('static', filename='js/aluno_form.js') }}"></script>
+{% endblock %}
+{% endblock %}

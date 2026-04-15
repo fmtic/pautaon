@@ -1,0 +1,175 @@
+/* Container da Tabela */
+.table-conselho {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+/* Cabeçalho com Perguntas */
+.table-conselho thead th {
+    height: 120px;
+    /* Altura controlada para o texto inclinado */
+    vertical-align: bottom;
+    padding-bottom: 15px !important;
+    position: relative;
+    min-width: 100px;
+}
+
+/* Efeito de Inclinação das Perguntas */
+.pergunta-header {
+    transform: rotate(-45deg);
+    transform-origin: bottom left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 150px;
+    /* Limite do comprimento do texto */
+    display: block;
+    font-size: 0.75rem;
+    line-height: 1.1;
+    margin-left: 20px;
+}
+
+/* Estilo para as colunas de Situação Final (Admin) */
+.bg-final-admin {
+    background-color: #fff9e6 !important;
+    /* Amarelo bem claro */
+    border-left: 1px solid #ffeeba;
+    border-right: 1px solid #ffeeba;
+}
+
+/* Ajuste dos Selects para não poluir a visão */
+.table-conselho .form-select-sm {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    transition: all 0.2s;
+}
+
+.table-conselho .form-select-sm:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
+}
+
+/* Avatar do Aluno */
+.aluno-avatar {
+    width: 40px;
+    height: 40px;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Rodapé Fixo (Sticky) */
+.card-footer-fixed {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    z-index: 1020;
+    box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.05);
+}
+
+/* Estilos para a página de Fechamento */
+.table-fechamento img {
+    border: 2px solid #dee2e6;
+    transition: transform 0.2s;
+}
+
+.table-fechamento tr:hover img {
+    transform: scale(1.1);
+}
+
+/* Badge customizado para conceitos */
+.badge-conceito {
+    min-width: 45px;
+    display: inline-block;
+    margin: 1px;
+}
+
+/* ============================================================
+   IMPRESSÃO — conselho_fechamento
+   Adicione/substitua o bloco @media print existente no conselho.css
+   ============================================================ */
+
+.print-only {
+    display: none;
+}
+
+@media print {
+
+    /* 1. Configurações de página */
+    @page {
+        size: A4 landscape;
+        margin: 1cm;
+    }
+
+    /* 2. Esconder elementos de interface */
+    nav,
+    .navbar,
+    .sidebar,
+    #sidebarMenu,
+    footer,
+    .btn,
+    .no-print,
+    .d-print-none {
+        display: none !important;
+    }
+
+    /* 3. Reset de layout */
+    body {
+        background: white !important;
+        color: black !important;
+        font-size: 10pt;
+    }
+
+    .container-fluid,
+    .container {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* 4. Tabela */
+    table {
+        page-break-inside: auto;
+        width: 100% !important;
+    }
+
+    tr {
+        page-break-inside: avoid;
+    }
+
+    /* Força cores do cabeçalho escuro a imprimir */
+    .table-dark th {
+        background-color: #212529 !important;
+        color: white !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Força cores dos badges a imprimir */
+    .badge {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* 5. Spans de impressão dos selects */
+    .situacao-texto,
+    .proxima-texto {
+        font-weight: 600;
+    }
+
+    /* 6. Rodapé de auditoria */
+    .print-footer-container {
+        margin-top: 1cm;
+        border-top: 1px solid #ccc;
+        padding-top: 4pt;
+        font-size: 8pt;
+        color: #555;
+    }
+}

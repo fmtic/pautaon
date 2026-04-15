@@ -1,0 +1,314 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    font-family: Arial;
+    display: flex;
+    flex-direction: column;
+}
+
+.navbar-nav .nav-link {
+    transition: all 0.3s ease;
+    border-radius: 5px;
+}
+
+.navbar-nav .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff !important;
+}
+
+.dropdown-menu {
+    border-radius: 8px;
+    padding: 10px;
+}
+
+main {
+    flex: 1 0 auto;
+    /* Empurra o rodapé para o final da página */
+}
+
+footer {
+    flex-shrink: 0;
+}
+
+.badge.bg-light.text-dark.border {
+    background-color: #ffffff !important;
+    color: #6c757d !important;
+    border: 1px solid #dee2e6 !important;
+    font-weight: 500;
+}
+
+/* Estilo dos Cards de Aluno Pauta*/
+
+/* Aplicação das cores nos botões de rádio */
+.label-conceito:hover {
+    background-color: #f8f9fa;
+}
+
+/* Força a cor definida nas variáveis quando o botão é selecionado */
+.btn-check:checked+.label-conceito {
+    background-color: var(--bg-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--bg-color) !important;
+}
+
+.card-aluno {
+    transition: transform 0.2s;
+    border-left: 5px solid #ffc107 !important;
+    /* Amarelo característico */
+}
+
+.card-aluno:hover {
+    transform: translateY(-4px);
+    shadow: 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Cores dos Conceitos */
+.conceito-A {
+    --bg-color: #1b5e20;
+    --text-color: white;
+}
+
+.conceito-B {
+    --bg-color: #2e7d32;
+    --text-color: white;
+}
+
+.conceito-C {
+    --bg-color: #4caf50;
+    --text-color: white;
+}
+
+.conceito-D {
+    --bg-color: #81c784;
+    --text-color: black;
+}
+
+.conceito-F {
+    --bg-color: #d32f2f;
+    --text-color: white;
+}
+
+.conceito-J {
+    --bg-color: #fbc02d;
+    --text-color: black;
+}
+
+/* Estado Normal dos Botões */
+.label-conceito {
+    border-color: #dee2e6;
+    color: #6c757d;
+    font-weight: bold;
+}
+
+/* Estado Selecionado (Checked) */
+.btn-check:checked+.conceito-A {
+    background-color: #1b5e20 !important;
+    color: white;
+    border-color: #1b5e20;
+}
+
+.btn-check:checked+.conceito-B {
+    background-color: #2e7d32 !important;
+    color: white;
+    border-color: #2e7d32;
+}
+
+.btn-check:checked+.conceito-C {
+    background-color: #4caf50 !important;
+    color: white;
+    border-color: #4caf50;
+}
+
+.btn-check:checked+.conceito-D {
+    background-color: #81c784 !important;
+    color: black;
+    border-color: #81c784;
+}
+
+.btn-check:checked+.conceito-F {
+    background-color: #d32f2f !important;
+    color: white;
+    border-color: #d32f2f;
+}
+
+.btn-check:checked+.conceito-J {
+    background-color: #fbc02d !important;
+    color: black;
+    border-color: #fbc02d;
+}
+
+/* Botão Salvar Fixo */
+.sticky-save-container {
+    bottom: 0;
+    z-index: 1020;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(5px);
+}
+
+/* Foto do Aluno */
+.avatar-aluno {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid #f2ab1c;
+    background-color: #eee;
+    display: block;
+}
+
+#student-data-columns .form-check {
+    margin-bottom: 0.6rem;
+}
+
+#student-data-columns .form-check-label {
+    cursor: pointer;
+}
+
+@media print {
+
+    body,
+    .container,
+    .main {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    .navbar,
+    .btn,
+    .d-print-none,
+    .no-print,
+    footer,
+    .alert,
+    .dropdown,
+    .navbar-brand,
+    .card.shadow-sm.mb-4.no-print,
+    .form-check,
+    .form-label,
+    .form-select {
+        display: none !important;
+    }
+
+    .table-responsive {
+        display: block !important;
+        overflow: visible !important;
+    }
+
+    .table {
+        color: #000 !important;
+        border-collapse: collapse !important;
+        page-break-inside: avoid !important;
+    }
+
+    .table th,
+    .table td {
+        border: 1px solid #000 !important;
+    }
+
+    .report-header,
+    .card.shadow-sm {
+        display: block !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: transparent !important;
+        margin: 0 0 0.75rem !important;
+    }
+
+    .report-header {
+        display: block !important;
+        padding: 0 0 0.75rem 0 !important;
+        border-bottom: 1px solid #333 !important;
+    }
+
+    .report-header .card-body {
+        display: block !important;
+        padding: 0 !important;
+    }
+
+    .report-brand {
+        display: flex !important;
+        align-items: center !important;
+        margin-bottom: 0.5rem !important;
+    }
+
+    .report-meta {
+        display: block !important;
+        text-align: left !important;
+        margin-top: 0.5rem !important;
+    }
+
+    .report-logo {
+        max-width: 90px !important;
+        height: auto !important;
+        margin-right: 0.75rem !important;
+    }
+
+    .report-header h4,
+    .report-header p,
+    .report-header strong {
+        color: #000 !important;
+    }
+
+    .report-header p {
+        margin: 0.2rem 0 !important;
+        font-size: 9pt !important;
+    }
+
+    h5.card-title,
+    .text-muted {
+        font-size: 10pt !important;
+    }
+
+    .table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 8.8pt !important;
+        margin: 0 !important;
+    }
+
+    .table th,
+    .table td {
+        border: 1px solid #000 !important;
+        padding: 5px !important;
+        vertical-align: middle !important;
+        word-break: break-word !important;
+    }
+
+    .table thead th {
+        background: #f2f2f2 !important;
+        color: #000 !important;
+        font-weight: bold !important;
+    }
+
+    .table tbody tr:nth-child(odd) td {
+        background: #fff !important;
+    }
+
+    .card-body {
+        padding: 0 !important;
+    }
+
+    .card {
+        border: none !important;
+    }
+}
+
+.report-header .report-logo {
+    max-width: 110px;
+    height: auto;
+}
+
+.report-header .report-meta p {
+    margin-bottom: 0.25rem;
+}
+
+.report-header h4 {
+    margin-bottom: 0.15rem;
+}

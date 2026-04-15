@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block styles %}{{ super() }}
+<style>
+/* ── Variáveis de cor por tipo ── */
+:root {
+  --cor-FERIADO:              #dc3545;
+  --cor-ATIVIDADE_PEDAGOGICA: #0d6efd;
+  --cor-REUNIAO_PAIS:         #6f42c1;
+  --cor-ATIVIDADE_INTERNA:    #fd7e14;
+  --cor-MANUTENCAO:           #6c757d;
+}
+
+body { background: #f8f9fa; }
+
+.cal-page { max-width: 900px; margin: 0 auto; }
+
+/* ── Cabeçalho ── */
+.print-header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.5rem;
+}
+.print-header h1 { font-size: 1.4rem; margin: 0; }
+.print-header .sub { font-size: .85rem; opacity: .75; margin-top: .25rem; }
+
+/* ── Grade de meses ── */
+.months-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 700px) {
+  .months-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.month-card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+.month-header {
+  background: #1a1a2e;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: .4rem 0;
+}
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #e9ecef;
+  padding: 1px;
+}
+.day-header {
+  background: #f8f9fa;
+  text-align: center;
+  font-size: .65rem;
+  font-weight: 700;
+  color: #6c757d;
+  text-transform: uppercase;
+  padding: 4px 0;
+}
+.day-cell {
+  background: #fff;
+  min-height: 34px;
+  padding: 3px;
+  position: relative;
+  transition: background .15s;
+}
+.day-cell.empty { background: #fafafa; }
+.day-cell.today { outline: 2px solid #0d6efd; outline-offset: -2px; }
+.day-num {
+  font-size: .7rem;
+  color: #495057;
+  font-weight: 500;
+  line-height: 1;
+}
+.day-cell.weekend .day-num { color: #adb5bd; }
+.day-badge {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: .6rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 22px;
+  margin-top: 2px;
+  cursor: default;
+}
+
+/* ── Legenda ── */
+.legend-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.4rem;
+  background: #fff;
+  border-radius: 10px;
+  padding: .75rem 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  margin-bottom: 1.5rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .78rem;
+  color: #495057;
+}
+.legend-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Lista detalhada ── */
+.detail-table { margin-top: 1.5rem; }
+.detail-table thead th {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: .5rem .75rem;
+}
+.detail-table tbody td { font-size: .82rem; padding: .45rem .75rem; }
+.tipo-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: .68rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ── Rodapé ── */
+.print-footer {
+  margin-top: 2rem;
+  padding-top: .75rem;
+  border-top: 1px solid #dee2e6;
+  font-size: .72rem;
+  color: #6c757d;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .25rem;
+}
+
+/* ── Impressão ── */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; font-size: 9pt; }
+  .cal-page { max-width: 100%; }
+  .print-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .month-header  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .months-grid { grid-template-columns: repeat(3, 1fr); }
+  .month-card { box-shadow: none; border: 1px solid #dee2e6; break-inside: avoid; }
+  .detail-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set TIPOS = {
+  'FERIADO':              {'label': 'Feriado',              'cor': '#dc3545', 'icone': 'F'},
+  'ATIVIDADE_PEDAGOGICA': {'label': 'Atividade Pedagógica', 'cor': '#0d6efd', 'icone': 'A'},
+  'REUNIAO_PAIS':         {'label': 'Reunião de Pais',      'cor': '#6f42c1', 'icone': 'R'},
+  'ATIVIDADE_INTERNA':    {'label': 'Atividade Interna',    'cor': '#fd7e14', 'icone': 'I'},
+  'MANUTENCAO':           {'label': 'Manutenção',           'cor': '#6c757d', 'icone': 'M'},
+} %}
+
+{# Monta lookup: data_str -> {tipo, descricao} #}
+{% set dias_map = {} %}
+{% for d in dias %}
+  {% set _ = dias_map.update({d.data.strftime('%Y-%m-%d'): d}) %}
+{% endfor %}
+
+<div class="cal-page py-4">
+
+  {# ── Ações (só tela) ── #}
+  <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <a href="{{ url_for('registros.planejamento') }}" class="btn btn-light border">
+      <i class="bi bi-chevron-left me-1"></i> Planejamento
+    </a>
+    <button class="btn btn-danger" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i> Imprimir / PDF
+    </button>
+  </div>
+
+  {# ── Cabeçalho ── #}
+  <div class="print-header">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h1><i class="bi bi-calendar-x me-2"></i>Calendário de Dias sem Aula</h1>
+        <p class="sub mb-0">
+          Período Letivo: <strong>{{ periodo.nome }}</strong>
+          &nbsp;|&nbsp;
+          {{ periodo.data_inicio.strftime('%d/%m/%Y') }} até {{ periodo.data_fim.strftime('%d/%m/%Y') }}
+        </p>
+        <p class="sub mb-0">Unidade: {{ periodo.unidade.nome }}</p>
+      </div>
+      <div class="text-end">
+        <p class="sub mb-0">Total de dias bloqueados: <strong>{{ dias|length }}</strong></p>
+        <p class="sub mb-0" id="data-emissao"></p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Legenda ── #}
+  <div class="legend-bar">
+    <strong class="me-2" style="font-size:.78rem; color:#1a1a2e;">Legenda:</strong>
+    {% for cod, t in TIPOS.items() %}
+    <div class="legend-item">
+      <span class="legend-dot" style="background:{{ t.cor }}"></span>
+      {{ t.label }}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Grade de meses ── #}
+  {% set MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
+  {% set DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'] %}
+
+  {# Determina o intervalo de meses a mostrar baseado no período letivo #}
+  {% set ano_inicio = periodo.data_inicio.year %}
+  {% set ano_fim    = periodo.data_fim.year %}
+  {% set mes_inicio = periodo.data_inicio.month %}
+  {% set mes_fim    = periodo.data_fim.month %}
+
+  <div class="months-grid">
+  {% for mes_num in range(1, 13) %}
+    {# Decide se este mês fica dentro do intervalo do período letivo #}
+    {% if (ano_inicio == ano_fim and mes_num >= mes_inicio and mes_num <= mes_fim)
+       or (ano_inicio != ano_fim and mes_num >= mes_inicio) %}
+
+    {# Calcula o primeiro dia do mês e quantos dias tem #}
+    {# Jinja2 não tem datetime nativo — delegamos ao Python via filtros inline #}
+    {% set nome_mes = MESES[mes_num - 1] %}
+    {% set ano_ref  = ano_inicio %}
+
+    <div class="month-card">
+      <div class="month-header">{{ nome_mes }} / {{ ano_ref }}</div>
+      <div class="month-grid">
+        {# Cabeçalho dos dias da semana #}
+        {% for dw in DIAS_SEMANA %}
+        <div class="day-header">{{ dw }}</div>
+        {% endfor %}
+
+        {# Gerado via JS após carga — placeholder para impressão #}
+        {# O preenchimento real é feito pelo script abaixo #}
+        <div class="month-cells" data-year="{{ ano_ref }}" data-month="{{ mes_num }}" style="display:contents"></div>
+      </div>
+    </div>
+
+    {% endif %}
+  {% endfor %}
+  </div>
+
+  {# ── Lista detalhada ── #}
+  {% if dias %}
+  <div class="detail-table mt-4">
+    <h5 class="fw-bold text-dark mb-3">
+      <i class="bi bi-list-ul me-2"></i>Lista Detalhada dos Dias Bloqueados
+    </h5>
+    <table class="table table-bordered table-hover table-sm">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Dia da Semana</th>
+          <th>Tipo</th>
+          <th>Descrição / Observação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set DIAS_PT = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira',
+                          'Sexta-feira','Sábado','Domingo'] %}
+        {% for d in dias %}
+        {% set t = TIPOS.get(d.tipo, {'label': d.tipo, 'cor': '#adb5bd'}) %}
+        <tr>
+          <td class="fw-semibold">{{ d.data.strftime('%d/%m/%Y') }}</td>
+          <td>{{ DIAS_PT[d.data.weekday()] }}</td>
+          <td>
+            <span class="tipo-badge" style="background:{{ t.cor }}">{{ t.label }}</span>
+          </td>
+          <td class="text-muted">{{ d.descricao or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-calendar-check fs-1 d-block mb-3 opacity-25"></i>
+    <p>Nenhum dia bloqueado registrado para este período.</p>
+  </div>
+  {% endif %}
+
+  {# ── Rodapé de auditoria ── #}
+  <div class="print-footer">
+    <span>Emitido por: <strong>{{ current_user.name }}</strong></span>
+    <span id="footer-datetime"></span>
+    <span>Período: {{ periodo.nome }} — {{ periodo.unidade.nome }}</span>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}{{ super() }}
+<script>
+// ── Injeta data/hora de emissão ──
+const agora = new Date().toLocaleString('pt-BR');
+document.getElementById('data-emissao').textContent  = 'Emissão: ' + agora;
+document.getElementById('footer-datetime').textContent = 'Data/Hora: ' + agora;
+
+// ── Dados de dias bloqueados do servidor ──
+const diasBloqueados = {
+  {% for d in dias %}
+  "{{ d.data.strftime('%Y-%m-%d') }}": {
+    tipo: "{{ d.tipo }}",
+    cor:  "{{ {'FERIADO':'#dc3545','ATIVIDADE_PEDAGOGICA':'#0d6efd','REUNIAO_PAIS':'#6f42c1','ATIVIDADE_INTERNA':'#fd7e14','MANUTENCAO':'#6c757d'}.get(d.tipo,'#adb5bd') }}",
+    icone: "{{ {'FERIADO':'F','ATIVIDADE_PEDAGOGICA':'A','REUNIAO_PAIS':'R','ATIVIDADE_INTERNA':'I','MANUTENCAO':'M'}.get(d.tipo,'?') }}",
+    desc: {{ d.descricao|tojson if d.descricao else '""' }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
+
+const hoje = new Date().toISOString().slice(0, 10);
+
+// ── Preenche cada grade mensal ──
+document.querySelectorAll('.month-cells').forEach(container => {
+  const year  = parseInt(container.dataset.year);
+  const month = parseInt(container.dataset.month);  // 1-based
+
+  const firstDay = new Date(year, month - 1, 1).getDay(); // 0=dom
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  // Células vazias antes do dia 1
+  for (let i = 0; i < firstDay; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'day-cell empty';
+    container.appendChild(blank);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cell = document.createElement('div');
+    const wday = new Date(year, month - 1, d).getDay();
+    const isWeekend = (wday === 0 || wday === 6);
+    const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+    cell.className = 'day-cell' + (isWeekend ? ' weekend' : '') + (ds === hoje ? ' today' : '');
+
+    const numEl = document.createElement('div');
+    numEl.className = 'day-num';
+    numEl.textContent = d;
+    cell.appendChild(numEl);
+
+    if (diasBloqueados[ds]) {
+      const b = diasBloqueados[ds];
+      const badge = document.createElement('div');
+      badge.className = 'day-badge';
+      badge.style.background = b.cor;
+      badge.textContent = b.icone;
+      badge.title = b.desc || b.tipo;
+      cell.appendChild(badge);
+    }
+
+    container.appendChild(cell);
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+<div class="row">
+    <div class="col-md-8 mb-3">
+        <label class="form-label fw-bold">Título do Encontro <span class="text-danger">*</span></label>
+        <input type="text" name="titulo" class="form-control" placeholder="Ex: Entrevista inicial — João Silva" required>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label class="form-label fw-bold">Categoria <span class="text-danger">*</span></label>
+        <select name="categoria" class="form-select" required>
+            <option value="">Selecione…</option>
+            <option value="Conversa">Conversa / Escuta</option>
+            <option value="Profissionalizante">Profissionalizante</option>
+            <option value="Mercado de Trabalho">Mercado de Trabalho</option>
+            <option value="Visita">Visita Domiciliar</option>
+        </select>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label class="form-label fw-bold">Data <span class="text-danger">*</span></label>
+        <input type="date" name="data" class="form-control" required>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label class="form-label fw-bold">Horário <span class="text-danger">*</span></label>
+        <input type="time" name="hora" class="form-control" required>
+    </div>
+    <div class="col-md-4 mb-3">
+        <label class="form-label fw-bold">Localização</label>
+        <input type="text" name="localizacao" class="form-control" placeholder="Ex: Sala de atendimento">
+    </div>
+    <div class="col-12 mb-3">
+        <label class="form-label fw-bold">Participantes <span class="text-muted small fw-normal">(e-mails separados por vírgula)</span></label>
+        <input type="text" name="participantes" class="form-control"
+               placeholder="email1@exemplo.com, email2@exemplo.com">
+    </div>
+    <div class="col-12 mb-3">
+        <label class="form-label fw-bold">Observações</label>
+        <textarea name="observacoes" class="form-control" rows="3"
+                  placeholder="Informações adicionais sobre o atendimento…"></textarea>
+    </div>
+</div>

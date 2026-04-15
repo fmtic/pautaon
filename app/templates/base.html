@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>PautaOn - FMtic</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/logo_resumida.png') }}"
+        type="image/png">
+    <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% block styles %}{% endblock %}
+</head>
+
+<body>
+
+    <nav class="navbar navbar-dark bg-dark px-3">
+        <img src="{{ url_for('static', filename='img/logo_textual_fundoPreto.png') }}" alt="Logo" class="d-inline-block align-text-top"
+            style="height: 30px;">
+        <div class="d-flex align-items-center">
+            {% if current_user.is_authenticated %}
+            <span class="text-light me-3 small">
+                <i class="bi bi-person-circle me-1"></i> {{ current_user.name }}
+                <span class="badge bg-secondary ms-1">{{ unidade_contexto }}</span>
+            </span>
+
+            {# SELETOR DE UNIDADE PARA ADMIN/PEDAGOGICO/GERENCIA #}
+            {% if unidades_lista %}
+            <div class="dropdown d-inline-block me-3">
+                <button class="btn btn-sm btn-outline-info dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-buildings me-1"></i> Unidade
+                </button>
+                <ul class="dropdown-menu dropdown-menu-dark shadow">
+                    <li><a class="dropdown-item" href="{{ url_for('main.trocar_unidade', id=0) }}">Visão Global</a></li>
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    {% for unit in unidades_lista %}
+                    <li>
+                        <a class="dropdown-item {% if session.get('unidade_id') == unit.id %}active{% endif %}"
+                            href="{{ url_for('main.trocar_unidade', id=unit.id) }}">
+                            {{ unit.nome }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-light btn-sm me-2">Dashboard</a>
+
+            {# ACESSO RESTRITO: Admin, Pedagógico, Gerência e Secretaria #}
+            {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'servico_social'] %}
+            <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-light btn-sm me-2">Alunos</a>
+            {% endif %}
+            {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
+            <a href="{{ url_for('registros.turma') }}" class="btn btn-outline-warning btn-sm me-2">Turmas</a>
+            <a href="{{ url_for('registros.periodo_letivo') }}" class="btn btn-outline-info btn-sm me-2">Períodos</a>
+            {% if current_user.is_authenticated %}
+            <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="bi bi-journal-check me-1"></i> Conselho
+                </button>
+                <ul class="dropdown-menu shadow">
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('conselho.index_conselho') }}">
+                            <i class="bi bi-grid-3x3-gap me-2"></i>Painel de Turmas
+                        </a>
+                    </li>
+                    {% if current_user.role in ['pedagogico', 'admin', 'gerencia'] %}
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('conselho.gerenciar_perguntas') }}">
+                            <i class="bi bi-gear-fill me-2"></i>Gerenciar Perguntas
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            {% if current_user.role in ['pedagogico', 'admin', 'gerencia', 'secretaria', 'servico_social'] %}
+            <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-outline-warning btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                    Relatórios
+                </button>
+                <ul class="dropdown-menu shadow">
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('main.relatorio_geral') }}">
+                            <i class="bi bi-speedometer2 me-2"></i>Painel de Relatórios
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('main.relatorio_alunos') }}">
+                            <i class="bi bi-people me-2"></i>Lista de Alunos
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('main.resultado_conselho') }}">
+                            <i class="bi bi-bar-chart-line me-2"></i>Resultado do Conselho
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+
+            {# MENU ADMIN #}
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown">Admin</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow">
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('auth.painel_admin') }}">
+                            <i class="fas fa-users-cog me-2"></i>Gerir Usuários
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('auth.admin_unidades') }}">
+                            <i class="bi bi-buildings me-2"></i>Gerir Unidades
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item {% if request.endpoint == 'auth.ver_logs' %}active{% endif %}"
+                            href="{{ url_for('auth.ver_logs') }}">
+                            <i class="fas fa-clipboard-list me-2"></i>Auditoria (Logs)
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
+
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm">Sair</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    {# ALERTA GLOBAL PARA UNIDADE INATIVA #}
+    {% if current_user.is_authenticated and current_user.unidade and not current_user.unidade.ativo %}
+    <div class="alert alert-danger rounded-0 text-center mb-0 shadow-sm">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>Sua unidade ({{ current_user.unidade.nome }}) está inativa no momento.</strong>
+        Algumas funcionalidades podem estar limitadas. Por favor, entre em contato com a gestão.
+    </div>
+    {% endif %}
+
+    <main class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+    <script src="/static/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Pauta de Frequência — {{ turma.nome }}</title>
+  <style>
+    /* ── Página ── */
+    @page {
+      size: landscape;
+      margin: 0.8cm 1cm;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8.5pt;
+      color: #000;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    /* ── Cabeçalho ── */
+    .print-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border: 1.5px solid #000;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      gap: 12px;
+    }
+    .print-header .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 160px;
+    }
+    .print-header .logo-area img { height: 44px; }
+    .print-header .logo-area .sys-name { font-size: 11pt; font-weight: 700; line-height: 1.2; }
+    .print-header .logo-area .sys-sub  { font-size: 7pt; color: #555; }
+
+    .print-header .info-turma { flex: 1; }
+    .print-header .info-turma h1 {
+      font-size: 12pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      margin-bottom: 4px;
+    }
+    .print-header .info-turma .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 20px;
+      font-size: 7.5pt;
+    }
+    .print-header .info-turma .meta span strong { font-weight: 700; }
+
+    .print-header .qr-area { text-align: right; font-size: 7pt; color: #555; min-width: 80px; }
+
+    /* ── Legenda de conceitos ── */
+    .legenda {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 7pt;
+      margin-bottom: 6px;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      background: #f9f9f9;
+    }
+    .legenda span { white-space: nowrap; }
+    .legenda strong { font-weight: 700; }
+
+    /* ── Tabela ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th, td {
+      border: 1px solid #555;
+      padding: 3px 2px;
+      text-align: center;
+      vertical-align: middle;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    thead tr th {
+      background: #1a1a2e;
+      color: #fff;
+      font-size: 7.5pt;
+      font-weight: 700;
+    }
+
+    /* Colunas fixas */
+    .col-num   { width: 20px; }
+    .col-nome  { width: 130px; text-align: left; padding-left: 5px; }
+    .col-nivel { width: 62px; font-size: 7pt; }
+    .col-data  { width: 16px; font-size: 6.5pt; }
+    .col-total { width: 28px; font-size: 7pt; font-weight: 700; }
+
+    tbody tr:nth-child(even) { background: #f5f5f5; }
+    tbody tr td { font-size: 8pt; }
+
+    .nome-cell { text-align: left; padding-left: 5px; }
+
+    /* ── Rodapé ── */
+    .print-footer {
+      margin-top: auto;
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      font-size: 7pt;
+      color: #555;
+      border-top: 1px solid #aaa;
+    }
+    .assinatura-box {
+      border-top: 1px solid #000;
+      width: 220px;
+      text-align: center;
+      padding-top: 4px;
+      font-size: 7.5pt;
+    }
+
+    /* ── Botões (só tela) ── */
+    .no-print { display: flex; gap: 8px; margin-bottom: 12px; }
+    .btn-print {
+      padding: 6px 18px; background: #dc3545; color: #fff;
+      border: none; border-radius: 4px; font-size: 10pt; cursor: pointer;
+    }
+    .btn-back {
+      padding: 6px 18px; background: #6c757d; color: #fff;
+      border: none; border-radius: 4px; font-size: 10pt;
+      cursor: pointer; text-decoration: none;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { font-size: 8pt; }
+      thead { display: table-header-group; }
+      .print-footer {
+        position: fixed;
+        bottom: 0.8cm;
+        left: 1cm;
+        right: 1cm;
+        background: #fff;
+        padding-top: 4px;
+      }
+      /* Garante que a tabela não sobreponha o rodapé fixo */
+      .table-wrap { margin-bottom: 40px; }
+    }
+  </style>
+</head>
+<body>
+
+  {# ── Determina se deve exibir coluna Nível ── #}
+  {% set tem_nivel = alunos | selectattr('nivel') | list | length > 0 %}
+
+  {# ── Botões (só tela) ── #}
+  <div class="no-print">
+    <button class="btn-print" onclick="window.print()">🖨 Imprimir / PDF</button>
+    <button class="btn-back" onclick="window.close()">✕ Fechar</button>
+  </div>
+
+  {# ── Cabeçalho ── #}
+  <div class="print-header">
+    <div class="logo-area">
+      <img src="{{ url_for('static', filename='img/favicon-fundoPreto.jpeg') }}" alt="Logo">
+      <div>
+        <div class="sys-name">pautaON</div>
+        <div class="sys-sub">Sistema de Gestão Acadêmica</div>
+      </div>
+    </div>
+
+    <div class="info-turma">
+      <h1>Pauta de Frequência</h1>
+      <div class="meta">
+        <span><strong>Turma:</strong> {{ '%02d'|format(turma.ordenacao or 0) }} — {{ turma.nome }}</span>
+        <span><strong>Programa:</strong> {{ turma.programa or '—' }}</span>
+        {% if turma.curso %}
+        <span><strong>Curso:</strong> {{ turma.curso.nome }}</span>
+        {% endif %}
+        <span><strong>Professor:</strong> {{ turma.professor.name if turma.professor else '___________________' }}</span>
+        <span><strong>Turno:</strong> {{ turma.turno or '—' }}</span>
+        <span><strong>Horário:</strong> {{ turma.hora_inicio or '--:--' }} às {{ turma.hora_fim or '--:--' }}</span>
+        <span><strong>Dias:</strong> {{ turma.dias_semana or '—' }}</span>
+        <span><strong>Período:</strong>
+          {% if turma.data_inicio and turma.data_fim %}
+            {{ turma.data_inicio[8:10] }}/{{ turma.data_inicio[5:7] }}/{{ turma.data_inicio[0:4] }}
+            a
+            {{ turma.data_fim[8:10] }}/{{ turma.data_fim[5:7] }}/{{ turma.data_fim[0:4] }}
+          {% else %}—{% endif %}
+        </span>
+        <span><strong>Total de aulas:</strong> {{ datas|length }}</span>
+        <span><strong>Total de alunos:</strong> {{ alunos|length }}</span>
+      </div>
+    </div>
+
+    <div class="qr-area">
+      <div id="dataEmissao" style="font-size:7pt;color:#555"></div>
+    </div>
+  </div>
+
+  {# ── Legenda ── #}
+  <div class="legenda">
+    <strong>Conceitos:</strong>
+    <span><strong>A</strong> = Excelente</span>
+    <span><strong>B</strong> = Bom</span>
+    <span><strong>C</strong> = Regular</span>
+    <span><strong>D</strong> = Insuficiente</span>
+    <span><strong>F</strong> = Falta</span>
+    <span><strong>J</strong> = Justificada</span>
+    <span style="margin-left:auto;color:#555">* Células em branco = não lançado</span>
+  </div>
+
+  {# ── Tabela de frequência ── #}
+  <div class="table-wrap">
+  <table>
+    <colgroup>
+      <col class="col-num">
+      <col class="col-nome">
+      {% if tem_nivel %}<col class="col-nivel">{% endif %}
+      {% for _ in datas %}<col class="col-data" style="width:16px">{% endfor %}
+      <col class="col-total">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="col-num">Nº</th>
+        <th class="col-nome" style="text-align:left;padding-left:5px">Nome</th>
+        {% if tem_nivel %}<th class="col-nivel">Nível</th>{% endif %}
+        {% for data in datas %}
+        <th class="col-data" title="{{ data }}">{{ data[8:10] }}/{{ data[5:7] }}</th>
+        {% endfor %}
+        <th class="col-total">Total<br>Aulas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for aluno in alunos %}
+      <tr>
+        <td class="col-num">{{ loop.index }}</td>
+        <td class="nome-cell">{{ aluno.nome_social if aluno.nome_social else aluno.nome }}</td>
+        {% if tem_nivel %}
+        <td class="col-nivel" style="font-size:6.5pt">{{ aluno.nivel or '—' }}</td>
+        {% endif %}
+        {% for data in datas %}
+        <td class="col-data"></td>
+        {% endfor %}
+        <td class="col-total"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>{# /table-wrap #}
+
+  {# ── Rodapé ── #}
+  <div class="print-footer">
+    <div>
+      <span id="footerData"></span><br>
+      Emitido por: <strong>{{ current_user.name }}</strong>
+    </div>
+    <div class="assinatura-box">
+      {{ turma.professor.name if turma.professor else '___________________________' }}<br>
+      <span style="font-size:6.5pt">Assinatura do Professor Responsável</span>
+    </div>
+  </div>
+
+  <script>
+    const agora = new Date().toLocaleString('pt-BR');
+    document.getElementById('dataEmissao').textContent = 'Emissão: ' + agora;
+    document.getElementById('footerData').textContent  = 'Emissão: ' + agora;
+  </script>
+
+</body>
+</html>

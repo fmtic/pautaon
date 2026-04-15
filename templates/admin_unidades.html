@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <h2>Gerenciamento de Unidades</h2>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovaUnidade">
+            <i class="bi bi-plus-circle me-1"></i> Nova Unidade
+        </button>
+    </div>
+    <hr>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">Lista de Unidades Operacionais</h5>
+        </div>
+        <div class="card-body">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nome da Unidade</th>
+                        <th>Status</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for uni in unidades %}
+                    <tr>
+                        <td>{{ uni.id }}</td>
+                        <td>{{ uni.nome }}</td>
+                        <td>
+                            {% if uni.ativo %}
+                            <span class="badge bg-success">Ativa</span>
+                            {% else %}
+                            <span class="badge bg-danger">Inativa</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEdit{{ uni.id }}">
+                                <i class="bi bi-pencil"></i> Editar
+                            </button>
+                            
+                            <a href="{{ url_for('auth.alternar_unidade_status', id=uni.id) }}" 
+                               class="btn btn-sm {% if uni.ativo %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                <i class="bi {% if uni.ativo %}bi-toggle-on{% else %}bi-toggle-off{% endif %}"></i>
+                                {% if uni.ativo %}Inativar{% else %}Ativar{% endif %}
+                            </a>
+                        </td>
+                    </tr>
+
+                    <!-- Modal Editar -->
+                    <div class="modal fade" id="modalEdit{{ uni.id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header bg-primary text-white">
+                                    <h5 class="modal-title">Editar Unidade: {{ uni.nome }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <form action="{{ url_for('auth.editar_unidade', id=uni.id) }}" method="POST">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <div class="modal-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Nome da Unidade</label>
+                                            <input type="text" name="nome" class="form-control" value="{{ uni.nome }}" required>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                        <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">Nenhuma unidade cadastrada.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nova Unidade -->
+<div class="modal fade" id="modalNovaUnidade" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Cadastrar Nova Unidade</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('auth.cadastrar_unidade') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nome da Unidade</label>
+                        <input type="text" name="nome" class="form-control" placeholder="Ex: Rio de Janeiro" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Criar Unidade</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

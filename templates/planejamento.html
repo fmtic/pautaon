@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-3 d-print-none">
+            <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
+                <div class="card-header bg-primary text-white fw-bold">
+                    <i class="fas fa-cog"></i> Gestão do Conselho
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('registros.salvar_configuracao_conselho') }}" method="POST" class="mb-4">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <label class="small fw-bold text-muted mb-2 text-uppercase">Período do Conselho</label>
+                        <div class="mb-3">
+                            <label class="form-label small mb-0">Início:</label>
+                            <input type="date" name="inicio_conselho" class="form-control form-control-sm"
+                                value="{{ data_inicio_atual }}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small mb-0">Fim:</label>
+                            <input type="date" name="fim_conselho" class="form-control form-control-sm"
+                                value="{{ data_fim_atual }}">
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary w-100">
+                            <i class="fas fa-save"></i> Atualizar Datas
+                        </button>
+                    </form>
+
+                    <hr>
+
+                    <label class="small fw-bold text-muted mb-2 text-uppercase">Check-list de Turmas</label>
+                    <div class="list-group list-group-flush border rounded shadow-sm"
+                        style="max-height: 350px; overflow-y: auto;">
+                        {% for t in turmas %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center p-2">
+                            <span class="small text-truncate" style="max-width: 110px;" title="{{ t.nome }}">{{ t.nome
+                                }}</span>
+                            <a href="{{ url_for('main.alternar_conselho', turma_id=t.id) }}"
+                                class="btn btn-sm {{ 'btn-success' if t.conselho_concluido else 'btn-outline-secondary' }}"
+                                style="padding: 2px 6px; font-size: 0.65rem; min-width: 65px;">
+                                {{ 'Concluído' if t.conselho_concluido else 'Pendente' }}
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <small class="text-muted mt-2 d-block" style="font-size: 0.7rem;">
+                        * Clique no botão para alternar o status da reunião.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-0">Planejamento Pedagógico</h2>
+                    <p class="text-muted">Cronograma de assuntos e temas por turma.</p>
+                </div>
+            </div>
+
+            <div class="card shadow-sm p-4 mb-4 border-0">
+                <form method="POST" action="{{ url_for('registros.planejamento') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="tipo_post" value="tema">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold small">Turma</label>
+                            <select name="turma_id" class="form-select shadow-sm" required>
+                                {% for turma in turmas %}
+                                <option value="{{ turma.id }}">{{ turma.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold small">Novo Tema Sugerido</label>
+                            <input type="text" name="titulo" class="form-control shadow-sm"
+                                placeholder="Ex: Operações Matemáticas" required>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100 shadow-sm">Adicionar</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="row g-4">
+                <!-- Temas Cadastrados (Card Original) -->
+                <div class="col-md-7">
+                    <div class="card shadow-sm border-0 h-100">
+                        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold text-dark">Temas Cadastrados</h5>
+                            <div class="d-flex gap-2 align-items-center">
+                                <form method="GET" action="{{ url_for('registros.planejamento') }}" class="d-flex gap-2 align-items-center">
+                                    <select name="programa" class="form-select form-select-sm" onchange="this.form.submit()">
+                                        <option value="Todos">Todos os Programas</option>
+                                        {% for p in programas %}
+                                        <option value="{{ p }}" {{ 'selected' if p == prog_filtro }}>{{ p }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                                <a href="{{ url_for('registros.imprimir_temas', programa=prog_filtro) }}" 
+                                    target="_blank" 
+                                    class="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center">
+                                        <i class="bi bi-printer"></i>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 align-middle">
+                                    <thead class="table-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-4">Programa</th>
+                                            <th>Turma</th>
+                                            <th>Tema / Assunto</th>
+                                            <th class="text-center pe-4">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for tema in temas %}
+                                        <tr class="align-middle {{ 'opacity-50 bg-light' if not tema.ativo }}">
+                                            <td class="ps-4">
+                                                <span class="badge rounded-pill bg-info-subtle text-info-emphasis border border-info-subtle">
+                                                    {{ tema.programa or 'Geral' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-column">
+                                                    <span class="fw-bold text-dark">{{ tema.turma.nome }}</span>
+                                                    <small class="text-muted" style="font-size: 0.75rem;">ID: #{{ tema.id }}</small>
+                                                </div>
+                                            </td>
+                                            <td class="fw-medium text-dark">
+                                                {{ tema.titulo }}
+                                                {% if not tema.ativo %}
+                                                    <span class="badge bg-secondary-subtle text-secondary border ms-2" style="font-size: 0.65rem;">INATIVO</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-center pe-4">
+                                                <div class="btn-group shadow-sm">
+                                                    <button type="button" class="btn btn-sm btn-white border text-primary" 
+                                                            title="Editar Tema"
+                                                            data-bs-toggle="modal" 
+                                                            data-bs-target="#modalEditTema{{ tema.id }}">
+                                                        <i class="bi bi-pencil-square"></i>
+                                                    </button>
+
+                                                    <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST" class="d-inline">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                        <button type="submit" 
+                                                                class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}" 
+                                                                title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
+                                                            <i class="bi {{ 'bi-toggle-off' if not tema.ativo else 'bi-toggle-on' }}"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <div class="modal fade" id="modalEditTema{{ tema.id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content border-0 shadow-lg">
+                                                    <div class="modal-header bg-light">
+                                                        <h5 class="modal-title h6 fw-bold text-dark">
+                                                            <i class="bi bi-pencil-square me-2"></i>Editar Planejamento
+                                                        </h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <form action="{{ url_for('registros.editar_tema', id=tema.id) }}" method="POST">
+                                                        <div class="modal-body p-4">
+                                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                            <div class="mb-3">
+                                                                <label class="form-label small fw-bold text-muted text-uppercase">Título do Tema / Assunto</label>
+                                                                <input type="text" name="titulo" class="form-control" value="{{ tema.titulo }}" required>
+                                                            </div>
+                                                            <div class="p-3 bg-light rounded border">
+                                                                <p class="small mb-1"><strong>Programa:</strong> {{ tema.programa }}</p>
+                                                                <p class="small mb-0"><strong>Turma:</strong> {{ tema.turma.nome }}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div class="modal-footer bg-light border-0">
+                                                            <button type="button" class="btn btn-sm btn-secondary fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                                                            <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar Alterações</button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="4" class="text-center p-5">
+                                                <div class="text-muted">
+                                                    <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
+                                                    <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
+                                                    <small>Utilize o formulário acima para adicionar um novo tema.</small>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gestão de Níveis (Nova Seção) -->
+                <div class="col-md-5">
+                    <div class="card shadow-sm border-0 h-100">
+                        <div class="card-header bg-white py-3">
+                            <h5 class="mb-0 fw-bold text-dark">Níveis de Alunos</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-4">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="tipo_post" value="nivel">
+                                <div class="input-group shadow-sm">
+                                    <input type="text" name="nome_nivel" class="form-control border-end-0" placeholder="Novo Nível (Ex: Nível 1)" required>
+                                    <button class="btn btn-success px-3" type="submit" title="Adicionar Nível">
+                                        <i class="bi bi-plus-lg"></i>
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle">
+                                    <thead class="table-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-2">Nível</th>
+                                            <th class="text-end pe-2">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for nivel in niveis %}
+                                        <tr>
+                                            <td class="fw-bold text-secondary ps-2">
+                                                <i class="bi bi-bar-chart-fill me-2 small opacity-50"></i>{{ nivel.nome }}
+                                            </td>
+                                            <td class="text-end pe-2">
+                                                <form action="{{ url_for('registros.excluir_nivel', id=nivel.id) }}" method="POST" onsubmit="return confirm('Deseja realmente excluir este nível?')">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Excluir Nível">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="2" class="text-center text-muted py-4">
+                                                <i class="bi bi-info-circle d-block mb-2 opacity-50"></i>
+                                                <small>Nenhum nível cadastrado.</small>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

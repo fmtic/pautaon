@@ -1,0 +1,5 @@
+{
+    "kiroAgent.configureMCP": "Disabled",
+    "files.autoSave": "afterDelay",
+    "editor.autoIndentOnPaste": true
+}
