@@ -1,0 +1,21 @@
+# Ambientes virtuais (muito importante!)
+venv/
+env/
+.env
+
+# Python (arquivos compilados)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Banco de dados local (geralmente não queremos no GitHub)
+instance/
+*.db
+*.sqlite3
+
+# VS Code e Logs
+.vscode/
+*.log
+
+# Pasta do Nextcloud (arquivos temporários de sincronização)
+.sync_*.db
