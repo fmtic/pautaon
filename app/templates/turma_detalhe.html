@@ -101,12 +101,8 @@
           <td>
             <div class="rounded bg-light d-flex align-items-center justify-content-center overflow-hidden"
               style="width: 30px; height: 40px; border: 1px solid #ddd">
-              {% if aluno.foto_path %}
-              <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}"
+              <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
                 class="w-100 h-100 object-fit-cover" />
-              {% else %}
-              <i class="bi bi-person text-muted"></i>
-              {% endif %}
             </div>
           </td>
           <td class="fw-bold small">{{ aluno.nome }}</td>

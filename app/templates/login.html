@@ -4,11 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login | pautaon</title>
+  <title>Login | {{ informacao_padrao.nome_instituicao or 'pautaON' }}</title>
   <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link rel="shortcut icon" href="{{ url_for('static', filename='img/logo_resumida.png') }}"
-    type="image/png">
+  <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png">
   <style>
     body {
       /* Degradê Azul Profissional */
@@ -76,7 +75,7 @@
       <div class="col-md-4">
         <div class="card login-card p-4">
           <div class="text-center mb-4">
-            <img src="{{ url_for('static', filename='img/logo_textual_transparente.png') }}" alt="Pauta On"
+            <img src="{{ informacao_padrao.logo_principal_url }}" alt="{{ informacao_padrao.nome_instituicao }}"
               class="img-fluid mb-3" style="max-height: 90px;">
             <!-- <h4 class="fw-bold">Pauta Online</h4> -->
             <p class="text-muted small">Entre com suas credenciais</p>
@@ -117,7 +116,7 @@
           </form>
 
           <div class="text-center mt-4">
-            <small class="text-muted">© 2026 pautaon - Impacto | Educação | Gestão</small>
+            <small class="text-muted">© 2026 {{ informacao_padrao.nome_instituicao or 'pautaON' }}</small>
           </div>
         </div>
       </div>

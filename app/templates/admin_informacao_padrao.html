@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-building-gear me-2"></i>Informacoes Padrao</h2>
+    <span class="badge bg-dark">Administracao</span>
+  </div>
+  <p class="text-muted mb-4">
+    Configure os dados institucionais e assets globais usados no sistema.
+  </p>
+
+  <div class="accordion mb-4 shadow-sm" id="accordionAjudaAssets">
+    <div class="accordion-item border-0">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed bg-light fw-semibold" type="button" data-bs-toggle="collapse"
+                data-bs-target="#collapseAjudaAssets" aria-expanded="false" aria-controls="collapseAjudaAssets">
+          <i class="bi bi-info-circle me-2 text-primary"></i> Dicas de formato e tamanho das imagens
+        </button>
+      </h2>
+      <div id="collapseAjudaAssets" class="accordion-collapse collapse" data-bs-parent="#accordionAjudaAssets">
+        <div class="accordion-body small text-body-secondary">
+          <ul class="mb-0 ps-3">
+            <li><strong>Logo principal</strong>: PNG ou WebP com fundo transparente, altura visual entre 28 e 40 px na barra (arquivo em largura moderada, até ~400 px de largura). Evite imagens muito largas para não distorcer o menu.</li>
+            <li><strong>Logo secundária</strong>: PNG ou JPG para impressos e certificados; proporção horizontal ou quadrada; altura exibida costuma ser 44–60 px nos relatórios. Prefira boa resolução (ex.: 300 px de largura) para impressão nítida.</li>
+            <li><strong>Favicon</strong>: ícone quadrado (16×16 a 512×512 px; PNG ou ICO). O navegador reduz automaticamente; evite texto ilegível em tamanhos pequenos.</li>
+            <li><strong>Foto padrão do aluno</strong>: imagem quadrada ou quase quadrada; o sistema exibe em círculo com <code>object-fit: cover</code>. Centralize o rosto; tamanho mínimo sugerido 200×200 px.</li>
+            <li><strong>Tamanho máximo de upload</strong>: 3 MB por arquivo; formatos aceitos conforme os campos do formulário.</li>
+            <li><strong>Privacidade</strong>: use apenas logotipos e materiais autorizados pela instituição.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data" class="card shadow-sm border-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label fw-bold">Nome da Instituicao</label>
+          <input type="text" name="nome_instituicao" class="form-control"
+                 maxlength="120" value="{{ informacao.nome_instituicao }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-bold">CNPJ</label>
+          <input type="text" name="cnpj" class="form-control"
+                 maxlength="30" value="{{ informacao.cnpj }}" placeholder="00.000.000/0000-00">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label fw-bold">Endereco</label>
+          <input type="text" name="endereco" class="form-control"
+                 maxlength="255" value="{{ informacao.endereco }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-bold">Telefones de contato</label>
+          <input type="text" name="telefones" class="form-control"
+                 maxlength="255" value="{{ informacao.telefones }}"
+                 placeholder="(21) 0000-0000 | (21) 90000-0000">
+        </div>
+      </div>
+
+      <hr class="my-4">
+
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <label class="form-label fw-bold">Logo principal</label>
+          <input type="file" name="logo_principal_path" class="form-control" accept=".png,.jpg,.jpeg,.webp">
+          <small class="text-muted">Uso recomendado na barra superior e cabecalhos.</small>
+          <div class="mt-2 border rounded p-2 bg-light">
+            <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo principal" style="max-height:48px;">
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <label class="form-label fw-bold">Logo secundaria</label>
+          <input type="file" name="logo_secundaria_path" class="form-control" accept=".png,.jpg,.jpeg,.webp">
+          <small class="text-muted">Uso recomendado em certificados e impressoes.</small>
+          <div class="mt-2 border rounded p-2 bg-light">
+            <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo secundaria" style="max-height:48px;">
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <label class="form-label fw-bold">Favicon</label>
+          <input type="file" name="favicon_path" class="form-control" accept=".png,.jpg,.jpeg,.webp,.ico">
+          <small class="text-muted">Icone exibido na aba do navegador.</small>
+          <div class="mt-2 border rounded p-2 bg-light d-flex align-items-center gap-2">
+            <img src="{{ informacao_padrao.favicon_url }}" alt="Favicon" style="height:24px;width:24px;object-fit:contain;">
+            <span class="small text-muted">Visualizacao atual</span>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <label class="form-label fw-bold">Foto padrao do aluno</label>
+          <input type="file" name="foto_default_aluno_path" class="form-control" accept=".png,.jpg,.jpeg,.webp">
+          <small class="text-muted">Usada quando o aluno nao tiver foto cadastrada.</small>
+          <div class="mt-2 border rounded p-2 bg-light">
+            <img src="{{ informacao_padrao.foto_default_aluno_url }}" alt="Foto padrao" style="height:72px;width:72px;border-radius:50%;object-fit:cover;">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex justify-content-end">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-save me-1"></i>Salvar configuracoes
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

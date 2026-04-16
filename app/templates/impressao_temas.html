@@ -19,10 +19,10 @@
     <!-- Cabeçalho -->
     <div class="d-flex justify-content-between align-items-center print-header pb-3 mb-4">
         <div class="d-flex align-items-center">
-            <img src="{{ url_for('static', filename='img/favicon-fundoPreto.jpeg') }}"
+            <img src="{{ informacao_padrao.logo_secundaria_url }}"
                  alt="Logo" style="height: 60px; margin-right: 15px;" class="rounded shadow-sm">
             <div>
-                <h1 class="h4 mb-0 fw-bold text-dark">pautaON</h1>
+                <h1 class="h4 mb-0 fw-bold text-dark">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</h1>
                 <p class="text-muted small mb-0">Sistema de Gestão Acadêmica</p>
             </div>
         </div>

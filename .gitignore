@@ -1,0 +1,33 @@
+# Ambiente e segredos
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# Flask / SQLite local (não versionar banco de desenvolvimento)
+instance/*.db
+instance/*.sqlite3
+
+# IDE e SO
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Logs e cobertura
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/

@@ -175,9 +175,9 @@
   {# ── Cabeçalho ── #}
   <div class="print-header">
     <div class="logo-area">
-      <img src="{{ url_for('static', filename='img/favicon-fundoPreto.jpeg') }}" alt="Logo">
+      <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo">
       <div>
-        <div class="sys-name">pautaON</div>
+        <div class="sys-name">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
         <div class="sys-sub">Sistema de Gestão Acadêmica</div>
       </div>
     </div>

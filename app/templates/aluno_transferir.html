@@ -14,14 +14,8 @@
                         <div class="col-md-2 text-center">
                             <div class="rounded bg-light overflow-hidden shadow-sm d-inline-block"
                                 style="width: 80px; height: 100px; border: 1px solid #ddd;">
-                                {% if aluno.foto_path %}
-                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}"
+                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
                                     class="w-100 h-100 object-fit-cover">
-                                {% else %}
-                                <div class="d-flex align-items-center justify-content-center h-100">
-                                    <i class="bi bi-person text-muted fs-2"></i>
-                                </div>
-                                {% endif %}
                             </div>
                         </div>
                         <div class="col-md-10">

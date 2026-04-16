@@ -82,7 +82,7 @@
               <td class="ps-3">
                 <div class="d-flex align-items-center">
                   <img
-                    src="{{ url_for('static', filename='uploads/fotos/' ~ item.obj.foto_path) if item.obj.foto_path else url_for('static', filename='img/default.png') }}"
+                    src="{{ url_for('static', filename='uploads/fotos/' ~ item.obj.foto_path) if item.obj.foto_path else informacao_padrao.foto_default_aluno_url }}"
                     class="rounded-circle me-3 border"
                     width="45"
                     height="45"

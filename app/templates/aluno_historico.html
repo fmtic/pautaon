@@ -15,9 +15,9 @@
   {# ── Cabeçalho ── #}
   <div class="ficha-header">
     <div class="ficha-logo">
-      <img src="{{ url_for('static', filename='img/favicon-fundoPreto.jpeg') }}" alt="Logo">
+      <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo">
       <div>
-        <div class="sys-name">pautaON</div>
+        <div class="sys-name">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
         <div class="sys-sub">Sistema de Gestão Acadêmica</div>
       </div>
     </div>
@@ -111,7 +111,7 @@
   <div class="rodape">
     <span>Emitido por: <strong>{{ current_user.name }}</strong></span>
     <span id="dataEmissao"></span>
-    <span>pautaON — Sistema de Gestão Acadêmica</span>
+    <span>{{ informacao_padrao.nome_instituicao or 'pautaON' }} — Sistema de Gestão Acadêmica</span>
   </div>
 
   <script>

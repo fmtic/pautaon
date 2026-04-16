@@ -87,13 +87,8 @@
           <td class="text-center">
             <div class="d-flex justify-content-center">
               <div class="rounded bg-light overflow-hidden shadow-sm" style="width: 42px; height: 56px; border: 1px solid #ddd">
-                {% if aluno.foto_path %}
-                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}" class="w-100 h-100 object-fit-cover" />
-                {% else %}
-                <div class="d-flex align-items-center justify-content-center h-100">
-                  <i class="bi bi-person text-muted fs-4"></i>
-                </div>
-                {% endif %}
+                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                     class="w-100 h-100 object-fit-cover" />
               </div>
             </div>
           </td>

@@ -128,7 +128,7 @@
                     <div class="card h-100 shadow-sm border-0 card-aluno">
                         <div class="card-body d-flex align-items-center">
                             <div class="me-3">
-                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else url_for('static', filename='uploads/fotos/aluno_5_perfil_padrao.png') }}"
+                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
                                     class="avatar-aluno shadow-sm" alt="Foto de {{ aluno.nome }}"
                                     style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 2px solid #f2ab1c;">
                             </div>

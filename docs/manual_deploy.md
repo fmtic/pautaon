@@ -134,3 +134,52 @@ sudo chmod 775 /var/www/pauta-online/instance
 sudo a2ensite pautaon.conf
 sudo systemctl restart apache2
 ```
+
+---
+
+## 3. Notificador de Pauta Pendente (Google Chat)
+
+Instruções completas de **Google Cloud**, credenciais, Calendar e Chat estão em **[manual_google_integracao.md](manual_google_integracao.md)** — use este item como referência rápida de execução.
+
+O script `scripts/notificador.py` notifica professores por mensagem direta no Google Chat quando houver pendencia de frequencia em aula com atraso maior/igual a 7 dias (regra: `data_aula + 7`).
+
+### Requisitos de seguranca
+- Nunca versionar JSON de credencial real no repositorio.
+- Salvar o arquivo de service account em pasta protegida no servidor (exemplo Windows: `C:\\inetpub\\secrets\\google_chat_key.json`).
+- Configurar permissao de leitura apenas para a conta de execucao do servico.
+
+### Variaveis de ambiente
+Adicionar no `.env` de producao:
+
+```env
+GOOGLE_CHAT_SERVICE_ACCOUNT_FILE=C:/inetpub/secrets/google_chat_key.json
+GOOGLE_CHAT_SCOPES=https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.spaces
+NOTIFICADOR_DIAS_ATRASO=7
+NOTIFICADOR_DRY_RUN=false
+NOTIFICADOR_LOG_LEVEL=INFO
+```
+
+### Execucao manual
+No diretorio raiz do projeto:
+
+```bash
+python scripts/notificador.py --dry-run
+python scripts/notificador.py
+```
+
+### Agendamento sugerido
+- Windows Task Scheduler: executar 1 vez por dia (ex.: 07:00).
+- Linux cron: `0 7 * * * /caminho/venv/bin/python /var/www/pauta-online/scripts/notificador.py`
+
+### Observacoes operacionais
+- O envio usa DM por e-mail do professor (`user.email`) no Google Chat.
+- O script ignora turmas fora de vigencia (`hoje > data_fim`).
+- Primeiro execute em `--dry-run` para validar o volume antes de ativar envio real.
+
+---
+
+## 4. Integração Google (Calendar e Chat) — manual completo
+
+Para criar o projeto no Google Cloud, ativar APIs, compartilhar calendário com a conta de serviço, escopos, variáveis de ambiente e solução de problemas, consulte:
+
+**[docs/manual_google_integracao.md](manual_google_integracao.md)**

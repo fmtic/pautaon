@@ -36,13 +36,14 @@ def _register_user_loader() -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    from app.routes import auth, conselho, main
+    from app.routes import auth, conselho, informacao_padrao, main
     from app.routes.registros import bp as registros_bp
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(main.bp)
     app.register_blueprint(registros_bp)
     app.register_blueprint(conselho.bp)
+    app.register_blueprint(informacao_padrao.bp)
 
 
 def _register_context_processors(app: Flask) -> None:
@@ -52,10 +53,30 @@ def _register_context_processors(app: Flask) -> None:
         from flask_login import current_user
 
         from app.models import Unidade
+        from app.informacao_padrao import get_informacao_padrao_context
+
+        try:
+            informacao_padrao = get_informacao_padrao_context()
+        except Exception:
+            app.logger.exception("Falha ao montar informacao_padrao para templates.")
+            informacao_padrao = {
+                "nome_instituicao": "pautaON",
+                "cnpj": "",
+                "endereco": "",
+                "telefones": "",
+                "logo_principal_url": "/static/img/logo_textual_fundoPreto.png",
+                "logo_secundaria_url": "/static/img/logo.png",
+                "favicon_url": "/static/img/logo_resumida.png",
+                "foto_default_aluno_url": "/static/img/default.png",
+            }
 
         allowed_roles = {"admin", "pedagogico", "gerencia", "secretaria"}
         if not current_user.is_authenticated or current_user.role not in allowed_roles:
-            return {"unidades_lista": [], "unidade_contexto": ""}
+            return {
+                "unidades_lista": [],
+                "unidade_contexto": "",
+                "informacao_padrao": informacao_padrao,
+            }
 
         try:
             unidades = Unidade.query.filter_by(ativo=True).order_by(Unidade.nome).all()
@@ -70,10 +91,15 @@ def _register_context_processors(app: Flask) -> None:
             return {
                 "unidades_lista": unidades,
                 "unidade_contexto": unidade_contexto,
+                "informacao_padrao": informacao_padrao,
             }
         except Exception:
             app.logger.exception("Falha ao montar contexto de unidade.")
-            return {"unidades_lista": [], "unidade_contexto": "Erro Contexto"}
+            return {
+                "unidades_lista": [],
+                "unidade_contexto": "Erro Contexto",
+                "informacao_padrao": informacao_padrao,
+            }
 
 
 def _register_cli(app: Flask) -> None:
