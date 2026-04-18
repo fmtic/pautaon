@@ -31,3 +31,6 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+
+# Pasta do Nextcloud (arquivos temporários de sincronização)
+.sync_*.db
