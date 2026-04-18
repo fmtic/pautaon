@@ -25,9 +25,15 @@ instance/*.sqlite3
 Thumbs.db
 .DS_Store
 
+# Pastas de uploads
+uploads/
+
 # Logs e cobertura
 *.log
 .coverage
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+
+# Pasta do Nextcloud (arquivos temporários de sincronização)
+.sync_*.db

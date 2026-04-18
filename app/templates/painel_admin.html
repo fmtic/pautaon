@@ -89,11 +89,17 @@
                                     <td><small class="text-muted">{{ user.email }}</small></td>
                                     <td>
                                         {% if user.role == "admin" %}
-                                            <span class="badge bg-danger">Admin</span>
+                                            <span class="badge bg-danger">Administrador</span>
                                         {% elif user.role == "professor" %}
                                             <span class="badge bg-success">Professor</span>
                                         {% elif user.role == "pedagogico" %}
                                             <span class="badge bg-info text-dark">Pedagógico</span>
+                                        {% elif user.role == "servico_social" %}
+                                            <span class="badge bg-primary">Serviço Social</span>
+                                        {% elif user.role == "secretaria" %}
+                                            <span class="badge bg-primary">Secretaria</span>
+                                        {% elif user.role == "gerencia" %}
+                                            <span class="badge bg-primary">Gerência</span>
                                         {% elif user.role == "aluno" %}
                                             <span class="badge bg-secondary">Aluno</span>
                                         {% else %}

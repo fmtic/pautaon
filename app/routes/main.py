@@ -16,6 +16,7 @@ from app.models import (
     Turma,
     Aluno,
     Frequencia,
+    Unidade,
     User,
     ConfiguracaoSistema,
     AgendaServicoSocial,
@@ -874,5 +875,6 @@ def trocar_unidade(id):
         flash("Visão Global (Todas as Unidades) ativada.", "success")
     else:
         session["unidade_id"] = id
-        flash(f"Unidade {id} selecionada com sucesso.", "info")
+        uni = Unidade.query.get(id)
+        flash(f"Você agora está na Unidade {uni.nome}", "info")
     return redirect(url_for("main.dashboard"))
