@@ -1,61 +1,7 @@
 {% extends "base.html" %}
 
 {% block styles %}{{ super() }}
-<style>
-  /* ── Tipos ── */
-  :root {
-    --cor-FERIADO:              #dc3545;
-    --cor-ATIVIDADE_PEDAGOGICA: #0d6efd;
-    --cor-REUNIAO_PAIS:         #6f42c1;
-    --cor-ATIVIDADE_INTERNA:    #fd7e14;
-    --cor-MANUTENCAO:           #6c757d;
-  }
-
-  /* ── Grade de meses ── */
-  .cal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
-
-  .cal-month { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; }
-  .cal-month-title {
-    background: #1a1a2e; color: #fff;
-    font-size: .75rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .4px; padding: .35rem .6rem;
-  }
-  .cal-week-header {
-    display: grid; grid-template-columns: repeat(7, 1fr);
-    font-size: .6rem; color: #6c757d; font-weight: 700;
-    text-align: center; text-transform: uppercase;
-    background: #f8f9fa; border-bottom: 1px solid #dee2e6;
-  }
-  .cal-week-header span { padding: 3px 0; }
-  .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); }
-
-  .cal-day {
-    border-right: 1px solid #eee; border-bottom: 1px solid #eee;
-    min-height: 40px; padding: 3px; cursor: pointer;
-    position: relative; transition: background .1s; user-select: none;
-  }
-  .cal-day:hover { background: #f0f4ff; }
-  .cal-day.empty { cursor: default; background: #fafafa; }
-  .cal-day.weekend .cal-day-num { color: #adb5bd; }
-  .cal-day.selecionado { outline: 2px solid var(--tipo-cor, #198754); outline-offset: -2px; }
-  .cal-day-num { font-size: .68rem; color: #495057; font-weight: 500; }
-  .cal-day-badge {
-    display: inline-block; width: 20px; height: 20px; border-radius: 50%;
-    font-size: .58rem; font-weight: 700; color: #fff;
-    text-align: center; line-height: 20px; margin-top: 2px;
-  }
-
-  /* ── Painel lateral ── */
-  #panelDia { border-top: 3px solid #1a1a2e; }
-
-  /* ── Legenda ── */
-  .tipo-btn { font-size: .75rem; }
-  .tipo-btn.ativo { outline: 3px solid var(--tipo-cor); outline-offset: 2px; }
-  .tipo-btn .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
-
-  /* ── Readonly ── */
-  .readonly-overlay { pointer-events: none; opacity: .7; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/periodo_letivo_calendario.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -91,8 +37,8 @@
         <i class="bi bi-eraser me-1"></i>Limpar tudo
       </button>
       {% endif %}
-      <a href="{{ url_for('registros.calendario_exportar', periodo_id=periodo.id) }}"
-         target="_blank" class="btn btn-outline-danger btn-sm">
+      <a href="{{ url_for('registros.calendario_exportar', periodo_id=periodo.id) }}" target="_blank"
+        class="btn btn-outline-danger btn-sm">
         <i class="bi bi-printer me-1"></i>Imprimir
       </a>
       <a href="{{ url_for('registros.periodo_letivo') }}" class="btn btn-outline-secondary btn-sm">
@@ -106,14 +52,13 @@
   <div class="d-flex gap-2 flex-wrap mb-3 p-2 bg-light rounded border">
     <small class="text-muted fw-bold text-uppercase align-self-center me-1">Tipo:</small>
     {% for cod, label, cor in [
-      ('FERIADO',              'Feriado',              '#dc3545'),
-      ('ATIVIDADE_PEDAGOGICA', 'At. Pedagógica',       '#0d6efd'),
-      ('REUNIAO_PAIS',         'Reunião de Pais',      '#6f42c1'),
-      ('ATIVIDADE_INTERNA',    'At. Interna',          '#fd7e14'),
-      ('MANUTENCAO',           'Manutenção',           '#6c757d'),
+    ('FERIADO', 'Feriado', '#dc3545'),
+    ('ATIVIDADE_PEDAGOGICA', 'At. Pedagógica', '#0d6efd'),
+    ('REUNIAO_PAIS', 'Reunião de Pais', '#6f42c1'),
+    ('ATIVIDADE_INTERNA', 'At. Interna', '#fd7e14'),
+    ('MANUTENCAO', 'Manutenção', '#6c757d'),
     ] %}
-    <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}"
-            style="--tipo-cor:{{ cor }}">
+    <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}" style="--tipo-cor:{{ cor }}">
       <span class="dot me-1" style="background:{{ cor }}"></span>{{ label }}
     </button>
     {% endfor %}
@@ -122,11 +67,13 @@
   {# Legenda somente leitura #}
   <div class="d-flex gap-3 flex-wrap mb-3 p-2 bg-light rounded border small">
     {% for cod, label, cor in [
-      ('FERIADO','Feriado','#dc3545'),('ATIVIDADE_PEDAGOGICA','At. Pedagógica','#0d6efd'),
-      ('REUNIAO_PAIS','Reunião de Pais','#6f42c1'),('ATIVIDADE_INTERNA','At. Interna','#fd7e14'),
-      ('MANUTENCAO','Manutenção','#6c757d'),
+    ('FERIADO','Feriado','#dc3545'),('ATIVIDADE_PEDAGOGICA','At. Pedagógica','#0d6efd'),
+    ('REUNIAO_PAIS','Reunião de Pais','#6f42c1'),('ATIVIDADE_INTERNA','At. Interna','#fd7e14'),
+    ('MANUTENCAO','Manutenção','#6c757d'),
     ] %}
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ cor }};vertical-align:middle" class="me-1"></span>{{ label }}</span>
+    <span><span
+        style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ cor }};vertical-align:middle"
+        class="me-1"></span>{{ label }}</span>
     {% endfor %}
   </div>
   {% endif %}
@@ -149,8 +96,8 @@
         <option value="ATIVIDADE_INTERNA">Atividade Interna</option>
         <option value="MANUTENCAO">Manutenção</option>
       </select>
-      <input type="text" id="diaDescInput" class="form-control form-control-sm"
-             placeholder="Descrição (opcional)" style="max-width:280px">
+      <input type="text" id="diaDescInput" class="form-control form-control-sm" placeholder="Descrição (opcional)"
+        style="max-width:280px">
       <button class="btn btn-success btn-sm" id="btnConfirmarDia">
         <i class="bi bi-check-lg me-1"></i>Confirmar
       </button>
@@ -161,200 +108,21 @@
   </div>
   {% endif %}
 
-  <div id="calStatus" class="small text-muted"></div>
+  <div id="alertContainer" class="position-fixed top-0 start-50 translate-middle-x mt-2"
+    style="z-index: 1050; min-width: 300px;"></div>
 
 </div>
 {% endblock %}
 
 {% block scripts %}{{ super() }}
 <script>
-(function () {
-  'use strict';
-
-  const READONLY = {{ 'true' if not periodo.ativo else 'false' }};
-  const PERIODO_ID = {{ periodo.id }};
-  const PERIODO_INICIO = '{{ periodo.data_inicio.strftime("%Y-%m-%d") }}';
-  const PERIODO_FIM    = '{{ periodo.data_fim.strftime("%Y-%m-%d") }}';
-  const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-  const TIPOS = {
-    FERIADO:              { label: 'Feriado',          cor: '#dc3545', icone: 'F' },
-    ATIVIDADE_PEDAGOGICA: { label: 'At. Pedagógica',   cor: '#0d6efd', icone: 'A' },
-    REUNIAO_PAIS:         { label: 'Reunião de Pais',  cor: '#6f42c1', icone: 'R' },
-    ATIVIDADE_INTERNA:    { label: 'At. Interna',      cor: '#fd7e14', icone: 'I' },
-    MANUTENCAO:           { label: 'Manutenção',       cor: '#6c757d', icone: 'M' },
+  window.calendarioConfig = {
+    readonly: {{ 'true' if not periodo.ativo else 'false' }},
+    periodoId: {{ periodo.id }},
+    dataInicio: '{{ periodo.data_inicio.strftime("%Y-%m-%d") }}',
+    dataFim: '{{ periodo.data_fim.strftime("%Y-%m-%d") }}',
+    dias: {{ dias_json | tojson | safe }}
   };
-
-  const MESES_PT   = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const DIAS_SEM   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-
-  // Carrega dados iniciais do servidor
-  let diasData = {};
-  {{ dias_json | tojson | safe }}.forEach(d => {
-    diasData[d.data] = { tipo: d.tipo, descricao: d.descricao };
-  });
-
-  let tipoAtivo  = 'FERIADO';
-  let diaFoco    = null;
-
-  const calGrade   = document.getElementById('calGrade');
-  const panelDia   = document.getElementById('panelDia');
-  const diaLabel   = document.getElementById('diaLabel');
-  const diaWeekday = document.getElementById('diaWeekday');
-  const diaTipoSel = document.getElementById('diaTipoSel');
-  const diaDescInput = document.getElementById('diaDescInput');
-  const btnConfirmar = document.getElementById('btnConfirmarDia');
-  const btnRemover   = document.getElementById('btnRemoverDia');
-  const btnSalvar    = document.getElementById('btnSalvarCal');
-  const btnLimpar    = document.getElementById('btnLimparSel');
-  const calStatus    = document.getElementById('calStatus');
-
-  // ── Seletor de tipo ──
-  document.querySelectorAll('.tipo-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('ativo'));
-      btn.classList.add('ativo');
-      tipoAtivo = btn.dataset.tipo;
-    });
-  });
-  // Ativa o primeiro por padrão
-  document.querySelector('.tipo-btn')?.classList.add('ativo');
-
-  // ── Render ──
-  function renderCalendar() {
-    calGrade.innerHTML = '';
-    const [anoI, mesI] = PERIODO_INICIO.split('-').map(Number);
-    const [anoF, mesF] = PERIODO_FIM.split('-').map(Number);
-    let ano = anoI, mes = mesI;
-    while (ano < anoF || (ano === anoF && mes <= mesF)) {
-      calGrade.appendChild(buildMonth(ano, mes));
-      mes++; if (mes > 12) { mes = 1; ano++; }
-    }
-  }
-
-  function buildMonth(year, month) {
-    const container = document.createElement('div');
-    container.className = 'cal-month';
-
-    const title = document.createElement('div');
-    title.className = 'cal-month-title';
-    title.textContent = `${MESES_PT[month-1]} / ${year}`;
-    container.appendChild(title);
-
-    const header = document.createElement('div');
-    header.className = 'cal-week-header';
-    DIAS_SEM.forEach(d => { const s = document.createElement('span'); s.textContent = d; header.appendChild(s); });
-    container.appendChild(header);
-
-    const grid = document.createElement('div');
-    grid.className = 'cal-days';
-
-    const firstDay = new Date(year, month-1, 1).getDay();
-    const daysInMonth = new Date(year, month, 0).getDate();
-
-    for (let i = 0; i < firstDay; i++) {
-      const b = document.createElement('div'); b.className = 'cal-day empty'; grid.appendChild(b);
-    }
-    for (let d = 1; d <= daysInMonth; d++) {
-      const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const wday = new Date(year, month-1, d).getDay();
-      const cell = document.createElement('div');
-      cell.className = `cal-day${wday >= 5 ? ' weekend' : ''}`;
-      cell.dataset.date = ds;
-
-      const num = document.createElement('div');
-      num.className = 'cal-day-num';
-      num.textContent = d;
-      cell.appendChild(num);
-
-      if (diasData[ds]) paintCell(cell, ds);
-
-      if (!READONLY) cell.addEventListener('click', () => onDiaClick(ds, cell));
-      grid.appendChild(cell);
-    }
-    container.appendChild(grid);
-    return container;
-  }
-
-  function paintCell(cell, ds) {
-    const info = diasData[ds];
-    const tipo = TIPOS[info.tipo] || { cor: '#6c757d', icone: '?' };
-    cell.style.setProperty('--tipo-cor', tipo.cor);
-    cell.classList.add('selecionado');
-    cell.querySelectorAll('.cal-day-badge').forEach(b => b.remove());
-    const badge = document.createElement('div');
-    badge.className = 'cal-day-badge';
-    badge.style.background = tipo.cor;
-    badge.textContent = tipo.icone;
-    badge.title = (info.descricao || tipo.label);
-    cell.appendChild(badge);
-  }
-
-  function onDiaClick(ds, cell) {
-    diaFoco = ds;
-    const [ano, mes, dia] = ds.split('-').map(Number);
-    const dataLocal = new Date(ano, mes-1, dia);
-    diaLabel.textContent = dataLocal.toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
-    diaWeekday.textContent = DIAS_SEM[dataLocal.getDay()];
-    diaTipoSel.value = diasData[ds]?.tipo || tipoAtivo;
-    diaDescInput.value = diasData[ds]?.descricao || '';
-    panelDia.classList.remove('d-none');
-  }
-
-  // ── Botões ──
-  btnConfirmar?.addEventListener('click', () => {
-    if (!diaFoco) return;
-    diasData[diaFoco] = { tipo: diaTipoSel.value, descricao: diaDescInput.value.trim() };
-    const cell = calGrade.querySelector(`[data-date="${diaFoco}"]`);
-    if (cell) paintCell(cell, diaFoco);
-    panelDia.classList.add('d-none');
-  });
-
-  btnRemover?.addEventListener('click', () => {
-    if (!diaFoco) return;
-    delete diasData[diaFoco];
-    const cell = calGrade.querySelector(`[data-date="${diaFoco}"]`);
-    if (cell) {
-      cell.classList.remove('selecionado');
-      cell.style.removeProperty('--tipo-cor');
-      cell.querySelectorAll('.cal-day-badge').forEach(b => b.remove());
-    }
-    panelDia.classList.add('d-none');
-  });
-
-  btnLimpar?.addEventListener('click', () => {
-    if (!confirm('Limpar todos os dias marcados?')) return;
-    diasData = {};
-    calGrade.querySelectorAll('.cal-day').forEach(c => {
-      c.classList.remove('selecionado');
-      c.style.removeProperty('--tipo-cor');
-      c.querySelectorAll('.cal-day-badge').forEach(b => b.remove());
-    });
-    panelDia.classList.add('d-none');
-  });
-
-  btnSalvar?.addEventListener('click', async () => {
-    const dias = Object.entries(diasData).map(([data, v]) => ({
-      data, tipo: v.tipo, descricao: v.descricao || ''
-    }));
-    calStatus.textContent = 'Salvando...';
-    try {
-      const res = await fetch('/planejamento/calendario/salvar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({ periodo_id: PERIODO_ID, dias })
-      });
-      if (!res.ok) { calStatus.textContent = 'Erro ao salvar.'; return; }
-      const data = await res.json();
-      calStatus.textContent = data.success ? '✔ Salvo com sucesso!' : `Erro: ${data.message}`;
-      setTimeout(() => calStatus.textContent = '', 3000);
-    } catch (e) {
-      calStatus.textContent = 'Falha de conexão.';
-    }
-  });
-
-  renderCalendar();
-})();
 </script>
+<script src="{{ url_for('static', filename='js/periodo_letivo_calendario.js') }}"></script>
 {% endblock %}
