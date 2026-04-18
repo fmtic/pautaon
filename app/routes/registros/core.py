@@ -221,7 +221,7 @@ def frequencia():
              ).first()
              aluno.pode_receber_frequencia = bool(insc and insc.ativo)
 
-    return render_template('frequencia.html',
+    return render_template('frequencia/lancar.html',
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,
@@ -281,7 +281,7 @@ def frequencia_relatorio():
                 "percentual": percentual
             })
 
-    return render_template('frequencia_relatorio.html',
+    return render_template('frequencia/relatorio.html',
                            dados=resultado,
                            turmas=turmas,
                            turma_id=turma_id,

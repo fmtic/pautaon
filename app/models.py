@@ -578,3 +578,13 @@ class LogAcao(db.Model):
     unidade = db.relationship('Unidade', backref='logs_unidade')
 
     usuario = db.relationship('User', backref='logs')
+
+    @staticmethod
+    def normalize(text):
+        from unidecode import unidecode
+        return unidecode(text).lower()
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if 'acao' in kwargs:
+            self.acao_normalizada = self.normalize(kwargs['acao'])

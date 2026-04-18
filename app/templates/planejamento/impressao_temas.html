@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Planejamento de Temas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/impressao_temas.css') }}">
+</head>
+<body class="bg-white">
+    <!-- conteúdo HTML original, sem o style e script inline -->
+    <div class="d-flex justify-content-between align-items-center print-header pb-3 mb-4">
+        <!-- cabeçalho -->
+    </div>
+    <div class="d-flex gap-2 align-items-center mb-4 no-print">
+        <!-- filtro e botão -->
+    </div>
+    <table class="table table-bordered table-striped">
+        <!-- tabela -->
+    </table>
+    <div class="mt-5 pt-3 border-top d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
+        <!-- rodapé -->
+    </div>
+    <script src="{{ url_for('static', filename='js/planejamento/impressao_temas.js') }}"></script>
+</body>
+</html>

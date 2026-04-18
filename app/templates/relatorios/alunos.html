@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/alunos.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <div>
+            <h2 class="fw-bold mb-1 text-dark"><i class="fas fa-users-cog text-primary me-2"></i>Lista de Alunos</h2>
+            <p class="text-muted small mb-0">Gerencie e visualize dados de alunos que já passaram por turmas.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('main.relatorio_geral') }}" class="btn btn-light border">
+                <i class="fas fa-chevron-left me-1"></i> Painel Geral
+            </a>
+            <button class="btn btn-success" type="button" onclick="exportarRelatorioAlunos()" {% if not alunos
+                %}disabled{% endif %}>
+                <i class="fas fa-file-excel me-1"></i> Exportar
+            </button>
+        </div>
+    </div>
+
+    <div class="card report-card shadow-sm mb-4 no-print border-0">
+        <div class="card-body p-4">
+            <form method="get" action="{{ url_for('main.relatorio_alunos') }}" id="filtroForm">
+                <input type="hidden" name="gerar" value="1">
+                <div class="row g-4">
+                    <div class="col-lg-3 border-end">
+                        <label class="form-label fw-bold text-uppercase small text-muted">Escopo Temporal</label>
+                        <select id="periodo_letivo_id" class="form-select border-0 bg-light" name="periodo_letivo_id">
+                            <option value="">Todos os períodos</option>
+                            {% for periodo in periodos %}
+                            <option value="{{ periodo.id }}" {% if periodo.id==selected_periodo_id %}selected{% endif
+                                %}>
+                                {{ periodo.nome }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="mt-3 p-2 bg-light rounded">
+                            <small class="text-muted d-block" style="font-size: 0.75rem;">
+                                <i class="fas fa-info-circle me-1"></i> Inclui todos os alunos associados a turmas no
+                                período.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-9">
+                        <label class="form-label fw-bold text-uppercase small text-muted mb-3">Filtros Avançados</label>
+                        <div class="row g-3">
+                            <!-- Sexo -->
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-muted">Sexo</label>
+                                <select class="form-select" name="sexo">
+                                    <option value="">Todos</option>
+                                    <option value="M" {% if request.args.get('sexo')=='M' %}selected{% endif %}>
+                                        Masculino</option>
+                                    <option value="F" {% if request.args.get('sexo')=='F' %}selected{% endif %}>Feminino
+                                    </option>
+                                    <option value="O" {% if request.args.get('sexo')=='O' %}selected{% endif %}>Outro
+                                    </option>
+                                </select>
+                            </div>
+                            <!-- Etnia -->
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-muted">Etnia / Cor</label>
+                                <select class="form-select" name="etnia">
+                                    <option value="">Todas</option>
+                                    <option value="Branca" {% if request.args.get('etnia')=='Branca' %}selected{% endif
+                                        %}>Branca</option>
+                                    <option value="Parda" {% if request.args.get('etnia')=='Parda' %}selected{% endif
+                                        %}>Parda</option>
+                                    <option value="Preta" {% if request.args.get('etnia')=='Preta' %}selected{% endif
+                                        %}>Preta</option>
+                                    <option value="Amarela" {% if request.args.get('etnia')=='Amarela' %}selected{%
+                                        endif %}>Amarela</option>
+                                    <option value="Indígena" {% if request.args.get('etnia')=='Indígena' %}selected{%
+                                        endif %}>Indígena</option>
+                                </select>
+                            </div>
+                            <!-- Idade Mínima -->
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-muted">Idade Mínima</label>
+                                <input type="number" class="form-control" name="idade_min" placeholder="Ex: 6" min="0"
+                                    max="120" value="{{ request.args.get('idade_min', '') }}">
+                            </div>
+                            <!-- Idade Máxima -->
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-muted">Idade Máxima</label>
+                                <input type="number" class="form-control" name="idade_max" placeholder="Ex: 18" min="0"
+                                    max="120" value="{{ request.args.get('idade_max', '') }}">
+                            </div>
+                            <!-- Cidade -->
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-muted">Cidade</label>
+                                <input type="text" class="form-control" name="cidade" placeholder="Ex: São Paulo"
+                                    value="{{ request.args.get('cidade', '') }}">
+                            </div>
+                            <!-- Bairro -->
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-muted">Bairro</label>
+                                <input type="text" class="form-control" name="bairro" placeholder="Ex: Centro"
+                                    value="{{ request.args.get('bairro', '') }}">
+                            </div>
+                            <!-- Beneficiário -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Beneficiário de Programa
+                                    Social</label>
+                                <select class="form-select" name="beneficio_social">
+                                    <option value="">Todos</option>
+                                    <option value="1" {% if request.args.get('beneficio_social')=='1' %}selected{% endif
+                                        %}>Sim</option>
+                                    <option value="0" {% if request.args.get('beneficio_social')=='0' %}selected{% endif
+                                        %}>Não</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center mb-3 mt-4">
+                            <label class="form-label fw-bold text-uppercase small text-muted mb-0">Dados para
+                                Exibição</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="select_all_dados_aluno">
+                                <label class="form-check-label fw-bold text-primary" for="select_all_dados_aluno">Marcar
+                                    Tudo</label>
+                            </div>
+                        </div>
+                        <div class="row g-2" id="student-data-columns">
+                            {% for coluna in column_options %}
+                            <div class="col-md-3 col-sm-6">
+                                <div class="form-check p-2 border rounded-3">
+                                    <input class="form-check-input ms-0 me-2" type="checkbox" name="colunas"
+                                        id="col_{{ coluna.key }}" value="{{ coluna.key }}" {% if coluna.key in
+                                        selected_cols %}checked{% endif %}>
+                                    <label class="form-check-label" for="col_{{ coluna.key }}">{{ coluna.label
+                                        }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="col-12 text-end pt-3 border-top">
+                        <button type="submit" class="btn btn-primary px-5 shadow-sm">
+                            <i class="fas fa-sync-alt me-2"></i> Gerar Tabela
+                        </button>
+                        <a href="{{ url_for('main.relatorio_alunos') }}" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-eraser me-1"></i> Limpar
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Exibição da tabela e paginação apenas quando 'gerar' está presente -->
+    {% if gerar %}
+    {% if alunos and selected_cols|length > 0 %}
+    <div class="card report-card shadow-sm mb-5">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-0">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-table me-2 text-primary"></i>Lista de Resultados</h5>
+            <span class="badge bg-light text-dark border px-3 py-2 rounded-pill">{{ total }} registros
+                encontrados</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            {% for coluna in column_options if coluna.key in selected_cols %}
+                            {% if coluna.key == 'turmas_aluno' %}
+                            <th class="px-3">Turma 1</th>
+                            <th class="px-3">Turma 2</th>
+                            <th class="px-3">Turma 3</th>
+                            {% else %}
+                            <th class="px-3">{{ coluna.label }}</th>
+                            {% endif %}
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for aluno in alunos %}
+                        <tr>
+                            {% for coluna in column_options if coluna.key in selected_cols %}
+                            {% if coluna.key == 'turmas_aluno' %}
+                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_1 or '-' }}</td>
+                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_2 or '-' }}</td>
+                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_3 or '-' }}</td>
+                            {% else %}
+                            <td class="px-3 py-3 small text-secondary">
+                                {% if coluna.key == 'pcd' %}
+                                {% if aluno[coluna.key] %}
+                                <span
+                                    class="badge bg-danger-subtle text-danger border border-danger-subtle badge-pcd">Sim</span>
+                                {% else %}
+                                <span class="text-muted">Não</span>
+                                {% endif %}
+                                {% else %}
+                                {{ aluno[coluna.key] or '-' }}
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paginação (apenas quando há colunas e mais de uma página) -->
+    {% if pagination and pagination.pages > 1 %}
+    {% set args = request.args.to_dict() %}
+    {% if 'page' in args %}{% set _ = args.pop('page') %}{% endif %}
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="{{ url_for('main.relatorio_alunos', page=pagination.prev_num, **args) }}">Anterior</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+            {% endif %}
+
+            <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages
+                    }}</span></li>
+
+            {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="{{ url_for('main.relatorio_alunos', page=pagination.next_num, **args) }}">Próxima</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">Próxima</span></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    {% elif alunos and selected_cols|length == 0 %}
+    <div class="alert alert-warning mt-3">
+        <i class="bi bi-exclamation-triangle me-2"></i> Nenhuma coluna selecionada. Marque ao menos um dado para
+        visualizar a tabela.
+    </div>
+    {% elif not alunos %}
+    <div class="alert alert-info mt-3">
+        <i class="bi bi-info-circle me-2"></i> Nenhum aluno encontrado com os filtros selecionados.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="alert alert-secondary mt-3 text-center">
+        <i class="bi bi-search me-2"></i> Utilize os filtros e clique em <strong>Gerar Tabela</strong> para exibir os
+        resultados.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/relatorios/alunos.js') }}"></script>
+<script>
+    function exportarRelatorioAlunos() {
+        const form = document.getElementById('filtroForm');
+        const params = new URLSearchParams(new FormData(form));
+        params.set('gerar', '1');
+        params.delete('page');
+        window.location.href = "{{ url_for('main.exportar_relatorio_alunos') }}?" + params.toString();
+    }
+
+    document.getElementById('select_all_dados_aluno')?.addEventListener('change', function (e) {
+        document.querySelectorAll('input[name="colunas"]').forEach(cb => cb.checked = e.target.checked);
+    });
+</script>
+{% endblock %}

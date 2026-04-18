@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Histórico — {{ aluno.nome_social or aluno.nome }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/historico.css') }}">
+</head>
+<body>
+
+  <div class="no-print btn-bar">
+    <button onclick="window.print()">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()">✕ Fechar</button>
+  </div>
+
+  {# ── Cabeçalho ── #}
+  <div class="ficha-header">
+    <div class="ficha-logo">
+      <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo">
+      <div>
+        <div class="sys-name">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
+        <div class="sys-sub">Sistema de Gestão Acadêmica</div>
+      </div>
+    </div>
+    <div class="ficha-titulo">
+      <h1>Histórico Escolar do Aluno</h1>
+      <p>{{ aluno.unidade.nome if aluno.unidade else '' }}</p>
+    </div>
+  </div>
+
+  {# ── Identificação ── #}
+  <section class="secao">
+    <h2 class="secao-titulo">Identificação</h2>
+    <div class="grid-id">
+      <div class="campo">
+        <span class="label">Nome Completo</span>
+        <span class="valor">{{ aluno.nome }}</span>
+      </div>
+      {% if aluno.nome_social %}
+      <div class="campo">
+        <span class="label">Nome Social</span>
+        <span class="valor">{{ aluno.nome_social }}</span>
+      </div>
+      {% endif %}
+      <div class="campo">
+        <span class="label">Data de Cadastro</span>
+        <span class="valor">{{ data_cadastro }}</span>
+      </div>
+    </div>
+  </section>
+
+  {# ── Histórico de Turmas ── #}
+  <section class="secao">
+    <h2 class="secao-titulo">Histórico de Turmas e Avaliações</h2>
+
+    {% if not dados %}
+    <p class="vazio">Nenhuma turma registrada para este aluno.</p>
+    {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Período</th>
+          <th>Turma</th>
+          <th>Curso</th>
+          <th>Professor</th>
+          <th>Dias / Horário</th>
+          <th>Nível</th>
+          <th class="text-center">Aulas</th>
+          <th class="text-center">Pres.</th>
+          <th class="text-center">Faltas</th>
+          <th class="text-center">% Freq.</th>
+          <th class="text-center">Situação Final</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in dados %}
+        <tr class="{{ 'inativo' if not h.ativo }}">
+          <td>
+            {{ h.periodo }}<br>
+            <small>
+              {% if h.data_inicio != '—' %}
+                {{ h.data_inicio[8:10] }}/{{ h.data_inicio[5:7] }}/{{ h.data_inicio[0:4] }}
+                a
+                {{ h.data_fim[8:10] }}/{{ h.data_fim[5:7] }}/{{ h.data_fim[0:4] }}
+              {% else %}—{% endif %}
+            </small>
+          </td>
+          <td><strong>{{ h.turma }}</strong></td>
+          <td>{{ h.curso }}</td>
+          <td>{{ h.professor }}</td>
+          <td>{{ h.dias }}<br><small>{{ h.horario }}</small></td>
+          <td>{{ h.nivel if h.nivel != '—' else 'Não informado' }}</td>
+          <td class="text-center">{{ h.total_aulas }}</td>
+          <td class="text-center">{{ h.presencas }}</td>
+          <td class="text-center">
+            {{ h.faltas }}
+            {% if h.justificadas %}<br><small>J: {{ h.justificadas }}</small>{% endif %}
+          </td>
+          <td class="text-center"><strong>{{ h.pct_presenca }}%</strong></td>
+          <td class="text-center">
+            <strong>{{ h.situacao_final if h.situacao_final != '—' else '—' }}</strong>
+            {% if not h.ativo %}<br><small class="inativo-label">Desligado</small>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  {# ── Rodapé ── #}
+  <div class="rodape">
+    <span>Emitido por: <strong>{{ current_user.name }}</strong></span>
+    <span id="dataEmissao"></span>
+    <span>{{ informacao_padrao.nome_instituicao or 'pautaON' }} — Sistema de Gestão Acadêmica</span>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/alunos/historico.js') }}"></script>
+</body>
+</html>

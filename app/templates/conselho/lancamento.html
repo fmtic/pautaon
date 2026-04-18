@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid mt-4">
+
+    <div class="card shadow-sm mb-4 border-0 bg-light">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('conselho.lancamento_conselho') }}" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary">Programa</label>
+                    <select name="programa" class="form-select" onchange="this.form.submit()">
+                        <option value="Todos">Todos os Programas</option>
+                        {% for p in lista_programas %}
+                        <option value="{{ p }}" {% if programa_ativo==p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary">Turno</label>
+                    <select name="turno" class="form-select" onchange="this.form.submit()">
+                        <option value="Todos">Todos os Turnos</option>
+                        <option value="Manhã" {% if turno_ativo=='Manhã' %}selected{% endif %}>Manhã</option>
+                        <option value="Tarde" {% if turno_ativo=='Tarde' %}selected{% endif %}>Tarde</option>
+                        <option value="Noite" {% if turno_ativo=='Noite' %}selected{% endif %}>Noite</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary">Selecionar Turma</label>
+                    <select name="turma" class="form-select" onchange="this.form.submit()">
+                        <option value="">Escolha a turma...</option>
+                        {% for t in turmas %}
+                        <option value="{{ t.id }}" {% if turma and turma.id==t.id %}selected{% endif %}>{{ t.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <hr>
+
+    {# 2. CONTEÚDO DINÂMICO #}
+    {% if turma %}
+    {# Card Azul com detalhes da turma #}
+    <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h3 class="mb-1"><i class="bi bi-people-fill me-2"></i>{{ turma.nome }}</h3>
+                <p class="mb-0 opacity-75">
+                    <i class="bi bi-tag-fill me-1"></i> {{ turma.programa or 'Programa não definido' }} |
+                    <i class="bi bi-clock-history me-1"></i> {{ turma.turno or '-' }} |
+                    <i class="bi bi-bar-chart-steps me-1"></i> Etapa: {{ etapa }}
+                </p>
+            </div>
+            <button type="button" class="btn btn-warning btn-sm shadow-sm" data-bs-toggle="modal"
+                data-bs-target="#modalAvaliacaoTurma">
+                <i class="bi bi-chat-left-text-fill me-1"></i> Ver Avaliação da Turma
+            </button>
+        </div>
+    </div>
+
+    {# Formulário de Lançamento #}
+    <form action="{{ url_for('conselho.salvar_conselho') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="turma_id" value="{{ turma.id }}">
+        <input type="hidden" name="etapa" value="{{ etapa }}">
+        <div class="row">
+            {% for aluno in alunos %}
+            {# ... Seu loop de alunos aqui ... #}
+            {% endfor %}
+        </div>
+
+        <div class="sticky-bottom bg-white p-3 border-top shadow-lg text-end mt-4">
+            <a href="{{ url_for('conselho.index_conselho') }}" class="btn btn-outline-secondary me-2">Cancelar</a>
+            <button type="submit" class="btn btn-success px-5">Salvar Tudo</button>
+        </div>
+    </form>
+
+    {% else %}
+    {# MENSAGEM QUANDO NÃO HÁ TURMA SELECIONADA OU SE A TURMA ESTAVA VAZIA #}
+    <div class="text-center py-5">
+        <div class="mb-3">
+            <i class="bi bi-person-video3 text-secondary opacity-25" style="font-size: 5rem;"></i>
+        </div>
+        <h5 class="text-secondary">Painel de Lançamento de Conselho</h5>
+        <p class="text-muted">Selecione uma turma nos filtros acima para carregar a lista de alunos e perguntas.</p>
+    </div>
+    {% endif %}
+
+</div>
+<script src="{{ url_for('static', filename='js/conselho/conselho.js') }}"></script>
+{% endblock %}

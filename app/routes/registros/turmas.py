@@ -30,7 +30,7 @@ def turma():
         stmt = stmt.where(Turma.unidade_id == unidade_id)
 
     turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
-    return render_template("turma_listar.html", turmas=turmas)
+    return render_template("turmas/listar.html", turmas=turmas)
 
 
 @bp.route("/turmas/lista")
@@ -129,7 +129,7 @@ def nova_turma():
     professores = professores.order_by(User.name).all()
     periodos = PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True).order_by(PeriodoLetivo.nome).all() if unidade_id else []
     cursos = Curso.query.filter_by(ativo=True, unidade_id=unidade_id).order_by(Curso.nome).all() if unidade_id else []
-    return render_template("turma.html", professores=professores, periodos=periodos, periodo_ativo=None, cursos=cursos)
+    return render_template("turmas/nova.html", professores=professores, periodos=periodos, periodo_ativo=None, cursos=cursos)
 
 
 @bp.route("/turma/<int:id>")
@@ -159,7 +159,7 @@ def ver_turma(id):
         .count()
     )
     return render_template(
-        "turma_detalhe.html",
+        "turmas/detalhe.html",
         perguntas=perguntas,
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
@@ -275,7 +275,7 @@ def editar_turma(id):
     periodo_ativo = turma_obj.periodo_letivo
     centros_custo = [c.strip() for c in periodo_ativo.centro_custo.split(",")] if periodo_ativo and periodo_ativo.centro_custo else []
     cursos = Curso.query.filter_by(ativo=True, unidade_id=unidade_id or turma_obj.unidade_id).order_by(Curso.nome).all()
-    return render_template("turma_editar.html", turma=turma_obj, professores=professores, programas=programas, periodos=periodos, periodo_ativo=periodo_ativo, centros_custo=centros_custo, cursos=cursos)
+    return render_template("turmas/editar.html", turma=turma_obj, professores=professores, programas=programas, periodos=periodos, periodo_ativo=periodo_ativo, centros_custo=centros_custo, cursos=cursos)
 
 
 @bp.route("/turma/excluir/<int:id>", methods=["POST"])
@@ -315,7 +315,7 @@ def ver_observacoes(turma_id):
         .all()
     )
     turma_obj = Turma.query.get_or_404(turma_id)
-    return render_template("observacoes_turma.html", obs=observacoes, turma=turma_obj, historico=observacoes)
+    return render_template("turmas/observacoes.html", obs=observacoes, turma=turma_obj, historico=observacoes)
 
 
 @bp.route("/turma/<int:id>/imprimir-pauta")

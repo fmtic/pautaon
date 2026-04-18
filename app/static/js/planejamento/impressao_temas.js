@@ -1,0 +1,1 @@
+document.getElementById('dataEmissao').textContent = new Date().toLocaleString('pt-BR');

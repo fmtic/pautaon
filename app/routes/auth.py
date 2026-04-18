@@ -3,7 +3,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
 
-from app.models import User, LogAcao, Unidade
+from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.database import db
 from app.services.auth_service import (
     authenticate_against_ldap,
@@ -116,7 +116,7 @@ def painel_admin():
         select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
     ).scalars().all()
 
-    return render_template('painel_admin.html', usuarios=usuarios, unidades=unidades)
+    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades)
 
 
 @bp.route('/admin/cadastrar', methods=['POST'])
@@ -239,7 +239,7 @@ def admin_unidades():
         abort(403)
     
     unidades = Unidade.query.order_by(Unidade.nome).all()
-    return render_template('admin_unidades.html', unidades=unidades)
+    return render_template('admin/unidades.html', unidades=unidades)
 
 @bp.route('/admin/unidades/cadastrar', methods=['POST'])
 @login_required
@@ -312,66 +312,78 @@ def alternar_unidade_status(id):
 
 # ====================== ROTAS AUDITORIA DE USO ======================
 
+from unidecode import unidecode
+
 @bp.route('/admin/logs')
 @login_required
 def ver_logs():
     if current_user.role != 'admin':
-        return abort(403)
+        abort(403)
 
-    page           = request.args.get('page', 1, type=int)
-    usuario_busca  = request.args.get('usuario', '')
-    acao_busca     = request.args.get('acao', '')
-    data_busca     = request.args.get('data', '')
+    page = request.args.get('page', 1, type=int)
+    usuario_busca = request.args.get('usuario', '').strip()
+    acao_busca = request.args.get('acao', '').strip()
+    data_busca = request.args.get('data', '').strip()
 
     query = LogAcao.query
+
     if usuario_busca:
         query = query.filter(LogAcao.usuario_nome.ilike(f'%{usuario_busca}%'))
-    if acao_busca:
-        query = query.filter(LogAcao.acao.ilike(f'%{acao_busca}%'))
-    if data_busca:
-        # SQLite spec date cast. Pode requerer ajuste se migrado a PostgreSQL futuramente
-        query = query.filter(db.func.date(LogAcao.data_hora) == data_busca)
 
-    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(page=page, per_page=20)
-    return render_template('admin_logs.html', logs=pagination.items, pagination=pagination)
+    if data_busca:
+        try:
+            data_inicio = datetime.strptime(data_busca, '%Y-%m-%d').date()
+            data_fim = data_inicio + timedelta(days=1)
+            query = query.filter(LogAcao.data_hora >= data_inicio, LogAcao.data_hora < data_fim)
+        except ValueError:
+            pass
+
+    # Paginação primeiro
+    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(page=page, per_page=20, error_out=False)
+
+    # Filtro por ação (em memória, apenas nos itens da página atual)
+    if acao_busca:
+        termo_normalizado = unidecode(acao_busca.lower())
+        pagination.items = [
+            log for log in pagination.items
+            if termo_normalizado in unidecode(log.acao).lower()
+        ]
+
+    return render_template('admin/logs.html', logs=pagination.items, pagination=pagination)
+
 
 def _executar_limpar_logs(automatico=False):
-    """Lógica centralizada para remoção de logs antigos (+30 dias)."""
-    from app.models import LogAcao, ConfiguracaoSistema
-    from app.utils.timezone import get_local_now
-    from datetime import timedelta
-
-    # Se for automático, verifica se já rodou hoje para evitar sobrecarga
-    if automatico:
-        ultima_limpeza = ConfiguracaoSistema.query.filter_by(chave='ultima_limpeza_logs').first()
-        hoje = get_local_now().date()
-        if ultima_limpeza and ultima_limpeza.valor == str(hoje):
-            return 0
-        
-        # Registra que rodou hoje
-        if not ultima_limpeza:
-            ultima_limpeza = ConfiguracaoSistema(chave='ultima_limpeza_logs', valor=str(hoje), descricao="Data da última execução automática de limpeza de logs")
-            db.session.add(ultima_limpeza)
-        else:
-            ultima_limpeza.valor = str(hoje)
-    
-    data_limite = get_local_now() - timedelta(days=30)
+    """Remove logs com mais de 30 dias. Retorna número de registros removidos ou -1 em erro."""
     try:
-        # Conta e deleta
+        data_limite = datetime.now() - timedelta(days=30)
+
+        # Controle para execução automática (evita rodar várias vezes no mesmo dia)
+        if automatico:
+            ultima_limpeza = ConfiguracaoSistema.query.filter_by(chave='ultima_limpeza_logs').first()
+            hoje = datetime.now().date()
+            if ultima_limpeza and ultima_limpeza.valor == str(hoje):
+                return 0
+            if not ultima_limpeza:
+                ultima_limpeza = ConfiguracaoSistema(
+                    chave='ultima_limpeza_logs',
+                    valor=str(hoje),
+                    descricao="Data da última execução automática de limpeza de logs"
+                )
+                db.session.add(ultima_limpeza)
+            else:
+                ultima_limpeza.valor = str(hoje)
+            db.session.commit()
+
+        # Executa a exclusão
         qtd = LogAcao.query.filter(LogAcao.data_hora < data_limite).count()
-        if qtd > 0:
+        if qtd:
             LogAcao.query.filter(LogAcao.data_hora < data_limite).delete(synchronize_session=False)
             db.session.commit()
-            register_security_log("Manutenção de Storage", f"Limpeza {'Automática' if automatico else 'Manual'}: {qtd} logs removidos.")
-        elif not automatico:
-            db.session.commit() # Salva o timestamp da limpeza manual se necessário
-        
         return qtd
     except Exception:
         db.session.rollback()
-        current_app.logger.exception("Falha ao limpar logs antigos.")
+        current_app.logger.exception("Falha ao limpar logs antigos")
         return -1
-
 
 @bp.route('/admin/logs/limpar-antigos', methods=['POST'])
 @login_required
@@ -383,7 +395,7 @@ def limpar_logs_antigos():
     qtd = _executar_limpar_logs(automatico=False)
     
     if qtd >= 0:
-        flash(f'Purge Cíclico: {qtd} evidências antigas extirpadas!', 'success')
+        flash(f'Limpeza de Logs: {qtd} logs removidos!', 'success')
     else:
         flash(f'Falha técnica ao tentar limpar logs antigos.', 'danger')
 

@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/editar.css') }}">
+{% endblock %}
+
+{% set ident = aluno.identificacao_json if aluno.identificacao_json else {} %}
+{% set end = ident.get('endereco', {}) %}
+{% set socio = aluno.socioeconomico_json if aluno.socioeconomico_json else {} %}
+{% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
+{% set docs = edu.get('doc_entregue', {}) %}
+{% set div = aluno.diversidade_json if aluno.diversidade_json else {} %}
+
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Header -->
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <div>
+                    <h4 class="fw-bold mb-0 text-primary">Editar Cadastro</h4>
+                    <small class="text-muted">Gestão Escolar</small>
+                </div>
+                <a href="/alunos" class="btn btn-outline-secondary btn-sm fw-bold">
+                    <i class="bi bi-x-lg"></i> CANCELAR
+                </a>
+            </div>
+
+            <!-- Stepper -->
+            <div class="stepper-container px-5 mb-5">
+                <div class="step-item active" id="step-indicator-1" onclick="goToStep(1)">1</div>
+                <div class="step-item" id="step-indicator-2" onclick="goToStep(2)">2</div>
+                <div class="step-item" id="step-indicator-3" onclick="goToStep(3)">3</div>
+                <div class="step-item" id="step-indicator-4" onclick="goToStep(4)">4</div>
+                <div class="step-item" id="step-indicator-5" onclick="goToStep(5)">5</div>
+            </div>
+
+            <form method="POST" enctype="multipart/form-data" id="multiStepForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="card shadow-lg card-modern p-4 mb-4">
+                    <!-- STEP 1: IDENTIFICAÇÃO -->
+                    <div class="form-step active" id="step-1">
+                        <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa I: Identificação Principal</h4>
+                        <div class="row g-3">
+                            <div class="col-md-3 text-center border-end">
+                                <div id="preview-container"
+                                    class="bg-light border rounded-circle mx-auto overflow-hidden shadow-sm mb-2"
+                                    style="width: 140px; height: 140px; position: relative;">
+                                    {% if aluno.foto_path %}
+                                    <img id="img-preview"
+                                        src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}"
+                                        class="w-100 h-100 object-fit-cover">
+                                    {% else %}
+                                    <i class="bi bi-person-fill text-muted display-1" id="placeholder-icon"></i>
+                                    <img id="img-preview" src="#" class="d-none w-100 h-100 object-fit-cover">
+                                    {% endif %}
+                                </div>
+                                <div class="mb-3">
+                                    <span class="badge bg-light text-primary border mb-2">#{{ aluno.matricula }}</span>
+                                </div>
+                                <div class="d-flex flex-column gap-1 align-items-center">
+                                    <label class="btn btn-xs btn-primary shadow-sm w-100" style="font-size: 0.75rem;">
+                                        <i class="bi bi-upload me-1"></i> Alterar
+                                        <input type="file" name="foto" id="inputFotoManual" class="d-none"
+                                            accept="image/*" onchange="previewImage(this)">
+                                    </label>
+                                    <button type="button" class="btn btn-xs btn-secondary shadow-sm w-100"
+                                        style="font-size: 0.75rem;" onclick="abrirWebcam()">
+                                        <i class="bi bi-camera me-1"></i> Tirar Foto
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-9">
+                                <div class="row g-3">
+                                    <!-- Row 1: Nomes -->
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold text-uppercase">Nome de Registro</label>
+                                        <input type="text" name="nome" class="form-control" value="{{ aluno.nome }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold text-uppercase">Nome Social</label>
+                                        <input type="text" name="nome_social" class="form-control"
+                                            value="{{ aluno.nome_social or ident.get('nome_social', '') }}"
+                                            placeholder="Como o aluno prefere ser chamado">
+                                    </div>
+
+                                    <!-- Row 2: Dados Pessoais -->
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-bold text-uppercase">Nascimento</label>
+                                        <input type="date" name="data_nascimento" id="data_nascimento"
+                                            class="form-control"
+                                            value="{{ aluno.data_nascimento.strftime('%Y-%m-%d') if aluno.data_nascimento else '' }}"
+                                            onchange="calcularIdade()">
+                                    </div>
+                                    <div class="col-md-2 text-center">
+                                        <label class="form-label fw-bold text-uppercase">Idade</label>
+                                        <input type="text" id="idade"
+                                            class="form-control fw-bold text-center bg-light px-0" readonly
+                                            placeholder="-- anos">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-bold text-uppercase">Sexo / Gênero</label>
+                                        {% set gen = div.get('genero', '') %}
+                                        <select name="genero" class="form-select">
+                                            <option value="">Selecione</option>
+                                            <option value="Masculino" {{ 'selected' if gen=='Masculino' }}>Masculino
+                                            </option>
+                                            <option value="Feminino" {{ 'selected' if gen=='Feminino' }}>Feminino
+                                            </option>
+                                            <option value="Outro" {{ 'selected' if gen=='Outro' }}>Outro</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">Etnia / Cor</label>
+                                        {% set rc = div.get('raca_cor', '') %}
+                                        <select name="raca_cor" class="form-select">
+                                            <option value="">Selecione</option>
+                                            <option value="Branca" {{ 'selected' if rc=='Branca' }}>Branca</option>
+                                            <option value="Preta" {{ 'selected' if rc=='Preta' }}>Preta</option>
+                                            <option value="Parda" {{ 'selected' if rc=='Parda' }}>Parda</option>
+                                            <option value="Amarela" {{ 'selected' if rc=='Amarela' }}>Amarela</option>
+                                            <option value="Indígena" {{ 'selected' if rc=='Indígena' }}>Indígena
+                                            </option>
+                                            <option value="Não declarada" {{ 'selected' if rc=='Não declarada' }}>Não
+                                                declarada</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Row 3: Documentos -->
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">CPF do Aluno</label>
+                                        <input type="text" name="cpf" class="form-control mask-cpf validate-cpf"
+                                            value="{{ aluno.cpf }}" placeholder="000.000.000-00">
+                                        <div class="invalid-feedback">CPF inválido</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">RG / Registro</label>
+                                        <input type="text" name="rg" class="form-control" value="{{ aluno.rg }}"
+                                            placeholder="Número do RG">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">Órgão Emissor / UF</label>
+                                        <input type="text" name="orgao_rg" class="form-control"
+                                            value="{{ ident.get('orgao_rg', '') }}" placeholder="Ex: SSP/SP">
+                                    </div>
+
+                                    <!-- Row 4: Naturalidade -->
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">Nacionalidade</label>
+                                        <input type="text" name="nacionalidade" class="form-control"
+                                            value="{{ ident.get('nacionalidade', 'Brasileira') }}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">Natural (UF)</label>
+                                        <select name="natural_uf" id="natural_uf" class="form-select select-uf"
+                                            data-selected="{{ ident.get('natural_uf', '') }}">
+                                            <option value="">Selecione UF</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold text-uppercase">Natural (Cidade)</label>
+                                        <select name="natural_cidade" id="natural_cidade"
+                                            class="form-select select-cidade"
+                                            data-selected="{{ ident.get('natural_cidade', '') }}">
+                                            <option value="">Selecione a UF primeiro</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2: FILIAÇÃO E RESPONSÁVEL -->
+                    <div class="form-step" id="step-2">
+                        <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa II: Filiação e Responsável</h4>
+                        <div class="row g-3">
+                            <div class="col-md-6 border-end pe-4">
+                                <p class="fw-bold small text-primary text-uppercase mb-2">Dados do Pai / Mãe</p>
+                                <div class="mb-3">
+                                    <label class="form-label small">Nome da Mãe</label>
+                                    <input type="text" name="nome_mae" id="nome_mae" class="form-control"
+                                        value="{{ ident.get('nome_mae', '') }}">
+                                    <label class="form-label small mt-2">CPF da Mãe</label>
+                                    <input type="text" name="cpf_mae" id="cpf_mae"
+                                        class="form-control mask-cpf validate-cpf"
+                                        value="{{ ident.get('cpf_mae', '') }}">
+                                    <div class="invalid-feedback">CPF inválido</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small border-top pt-2">Nome do Pai</label>
+                                    <input type="text" name="nome_pai" id="nome_pai" class="form-control"
+                                        value="{{ ident.get('nome_pai', '') }}">
+                                    <label class="form-label small mt-2">CPF do Pai</label>
+                                    <input type="text" name="cpf_pai" id="cpf_pai"
+                                        class="form-control mask-cpf validate-cpf"
+                                        value="{{ ident.get('cpf_pai', '') }}">
+                                    <div class="invalid-feedback">CPF inválido</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 ps-4">
+                                <p class="fw-bold small text-primary text-uppercase mb-2">Responsável Legal</p>
+                                <div class="mb-3">
+                                    <label class="form-label small">Quem é o Responsável?</label>
+                                    {% set rt = ident.get('responsavel_tipo', '') %}
+                                    <select name="responsavel_tipo" id="responsavel_tipo" class="form-select">
+                                        <option value="">Selecione...</option>
+                                        <option value="Mãe" {{ 'selected' if rt=='Mãe' }}>Mãe</option>
+                                        <option value="Pai" {{ 'selected' if rt=='Pai' }}>Pai</option>
+                                        <option value="Avô/Avó" {{ 'selected' if rt=='Avô/Avó' }}>Avô/Avó</option>
+                                        <option value="Irmão/Tio" {{ 'selected' if rt=='Irmão/Tio' }}>Irmão/Tio</option>
+                                        <option value="Outro" {{ 'selected' if rt=='Outro' }}>Outro</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small">Nome Completo do Responsável</label>
+                                    <input type="text" name="responsavel_nome" id="responsavel_nome"
+                                        class="form-control" value="{{ ident.get('responsavel_nome', '') }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small">CPF do Responsável</label>
+                                    <input type="text" name="responsavel_cpf" id="responsavel_cpf"
+                                        class="form-control mask-cpf validate-cpf"
+                                        value="{{ ident.get('responsavel_cpf', '') }}">
+                                    <div class="invalid-feedback">CPF inválido</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 3: LOCALIZAÇÃO -->
+                    <div class="form-step" id="step-3">
+                        <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa III: Endereço e Contato</h4>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">CEP</label>
+                                <input type="text" name="cep" id="cep" class="form-control form-control-lg mask-cep"
+                                    value="{{ end.get('cep', '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Rua / Logradouro</label>
+                                <input type="text" name="rua" id="rua" class="form-control form-control-lg"
+                                    value="{{ end.get('rua', '') }}">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold small">Nº</label>
+                                <input type="text" name="numero" class="form-control form-control-lg"
+                                    value="{{ end.get('numero', '') }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Bairro</label>
+                                <input type="text" name="bairro" id="bairro" class="form-control"
+                                    value="{{ end.get('bairro', '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Cidade</label>
+                                <input type="text" name="cidade" id="cidade" class="form-control"
+                                    value="{{ end.get('cidade', '') }}">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold small">UF</label>
+                                <input type="text" name="uf" id="uf" class="form-control"
+                                    value="{{ end.get('uf', 'SP') }}" maxlength="2">
+                            </div>
+                            <div class="col-md-12 border-top mt-4 pt-3">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small">WhatsApp Aluno</label>
+                                        <input type="text" name="whatsapp" class="form-control mask-phone"
+                                            value="{{ aluno.whatsapp or '' }}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small">Telefone Responsável</label>
+                                        <input type="text" name="telefone_resp" class="form-control mask-phone"
+                                            value="{{ ident.get('telefone_resp', '') }}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small">E-mail Principal</label>
+                                        <input type="email" name="email" class="form-control"
+                                            value="{{ aluno.email or '' }}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 4: DOCUMENTAÇÃO (UPLOADS) -->
+                    <div class="form-step" id="step-4">
+                        <h4 class="mb-2 text-secondary border-bottom pb-2">Etapa IV: Documentação Digital</h4>
+                        <p class="text-muted small mb-4"><i class="bi bi-info-circle me-1"></i> Somente arquivos PDF de
+                            no máximo 2MB.</p>
+
+                        <div class="row g-4">
+                            {% set uploads = [
+                            ('doc_aluno','RG/CPF Aluno'), ('doc_residencia','Comprovante Residência'),
+                            ('doc_declaracao','Declaração Escolar'), ('doc_atestado','Atestado Médico'),
+                            ('doc_termo','Termo Imagem/Som'), ('doc_responsavel','RG/CPF Responsável')
+                            ] %}
+                            {% for id, label in uploads %}
+                            <div class="col-md-4">
+                                {% set has_file = docs.get(id) %}
+                                <div class="pdf-upload-box {{ 'has-file' if has_file }}"
+                                    onclick="document.getElementById('input_{{id}}').click()">
+                                    <i
+                                        class="bi {{ 'bi-check-circle-fill text-success' if has_file else 'bi-file-earmark-pdf text-danger' }} fs-3 mb-2 d-block"></i>
+                                    <span class="fw-bold small d-block">{{ label }}</span>
+                                    <span class="text-muted" style="font-size: 0.7rem;" id="name_{{id}}">
+                                        {{ 'Arquivo já enviado' if has_file else 'Clique para selecionar' }}
+                                    </span>
+                                    <input type="file" name="{{id}}" id="input_{{id}}" class="d-none" accept=".pdf"
+                                        onchange="updateFileName('{{id}}', this)">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- STEP 5: SAÚDE E SOCIOECONÔMICO -->
+                    <div class="form-step" id="step-5">
+                        <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa V: Perfil e Saúde</h4>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Renda Familiar Mensal</label>
+                                {% set rf = socio.get('renda_familiar', '') %}
+                                <select name="renda_familiar" class="form-select">
+                                    <option value="Até 1 salário" {{ 'selected' if rf=='Até 1 salário' }}>Até 1 Salário
+                                        Mínimo</option>
+                                    <option value="1 a 3 salários" {{ 'selected' if rf=='1 a 3 salários' }}>De 1 a 3
+                                        Salários</option>
+                                    <option value="3 a 5 salários" {{ 'selected' if rf=='3 a 5 salários' }}>De 3 a 5
+                                        Salários</option>
+                                    <option value="Acima de 5" {{ 'selected' if rf=='Acima de 5' }}>Acima de 5 Salários
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Residente de maior renda</label>
+                                {% set rmr = socio.get('residente_maior_renda', '') %}
+                                <select name="residente_maior_renda" class="form-select">
+                                    <option value="Pai" {{ 'selected' if rmr=='Pai' }}>Pai</option>
+                                    <option value="Mãe" {{ 'selected' if rmr=='Mãe' }}>Mãe</option>
+                                    <option value="Aluno" {{ 'selected' if rmr=='Aluno' }}>Aluno</option>
+                                    <option value="Irmão(ã)" {{ 'selected' if rmr=='Irmão(ã)' }}>Irmão(ã)</option>
+                                    <option value="Avô/Avó" {{ 'selected' if rmr=='Avô/Avó' }}>Avô/Avó</option>
+                                    <option value="Outro" {{ 'selected' if rmr=='Outro' }}>Outro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Pessoas na Residência</label>
+                                <input type="number" name="pessoas_residencia" class="form-control"
+                                    value="{{ socio.get('pessoas_residencia', 1) }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Situação de Ocupação do Aluno</label>
+                                {% set oc = socio.get('ocupacao', '') %}
+                                <select name="ocupacao" class="form-select">
+                                    <option value="Estudante" {{ 'selected' if oc=='Estudante' }}>Estudante</option>
+                                    <option value="Desempregado" {{ 'selected' if oc=='Desempregado' }}>Desempregado
+                                    </option>
+                                    <option value="Autônomo" {{ 'selected' if oc=='Autônomo' }}>Autônomo</option>
+                                    <option value="CLT" {{ 'selected' if oc=='CLT' }}>CLT</option>
+                                    <option value="Jovem Aprendiz" {{ 'selected' if oc=='Jovem Aprendiz' }}>Jovem
+                                        Aprendiz</option>
+                                    <option value="Estagiário" {{ 'selected' if oc=='Estagiário' }}>Estagiário</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Beneficiário de Programa Social?</label>
+                                {% set bs_status = socio.get('beneficio_social_status', 'Não') %}
+                                <select name="beneficio_social_status" class="form-select"
+                                    onchange="window.toggleBeneficioSocial && window.toggleBeneficioSocial(this)">
+                                    <option value="Não" {{ 'selected' if bs_status=='Não' }}>Não</option>
+                                    <option value="Sim" {{ 'selected' if bs_status=='Sim' }}>Sim</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 {{ 'd-none' if bs_status != 'Sim' }}" id="beneficio_social_div">
+                                <label class="form-label small fw-bold">Qual programa?</label>
+                                <input type="text" name="beneficio_social_nome" class="form-control"
+                                    list="programas_sociais" value="{{ socio.get('beneficio_social_nome', '') }}"
+                                    placeholder="Ex: Bolsa Família">
+                                <datalist id="programas_sociais">
+                                    <option value="Bolsa Família">
+                                    <option value="Cadastro Único">
+                                    <option value="Auxílio Gás">
+                                    <option value="BPC (Benefício de Prestação Continuada)">
+                                    <option value="Minha Casa Minha Vida">
+                                    <option value="Outros">
+                                </datalist>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Meio de Transporte</label>
+                                {% set mt = socio.get('meio_transporte', '') %}
+                                <select name="meio_transporte" class="form-select">
+                                    <option value="Ônibus" {{ 'selected' if mt=='Ônibus' }}>Ônibus</option>
+                                    <option value="Carro/Moto" {{ 'selected' if mt=='Carro/Moto' }}>Carro/Moto</option>
+                                    <option value="Bicicleta" {{ 'selected' if mt=='Bicicleta' }}>Bicicleta</option>
+                                    <option value="A pé" {{ 'selected' if mt=='A pé' }}>A pé</option>
+                                    <option value="Outro" {{ 'selected' if mt=='Outro' }}>Outro</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-12 bg-light p-3 rounded mt-4 border">
+                                <div class="row g-3">
+                                    <div class="col-md-12">
+                                        {% set has_laudo = div.get('saude_laudo') %}
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" name="saude_laudo"
+                                                id="saude_laudo" onchange="window.toggleLaudoUpload(this)" {{ 'checked' if
+                                                has_laudo }}>
+                                            <label class="form-check-label fw-bold text-danger" for="saude_laudo">
+                                                Aluno possui deficiência ou laudo médico?
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 {{ 'd-none' if not has_laudo }}" id="laudo_upload_container">
+                                        {% set doc_saved = docs.get('doc_laudo') %}
+                                        <div class="pdf-upload-box py-2 {{ 'has-file' if doc_saved }}"
+                                            onclick="document.getElementById('input_doc_laudo').click()">
+                                            <i
+                                                class="bi {{ 'bi-check-circle-fill text-success' if doc_saved else 'bi-file-earmark-medical text-danger' }} fs-4 d-block"></i>
+                                            <span class="fw-bold small d-block">Upload do Laudo Médico (PDF)</span>
+                                            <span class="text-muted" style="font-size: 0.7rem;" id="name_doc_laudo">
+                                                {{ 'Arquivo já enviado' if doc_saved else 'Clique para selecionar' }}
+                                            </span>
+                                            <input type="file" name="doc_laudo" id="input_doc_laudo" class="d-none"
+                                                accept=".pdf" onchange="window.updateFileName('doc_laudo', this)">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        {% set med_status = div.get('saude_medicacao', 'Não') %}
+                                        <label class="form-label small fw-bold">Faz uso de medicação regular?</label>
+                                        <select name="saude_medicacao" class="form-select"
+                                            onchange="window.toggleMedicacao && window.toggleMedicacao(this)">
+                                            <option value="Não" {{ 'selected' if med_status=='Não' }}>Não</option>
+                                            <option value="Sim" {{ 'selected' if med_status=='Sim' }}>Sim</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 {{ 'd-none' if med_status != 'Sim' }}" id="medicacao_nome_div">
+                                        <label class="form-label small fw-bold">Qual medicação?</label>
+                                        <input type="text" name="saude_medicamento_nome" class="form-control"
+                                            value="{{ div.get('saude_medicamento_nome', '') }}"
+                                            placeholder="Nome do medicamento">
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="form-label small fw-bold">Observações de Saúde / Alergias</label>
+                                        <textarea name="saude_observacoes" class="form-control"
+                                            rows="2">{{ div.get('saude_observacoes', '') }}</textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Termo de Consentimento -->
+                            <div class="col-md-12 mt-4">
+                                <div class="card border-primary-subtle bg-light shadow-sm">
+                                    <div class="card-body">
+                                        <h6 class="fw-bold text-primary mb-2"><i
+                                                class="bi bi-shield-check me-2"></i>AUTORIZAÇÃO DE USO DE IMAGEM E SOM
+                                        </h6>
+                                        <p class="text-muted mb-3" style="font-size: 0.85rem; line-height: 1.4;">
+                                            Autorizo o uso da imagem e som da voz do aluno acima identificado, para fins
+                                            de divulgação de atividades pedagógicas,
+                                            eventos e promoções da instituição, em redes sociais, site oficial e
+                                            materiais impressos, sem fins lucrativos.
+                                        </p>
+                                        <div class="form-check form-switch custom-switch-lg">
+                                            <input class="form-check-input" type="checkbox" name="autorizacao_imagem"
+                                                id="autorizacao_imagem" {{ 'checked' if div.get('autorizacao_imagem')
+                                                }}>
+                                            <label class="form-check-label fw-bold text-secondary"
+                                                for="autorizacao_imagem">
+                                                O responsável conscente com este termo?
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer / Navigation -->
+                <div class="d-flex justify-content-between align-items-center">
+                    <button type="button" class="btn btn-secondary fw-bold px-4 d-none" id="prevBtn"
+                        onclick="window.nextStep(-1)">
+                        ANTERIOR
+                    </button>
+                    <button type="button" class="btn btn-primary fw-bold px-5 ms-auto" id="nextBtn"
+                        onclick="window.nextStep(1)">
+                        PRÓXIMO <i class="bi bi-arrow-right ms-2"></i>
+                    </button>
+                    <button type="submit" class="btn btn-success fw-bold px-5 d-none ms-auto" id="submitBtn">
+                        SALVAR ALTERAÇÕES <i class="bi bi-person-check-fill ms-2"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Webcam -->
+<div class="modal fade" id="webcamModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 15px;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-primary">Capturar Foto</h5>
+                <button type="button" class="btn-close" onclick="window.fecharWebcam && window.fecharWebcam()"></button>
+            </div>
+            <div class="modal-body p-0 border-0">
+                <div class="webcam-container shadow-sm mt-3">
+                    <video id="webcamVideo" autoplay playsinline></video>
+                    <div class="webcam-guide"></div>
+                    <canvas id="webcamCanvas" class="d-none" width="640" height="480"></canvas>
+                </div>
+                <div class="px-4 py-3 text-center">
+                    <p class="text-muted small mb-0 px-3">Posicione o rosto do aluno no centro do guia para garantir uma
+                        foto oficial de qualidade.</p>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center">
+                <button type="button" class="btn btn-secondary px-4" onclick="window.fecharWebcam && window.fecharWebcam()">Cancelar</button>
+                <button type="button" class="btn btn-primary px-4 fw-bold" onclick="window.capturarFoto && window.capturarFoto()">
+                    <i class="bi bi-camera-fill me-2"></i> CAPTURAR
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/aluno_form.js') }}"></script>
+<script src="{{ url_for('static', filename='js/calcularIdade.js') }}"></script>
+
+{# Configuração injetada pelo servidor #}
+<script>
+    window.alunoEditConfig = {
+        alunoId: {{ aluno.id }},
+        fotoPath: {{ aluno.foto_path|tojson }},
+        identificacao: {{ aluno.identificacao_json|tojson }},
+        socioeconomico: {{ aluno.socioeconomico_json|tojson }},
+        escolaridade: {{ aluno.escolaridade_json|tojson }},
+        diversidade: {{ aluno.diversidade_json|tojson }}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/alunos/editar.js') }}"></script>
+{% endblock %}

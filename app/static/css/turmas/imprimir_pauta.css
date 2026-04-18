@@ -1,0 +1,154 @@
+/* static/css/turmas/imprimir_pauta.css */
+@page {
+  size: landscape;
+  margin: 0.8cm 1cm;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8.5pt;
+  color: #000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* ── Cabeçalho ── */
+.print-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border: 1.5px solid #000;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+.print-header .logo-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+}
+.print-header .logo-area img { height: 44px; }
+.print-header .logo-area .sys-name { font-size: 11pt; font-weight: 700; line-height: 1.2; }
+.print-header .logo-area .sys-sub  { font-size: 7pt; color: #555; }
+
+.print-header .info-turma { flex: 1; }
+.print-header .info-turma h1 {
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.print-header .info-turma .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 7.5pt;
+}
+.print-header .info-turma .meta span strong { font-weight: 700; }
+
+.print-header .qr-area { text-align: right; font-size: 7pt; color: #555; min-width: 80px; }
+
+/* ── Legenda de conceitos ── */
+.legenda {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 7pt;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #f9f9f9;
+}
+.legenda span { white-space: nowrap; }
+.legenda strong { font-weight: 700; }
+
+/* ── Tabela ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+th, td {
+  border: 1px solid #555;
+  padding: 3px 2px;
+  text-align: center;
+  vertical-align: middle;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+thead tr th {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 7.5pt;
+  font-weight: 700;
+}
+
+/* Colunas fixas */
+.col-num   { width: 20px; }
+.col-nome  { width: 130px; text-align: left; padding-left: 5px; }
+.col-nivel { width: 62px; font-size: 7pt; }
+.col-data  { width: 16px; font-size: 6.5pt; }
+.col-total { width: 28px; font-size: 7pt; font-weight: 700; }
+
+tbody tr:nth-child(even) { background: #f5f5f5; }
+tbody tr td { font-size: 8pt; }
+
+.nome-cell { text-align: left; padding-left: 5px; }
+
+/* ── Rodapé ── */
+.print-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 7pt;
+  color: #555;
+  border-top: 1px solid #aaa;
+}
+.assinatura-box {
+  border-top: 1px solid #000;
+  width: 220px;
+  text-align: center;
+  padding-top: 4px;
+  font-size: 7.5pt;
+}
+
+/* ── Botões (só tela) ── */
+.no-print { display: flex; gap: 8px; margin-bottom: 12px; }
+.btn-print {
+  padding: 6px 18px; background: #dc3545; color: #fff;
+  border: none; border-radius: 4px; font-size: 10pt; cursor: pointer;
+}
+.btn-back {
+  padding: 6px 18px; background: #6c757d; color: #fff;
+  border: none; border-radius: 4px; font-size: 10pt;
+  cursor: pointer; text-decoration: none;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { font-size: 8pt; }
+  thead { display: table-header-group; }
+  .print-footer {
+    position: fixed;
+    bottom: 0.8cm;
+    left: 1cm;
+    right: 1cm;
+    background: #fff;
+    padding-top: 4px;
+  }
+  .table-wrap { margin-bottom: 40px; }
+}

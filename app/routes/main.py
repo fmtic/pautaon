@@ -88,7 +88,7 @@ def dashboard():
                 )
 
             return render_template(
-                "dashboard.html",
+                "dashboard/index.html",
                 total_turmas=total_turmas,
                 total_alunos=total_alunos,
                 total_professores=total_professores,
@@ -96,7 +96,7 @@ def dashboard():
         except Exception as e:
             flash(f"Erro ao computar dados para o dashboard gerencial: {e}", "danger")
             return render_template(
-                "dashboard.html",
+                "dashboard/index.html",
                 total_turmas=0,
                 total_alunos=0,
                 total_professores=0,
@@ -195,7 +195,7 @@ def dashboard():
             aulas_pendentes.sort(key=lambda x: x['data'])
 
             return render_template(
-                "dashboard_professor.html",
+                "dashboard/professor.html",
                 turmas=minhas_turmas,
                 total_alunos=total_meus_alunos,
                 dias_bloqueados=dias_bloqueados,
@@ -204,7 +204,7 @@ def dashboard():
         except Exception as e:
             flash("Erro ao processar as turmas do professor.", "warning")
             return render_template(
-                "dashboard_professor.html",
+                "dashboard/professor.html",
                 turmas=[],
                 total_alunos=0,
                 dias_bloqueados=[],
@@ -238,7 +238,7 @@ def dashboard():
             flash("Erro ao carregar dados do painel.", "warning")
 
         return render_template(
-            'dashboard_servico_social.html',
+            'dashboard/servico_social.html',
             total_alunos=total_alunos,
             total_turmas=total_turmas,
             ano_atual=date.today().year,
@@ -350,7 +350,7 @@ def dashboard_secretaria():
             unidade_nome = u.nome
 
     return render_template(
-        'dashboard_secretaria.html',
+        'dashboard/secretaria.html',
         total_alunos=total_alunos,
         total_turmas=total_turmas,
         total_pendencias_frequencia=total_pendencias_frequencia,
@@ -406,7 +406,7 @@ def relatorio_geral():
                 total_outro += 1
 
         return render_template(
-            "relatorios.html",
+            "relatorios/geral.html",
             total_alunos=total_alunos_query.count(),
             total_professores=total_professores_query.count(),
             total_turmas=len(todas_as_turmas),
@@ -540,66 +540,112 @@ def alternar_conselho(turma_id):
 @bp.route("/relatorios/alunos")
 @login_required
 def relatorio_alunos():
-    """Gera o painel de listagem de alunos com filtros dinâmicos."""
+    """Gera o painel de listagem de alunos com filtros dinâmicos e paginação sob demanda."""
     if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     from app.models import PeriodoLetivo
     from app.utils.logica import get_unidade_id
+    from sqlalchemy import or_
 
-    # 1. Captura Filtros da Requisição
+    # 1. Captura parâmetros
     periodo_id = request.args.get("periodo_letivo_id", type=int)
     selected_cols = request.args.getlist("colunas")
+    gerar = request.args.get("gerar") == "1"      # ← controle de geração
+    page = request.args.get("page", 1, type=int)
+    per_page = 20
 
-    # Se for o primeiro acesso sem colunas, define um set padrão amigável
-    if not selected_cols and "periodo_letivo_id" not in request.args:
+    # 2. Filtros adicionais (opcionais)
+    sexo = request.args.get("sexo")
+    etnia = request.args.get("etnia")
+    idade_min = request.args.get("idade_min", type=int)
+    idade_max = request.args.get("idade_max", type=int)
+    cidade = request.args.get("cidade")
+    bairro = request.args.get("bairro")
+    beneficio_social = request.args.get("beneficio_social")
+
+    # 3. Se for primeiro acesso sem colunas, define padrão
+    if not selected_cols and not gerar:
         selected_cols = ["nome", "idade", "turmas_aluno"]
     elif not selected_cols:
-        # Se o usuário desmarcou tudo, manterá vazio (template trata)
-        pass
+        selected_cols = []
 
-    # 2. Dados de Contexto para Filtros (Unidade Logada)
+    # 4. Períodos disponíveis (para o filtro)
     u_id = get_unidade_id()
     periodos_query = PeriodoLetivo.query
     if u_id:
         periodos_query = periodos_query.filter_by(unidade_id=u_id)
     periodos = periodos_query.order_by(PeriodoLetivo.nome).all()
 
-    # 3. Query Base de Alunos
-    query = Aluno.query.filter_by(ativo=True)
-    if u_id:
-        query = query.filter_by(unidade_id=u_id)
+    # 5. Inicializa variáveis de resultado
+    alunos = []
+    pagination = None
+    total = 0
 
-    if periodo_id:
-        # Filtra alunos que possuem vínculo com turmas do período selecionado
-        query = query.join(Aluno.turmas).filter(Turma.periodo_letivo_id == periodo_id)
+    # 6. Somente executa a busca se o parâmetro 'gerar' estiver presente
+    if gerar:
+        query = Aluno.query.filter_by(ativo=True)
+        if u_id:
+            query = query.filter_by(unidade_id=u_id)
 
-    alunos_lista = query.distinct().all()
+        # Filtro por período letivo (alunos vinculados a turmas do período)
+        if periodo_id:
+            query = query.join(Aluno.turmas).filter(Turma.periodo_letivo_id == periodo_id)
 
-    # 4. Normalização de dados para o template (acesso via aluno[coluna.key])
-    alunos_data = []
-    for a in alunos_lista:
-        d = {
-            "id": a.id,
-            "nome": a.nome,
-            "nome_social": a.nome_social or "-",
-            "data_nascimento": (
-                a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-"
-            ),
-            "idade": a.idade,
-            "nivel": a.nivel or "-",
-            "pcd": False,  # Campo futuro a ser integrado no schema físico
-            "turmas_aluno": True,  # Flag para lógica de expansão no template
-        }
-        # Injeta turmas vinculadas (Top 3 conforme layout do template)
-        turmas_vinculadas = a.turmas[:3] if hasattr(a, "turmas") else []
-        for i in range(1, 4):
-            d[f"turma_{i}"] = (
-                turmas_vinculadas[i - 1].nome if len(turmas_vinculadas) >= i else "-"
-            )
+        # Filtro por sexo (baseado no campo diversidade_json)
+        if sexo:
+            query = query.filter(Aluno.diversidade_json['genero'].astext == sexo)
 
-        alunos_data.append(d)
+        # Filtro por etnia (raca_cor)
+        if etnia:
+            query = query.filter(Aluno.diversidade_json['raca_cor'].astext == etnia)
 
+        # Filtro por cidade (endereco)
+        if cidade:
+            query = query.filter(Aluno.identificacao_json['endereco']['cidade'].astext.ilike(f"%{cidade}%"))
+
+        # Filtro por bairro
+        if bairro:
+            query = query.filter(Aluno.identificacao_json['endereco']['bairro'].astext.ilike(f"%{bairro}%"))
+
+        # Filtro por benefício social
+        if beneficio_social == "1":
+            query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext == "Sim")
+        elif beneficio_social == "0":
+            query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext != "Sim")
+
+        # Filtro por idade (calculada em tempo real, mais complexo – opcional)
+        # Neste exemplo, vamos pular idade pois depende de cálculo dinâmico.
+        # Se necessário, implemente usando uma subconsulta ou faça no Python após paginar.
+
+        # Ordenar por ID (que é sequencial e pode representar a ordem de cadastro)
+        query = query.order_by(Aluno.id.asc())
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        alunos_lista = pagination.items
+        total = pagination.total
+
+        # 7. Transforma dados para o formato do template (similar ao original)
+        alunos_data = []
+        for a in alunos_lista:
+            # Idade calculada (você já tem função `calcular_idades` ou similar)
+            idade = a.idade if hasattr(a, 'idade') else (datetime.now().year - a.data_nascimento.year if a.data_nascimento else '-')
+            d = {
+                "id": a.id,
+                "nome": a.nome,
+                "nome_social": a.nome_social or "-",
+                "data_nascimento": a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-",
+                "idade": idade,
+                "nivel": a.nivel or "-",
+                "pcd": a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False,
+                "turmas_aluno": True,
+            }
+            turmas_vinculadas = a.turmas[:3] if hasattr(a, "turmas") else []
+            for i in range(1, 4):
+                d[f"turma_{i}"] = turmas_vinculadas[i-1].nome if len(turmas_vinculadas) >= i else "-"
+            alunos_data.append(d)
+        alunos = alunos_data
+
+    # 8. Configuração de colunas
     column_options = [
         {"key": "nome", "label": "Nome Completo"},
         {"key": "nome_social", "label": "Nome Social"},
@@ -610,25 +656,37 @@ def relatorio_alunos():
         {"key": "turmas_aluno", "label": "Turmas Vinculadas"},
     ]
 
+    # 9. Cria um dicionário com todos os argumentos da URL, exceto 'page'
+    url_args = dict(request.args)
+    url_args.pop('page', None)
+
     return render_template(
-        "relatorios_alunos.html",
+        "relatorios/alunos.html",
         periodos=periodos,
         selected_periodo_id=periodo_id,
         column_options=column_options,
         selected_cols=selected_cols,
-        alunos=alunos_data,
+        alunos=alunos,
+        pagination=pagination,
+        total=total,
+        gerar=gerar,
+        # Manter os filtros atuais no template
+        request=request,
     )
 
 
 @bp.route("/relatorios/alunos/exportar")
 @login_required
 def exportar_relatorio_alunos():
-    """Gera exportação Excel da listagem de alunos filtrada."""
+    """Gera exportação Excel da listagem de alunos filtrada, respeitando os mesmos filtros."""
     if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     from app.models import PeriodoLetivo
     from app.utils.logica import get_unidade_id
+    import pandas as pd
+    from io import BytesIO
+    from datetime import date
 
     periodo_id = request.args.get("periodo_letivo_id", type=int)
     selected_cols = request.args.getlist("colunas")
@@ -637,6 +695,13 @@ def exportar_relatorio_alunos():
         flash("Selecione ao menos um dado para exportação.", "warning")
         return redirect(url_for("main.relatorio_alunos"))
 
+    # Captura filtros (os mesmos da listagem)
+    sexo = request.args.get("sexo")
+    etnia = request.args.get("etnia")
+    cidade = request.args.get("cidade")
+    bairro = request.args.get("bairro")
+    beneficio_social = request.args.get("beneficio_social")
+
     u_id = get_unidade_id()
     query = Aluno.query.filter_by(ativo=True)
     if u_id:
@@ -644,9 +709,23 @@ def exportar_relatorio_alunos():
     if periodo_id:
         query = query.join(Aluno.turmas).filter(Turma.periodo_letivo_id == periodo_id)
 
-    alunos_lista = query.distinct().all()
+    # Aplica os mesmos filtros
+    if sexo:
+        query = query.filter(Aluno.diversidade_json['genero'].astext == sexo)
+    if etnia:
+        query = query.filter(Aluno.diversidade_json['raca_cor'].astext == etnia)
+    if cidade:
+        query = query.filter(Aluno.identificacao_json['endereco']['cidade'].astext.ilike(f"%{cidade}%"))
+    if bairro:
+        query = query.filter(Aluno.identificacao_json['endereco']['bairro'].astext.ilike(f"%{bairro}%"))
+    if beneficio_social == "1":
+        query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext == "Sim")
+    elif beneficio_social == "0":
+        query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext != "Sim")
 
-    # Mapeamento de Labels para o Excel
+    alunos_lista = query.distinct().order_by(Aluno.matricula.asc(), Aluno.id.asc()).all()
+
+    # Mapeamento de Labels
     column_labels = {
         "nome": "Nome Completo",
         "nome_social": "Nome Social",
@@ -664,19 +743,21 @@ def exportar_relatorio_alunos():
             if col == "turmas_aluno":
                 row[column_labels[col]] = ", ".join([t.nome for t in a.turmas])
             elif col == "idade":
-                row[column_labels[col]] = a.idade
+                idade = a.idade if hasattr(a, 'idade') else (datetime.now().year - a.data_nascimento.year if a.data_nascimento else '-')
+                row[column_labels[col]] = idade
             elif col == "pcd":
-                row[column_labels[col]] = "Sim" if getattr(a, "pcd", False) else "Não"
+                pcd = a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False
+                row[column_labels[col]] = "Sim" if pcd else "Não"
+            elif col == "data_nascimento":
+                row[column_labels[col]] = a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-"
             else:
                 row[column_labels[col]] = getattr(a, col, "-")
         data_to_df.append(row)
 
     df = pd.DataFrame(data_to_df)
-
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, sheet_name="Lista de Alunos", index=False)
-
     output.seek(0)
 
     return send_file(
@@ -692,174 +773,104 @@ def exportar_relatorio_alunos():
 def resultado_conselho():
     """
     Relatório consolidado do Resultado do Conselho de Classe.
-    Cada unidade tem seu próprio contexto: períodos, turmas, alunos, professores.
     Filtra por período letivo e, opcionalmente, por turmas específicas.
     """
     if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     from app.models import PeriodoLetivo, ConselhoClasse, OpcaoProximaTurma
+    from app.utils.logica import get_unidade_id
 
     unidade_id = get_unidade_id()
+    periodo_id = request.args.get("periodo_letivo_id", type=int)
+    turmas_all = request.args.get("turmas_all") == "1"
+    turmas_ids = request.args.getlist("turmas", type=int)
 
-    # ------------------------------------------------------------------
-    # 1. Períodos letivos da unidade atual (para o filtro do formulário)
-    # ------------------------------------------------------------------
+    # Carrega períodos da unidade
     periodos_query = PeriodoLetivo.query
     if unidade_id:
         periodos_query = periodos_query.filter_by(unidade_id=unidade_id)
-    periodos = periodos_query.order_by(PeriodoLetivo.data_inicio.desc()).all()
-
-    # ------------------------------------------------------------------
-    # 2. Parâmetros de filtro da requisição
-    # ------------------------------------------------------------------
-    selected_periodo_id = request.args.get("periodo_letivo_id", type=int)
-    selected_turma_ids = request.args.getlist("turmas", type=int)
-    selected_all_turmas = bool(request.args.get("turmas_all"))
+    periodos = periodos_query.order_by(PeriodoLetivo.nome).all()
 
     periodo_selecionado = None
-    periodos_turmas = []  # turmas do período para popular o select
-    registros = []  # linhas da tabela de resultados
-    resumo_status = {}
+    periodos_turmas = []
+    selected_turma_ids = []
+    registros = []
     turma_count = 0
     aluno_count = 0
+    resumo_status = {}
     conselho_inicio = None
     conselho_fim = None
 
-    if selected_periodo_id:
-        periodo_selecionado = PeriodoLetivo.query.get(selected_periodo_id)
+    if periodo_id:
+        periodo_selecionado = PeriodoLetivo.query.get(periodo_id)
+        if periodo_selecionado:
+            # Carrega turmas do período
+            turmas_query = Turma.query.filter_by(periodo_letivo_id=periodo_id, ativo=True)
+            if unidade_id:
+                turmas_query = turmas_query.filter_by(unidade_id=unidade_id)
+            periodos_turmas = turmas_query.order_by(Turma.nome).all()
 
-    if periodo_selecionado:
-        # Turmas deste período (respeitando unidade)
-        turmas_query = Turma.query.filter_by(periodo_letivo_id=selected_periodo_id)
-        if unidade_id:
-            turmas_query = turmas_query.filter_by(unidade_id=unidade_id)
-        periodos_turmas = turmas_query.order_by(Turma.nome).all()
+            if turmas_all:
+                selected_turma_ids = [t.id for t in periodos_turmas]
+            else:
+                selected_turma_ids = turmas_ids
 
-        # Quais turmas exibir
-        if selected_all_turmas or not selected_turma_ids:
-            turmas_exibir = periodos_turmas
-        else:
-            turmas_exibir = [t for t in periodos_turmas if t.id in selected_turma_ids]
-
-        turma_count = len(turmas_exibir)
-        alunos_vistos = set()
-
-        # Contadores de situação final
-        contadores = {
-            "Aprovado": 0,
-            "Reprovado por Falta": 0,
-            "Evadido": 0,
-            "Desistente": 0,
-            "Empregado": 0,
-            "Sem Registro": 0,
-        }
-
-        # Datas extremas do ciclo de conselho (para o card de resumo)
-        datas_inicio = []
-        datas_fim = []
-
-        for turma in turmas_exibir:
-            # Alunos ativos da turma
-            alunos_turma = [a for a in turma.alunos if a.ativo]
-
-            for aluno in alunos_turma:
-                alunos_vistos.add(aluno.id)
-
-                # Busca o registro de fechamento final deste aluno nesta turma
-                cc = ConselhoClasse.query.filter_by(
-                    turma_id=turma.id, aluno_id=aluno.id, etapa="FINAL"
-                ).first()
-
-                situacao = (
-                    cc.situacao_final if cc and cc.situacao_final else "Sem Registro"
+            if selected_turma_ids:
+                # Busca os registros de conselho final
+                conselho_query = ConselhoClasse.query.filter(
+                    ConselhoClasse.etapa == "FINAL",
+                    ConselhoClasse.turma_id.in_(selected_turma_ids)
                 )
-                prox_turma = ""
-                if cc and cc.proxima_turma_obj:
-                    prox_turma = cc.proxima_turma_obj.nome
-                elif cc and cc.proxima_turma_id:
-                    prox_turma = str(cc.proxima_turma_id)
+                conselhos = conselho_query.all()
 
-                if cc and cc.data_inicio:
-                    datas_inicio.append(cc.data_inicio)
-                if cc and cc.data_fim:
-                    datas_fim.append(cc.data_fim)
-
-                # Frequência global do aluno nesta turma
-                freq_regs = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_id=turma.id
-                ).all()
-                total_freq = len(freq_regs)
-                counts = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0, "J": 0}
-                for fr in freq_regs:
-                    if fr.conceito in counts:
-                        counts[fr.conceito] += 1
-
-                _presentes = counts["A"] + counts["B"] + counts["C"] + counts["D"]
-                _contaveis = _presentes + counts["F"]   # J não entra no denominador
-                presenca = round((_presentes / _contaveis * 100), 1) if _contaveis > 0 else 0
-
-                # Constrói linha da tabela
-                registros.append(
-                    {
+                # Monta dados para a tabela
+                for cons in conselhos:
+                    aluno = cons.aluno
+                    turma = cons.turma
+                    if not aluno or not turma:
+                        continue
+                    registros.append({
                         "turma": turma.nome,
                         "programa": turma.programa or "-",
                         "professor": turma.professor.name if turma.professor else "-",
                         "aluno": aluno.nome_social or aluno.nome,
-                        "nivel": aluno.nivel or "-",
-                        "presenca": presenca,
-                        "situacao_final": situacao,
-                        "proxima_turma": prox_turma,
-                        "concluido": cc.concluido if cc else False,
-                    }
-                )
+                        "nivel": cons.nivel or "-",
+                        "presenca": cons.presenca_percentual or 0,
+                        "situacao_final": cons.situacao_final or "Sem Registro",
+                        "proxima_turma": cons.proxima_turma or "-",
+                    })
+                turma_count = len(set(cons.turma_id for cons in conselhos))
+                aluno_count = len(set(cons.aluno_id for cons in conselhos))
 
-                # Acumula contador normalizado
-                situacao_norm = situacao
-                if situacao == "APROVADO":
-                    situacao_norm = "Aprovado"
-                elif situacao == "REPROVADO_POR_FALTA":
-                    situacao_norm = "Reprovado por Falta"
-                elif situacao == "EVADIDO":
-                    situacao_norm = "Evadido"
-                elif situacao == "DESISTENTE":
-                    situacao_norm = "Desistente"
-                elif situacao == "EMPREGADO":
-                    situacao_norm = "Empregado"
+                # Resumo por situação
+                situacoes = {}
+                for cons in conselhos:
+                    sit = cons.situacao_final or "Sem Registro"
+                    situacoes[sit] = situacoes.get(sit, 0) + 1
+                total = len(conselhos)
+                for sit, cnt in situacoes.items():
+                    resumo_status[sit] = {"count": cnt, "percent": round(cnt/total*100, 1) if total else 0}
+                resumo_status["total"] = total
 
-                if situacao_norm in contadores:
-                    contadores[situacao_norm] += 1
-                else:
-                    contadores["Sem Registro"] += 1
-
-        aluno_count = len(alunos_vistos)
-        conselho_inicio = min(datas_inicio) if datas_inicio else None
-        conselho_fim = max(datas_fim) if datas_fim else None
-
-        total_registros = sum(contadores.values())
-        resumo_status = {
-            label: {
-                "count": v,
-                "percent": (
-                    round(v / total_registros * 100, 1) if total_registros > 0 else 0
-                ),
-            }
-            for label, v in contadores.items()
-        }
-        resumo_status["total"] = total_registros
+        # Datas do conselho (configuração em Planejamento)
+        config = Configuracao.query.first()
+        if config:
+            conselho_inicio = config.inicio_conselho
+            conselho_fim = config.fim_conselho
 
     return render_template(
-        "resultado_conselho.html",
+        "relatorios/resultado_conselho.html",
         periodos=periodos,
-        selected_periodo_id=selected_periodo_id,
-        selected_turma_ids=selected_turma_ids,
-        selected_all_turmas=selected_all_turmas,
+        selected_periodo_id=periodo_id,
         periodo_selecionado=periodo_selecionado,
         periodos_turmas=periodos_turmas,
+        selected_turma_ids=selected_turma_ids,
+        selected_all_turmas=turmas_all,
         registros=registros,
-        resumo_status=resumo_status,
         turma_count=turma_count,
         aluno_count=aluno_count,
+        resumo_status=resumo_status,
         conselho_inicio=conselho_inicio,
         conselho_fim=conselho_fim,
     )

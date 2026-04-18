@@ -1,0 +1,93 @@
+/* static/css/periodos/certificado.css */
+/* ── Tela ── */
+.no-print { }
+
+/* ── Certificado (oculto na tela, visível na impressão via JS) ── */
+.cert-page { display: none; }
+
+/* ── Impressão ── */
+@media print {
+  .no-print, .no-cert-print { display: none !important; }
+
+  .cert-page { display: block !important; }
+
+  .certificado {
+    width: 100%;
+    min-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2cm 2.5cm;
+    font-family: 'Georgia', serif;
+    border: 3px double #1a1a2e;
+    box-sizing: border-box;
+  }
+
+  .cert-break { page-break-after: always; }
+
+  .cert-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 2px solid #1a1a2e;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+  .cert-logo { height: 60px; }
+  .cert-unidade { font-size: 13pt; font-weight: 700; color: #1a1a2e; }
+
+  .cert-titulo {
+    text-align: center;
+    font-size: 22pt;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #1a1a2e;
+    margin: 20px 0;
+  }
+
+  .cert-corpo {
+    text-align: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+  .cert-corpo p { margin: 0; font-size: 12pt; color: #333; }
+  .cert-nome {
+    font-size: 20pt !important;
+    font-weight: 700;
+    color: #1a1a2e !important;
+    border-bottom: 1px solid #aaa;
+    padding-bottom: 4px;
+    margin: 8px auto !important;
+    display: inline-block;
+  }
+  .cert-curso {
+    font-size: 15pt !important;
+    font-weight: 700;
+    font-style: italic;
+    color: #1a1a2e !important;
+  }
+  .cert-ch { font-size: 11pt !important; }
+  .cert-periodo, .cert-situacao { font-size: 10pt !important; color: #555 !important; }
+
+  .cert-rodape {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 40px;
+    border-top: 1px solid #ccc;
+    padding-top: 16px;
+  }
+  .cert-local-data { font-size: 10pt; color: #555; }
+  .cert-assinatura { text-align: center; }
+  .cert-linha-assinatura {
+    border-top: 1px solid #000;
+    width: 220px;
+    margin: 0 auto 4px;
+  }
+  .cert-nome-prof { font-size: 10pt; font-weight: 700; }
+  .cert-cargo-prof { font-size: 9pt; color: #555; }
+}

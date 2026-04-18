@@ -17,7 +17,7 @@ def painel_informacao_padrao():
         abort(403)
 
     return render_template(
-        "admin_informacao_padrao.html",
+        "admin/informacao_padrao.html",
         informacao=get_informacao_padrao_values(),
     )
 

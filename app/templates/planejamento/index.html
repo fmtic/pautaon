@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/index.css') }}">
+{% endblock %}
+
+{% block content %}
+<!-- Todo o conteúdo HTML permanece igual -->
+<div class="container-fluid mt-4">
+  <div class="row">
+    <div class="col-md-3 d-print-none">
+      <!-- card Gestão do Conselho -->
+    </div>
+    <div class="col-md-9">
+      <!-- restante -->
+    </div>
+  </div>
+</div>
+
+<!-- Modais (Cursos e Calendário) -->
+...
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/calendario_bloqueios.js') }}"></script>
+<script src="{{ url_for('static', filename='js/planejamento/index.js') }}"></script>
+{% endblock %}

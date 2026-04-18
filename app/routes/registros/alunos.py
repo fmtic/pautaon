@@ -57,10 +57,19 @@ def gerenciar_alunos():
     if unidade_id:
         query = query.filter_by(unidade_id=unidade_id)
     if search_nome:
-        query = query.filter(db.or_(Aluno.nome.ilike(f"%{search_nome}%"), Aluno.nome_social.ilike(f"%{search_nome}%")))
+        query = query.filter(
+            db.or_(
+                Aluno.nome.ilike(f"%{search_nome}%"),
+                Aluno.nome_social.ilike(f"%{search_nome}%"),
+            )
+        )
     if search_cpf:
         cpf_limpo = search_cpf.replace(".", "").replace("-", "").strip()
-        query = query.filter(db.or_(Aluno.cpf.ilike(f"%{search_cpf}%"), Aluno.cpf.ilike(f"%{cpf_limpo}%")))
+        query = query.filter(
+            db.or_(
+                Aluno.cpf.ilike(f"%{search_cpf}%"), Aluno.cpf.ilike(f"%{cpf_limpo}%")
+            )
+        )
     if search_matr:
         try:
             query = query.filter(Aluno.id == int(search_matr.split(".")[0]))
@@ -73,7 +82,12 @@ def gerenciar_alunos():
     if search_idade_min or search_idade_max:
         idade_min = int(search_idade_min) if search_idade_min.isdigit() else 0
         idade_max = int(search_idade_max) if search_idade_max.isdigit() else 999
-        alunos_lista = [a for a in alunos_lista if isinstance(a.idade_calculada, int) and idade_min <= a.idade_calculada <= idade_max]
+        alunos_lista = [
+            a
+            for a in alunos_lista
+            if isinstance(a.idade_calculada, int)
+            and idade_min <= a.idade_calculada <= idade_max
+        ]
 
     per_page = 20
     total_filtrado = len(alunos_lista)
@@ -100,7 +114,7 @@ def gerenciar_alunos():
         enturm_q = enturm_q.filter_by(unidade_id=unidade_id)
 
     return render_template(
-        "alunos_gerenciar.html",
+        "alunos/gerenciar.html",
         pagination=pagination,
         total_alunos=total_q.count(),
         total_enturmados=enturm_q.filter(Aluno.turmas.any(Turma.ativo == True)).count(),
@@ -128,7 +142,9 @@ def novo_aluno():
 
     try:
         nascimento = request.form.get("data_nascimento")
-        data_nascimento = datetime.strptime(nascimento, "%Y-%m-%d").date() if nascimento else None
+        data_nascimento = (
+            datetime.strptime(nascimento, "%Y-%m-%d").date() if nascimento else None
+        )
         novo = Aluno(
             nome=nome,
             nome_social=request.form.get("nome_social"),
@@ -198,15 +214,29 @@ def novo_aluno():
 
         docs = novo.escolaridade_json or {}
         entregues = docs.get("doc_entregue", {})
-        for doc_id in ["doc_aluno", "doc_residencia", "doc_declaracao", "doc_atestado", "doc_termo", "doc_responsavel", "doc_laudo"]:
+        for doc_id in [
+            "doc_aluno",
+            "doc_residencia",
+            "doc_declaracao",
+            "doc_atestado",
+            "doc_termo",
+            "doc_responsavel",
+            "doc_laudo",
+        ]:
             documento = request.files.get(doc_id)
-            if documento and documento.filename and salvar_documento(documento, novo, doc_id):
+            if (
+                documento
+                and documento.filename
+                and salvar_documento(documento, novo, doc_id)
+            ):
                 entregues[doc_id] = True
         docs["doc_entregue"] = entregues
         novo.escolaridade_json = docs
 
         db.session.commit()
-        flash(f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!", "success")
+        flash(
+            f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!", "success"
+        )
     except Exception as exc:
         db.session.rollback()
         flash(f"Erro em cascata local a nível de Banco: {exc}", "danger")
@@ -287,21 +317,36 @@ def editar_aluno(id):
 
             docs = aluno.escolaridade_json or {}
             entregues = docs.get("doc_entregue", {})
-            for doc_id in ["doc_aluno", "doc_residencia", "doc_declaracao", "doc_atestado", "doc_termo", "doc_responsavel", "doc_laudo"]:
+            for doc_id in [
+                "doc_aluno",
+                "doc_residencia",
+                "doc_declaracao",
+                "doc_atestado",
+                "doc_termo",
+                "doc_responsavel",
+                "doc_laudo",
+            ]:
                 documento = request.files.get(doc_id)
-                if documento and documento.filename and salvar_documento(documento, aluno, doc_id):
+                if (
+                    documento
+                    and documento.filename
+                    and salvar_documento(documento, aluno, doc_id)
+                ):
                     entregues[doc_id] = True
             docs["doc_entregue"] = entregues
             aluno.escolaridade_json = docs
 
             db.session.commit()
-            flash(f"Aluno {aluno.nome_social or aluno.nome} editado com sucesso!", "success")
+            flash(
+                f"Aluno {aluno.nome_social or aluno.nome} editado com sucesso!",
+                "success",
+            )
             return redirect(url_for("registros.gerenciar_alunos"))
         except Exception as exc:
             db.session.rollback()
             flash(f"Atenção, falha de integridade referencial: {exc}", "danger")
 
-    return render_template("aluno_editar.html", aluno=aluno)
+    return render_template("alunos/editar.html", aluno=aluno)
 
 
 @bp.route("/aluno/excluir/<int:id>")
@@ -309,9 +354,16 @@ def editar_aluno(id):
 def excluir_aluno(id):
     aluno = db.get_or_404(Aluno, id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
-    tem_presenca = db.session.execute(select(Frequencia).where(Frequencia.aluno_id == id)).scalars().first()
+    tem_presenca = (
+        db.session.execute(select(Frequencia).where(Frequencia.aluno_id == id))
+        .scalars()
+        .first()
+    )
     if tem_presenca:
-        flash("Proteção Sistêmica: Aluno blindado para Exclusão Física, pois possui Diário. Desative-o apenas.", "warning")
+        flash(
+            "Proteção Sistêmica: Aluno blindado para Exclusão Física, pois possui Diário. Desative-o apenas.",
+            "warning",
+        )
         return redirect(url_for("registros.gerenciar_alunos"))
     try:
         db.session.delete(aluno)
@@ -355,7 +407,9 @@ def desenturmar_alunos(id):
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
     if turma:
         assert_unidade_context(turma.unidade_id, get_unidade_id())
-        inscricao = Inscricao.query.filter_by(aluno_id=aluno.id, turma_id=turma.id, ativo=True).first()
+        inscricao = Inscricao.query.filter_by(
+            aluno_id=aluno.id, turma_id=turma.id, ativo=True
+        ).first()
         if not inscricao:
             flash("Aluno não está enturmado nesta turma.", "warning")
             return redirect(url_for("registros.ver_turma", id=turma.id))
@@ -370,7 +424,10 @@ def desenturmar_alunos(id):
             if frequencia_existente:
                 inscricao.ativo = False
                 db.session.commit()
-                flash(f"Aluno {aluno.nome} inativado na turma {turma.nome} devido à frequência registrada.", "info")
+                flash(
+                    f"Aluno {aluno.nome} inativado na turma {turma.nome} devido à frequência registrada.",
+                    "info",
+                )
             else:
                 db.session.delete(inscricao)
                 db.session.commit()
@@ -446,7 +503,7 @@ def historico_aluno(aluno_id):
         aluno.created_at.strftime("%d/%m/%Y") if aluno.created_at else "Não disponível"
     )
     return render_template(
-        "aluno_historico.html",
+        "alunos/historico.html",
         aluno=aluno,
         dados=dados,
         data_cadastro=data_cadastro,
@@ -462,7 +519,7 @@ def imprimir_aluno(id):
     aluno = db.get_or_404(Aluno, id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
     return render_template(
-        "aluno_impressao.html",
+        "alunos/impressao.html",
         aluno=aluno,
         data_matricula=aluno.created_at or datetime.now(),
     )

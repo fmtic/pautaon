@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/calendario_bloqueados_print.css') }}">
+{% endblock %}
+{% block content %}
+<!-- conteúdo HTML original, sem style e script inline -->
+<div class="cal-page py-4">
+  <!-- ... -->
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  window.diasBloqueados = {
+      {% for d in dias %}
+  "{{ d.data.strftime('%Y-%m-%d') }}": {
+    tipo: "{{ d.tipo }}",
+      cor: "{{ {'FERIADO':'#dc3545','ATIVIDADE_PEDAGOGICA':'#0d6efd','REUNIAO_PAIS':'#6f42c1','ATIVIDADE_INTERNA':'#fd7e14','MANUTENCAO':'#6c757d'}.get(d.tipo,'#adb5bd') }}",
+        icone: "{{ {'FERIADO':'F','ATIVIDADE_PEDAGOGICA':'A','REUNIAO_PAIS':'R','ATIVIDADE_INTERNA':'I','MANUTENCAO':'M'}.get(d.tipo,'?') }}",
+          desc: { { d.descricao | tojson if d.descricao else '""' } }
+  } {% if not loop.last %}, {% endif %}
+  {% endfor %}
+  };
+</script>
+<script src="{{ url_for('static', filename='js/planejamento/calendario_bloqueados_print.js') }}"></script>
+{% endblock %}

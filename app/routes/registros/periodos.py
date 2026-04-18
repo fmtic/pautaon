@@ -150,7 +150,7 @@ def calendario_exportar(periodo_id):
         .all()
     )
 
-    return render_template("calendario_bloqueados_print.html", periodo=periodo, dias=dias)
+    return render_template("planejamento/calendario_bloqueados_print.html", periodo=periodo, dias=dias)
 
 
 @bp.route("/periodo-letivo")
@@ -181,7 +181,7 @@ def periodo_letivo():
     periodos = [periodo for periodo in todos if periodo.data_inicio.year == ano_filtro]
 
     return render_template(
-        "periodo_letivo.html",
+        "periodos/lista.html",
         periodos=periodos,
         anos=anos_disponiveis,
         ano_filtro=ano_filtro,
@@ -236,7 +236,7 @@ def periodo_letivo_novo():
             current_app.logger.exception("Erro ao cadastrar período letivo.")
             flash("Erro ao cadastrar período letivo.", "danger")
 
-    return render_template("periodo_letivo_form.html", periodo=None, unidade=unidade)
+    return render_template("periodos/form.html", periodo=None, unidade=unidade)
 
 
 @bp.route("/periodo-letivo/editar/<int:id>", methods=["GET", "POST"])
@@ -264,7 +264,7 @@ def periodo_letivo_editar(id):
             current_app.logger.exception("Erro ao editar período letivo.")
             flash("Erro ao salvar alterações no período.", "danger")
 
-    return render_template("periodo_letivo_form.html", periodo=periodo, unidade=unidade)
+    return render_template("periodos/form.html", periodo=periodo, unidade=unidade)
 
 
 @bp.route("/periodo-letivo/inativar/<int:id>")
@@ -311,7 +311,7 @@ def periodo_letivo_calendario(id):
         for item in dias
     ]
 
-    return render_template("periodo_letivo_calendario.html", periodo=periodo, dias_json=dias_json)
+    return render_template("periodos/calendario.html", periodo=periodo, dias_json=dias_json)
 
 
 @bp.route("/periodo-letivo/relatorio/<int:id>")
@@ -360,4 +360,4 @@ def periodo_letivo_relatorio_certificado(id):
             )
 
     dados = sorted(alunos_map.values(), key=lambda item: item["aluno"].nome)
-    return render_template("periodo_letivo_certificado.html", periodo=periodo, dados=dados)
+    return render_template("periodos/certificado.html", periodo=periodo, dados=dados)

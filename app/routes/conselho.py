@@ -40,7 +40,7 @@ def index_conselho():
 
     turmas = db.session.execute(stmt).scalars().all()
 
-    return render_template('painel_conselho.html',
+    return render_template('conselho/painel.html',
                            turmas=turmas,
                            lista_programas=lista_programas,
                            programa_ativo=programa_ativo,
@@ -76,7 +76,7 @@ def gerenciar_perguntas():
         if lista:
             perguntas_agrupadas[etapa] = lista
 
-    return render_template('conselho_perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
+    return render_template('conselho/perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
 
 
 @bp.route('/conselho/pergunta/salvar', methods=['POST'])
@@ -160,7 +160,7 @@ def lancamento_conselho():
 
     # Sem turma selecionada: renderiza apenas os filtros
     if not turma_id:
-        return render_template('conselho_lancamento.html',
+        return render_template('conselho/lancamento.html',
                                turmas=turmas_para_select,
                                lista_programas=lista_programas,
                                programa_ativo=programa_filtro,
@@ -348,7 +348,7 @@ def fechamento_turma(turma_id):
             'falta':    perc(counts['F'])
         })
 
-    return render_template('conselho_fechamento.html',
+    return render_template('conselho/fechamento.html',
                            turma=turma,
                            dados=dados_alunos,
                            opcoes_turma=proximas_turmas)
@@ -421,7 +421,7 @@ def avaliar_turma(turma_id):
         flash(f"Avaliação da turma {turma.nome} salva!", "success")
         return redirect(url_for('registros.painel_professor'))
 
-    return render_template('conselho_turma_aval.html',
+    return render_template('conselho/turma_aval.html',
                            turma=turma,
                            etapa_atual=etapa_selecionada,
                            perguntas=perguntas,
