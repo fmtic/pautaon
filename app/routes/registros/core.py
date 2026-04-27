@@ -114,7 +114,7 @@ def painel_professor():
 
     todas_turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
 
-    return render_template('painel_professor.html',
+    return render_template('dashboard/professor.html',
                            turmas=todas_turmas,
                            lista_programas=lista_programas,
                            programa_ativo=programa_selecionado,
