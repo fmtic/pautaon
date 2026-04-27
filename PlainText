@@ -53,8 +53,8 @@ templates/
 ├── frequencia/
 │   ├── lancar.html
 │   ├── relatorio.html
-│   ├── imprimir_pauta.html
-│   └── lancamento_old.html (se for manter)
+│   └── imprimir_pauta.html
+│ 
 │
 ├── relatorios/
 │   ├── geral.html

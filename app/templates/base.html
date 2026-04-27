@@ -24,8 +24,8 @@
                 <span class="badge bg-secondary ms-1">{{ unidade_contexto }}</span>
             </span>
 
-            {# SELETOR DE UNIDADE PARA ADMIN/PEDAGOGICO/GERENCIA #}
-            {% if unidades_lista %}
+            {# SELETOR DE UNIDADE PARA ADMIN/GERENCIA #}
+            {% if unidades_lista and current_user.role in ['admin', 'gerencia'] %}
             <div class="dropdown d-inline-block me-3">
                 <button class="btn btn-sm btn-outline-info dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="bi bi-buildings me-1"></i> Unidade
