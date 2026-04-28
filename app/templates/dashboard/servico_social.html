@@ -4,7 +4,8 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
         <div>
-            <h2 class="fw-bold text-dark"><i class="bi bi-person-heart text-primary me-2"></i>Painel do Serviço Social</h2>
+            <h2 class="fw-bold text-dark"><i class="bi bi-person-heart text-primary me-2"></i>Painel do Serviço Social
+            </h2>
             <p class="text-muted mb-0">Gestão de atendimentos e acompanhamento social institucional</p>
         </div>
         <div class="text-end">
@@ -37,16 +38,36 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-12 col-lg-6">
+
+        <!-- Card: Novo Atendimento -->
+        <div class="col-md-12 col-lg-3">
             <div class="card border-0 shadow-sm h-100 bg-light border-start border-4 border-primary">
-                <div class="card-body d-flex justify-content-between align-items-center">
+                <div class="card-body d-flex flex-column justify-content-between">
                     <div>
-                        <h5 class="fw-bold mb-1">Novo Atendimento?</h5>
-                        <p class="text-muted small mb-0">Agende uma conversa e sincronize com o Google Calendar.</p>
+                        <h5 class="fw-bold mb-1">📅 Novo Atendimento</h5>
+                        <p class="text-muted small mb-3">Agende uma conversa e sincronize com o Google Calendar.</p>
                     </div>
-                    <button class="btn btn-primary px-4 py-2 shadow" data-bs-toggle="modal" data-bs-target="#modalAgendamento">
+                    <button class="btn btn-primary w-100 py-2 shadow" data-bs-toggle="modal"
+                        data-bs-target="#modalAgendamento">
                         <i class="bi bi-plus-circle me-2"></i>Agendar Entrevista
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card: Entrevistas e Formulários -->
+        <div class="col-md-12 col-lg-3">
+            <div class="card border-0 shadow-sm h-100 bg-light border-start border-4 border-success">
+                <div class="card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="fw-bold mb-1"><i class="bi bi-journal-text"></i> Entrevistas e Formulários</h5>
+                        <p class="text-muted small mb-3">Preencha fichas de acompanhamento, notificações e avaliações.
+                        </p>
+                    </div>
+                    <a href="{{ url_for('servico_social.listar_entrevistas') }}"
+                        class="btn btn-success w-100 py-2 shadow">
+                        <i class="bi bi-pencil-square me-2"></i>Acessar Formulários
+                    </a>
                 </div>
             </div>
         </div>
@@ -56,7 +77,8 @@
         <div class="col-lg-8">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-header bg-white py-3">
-                    <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Últimos Agendamentos</h5>
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Últimos Agendamentos
+                    </h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -77,12 +99,12 @@
                                     <td><span class="badge bg-light text-dark border">{{ agenda.hora }}</span></td>
                                     <td class="text-end">
                                         <div class="btn-group">
-                                            <button class="btn btn-sm btn-outline-primary" 
+                                            <button class="btn btn-sm btn-outline-primary"
                                                 onclick="abrirModalEdicao('{{ agenda.id }}', '{{ agenda.titulo }}', '{{ agenda.categoria }}', '{{ agenda.data }}', '{{ agenda.hora }}', '{{ agenda.localizacao }}', '{{ agenda.descricao }}', '{{ agenda.participantes_emails }}')">
                                                 <i class="bi bi-pencil-square"></i>
                                             </button>
 
-                                            <a href="{{ url_for('registros.excluir_agendamento', id=agenda.id) }}"
+                                            <a href="{{ url_for('servico_social.excluir_agendamento', id=agenda.id) }}"
                                                 class="btn btn-sm btn-outline-danger"
                                                 onclick="return confirm('Tem certeza? Isso removerá o evento do Google Agenda também.')">
                                                 <i class="bi bi-trash"></i>
@@ -132,10 +154,12 @@
 
             <div class="alert alert-warning border-0 shadow-sm">
                 <h6 class="fw-bold small"><i class="bi bi-info-circle-fill me-2"></i>Lembrete de Sincronização</h6>
-                <p class="mb-0 x-small">Os agendamentos são enviados para a agenda institucional do 
-                    <a href="https://calendar.google.com/calendar/embed?src=c_4632f62fda3efe957dfb7e6e052ce9eb2c9b2b9dd36f2faaf173eb86865c848d%40group.calendar.google.com&ctz=America%2FSao_Paulo">
+                <p class="mb-0 x-small">Os agendamentos são enviados para a agenda institucional do
+                    <a
+                        href="https://calendar.google.com/calendar/embed?src=c_4632f62fda3efe957dfb7e6e052ce9eb2c9b2b9dd36f2faaf173eb86865c848d%40group.calendar.google.com&ctz=America%2FSao_Paulo">
                         <strong>Serviço Social</strong>
-                </a>.</p>
+                    </a>.
+                </p>
             </div>
         </div>
     </div>
@@ -148,14 +172,15 @@
                 <h5 class="modal-title"><i class="bi bi-calendar-plus me-2"></i>Novo Agendamento Social</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-modal="modal"></button>
             </div>
-            <form action="{{ url_for('registros.agendar_entrevista') }}" method="POST">
+            <form action="{{ url_for('servico_social.agendar_entrevista') }}" method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body p-4">
                     {% include "partials/_campos_agendamento.html" %}
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-2"></i>Sincronizar e Salvar</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-2"></i>Sincronizar e
+                        Salvar</button>
                 </div>
             </form>
         </div>

@@ -588,3 +588,22 @@ class LogAcao(db.Model):
         super().__init__(**kwargs)
         if 'acao' in kwargs:
             self.acao_normalizada = self.normalize(kwargs['acao'])
+
+# ===========================================================================
+# SERVIÇO SOCIAL - FORMULÁRIOS
+# ===========================================================================
+class RespostaFormulario(db.Model):
+    """Armazena respostas de qualquer formulário do Serviço Social (JSON)."""
+    __tablename__ = 'respostas_formulario'
+
+    id = db.Column(db.Integer, primary_key=True)
+    tipo_formulario = db.Column(db.String(50), nullable=False)   # identificador do formulário
+    aluno_id = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    dados = db.Column(db.JSON, nullable=False)                   # dicionário com todas as respostas
+    created_at = db.Column(db.DateTime, default=get_local_now)
+    updated_at = db.Column(db.DateTime, default=get_local_now, onupdate=get_local_now)
+
+    # relacionamentos (aproveitando os modelos já existentes)
+    aluno = db.relationship('Aluno', backref='formularios')
+    usuario = db.relationship('User', backref='formularios_preenchidos')

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-files me-2"></i>Entrevistas e Formulários</h2>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Voltar</a>
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 g-4 mb-5">
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Notificação de Violência</h5>
+                    <p class="card-text">Ficha para casos suspeitos ou confirmados de maus tratos.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='notificacao') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-graph-up me-2 text-success"></i>Análise Socioeconômica</h5>
+                    <p class="card-text">Levantamento de renda, moradia, composição familiar.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='socioeconomica') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-chat-text me-2 text-info"></i>Atendimento Social</h5>
+                    <p class="card-text">Registro de atendimento individual.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='atendimento_social') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-briefcase me-2 text-warning"></i>Profissionalizante 30+</h5>
+                    <p class="card-text">Entrevista para candidatos acima de 30 anos.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='profissionalizante_30') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-briefcase-fill me-2 text-secondary"></i>Profissionalizante Geral</h5>
+                    <p class="card-text">Perfil do educando para encaminhamentos.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='profissionalizante_geral') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="bi bi-heart me-2 text-danger"></i>Plano Individual (Trans)</h5>
+                    <p class="card-text">Acompanhamento para crianças e adolescentes trans.</p>
+                    <a href="{{ url_for('servico_social.preencher_formulario', tipo='plano_individual') }}" class="btn btn-outline-primary">Preencher</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h4 class="mt-5 mb-3">Histórico de Respostas</h4>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr><th>Tipo</th><th>Data</th><th>Aluno</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+                {% for r in respostas %}
+                <tr>
+                    <td>{{ r.tipo_formulario }}</td>
+                    <td>{{ r.created_at.strftime('%d/%m/%Y %H:%M') if r.created_at else '' }}</td>
+                    <td>{{ r.aluno.nome if r.aluno else '—' }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalVisualizar{{ r.id }}">Visualizar</button>
+                        <div class="modal fade" id="modalVisualizar{{ r.id }}" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Respostas - {{ r.tipo_formulario }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <pre>{{ r.dados | tojson(indent=2) }}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center">Nenhum formulário preenchido ainda.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

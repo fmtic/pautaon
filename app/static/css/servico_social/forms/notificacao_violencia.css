@@ -1,0 +1,81 @@
+/* Stepper customizado - igual ao usado em alunos */
+.stepper-container {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    margin-bottom: 2rem;
+}
+.stepper-container::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #dee2e6;
+    z-index: 0;
+}
+.step-item {
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border: 2px solid #dee2e6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    z-index: 1;
+    background-color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.step-item.active {
+    border-color: #0d6efd;
+    background-color: #0d6efd;
+    color: white;
+}
+.step-item.completed {
+    border-color: #198754;
+    background-color: #198754;
+    color: white;
+}
+.form-step {
+    display: none;
+}
+.form-step.active {
+    display: block;
+}
+@media print {
+    .no-print, .stepper-container, .btn-group, .btn, footer, nav, .card-header button, .text-end .btn, .modal {
+        display: none !important;
+    }
+    .container {
+        max-width: 100%;
+        padding: 0;
+    }
+    .card {
+        border: none;
+        box-shadow: none;
+    }
+    .card-body {
+        padding: 0;
+    }
+    input, select, textarea {
+        border: none;
+        background: transparent;
+        padding: 0;
+    }
+    .form-check-input {
+        display: none;
+    }
+    .form-check-label {
+        margin-left: 0;
+    }
+    .border-bottom, .alert {
+        border: none;
+    }
+    .rounded-circle {
+        border: 1px solid #ccc;
+    }
+}

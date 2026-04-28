@@ -1,5 +1,7 @@
-from flask import Flask
+# puataon/app/__init__.py
 
+from flask import Flask
+from flask_migrate import Migrate
 from config import Config
 from app.extensions import csrf, db, login_manager
 
@@ -20,6 +22,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
 def _configure_extensions(app: Flask) -> None:
     db.init_app(app)
+    migrate = Migrate(app, db)
     csrf.init_app(app)
     login_manager.init_app(app)
 
@@ -38,12 +41,14 @@ def _register_user_loader() -> None:
 def _register_blueprints(app: Flask) -> None:
     from app.routes import auth, conselho, informacao_padrao, main
     from app.routes.registros import bp as registros_bp
+    from app.routes.registros.servico_social import bp as servico_social_bp
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(main.bp)
     app.register_blueprint(registros_bp)
     app.register_blueprint(conselho.bp)
     app.register_blueprint(informacao_padrao.bp)
+    app.register_blueprint(servico_social_bp)
 
 
 def _register_context_processors(app: Flask) -> None:
