@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Histórico — {{ aluno.nome_social or aluno.nome }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/historico.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/historico.css') }}">
 </head>
 <body>
 
@@ -34,6 +34,8 @@
       <div class="campo">
         <span class="label">Nome Completo</span>
         <span class="valor">{{ aluno.nome }}</span>
+        <span class="label">Matrícula</span>
+        <span class="valor">{{ aluno.matricula }}</span>
       </div>
       {% if aluno.nome_social %}
       <div class="campo">
