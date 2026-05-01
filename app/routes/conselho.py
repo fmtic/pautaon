@@ -223,7 +223,7 @@ def lancamento_conselho():
     ).all()
     respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": r.resposta for r in respostas_db}
 
-    return render_template('conselho_lancamento.html',
+    return render_template('conselho/lancamento.html',
                            turma=turma_obj,
                            alunos=alunos,
                            perguntas=perguntas,

@@ -9,7 +9,7 @@
                     <h4 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Transferir Aluno</h4>
                 </div>
                 <div class="card-body">
-                    <!-- Informações do Aluno -->
+                    <!-- Informações do Aluno (sem CPF) -->
                     <div class="row mb-4">
                         <div class="col-md-2 text-center">
                             <div class="rounded bg-light overflow-hidden shadow-sm d-inline-block"
@@ -20,54 +20,48 @@
                         </div>
                         <div class="col-md-10">
                             <h5 class="mb-1">{{ aluno.nome }}</h5>
-                            <p class="text-muted mb-1">Matrícula: {{ aluno.matricula }}</p>
-                            <p class="text-muted mb-0">CPF: {{ aluno.cpf or 'Não informado' }}</p>
+                            <p class="text-muted mb-0">Matrícula: {{ aluno.matricula }}</p>
                         </div>
                     </div>
 
-                    <!-- Turmas Atuais -->
-                    <div class="mb-4">
-                        <h6 class="text-primary">Turmas Atuais do Aluno:</h6>
-                        <div class="d-flex flex-wrap gap-2">
-                            {% for turma in turmas_aluno %}
-                            <span class="badge bg-info text-dark">{{ turma.nome }}</span>
-                            {% else %}
-                            <span class="text-muted">Nenhuma turma ativa</span>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <form method="POST">
+                    <form method="POST" id="transferForm">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="turma_origem" class="form-label fw-bold">Turma de Origem *</label>
-                                    <select class="form-select" id="turma_origem" name="turma_origem" required>
-                                        <option value="">Selecione...</option>
-                                        {% for turma in turmas_aluno %}
-                                        <option value="{{ turma.id }}">{{ turma.nome }}</option>
-                                        {% endfor %}
-                                    </select>
+
+                        <!-- Turma de Origem com detalhes -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Turma de Origem</label>
+                            <div class="p-3 bg-light border rounded">
+                                <div><strong>{{ turma_origem.nome }}</strong></div>
+                                {% if turma_origem.programa %}
+                                <div class="mt-1"><span class="text-muted">Programa:</span> {{ turma_origem.programa }}
                                 </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="turma_destino" class="form-label fw-bold">Turma de Destino *</label>
-                                    <select class="form-select" id="turma_destino" name="turma_destino" required>
-                                        <option value="">Selecione...</option>
-                                        {% for turma in turmas_ativas %}
-                                        <option value="{{ turma.id }}">{{ turma.nome }}</option>
-                                        {% endfor %}
-                                    </select>
+                                {% endif %}
+                                <div><span class="text-muted">Turno:</span> {{ turma_origem.turno or 'Não informado' }}
                                 </div>
+                                <div><span class="text-muted">Dias:</span> {{ turma_origem.dias_semana or 'Não
+                                    informado' }}</div>
+                                <div><span class="text-muted">Horário:</span> {{ turma_origem.hora_inicio or '--:--' }}
+                                    às {{ turma_origem.hora_fim or '--:--' }}</div>
                             </div>
+                            <input type="hidden" name="turma_origem_id" value="{{ turma_origem.id }}">
                         </div>
 
                         <div class="mb-3">
-                            <label for="observacoes" class="form-label fw-bold">Observações</label>
+                            <label for="turma_destino" class="form-label fw-bold">Turma de Destino *</label>
+                            <select class="form-select" id="turma_destino" name="turma_destino_id" required>
+                                <option value="">Selecione...</option>
+                                {% for turma in turmas_destino %}
+                                <option value="{{ turma.id }}">{{ turma.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="observacoes" class="form-label fw-bold">Observações *</label>
                             <textarea class="form-control" id="observacoes" name="observacoes" rows="3"
-                                placeholder="Observações sobre a transferência (opcional)"></textarea>
+                                placeholder="Descreva o motivo da transferência (obrigatório)" required></textarea>
+                            <div class="invalid-feedback">As observações são obrigatórias para registrar a
+                                transferência.</div>
                         </div>
 
                         <div class="alert alert-info">
@@ -78,15 +72,82 @@
                         </div>
 
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-warning fw-bold">
+                            <button type="button" class="btn btn-warning fw-bold" id="btnAbrirModal">
                                 <i class="bi bi-arrow-left-right me-1"></i> CONFIRMAR TRANSFERÊNCIA
                             </button>
-                            <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-secondary">
+                            <a href="{{ url_for('registros.ver_turma', id=turma_origem.id, **request.args) }}"
+                                class="btn btn-secondary">
                                 <i class="bi bi-x-circle me-1"></i> Cancelar
                             </a>
                         </div>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmação de Transferência -->
+<div class="modal fade" id="confirmarTransferenciaModal" tabindex="-1" aria-labelledby="modalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold" id="modalLabel">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirmar Transferência
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-arrow-repeat text-warning" style="font-size: 3rem;"></i>
+                </div>
+                <p class="fw-bold">Tem certeza que deseja transferir o aluno abaixo?</p>
+
+                <div class="alert alert-light border p-3">
+                    <div class="row">
+                        <div class="col-5 text-muted">Aluno:</div>
+                        <div class="col-7 fw-bold">{{ aluno.nome }}</div>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-5 text-muted">Turma de Origem:</div>
+                        <div class="col-7">
+                            <span class="fw-bold">{{ turma_origem.nome }}</span>
+                            <br><small class="text-muted">
+                                {% if turma_origem.programa %}Programa: {{ turma_origem.programa }}<br>{% endif %}
+                                Turno: {{ turma_origem.turno or 'Não informado' }}<br>
+                                Dias: {{ turma_origem.dias_semana or 'Não informado' }}<br>
+                                Horário: {{ turma_origem.hora_inicio or '--:--' }} às {{ turma_origem.hora_fim or
+                                '--:--' }}
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-5 text-muted">Turma de Destino:</div>
+                        <div class="col-7 fw-bold" id="modalTurmaDestino">-</div>
+                    </div>
+
+                    <div class="row mt-2">
+                        <div class="col-5 text-muted">Observações:</div>
+                        <div class="col-7" id="modalObservacoes">-</div>
+                    </div>
+                </div>
+
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Após confirmar, o aluno será desvinculado da turma de origem e passará a pertencer à turma de
+                    destino.
+                    Esta ação não pode ser desfeita automaticamente.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i> Cancelar
+                </button>
+                <button type="button" class="btn btn-warning fw-bold" id="confirmarTransferenciaBtn">
+                    <i class="bi bi-check-circle me-1"></i> Sim, Transferir
+                </button>
             </div>
         </div>
     </div>

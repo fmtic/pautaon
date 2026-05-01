@@ -1,17 +1,77 @@
 // static/js/alunos/transferir.js
+
 (function() {
     'use strict';
 
-    const origem = document.getElementById('turma_origem');
-    const destino = document.getElementById('turma_destino');
+    const form = document.getElementById('transferForm');
+    const destinoSelect = document.getElementById('turma_destino');
+    const observacoes = document.getElementById('observacoes');
+    const btnAbrirModal = document.getElementById('btnAbrirModal');
+    const confirmarBtn = document.getElementById('confirmarTransferenciaBtn');
+    const modalElement = document.getElementById('confirmarTransferenciaModal');
 
-    function validarTurmas() {
-        if (origem && destino && origem.value && destino.value && origem.value === destino.value) {
-            alert('A turma de origem e destino devem ser diferentes!');
-            destino.value = '';
-        }
+    if (!modalElement) {
+        console.error('Modal não encontrado!');
+        return;
     }
 
-    if (origem) origem.addEventListener('change', validarTurmas);
-    if (destino) destino.addEventListener('change', validarTurmas);
+    let modal;
+    if (typeof bootstrap !== 'undefined') {
+        modal = new bootstrap.Modal(modalElement);
+    } else {
+        console.error('Bootstrap JS não carregado');
+        return;
+    }
+
+    // Preenche os campos do modal
+    function preencherModal() {
+        const destinoOption = destinoSelect.options[destinoSelect.selectedIndex];
+        const nomeDestino = destinoOption ? destinoOption.text : '';
+        const obs = observacoes.value.trim();
+
+        const modalDestino = document.getElementById('modalTurmaDestino');
+        const modalObs = document.getElementById('modalObservacoes');
+
+        if (modalDestino) modalDestino.textContent = nomeDestino;
+        if (modalObs) modalObs.textContent = obs;
+    }
+
+    // Abrir modal com validação
+    if (btnAbrirModal) {
+        btnAbrirModal.addEventListener('click', function() {
+            // Valida destino
+            if (!destinoSelect.value) {
+                alert('Selecione a turma de destino.');
+                destinoSelect.focus();
+                return;
+            }
+            // Valida observações
+            const obsValue = observacoes.value.trim();
+            if (obsValue === '') {
+                alert('As observações são obrigatórias.');
+                observacoes.focus();
+                observacoes.classList.add('is-invalid');
+                return;
+            } else {
+                observacoes.classList.remove('is-invalid');
+            }
+            preencherModal();
+            modal.show();
+        });
+    }
+
+    // Confirmar transferência
+    if (confirmarBtn) {
+        confirmarBtn.addEventListener('click', function() {
+            modal.hide();
+            form.submit();
+        });
+    }
+
+    // Remover classe de erro ao digitar
+    if (observacoes) {
+        observacoes.addEventListener('input', function() {
+            if (this.value.trim() !== '') this.classList.remove('is-invalid');
+        });
+    }
 })();

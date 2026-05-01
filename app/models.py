@@ -25,6 +25,7 @@ class Inscricao(db.Model):
 
     # Metadados de Auditoria / Status
     ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
+    data_inicio = db.Column(db.Date, nullable=False, default=datetime.utcnow)
     data_desativacao: datetime = db.Column(db.DateTime)
     motivo_desativacao: str = db.Column(db.String(50))
 

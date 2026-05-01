@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -9,6 +9,7 @@ from app.models import Aluno, Frequencia, Inscricao, Turma
 from app.utils.logica import get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, salvar_documento, salvar_foto
+
 
 
 @bp.route("/aluno/<int:aluno_id>/atualizar-nivel", methods=["POST"])
@@ -525,8 +526,119 @@ def imprimir_aluno(id):
     )
 
 
-@bp.route("/aluno/transferir/<int:aluno_id>")
+@bp.route("/aluno/transferir/<int:aluno_id>", methods=["GET", "POST"])
 @login_required
 def transferir_aluno(aluno_id):
-    flash("Transferência de Aluno em desenvolvimento.", "info")
-    return redirect(url_for("registros.gerenciar_alunos"))
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+        abort(403)
+
+    aluno = db.get_or_404(Aluno, aluno_id)
+    unidade_id = get_unidade_id()  # pode ser None
+    assert_unidade_context(aluno.unidade_id, unidade_id)
+
+    # Turma de origem – vem da URL (GET) ou do form (POST)
+    turma_origem_id = request.args.get('turma_origem_id', type=int)
+    if not turma_origem_id and request.method == 'POST':
+        turma_origem_id = request.form.get('turma_origem_id', type=int)
+
+    if not turma_origem_id:
+        flash("Turma de origem não informada.", "danger")
+        return redirect(url_for('registros.gerenciar_alunos'))
+
+    # Verifica se a inscrição realmente existe e está ativa
+    inscricao_origem = Inscricao.query.filter_by(
+        aluno_id=aluno.id, turma_id=turma_origem_id, ativo=True
+    ).first()
+    if not inscricao_origem:
+        flash("Aluno não está ativo na turma de origem informada.", "danger")
+        return redirect(url_for('registros.gerenciar_alunos'))
+
+    # --- MÉTODO GET: exibe formulário ---
+    if request.method == 'GET':
+        # Consulta turmas de destino (ativas, diferente da origem)
+        query = Turma.query.filter(
+            Turma.ativo == True,
+            Turma.id != turma_origem_id
+        )
+        # Aplica filtro de unidade SOMENTE se unidade_id não for None
+        if unidade_id is not None:
+            query = query.filter(Turma.unidade_id == unidade_id)
+        turmas_destino = query.order_by(Turma.nome).all()
+
+        if not turmas_destino:
+            flash("Não há outras turmas ativas disponíveis para transferência.", "warning")
+
+        return render_template(
+            "alunos/transferir.html",
+            aluno=aluno,
+            turma_origem=inscricao_origem.turma,
+            turmas_destino=turmas_destino,
+            hoje=datetime.now().date()
+        )
+
+    # --- MÉTODO POST: processa a transferência ---
+    turma_destino_id = request.form.get('turma_destino_id', type=int)
+    data_transferencia_str = request.form.get('data_transferencia')
+    observacoes = request.form.get('observacoes', '').strip()
+
+    if not turma_destino_id or not data_transferencia_str:
+        flash("Selecione a turma de destino e a data da transferência.", "warning")
+        return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
+
+    try:
+        data_transferencia = datetime.strptime(data_transferencia_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Data inválida.", "danger")
+        return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
+
+    turma_destino = db.get_or_404(Turma, turma_destino_id)
+
+    # Valida se a data de transferência é anterior ao início da turma destino
+    if turma_destino.data_inicio:
+        try:
+            inicio = datetime.strptime(turma_destino.data_inicio, "%Y-%m-%d").date()
+            if data_transferencia < inicio:
+                flash(f"A data de transferência não pode ser anterior ao início da turma ({turma_destino.data_inicio}).", "warning")
+                return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
+        except ValueError:
+            pass  # ignora formato inválido
+
+    # --- Executa a transferência no banco ---
+    try:
+        # 1. Desativa a inscrição atual
+        inscricao_origem.ativo = False
+        inscricao_origem.data_desativacao = data_transferencia - timedelta(days=1)
+        inscricao_origem.motivo_desativacao = "TRANSFERENCIA"
+
+        # 2. Cria nova inscrição na turma destino
+        nova_inscricao = Inscricao(
+            aluno_id=aluno.id,
+            turma_id=turma_destino_id,
+            nivel=inscricao_origem.nivel,
+            data_inicio=data_transferencia,
+            ativo=True,
+            data_desativacao=None,
+            motivo_desativacao=None
+        )
+        db.session.add(nova_inscricao)
+
+        # 3. Registra o log de transferência
+        from app.models import Transferencia
+        transferencia = Transferencia(
+            aluno_id=aluno.id,
+            turma_origem_id=inscricao_origem.turma_id,
+            turma_destino_id=turma_destino_id,
+            data_transferencia=data_transferencia,
+            observacoes=observacoes,
+            unidade_id=unidade_id
+        )
+        db.session.add(transferencia)
+
+        db.session.commit()
+        flash(f"Aluno {aluno.nome} transferido para a turma {turma_destino.nome} com sucesso!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Erro ao transferir aluno: {str(e)}", "danger")
+
+    # Redireciona de volta para a página da turma de origem
+    return redirect(url_for("registros.ver_turma", id=turma_origem_id))
