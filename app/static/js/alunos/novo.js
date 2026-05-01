@@ -3,7 +3,11 @@
     'use strict';
 
     let currentStep = 1;
-    const totalSteps = 5;
+    const stepIds = Array.from(document.querySelectorAll('.form-step'))
+        .map(step => Number(step.id.replace('step-', '')))
+        .filter(Number.isInteger)
+        .sort((a, b) => a - b);
+    const lastStepId = stepIds[stepIds.length - 1] || 1;
 
     // Funções globais
     window.updateStepper = updateStepper;
@@ -16,8 +20,14 @@
     window.toggleMedicacao = toggleMedicacao;
 
     function updateStepper() {
-        for (let i = 1; i <= totalSteps; i++) {
+        for (let i = 1; i <= 5; i++) {
             const indicator = document.getElementById(`step-indicator-${i}`);
+            if (!indicator) continue;
+
+            const hasStep = stepIds.includes(i);
+            indicator.classList.toggle('d-none', !hasStep);
+            if (!hasStep) continue;
+
             if (i < currentStep) {
                 indicator.classList.remove('active');
                 indicator.classList.add('completed');
@@ -32,7 +42,7 @@
             }
         }
         document.getElementById('prevBtn')?.classList.toggle('d-none', currentStep === 1);
-        if (currentStep === totalSteps) {
+        if (currentStep === lastStepId) {
             document.getElementById('nextBtn')?.classList.add('d-none');
             document.getElementById('submitBtn')?.classList.remove('d-none');
         } else {
@@ -42,18 +52,25 @@
     }
 
     function goToStep(n) {
-        if (n === currentStep) return;
-        document.getElementById(`step-${currentStep}`).classList.remove('active');
+        if (n === currentStep || !stepIds.includes(n)) return;
+
+        document.getElementById(`step-${currentStep}`)?.classList.remove('active');
         currentStep = n;
-        document.getElementById(`step-${currentStep}`).classList.add('active');
+        document.getElementById(`step-${currentStep}`)?.classList.add('active');
         updateStepper();
         window.scrollTo(0, 0);
     }
 
     function nextStep(n) {
-        document.getElementById(`step-${currentStep}`).classList.remove('active');
-        currentStep += n;
-        document.getElementById(`step-${currentStep}`).classList.add('active');
+        const currentIndex = stepIds.indexOf(currentStep);
+        const nextIndex = currentIndex + n;
+        const nextStepId = stepIds[nextIndex];
+
+        if (!nextStepId) return;
+
+        document.getElementById(`step-${currentStep}`)?.classList.remove('active');
+        currentStep = nextStepId;
+        document.getElementById(`step-${currentStep}`)?.classList.add('active');
         updateStepper();
         window.scrollTo(0, 0);
     }

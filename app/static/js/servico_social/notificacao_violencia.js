@@ -1,4 +1,4 @@
-// Máscara de telefone
+// ========== MÁSCARAS ==========
 function maskTelefone(input) {
     let value = input.value.replace(/\D/g, '');
     if (value.length > 10) {
@@ -13,136 +13,95 @@ function maskTelefone(input) {
 
 function aplicarMascaras() {
     const telefone = document.querySelector('input[name="telefone"]');
-    if (telefone) {
-        telefone.addEventListener('input', () => maskTelefone(telefone));
-    }
+    if (telefone) telefone.addEventListener('input', () => maskTelefone(telefone));
 }
 
-// ========== STEPS (navegação) ==========
+// ========== STEPPER (modo preenchimento normal) ==========
 let currentStep = 1;
-const totalSteps = 7;
-
-function updateStepDisplay() {
-    for (let i = 1; i <= totalSteps; i++) {
-        const stepDiv = document.getElementById(`step-${i}`);
-        if (stepDiv) stepDiv.classList.toggle('active', i === currentStep);
-        
-        const stepIndicator = document.querySelector(`.step-item[data-step="${i}"]`);
-        if (stepIndicator) {
-            stepIndicator.classList.toggle('active', i === currentStep);
-            // Marca como completed se o step já foi visitado e não é o atual
-            const isCompleted = (i < currentStep);
-            stepIndicator.classList.toggle('completed', isCompleted);
-        }
-    }
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    if (prevBtn) prevBtn.style.display = currentStep === 1 ? 'none' : 'inline-block';
-    if (nextBtn) nextBtn.style.display = currentStep === totalSteps ? 'none' : 'inline-block';
-}
+let totalSteps = 7;
 
 function changeStep(delta) {
-    let newStep = currentStep + delta;
-    if (newStep < 1) newStep = 1;
-    if (newStep > totalSteps) newStep = totalSteps;
-    currentStep = newStep;
-    updateStepDisplay();
+    const newStep = currentStep + delta;
+    if (newStep >= 1 && newStep <= totalSteps) {
+        currentStep = newStep;
+        updateStepDisplay();
+    }
 }
 
-window.changeStep = changeStep;
-window.goToStep = function(step) {
+function goToStep(step) {
     if (step >= 1 && step <= totalSteps) {
         currentStep = step;
         updateStepDisplay();
     }
-};
+}
 
-// ========== AUTO PREENCHIMENTO ==========
+function updateStepDisplay() {
+    document.querySelectorAll('.form-step').forEach((stepDiv, index) => {
+        const isActive = index + 1 === currentStep;
+        stepDiv.style.display = isActive ? 'block' : 'none';
+        stepDiv.classList.toggle('active', isActive);
+    });
+    document.querySelectorAll('.step-item').forEach((indicator, index) => {
+        const stepNum = index + 1;
+        indicator.classList.toggle('active', stepNum === currentStep);
+        indicator.classList.toggle('completed', stepNum < currentStep);
+    });
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    if (prevBtn) prevBtn.style.display = currentStep === 1 ? 'none' : 'inline-block';
+    if (nextBtn) nextBtn.style.display = currentStep === totalSteps ? 'none' : 'inline-block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+window.changeStep = changeStep;
+window.goToStep = goToStep;
+
+// ========== AUTOPREENCHIMENTO ==========
 function initAutoPreenchimento() {
     const selectAluno = document.querySelector('select[name="aluno_id"]');
     if (!selectAluno) return;
-
-    selectAluno.addEventListener('change', function() {
+    selectAluno.addEventListener('change', function () {
         const alunoId = this.value;
-        if (!alunoId) {
-            limparCampos();
-            return;
-        }
-
+        if (!alunoId) { limparCampos(); return; }
         fetch(`/servico-social/aluno/${alunoId}/dados`)
-            .then(response => {
-                if (!response.ok) throw new Error('Erro ao buscar dados');
-                return response.json();
-            })
-            .then(data => {
-                preencherCampos(data);
-                atualizarFoto(data.foto_url);
-            })
-            .catch(error => console.error('Erro no autopreenchimento:', error));
+            .then(r => { if (!r.ok) throw new Error('Erro'); return r.json(); })
+            .then(data => { preencherCampos(data); atualizarFoto(data.foto_url); })
+            .catch(err => console.error('Erro no autopreenchimento:', err));
     });
 }
 
 function preencherCampos(data) {
     const mapping = {
-        'nome': 'nome',
-        'data_nascimento': 'data_nascimento',
-        'sexo': 'sexo',
-        'raca_cor': 'raca_cor',
-        'mae': 'mae',
-        'pai': 'pai',
-        'responsavel_nome': 'responsavel_nome',
-        'parentesco_responsavel': 'parentesco_responsavel',
-        'endereco': 'endereco',
-        'telefone': 'telefone',
-        'turma': 'turmas',
-        'escola': 'escola',
-        'serie': 'serie',
-        'turno': 'turno'
+        'nome': 'nome', 'data_nascimento': 'data_nascimento', 'sexo': 'sexo',
+        'raca_cor': 'raca_cor', 'mae': 'mae', 'pai': 'pai',
+        'responsavel_nome': 'responsavel_nome', 'parentesco_responsavel': 'parentesco_responsavel',
+        'endereco': 'endereco', 'telefone': 'telefone',
+        'turma': 'turmas', 'escola': 'escola', 'serie': 'serie', 'turno': 'turno'
     };
-
     for (const [campo, chave] of Object.entries(mapping)) {
         const input = document.querySelector(`[name="${campo}"]`);
-        if (input) {
-            if (chave === 'turmas' && Array.isArray(data[chave])) {
-                input.value = data[chave].join(', ');
-            } else {
-                input.value = data[chave] || '';
-            }
-        }
+        if (!input) continue;
+        if (chave === 'turmas' && Array.isArray(data[chave])) input.value = data[chave].join(', ');
+        else input.value = data[chave] || '';
     }
-
     const sexoSelect = document.querySelector('select[name="sexo"]');
     if (sexoSelect && data.sexo) sexoSelect.value = data.sexo;
-
     const racaSelect = document.querySelector('select[name="raca_cor"]');
     if (racaSelect && data.raca_cor) racaSelect.value = data.raca_cor;
-
     if (data.turno) {
-        const radiosTurno = document.querySelectorAll('input[name="turno"]');
-        radiosTurno.forEach(radio => {
-            if (radio.value === data.turno) radio.checked = true;
+        document.querySelectorAll('input[name="turno"]').forEach(r => {
+            if (r.value === data.turno) r.checked = true;
         });
     }
-
-    const deficienciaInput = document.querySelector('input[name="deficiencia_outros"]');
-    if (deficienciaInput && data.deficiencia) deficienciaInput.value = data.deficiencia;
-
-    const dataNasc = document.querySelector('input[name="data_nascimento"]');
-    if (dataNasc && dataNasc.value) calcularIdadePorData(dataNasc.value);
+    if (data.data_nascimento) calcularIdadePorData(data.data_nascimento);
 }
 
 function limparCampos() {
-    const campos = [
-        'nome', 'data_nascimento', 'sexo', 'raca_cor', 'mae', 'pai',
-        'responsavel_nome', 'parentesco_responsavel', 'endereco', 'telefone',
-        'turma', 'escola', 'serie', 'turno'
-    ];
-    campos.forEach(campo => {
+    ['nome','data_nascimento','sexo','raca_cor','mae','pai','responsavel_nome',
+     'parentesco_responsavel','endereco','telefone','turma','escola','serie','turno']
+    .forEach(campo => {
         const el = document.querySelector(`[name="${campo}"]`);
-        if (el) {
-            if (el.type === 'radio') el.checked = false;
-            else el.value = '';
-        }
+        if (el) { if (el.type === 'radio') el.checked = false; else el.value = ''; }
     });
     const fotoImg = document.getElementById('foto_aluno');
     if (fotoImg) fotoImg.src = '/static/img/default.png';
@@ -166,15 +125,43 @@ function calcularIdadePorData(dataNasc) {
 // ========== INICIALIZAÇÃO ==========
 document.addEventListener('DOMContentLoaded', () => {
     aplicarMascaras();
-    initAutoPreenchimento();
-    updateStepDisplay(); // Inicializa o stepper
+    // Preenche data atual no campo de data do atendimento, se estiver vazio
+    const dataInput = document.querySelector('input[name="data_atendimento"]');
+    if (dataInput && !dataInput.value) {
+        dataInput.value = new Date().toISOString().split('T')[0];
+    }
+    if (window.MODO_IMPRESSAO) {
+        // --- MODO IMPRESSÃO ---
+        // 1. Exibe todos os passos via CSS class — sem style inline, para não sujar o DOM
+        document.body.classList.add('modo-impressao-ativo');
 
-    // Calcula idade se data já estiver preenchida (edição)
-    const dataNasc = document.querySelector('input[name="data_nascimento"]');
-    if (dataNasc && dataNasc.value) calcularIdadePorData(dataNasc.value);
-    
-    // Atualiza idade quando data for alterada manualmente
-    if (dataNasc) {
-        dataNasc.addEventListener('change', () => calcularIdadePorData(dataNasc.value));
+        // 2. Preenche campos com os dados salvos (fallback caso o Jinja2 não tenha preenchido)
+        Object.keys(window.DADOS_FORMULARIO).forEach(key => {
+            const field = document.querySelector(`[name="${key}"]`);
+            if (!field) return;
+            if (field.type === 'checkbox' || field.type === 'radio') {
+                if (field.value === window.DADOS_FORMULARIO[key]) field.checked = true;
+            } else {
+                field.value = window.DADOS_FORMULARIO[key];
+            }
+        });
+
+        // 3. Calcula idade
+        if (window.DADOS_FORMULARIO.data_nascimento) {
+            calcularIdadePorData(window.DADOS_FORMULARIO.data_nascimento);
+        }
+
+        // 4. Dispara impressão automaticamente
+        setTimeout(() => window.print(), 800);
+
+    } else {
+        // --- MODO PREENCHIMENTO NORMAL ---
+        updateStepDisplay();
+        initAutoPreenchimento();
+        const dataNasc = document.querySelector('input[name="data_nascimento"]');
+        if (dataNasc) {
+            if (dataNasc.value) calcularIdadePorData(dataNasc.value);
+            dataNasc.addEventListener('change', () => calcularIdadePorData(dataNasc.value));
+        }
     }
 });

@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/editar.css') }}">
 {% endblock %}
 
+{% block content %}
 {% set ident = aluno.identificacao_json if aluno.identificacao_json else {} %}
 {% set end = ident.get('endereco', {}) %}
 {% set socio = aluno.socioeconomico_json if aluno.socioeconomico_json else {} %}
@@ -335,9 +336,9 @@
                                 <label class="form-label small fw-bold">Residente de maior renda</label>
                                 {% set rmr = socio.get('residente_maior_renda', '') %}
                                 <select name="residente_maior_renda" class="form-select">
+                                    <option value="Aluno" {{ 'selected' if rmr=='Aluno' }}>Aluno</option>
                                     <option value="Pai" {{ 'selected' if rmr=='Pai' }}>Pai</option>
                                     <option value="Mãe" {{ 'selected' if rmr=='Mãe' }}>Mãe</option>
-                                    <option value="Aluno" {{ 'selected' if rmr=='Aluno' }}>Aluno</option>
                                     <option value="Irmão(ã)" {{ 'selected' if rmr=='Irmão(ã)' }}>Irmão(ã)</option>
                                     <option value="Avô/Avó" {{ 'selected' if rmr=='Avô/Avó' }}>Avô/Avó</option>
                                     <option value="Outro" {{ 'selected' if rmr=='Outro' }}>Outro</option>
@@ -523,11 +524,11 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/aluno_form.js') }}"></script>
-<script src="{{ url_for('static', filename='js/calcularIdade.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alunos/aluno_form.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alunos/calcularIdade.js') }}"></script>
 
-{# Configuração injetada pelo servidor #}
 <script>
+    // Configuração injetada pelo servidor
     window.alunoEditConfig = {
         alunoId: {{ aluno.id }},
         fotoPath: {{ aluno.foto_path|tojson }},

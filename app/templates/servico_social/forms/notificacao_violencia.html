@@ -3,6 +3,40 @@
 {% block styles %}
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/servico_social/forms/notificacao_violencia.css') }}">
+{# BUG 1 CORRIGIDO: estava fora de qualquer block — Jinja2 descartava o bloco inteiro #}
+{% if modo_impressao %}
+<style>
+    /* Exibe todos os passos na tela E na impressão */
+    body.modo-impressao-ativo .form-step {
+        display: block !important;
+        opacity: 1 !important;
+    }
+
+    /* Esconde navegação e elementos de UI na tela (modo visualização da ficha) */
+    body.modo-impressao-ativo .stepper-container,
+    body.modo-impressao-ativo #nextBtn,
+    body.modo-impressao-ativo #prevBtn,
+    body.modo-impressao-ativo .btn-success,
+    body.modo-impressao-ativo .no-print:not(#btnImprimirFlutuante) {
+        display: none !important;
+    }
+
+    /* Estilo de leitura: campos sem borda de input */
+    body.modo-impressao-ativo input,
+    body.modo-impressao-ativo select,
+    body.modo-impressao-ativo textarea {
+        border: none !important;
+        border-bottom: 1px solid #000 !important;
+        background: transparent !important;
+        pointer-events: none;
+    }
+
+    /* Na impressão física, esconde também o botão flutuante */
+    @media print {
+        #btnImprimirFlutuante { display: none !important; }
+    }
+</style>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -16,11 +50,23 @@
                 </button>
             </div>
         </div>
+
+        {# Botão flutuante fixo: aparece apenas no modo impressão, garante reimprimir se o usuário cancelar a janela #}
+        {% if modo_impressao %}
+        <button type="button" id="btnImprimirFlutuante" onclick="window.print()" class="no-print"
+            style="position:fixed;bottom:2rem;right:2rem;z-index:9999;
+                   background-color:#dc3545;color:#fff;border:none;
+                   border-radius:50px;padding:0.75rem 1.5rem;
+                   font-size:1rem;font-weight:600;
+                   box-shadow:0 4px 15px rgba(220,53,69,0.4);
+                   cursor:pointer;display:flex;align-items:center;gap:0.5rem;">
+            <i class="bi bi-printer-fill"></i> Imprimir Ficha
+        </button>
+        {% endif %}
         <div class="card-body">
             <form method="POST" id="multiStepForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                <!-- Stepper (apenas visual, não imprime) -->
                 <div class="stepper-container no-print px-5 mb-4">
                     <div class="step-item active" data-step="1" onclick="goToStep(1)">1</div>
                     <div class="step-item" data-step="2" onclick="goToStep(2)">2</div>
@@ -31,412 +77,227 @@
                     <div class="step-item" data-step="7" onclick="goToStep(7)">7</div>
                 </div>
 
-                <!-- PASSO 1: Vínculo e cabeçalho -->
+                <!-- STEP 1 -->
                 <div class="form-step active" id="step-1">
-                    <h5 class="mb-3">1. Vínculo e Identificação da Ocorrência</h5>
-                    <!-- Vínculo com aluno -->
-                    <div class="mb-4 p-3 bg-light rounded d-flex align-items-center gap-3">
+                    <h5 class="mb-4"><i class="bi bi-person-badge me-2"></i>1. Vínculo e Identificação</h5>
+                    <div class="mb-4 p-4 bg-light-custom rounded shadow-sm d-flex align-items-center gap-4">
                         <div class="flex-grow-1">
-                            <label class="fw-bold">Vincular a um aluno cadastrado (opcional)</label>
-                            <select name="aluno_id" class="form-select" id="aluno_select">
-                                <option value="">-- Sem vínculo --</option>
-                                {% for aluno in alunos %}
-                                <option value="{{ aluno.id }}">{{ aluno.nome }} ({{ aluno.matricula }})</option>
+                            <label class="text-danger fw-bold">Vincular a um aluno cadastrado</label>
+                            {# BUG 3 CORRIGIDO: 'alunos' não é passado por gerar_impressao — usar 'alunos or []' evita erro #}
+                            <select name="aluno_id" class="form-select form-select-lg" id="aluno_select" {% if modo_impressao %}disabled{% endif %}>
+                                <option value="">-- Clique para buscar aluno --</option>
+                                {% for a in (alunos or []) %}
+                                <option value="{{ a.id }}" {% if dados_preenchidos and dados_preenchidos.get('aluno_id')|string == a.id|string %}selected{% endif %}>
+                                    {{ a.nome }} ({{ a.matricula }})
+                                </option>
                                 {% endfor %}
                             </select>
-                            <small class="text-muted">Os dados do aluno preencherão os campos abaixo
-                                automaticamente.</small>
                         </div>
-                        <div>
-                            <img id="foto_aluno" src="{{ url_for('static', filename='img/default.png') }}"
-                                class="rounded-circle" style="width: 80px; height: 80px; object-fit: cover;">
+                        <div class="text-center">
+                            <img id="foto_aluno"
+                                src="{% if modo_impressao and aluno and aluno.foto_path %}{{ url_for('static', filename=aluno.foto_path) }}{% else %}{{ url_for('static', filename='img/default.png') }}{% endif %}"
+                                class="rounded-circle border shadow-sm"
+                                style="width: 100px; height: 100px; object-fit: cover;">
                         </div>
                     </div>
-                    <div class="row mb-4">
-                        <div class="col-md-4">
-                            <label>DATA</label>
-                            <input type="date" name="data_notificacao" class="form-control" required>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Data da Notificação</label>
+                            <input type="date" name="data_notificacao" class="form-control"
+                                value="{{ dados_preenchidos.get('data_notificacao', '') if dados_preenchidos else '' }}"
+                                {% if not modo_impressao %}required{% endif %}>
                         </div>
-                        <div class="col-md-4">
-                            <label>OCORRÊNCIA Nº</label>
-                            <input type="hidden" name="numero_ocorrencia" value="Gerado automaticamente">
-                            <p class="text-muted small">* Gerado automaticamente ao salvar.</p>
+                        <div class="col-md-6">
+                            <label>Número da Ocorrência</label>
+                            <input type="text" class="form-control bg-light"
+                                value="{{ dados_preenchidos.get('numero_ocorrencia', 'Gerado automaticamente') if dados_preenchidos else 'Gerado automaticamente' }}"
+                                readonly>
                         </div>
                     </div>
                 </div>
 
-                <!-- PASSO 2: Identificação da Criança/Adolescente (parte 1) -->
-                <div class="form-step" id="step-2">
-                    <h5 class="mb-3">2. Identificação da Criança/Adolescente (Pessoal)</h5>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
+                <!-- STEP 2 -->
+                <div class="form-step" id="step-2" style="display:none;">
+                    <h5 class="mb-3">2. Identificação da Criança/Adolescente</h5>
+                    <div class="row g-3">
+                        <div class="col-md-8">
                             <label>Nome completo</label>
-                            <input type="text" name="nome" class="form-control" required>
+                            <input type="text" name="nome" class="form-control"
+                                value="{{ dados_preenchidos.get('nome', '') if dados_preenchidos else '' }}">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label>Turma</label>
-                            <input type="text" name="turma" class="form-control">
+                            <input type="text" name="turma" class="form-control"
+                                value="{{ dados_preenchidos.get('turma', '') if dados_preenchidos else '' }}">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label>Data Nasc.</label>
-                            <input type="date" name="data_nascimento" class="form-control">
+                            <input type="date" name="data_nascimento" class="form-control"
+                                value="{{ dados_preenchidos.get('data_nascimento', '') if dados_preenchidos else '' }}">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label>Idade</label>
                             <input type="text" id="idade_aluno" class="form-control bg-light" readonly>
                         </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label>Sexo</label>
                             <select name="sexo" class="form-select">
                                 <option value="">Selecione</option>
-                                <option>Feminino</option>
-                                <option>Masculino</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label>Raça/cor/etnia</label>
-                            <select name="raca_cor" class="form-select">
-                                <option value="">Selecione</option>
-                                <option>Preta</option>
-                                <option>Parda</option>
-                                <option>Branca</option>
-                                <option>Amarela</option>
-                                <option>Indígena</option>
-                                <option>outra</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label>Estuda?</label>
-                            <select name="estuda" class="form-select">
-                                <option>Sim</option>
-                                <option>Não</option>
+                                <option value="Feminino" {% if dados_preenchidos and dados_preenchidos.get('sexo') == 'Feminino' %}selected{% endif %}>Feminino</option>
+                                <option value="Masculino" {% if dados_preenchidos and dados_preenchidos.get('sexo') == 'Masculino' %}selected{% endif %}>Masculino</option>
                             </select>
                         </div>
                     </div>
                 </div>
 
-                <!-- PASSO 3: Filiação, responsável e endereço -->
-                <div class="form-step" id="step-3">
-                    <h5 class="mb-3">3. Filiação, Responsável e Endereço</h5>
-                    <div class="row mb-3">
+                <!-- STEP 3 -->
+                <div class="form-step" id="step-3" style="display:none;">
+                    <h5 class="mb-3">3. Filiação e Convívio</h5>
+                    <div class="row g-3 mb-3">
                         <div class="col-md-6">
-                            <label>Nome da mãe</label>
-                            <input type="text" name="mae" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <label>Nome do pai</label>
-                            <input type="text" name="pai" class="form-control">
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label>Nome do responsável</label>
-                            <input type="text" name="responsavel_nome" class="form-control">
-                        </div>
-                        <div class="col-md-2">
-                            <label>Parentesco</label>
-                            <input type="text" name="parentesco_responsavel" class="form-control">
+                            <label>Mãe</label>
+                            <input type="text" name="mae" class="form-control"
+                                value="{{ dados_preenchidos.get('mae', '') if dados_preenchidos else '' }}">
                         </div>
                         <div class="col-md-6">
-                            <label>Endereço de residência</label>
-                            <input type="text" name="endereco" class="form-control">
+                            <label>Pai</label>
+                            <input type="text" name="pai" class="form-control"
+                                value="{{ dados_preenchidos.get('pai', '') if dados_preenchidos else '' }}">
                         </div>
                     </div>
-                    <div class="row mb-3">
-                        <div class="col-md-3">
-                            <label>Telefone contato</label>
-                            <input type="text" name="telefone" class="form-control">
-                        </div>
-                        <div class="col-md-9">
-                            <label>Com quem vive</label>
-                            <div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Pai"> Pai</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Mãe"> Mãe</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Padrasto"> Padrasto</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Madrasta"> Madrasta</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Tio"> Tio</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Tia"> Tia</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Avô"> Avô</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Avó"> Avó</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Irmão"> Irmão(ã/ãs/aos)</div>
-                                <div class="form-check form-check-inline"><input class="form-check-input"
-                                        type="checkbox" name="convive" value="Outros"> Outros: <input type="text"
-                                        name="convive_outros" size="15"></div>
-                            </div>
-                        </div>
+                    <div class="mb-3">
+                        <label>Com quem a criança vive atualmente?</label>
+                        <select name="convive" class="form-select">
+                            <option value="">Selecione...</option>
+                            {% for opcao in ['Pai e Mãe', 'Apenas Mãe', 'Apenas Pai', 'Mãe e Padrasto', 'Pai e Madrasta', 'Avós', 'Outros'] %}
+                            <option value="{{ opcao }}" {% if dados_preenchidos and dados_preenchidos.get('convive') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
+                    <input type="text" name="convive_outros" class="form-control mt-2"
+                        placeholder="Se outros, especifique aqui"
+                        value="{{ dados_preenchidos.get('convive_outros', '') if dados_preenchidos else '' }}">
                 </div>
 
-                <!-- PASSO 4: Escola, deficiência e detalhes do incidente -->
-                <div class="form-step" id="step-4">
-                    <h5 class="mb-3">4. Escola, Deficiência e Detalhes do Incidente</h5>
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label>Escola</label>
-                            <input type="text" name="escola" class="form-control">
-                        </div>
-                        <div class="col-md-2">
-                            <label>Série</label>
-                            <input type="text" name="serie" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <label>Turno</label>
-                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
-                                    name="turno" value="M"> M</div>
-                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
-                                    name="turno" value="T"> T</div>
-                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
-                                    name="turno" value="N"> N</div>
-                        </div>
-                    </div>
+                <!-- STEP 4 -->
+                <div class="form-step" id="step-4" style="display:none;">
+                    <h5 class="mb-3">4. Deficiência e Detalhes do Incidente</h5>
                     <div class="mb-3">
-                        <label>Possui algum tipo de deficiência ou transtorno</label><br>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="física"> física</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="mental"> mental</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="visual"> visual</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="auditiva"> auditiva</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="intelectual"> intelectual</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="nao_observada"> não observada</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="deficiencia" value="outros"> outros: <input type="text" name="deficiencia_outros"
-                                size="20"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label>O estado físico e emocional da criança/adolescente</label><br>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="estado_fisico" value="Corte"> Corte</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="estado_fisico" value="Mancha"> Mancha</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="estado_fisico" value="Mudança de humor"> Mudança de humor</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="estado_fisico" value="Mudança de comportamento"> Mudança de comportamento</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="estado_fisico" value="Outro"> Outro: <input type="text" name="estado_outro"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label>Você falou diretamente com a criança/adolescente?</label>
-                        <select name="falou_crianca" class="form-select w-25 d-inline-block mx-2">
-                            <option>Sim</option>
-                            <option>Não</option>
-                        </select>
-                        <span class="text-muted">(Se sim, anote nas observações)</span>
-                    </div>
-                    <div class="mb-3">
-                        <label>A criança/adolescente falou ou relatou sobre o abuso?</label>
-                        <select name="relatou_abuso" class="form-select w-25 d-inline-block mx-2">
-                            <option>Sim</option>
-                            <option>Não</option>
+                        <label>Possui deficiência ou transtorno?</label>
+                        <select name="deficiencia" class="form-select">
+                            {% for val, label in [('nao_observada','Não observada'),('física','Física'),('mental','Mental'),('visual','Visual'),('auditiva','Auditiva'),('intelectual','Intelectual'),('outros','Outros')] %}
+                            <option value="{{ val }}" {% if dados_preenchidos and dados_preenchidos.get('deficiencia') == val %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label>Se negativo, o que o(a) levou a suspeitar?</label>
-                        <textarea name="suspeita" rows="2" class="form-control"></textarea>
+                        <label>Estado físico/emocional observado:</label>
+                        <select name="estado_fisico" class="form-select">
+                            <option value="">Selecione...</option>
+                            {% for opcao in ['Corte / Lesão Física', 'Manchas / Hematomas', 'Mudança de humor repentina', 'Mudança de comportamento', 'Outro'] %}
+                            <option value="{{ opcao }}" {% if dados_preenchidos and dados_preenchidos.get('estado_fisico') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="mb-3">
-                        <label>Há testemunhas?</label>
-                        <select name="testemunhas" class="form-select w-25 d-inline-block mx-2">
-                            <option>Sim</option>
-                            <option>Não</option>
+                        <label>Relato de abuso pela criança?</label>
+                        <select name="relatou_abuso" class="form-select w-25">
+                            {% for opcao in ['Não', 'Sim'] %}
+                            <option {% if dados_preenchidos and dados_preenchidos.get('relatou_abuso') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                 </div>
 
-                <!-- PASSO 5: Caracterização da violência e autolesão -->
-                <div class="form-step" id="step-5">
-                    <h5 class="mb-3">5. Caracterização da Violência / Autolesão</h5>
-                    <div class="row mb-2">
-                        <div class="col-md-4">Suposto agressor(es): <input type="text" name="agressor_nome"
-                                class="form-control"></div>
-                        <div class="col-md-2">Sexo: <select name="agressor_sexo" class="form-select">
-                                <option>F</option>
-                                <option>M</option>
-                            </select></div>
-                        <div class="col-md-3">Idade: <input type="text" name="agressor_idade" class="form-control">
+                <!-- STEP 5 — BUG 2 CORRIGIDO: campos sem value agora lêem dados_preenchidos -->
+                <div class="form-step" id="step-5" style="display:none;">
+                    <h5 class="mb-3">5. Caracterização da Violência</h5>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label>Suposto Agressor</label>
+                            <input type="text" name="agressor_nome" class="form-control"
+                                value="{{ dados_preenchidos.get('agressor_nome', '') if dados_preenchidos else '' }}">
                         </div>
-                        <div class="col-md-3">Grau de relacionamento: <input type="text" name="relacionamento_vitima"
-                                class="form-control"></div>
-                    </div>
-                    <div class="mb-2">
-                        <label>Relacionamento com o Projeto Grael ou parceiros</label>
-                        <input type="text" name="relacionamento_projeto" class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label>Tipo(s) de violência</label><br>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Negligência"> Negligência</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Física"> Física</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Psicológica/moral"> Psicológica/moral</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Tortura"> Tortura</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Sexual"> Sexual</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Trabalho infantil"> Trabalho infantil</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="tipo_violencia" value="Outro"> Outro: <input type="text"
-                                name="tipo_violencia_outro"></div>
+                        <div class="col-md-6">
+                            <label>Tipo de Violência Predominante</label>
+                            <select name="tipo_violencia" class="form-select">
+                                <option value="">Selecione...</option>
+                                {% for opcao in ['Negligência', 'Física', 'Psicológica/Moral', 'Tortura', 'Sexual', 'Trabalho Infantil'] %}
+                                <option {% if dados_preenchidos and dados_preenchidos.get('tipo_violencia') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                     <div class="mb-3">
-                        <label>Frequência da(s) agressão(ões)</label>
-                        <select name="frequencia" class="form-select w-50">
-                            <option>1 única vez</option>
-                            <option>2 a 5 vezes</option>
-                            <option>6 a 9 vezes</option>
-                            <option>10 ou mais vezes</option>
-                            <option>ignorado</option>
+                        <label>Frequência</label>
+                        <select name="frequencia" class="form-select">
+                            {% for opcao in ['1 única vez', 'Recorrente (2 a 5 vezes)', 'Crônica (mais de 5 vezes)', 'Ignorado'] %}
+                            <option {% if dados_preenchidos and dados_preenchidos.get('frequencia') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                            {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label>Local(is)</label><br>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="local" value="Residência"> Residência</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="local" value="Habitação coletiva"> Habitação coletiva</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="local" value="Escola"> Escola</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="local" value="Projeto Grael"> Projeto Grael</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="local" value="Outro"> Outro: <input type="text" name="local_outro"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label>Instrumento ou meio utilizado (autolesão)</label><br>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="arma de fogo"> arma de fogo</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="arma branca"> arma branca</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="enforcamento ou sufocação"> enforcamento/sufocação</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="afogamento"> afogamento</div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="intoxicação"> intoxicação (substância: <input type="text"
-                                name="substancia" size="10"></div>
-                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
-                                name="autolesao" value="outros"> outros: <input type="text" name="autolesao_outros"
-                                size="15"></div>
-                    </div>
                 </div>
 
-                <!-- PASSO 6: Atendimento, ações tomadas e responsável pelo preenchimento -->
-                <div class="form-step" id="step-6">
-                    <h5 class="mb-3">6. Atendimento, Ações e Responsável</h5>
-                    <div class="mb-2"><label>Atendimento Emergencial - Qual?</label> <input type="text"
-                            name="emergencial_qual" class="form-control"></div>
-                    <div class="mb-2"><label>Quando?</label> <input type="text" name="emergencial_quando"
-                            class="form-control"></div>
-                    <div class="mb-2"><label>Onde?</label> <input type="text" name="emergencial_onde"
-                            class="form-control"></div>
-                    <div class="mb-3"><label>Por quem?</label> <input type="text" name="emergencial_por_quem"
-                            class="form-control"></div>
+                <!-- STEP 6 — BUG 2 CORRIGIDO -->
+                <div class="form-step" id="step-6" style="display:none;">
+                    <h5 class="mb-3">6. Atendimento e Ações</h5>
                     <div class="mb-3">
-                        <label>Ações Tomadas</label>
-                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
-                                value="Conversa com os responsáveis"> Conversa com os responsáveis</div>
-                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
-                                value="Conversa com Assistente Social do Instituto"> Conversa com Assistente Social do
-                            Instituto</div>
-                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
-                                value="Boletim de Ocorrência"> Boletim de Ocorrência</div>
+                        <label>Principal Ação Tomada</label>
+                        <select name="acoes" class="form-select">
+                            <option value="">Selecione...</option>
+                            {% for opcao in ['Conversa com os responsáveis', 'Encaminhamento Assistente Social', 'Boletim de Ocorrência', 'Conselho Tutelar imediato'] %}
+                            <option {% if dados_preenchidos and dados_preenchidos.get('acoes') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
-                    <div class="row mb-2">
-                        <div class="col-md-6"><label>Nome do responsável pelo preenchimento</label> <input type="text"
-                                name="responsavel_nome_preenchimento" class="form-control"></div>
-                        <div class="col-md-6"><label>Cargo</label> <input type="text" name="responsavel_cargo"
-                                class="form-control"></div>
-                    </div>
-                    <div class="row mb-2">
-                        <div class="col-md-4"><label>Data da Notificação</label> <input type="date"
-                                name="data_notificacao_preenchimento" class="form-control"></div>
-                        <div class="col-md-4"><label>Horário</label> <input type="time" name="horario_notificacao"
-                                class="form-control"></div>
-                        <div class="col-md-4"><label>Local</label> <input type="text" name="local_notificacao"
-                                class="form-control"></div>
-                    </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" name="declaracao_veracidade" value="1">
-                        <label class="form-check-label">Declaro que as informações são verdadeiras.</label>
-                    </div>
-                </div>
-
-                <!-- PASSO 7: Observações, encaminhamentos e envio -->
-                <div class="form-step" id="step-7">
-                    <h5 class="mb-3">7. Observações, Encaminhamentos e Finalização</h5>
-                    <div class="mb-3">
-                        <label>Observações e outras informações relevantes</label>
-                        <textarea name="observacoes" rows="6" class="form-control"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label>Encaminhamentos</label>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Gerência do Projeto Grael"> Gerência do Projeto
-                                    Grael</div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Equipe de Coordenação"> Equipe de Coordenação
-                                </div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Familiares e/ou responsáveis"> Familiares e/ou
-                                    responsáveis</div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Conselho Tutelar"> Conselho Tutelar</div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Vara da Infância e Juventude"> Vara da Infância
-                                </div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="CRAS/CREAS"> CRAS/CREAS</div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        name="encaminhamentos" value="Outros serviços"> Outros: <input type="text"
-                                        name="outros_servicos" class="d-inline-block w-50"></div>
-                            </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Responsável Preenchimento</label>
+                            <input type="text" name="responsavel_nome_preenchimento" class="form-control"
+                                value="{{ dados_preenchidos.get('responsavel_nome_preenchimento', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Cargo</label>
+                            <input type="text" name="responsavel_cargo" class="form-control"
+                                value="{{ dados_preenchidos.get('responsavel_cargo', '') if dados_preenchidos else '' }}">
                         </div>
                     </div>
-                    <div class="alert alert-info small">
-                        <i class="bi bi-info-circle"></i> *Confidencial – Não compartilhar com pessoas não autorizados.<br>
-                        *Suspeito é inocente até prova contrária.<br>
-                        *Não informar ao suspeito sobre este formulário.
-                    </div>
-                    <div class="text-end mt-4">
-                        <button type="submit" class="btn btn-primary px-5 py-2">Salvar Respostas</button>
-                        <a href="{{ url_for('servico_social.listar_entrevistas') }}"
-                            class="btn btn-secondary">Cancelar</a>
+                </div>
+
+                <!-- STEP 7 — BUG 2 CORRIGIDO -->
+                <div class="form-step" id="step-7" style="display:none;">
+                    <h5 class="mb-3">7. Observações e Encaminhamentos</h5>
+                    <textarea name="observacoes" rows="5" class="form-control mb-3"
+                        placeholder="Detalhes adicionais...">{{ dados_preenchidos.get('observacoes', '') if dados_preenchidos else '' }}</textarea>
+
+                    <label>Encaminhamento Externo</label>
+                    <select name="encaminhamentos" class="form-select mb-4">
+                        <option value="">Nenhum</option>
+                        {% for opcao in ['Conselho Tutelar', 'CRAS/CREAS', 'Vara da Infância', 'MP/Delegacia'] %}
+                        <option {% if dados_preenchidos and dados_preenchidos.get('encaminhamentos') == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-success btn-lg px-5">Finalizar e Salvar</button>
                     </div>
                 </div>
 
-                <!-- Botões de navegação (não imprimem) -->
-                <div class="d-flex justify-content-between mt-4 no-print">
-                    <button type="button" class="btn btn-secondary" id="prevBtn" onclick="changeStep(-1)"
+                <div class="d-flex justify-content-between mt-4 no-print border-top pt-3">
+                    <button type="button" class="btn btn-outline-secondary" id="prevBtn" onclick="changeStep(-1)"
                         style="display:none;">Anterior</button>
-                    <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Próximo</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Próximo
+                        Passo</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
+<script>
+    window.MODO_IMPRESSAO = {{ 'true' if modo_impressao else 'false' }};
+    window.DADOS_FORMULARIO = {{ dados_preenchidos | tojson | safe if dados_preenchidos else '{}' }};
+</script>
 <script src="{{ url_for('static', filename='js/servico_social/notificacao_violencia.js') }}"></script>
 
 {% endblock %}

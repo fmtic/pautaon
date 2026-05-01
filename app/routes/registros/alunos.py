@@ -133,7 +133,7 @@ def novo_aluno():
     if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
     if request.method == "GET":
-        return render_template("aluno_novo.html")
+        return render_template("alunos/novo.html")
 
     nome = request.form.get("nome")
     if not nome:
@@ -425,7 +425,7 @@ def desenturmar_alunos(id):
                 inscricao.ativo = False
                 db.session.commit()
                 flash(
-                    f"Aluno {aluno.nome} inativado na turma {turma.nome} devido à frequência registrada.",
+                    f"Aluno {aluno.nome} inativado na turma {turma.nome}.",
                     "info",
                 )
             else:

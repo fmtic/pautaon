@@ -5,7 +5,7 @@
 document.addEventListener('DOMContentLoaded', function () {
 
     // ==================== MÁSCARAS ====================
-    
+
     // Máscara CPF
     document.querySelectorAll('.mask-cpf').forEach(input => {
         input.addEventListener('input', function (e) {
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function () {
         input.addEventListener('input', function (e) {
             let v = e.target.value.replace(/\D/g, '');
             if (v.length > 11) v = v.substring(0, 11);
-            
+
             if (v.length > 10) {
                 v = v.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
             } else if (v.length > 5) {
@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const ufSelect = document.getElementById('natural_uf');
     const cidadeSelect = document.getElementById('natural_cidade');
 
+    // Função para carregar UFs
     async function carregarUFs() {
         if (!ufSelect) return;
         try {
@@ -134,11 +135,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 const opt = new Option(uf.nome, uf.sigla);
                 ufSelect.appendChild(opt);
             });
+
+            // Após carregar as UFs, aplica o valor salvo (se existir)
+            const ufSelecionada = ufSelect.getAttribute('data-selected');
+            if (ufSelecionada) {
+                ufSelect.value = ufSelecionada;
+                // Dispara o evento 'change' para carregar as cidades correspondentes
+                ufSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         } catch (e) {
             console.error('Erro ao carregar UFs:', e);
         }
     }
 
+    // Função para carregar cidades com base na UF
     async function carregarCidades(ufSigla) {
         if (!cidadeSelect || !ufSigla) return;
         cidadeSelect.innerHTML = '<option value="">Carregando...</option>';
@@ -149,13 +159,22 @@ document.addEventListener('DOMContentLoaded', function () {
             cidades.forEach(c => {
                 cidadeSelect.appendChild(new Option(c.nome, c.nome));
             });
+
+            // Após carregar as cidades, aplica o valor salvo (se existir)
+            const cidadeSalva = cidadeSelect.getAttribute('data-selected');
+            if (cidadeSalva && cidadeSalva !== "") {
+                cidadeSelect.value = cidadeSalva;
+            }
         } catch (e) {
             console.error('Erro ao carregar cidades:', e);
         }
     }
 
+    // Inicialização
     if (ufSelect) {
+        // Carrega as UFs (já fará a seleção e carregará cidades se houver data-selected)
         carregarUFs();
+        // Adiciona o listener para quando o usuário mudar manualmente
         ufSelect.addEventListener('change', e => carregarCidades(e.target.value));
     }
 
@@ -266,13 +285,29 @@ window.abrirWebcam = async function () {
     const video = document.getElementById('webcamVideo');
     const modalEl = document.getElementById('webcamModal');
 
-    if (!modalInstance && typeof bootstrap !== 'undefined') {
+    if (!video || !modalEl) {
+        alert("A janela da câmera não está disponível nesta página.");
+        return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Este navegador não permite acessar a câmera.");
+        return;
+    }
+
+    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+        alert("Não foi possível abrir a janela da câmera.");
+        return;
+    }
+
+    if (!modalInstance) {
         modalInstance = new bootstrap.Modal(modalEl, { backdrop: 'static' });
     }
 
     try {
-        webcamStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: 640, height: 480, facingMode: "user" } 
+        window.fecharWebcam();
+        webcamStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480, facingMode: "user" }
         });
         video.srcObject = webcamStream;
         modalInstance.show();
@@ -283,13 +318,31 @@ window.abrirWebcam = async function () {
 };
 
 window.fecharWebcam = function () {
-    if (webcamStream) webcamStream.getTracks().forEach(track => track.stop());
+    const video = document.getElementById('webcamVideo');
+
+    if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+        webcamStream = null;
+    }
+
+    if (video) video.srcObject = null;
     if (modalInstance) modalInstance.hide();
 };
 
 window.capturarFoto = function () {
     const video = document.getElementById('webcamVideo');
     const canvas = document.getElementById('webcamCanvas');
+
+    if (!video || !canvas) {
+        alert("Não foi possível localizar a câmera para capturar a foto.");
+        return;
+    }
+
+    if (!webcamStream || video.readyState < 2) {
+        alert("A câmera ainda não está pronta para capturar a foto.");
+        return;
+    }
+
     const ctx = canvas.getContext('2d');
 
     ctx.save();
@@ -298,6 +351,11 @@ window.capturarFoto = function () {
     ctx.restore();
 
     canvas.toBlob(blob => {
+        if (!blob) {
+            alert("Não foi possível gerar a foto da webcam.");
+            return;
+        }
+
         const file = new File([blob], "foto_webcam.jpg", { type: "image/jpeg" });
         const dt = new DataTransfer();
         dt.items.add(file);
@@ -306,6 +364,9 @@ window.capturarFoto = function () {
         if (input) {
             input.files = dt.files;
             input.dispatchEvent(new Event('change'));
+            if (typeof window.previewImage === 'function') {
+                window.previewImage(input);
+            }
         }
         window.fecharWebcam();
     }, 'image/jpeg', 0.92);
@@ -335,49 +396,49 @@ window.buscarEndereco = function (cep) {
 };
 
 let currentStep = 1;
-  const totalSteps = 5;
+const totalSteps = 5;
 
-  function updateStepper() {
+function updateStepper() {
     for (let i = 1; i <= totalSteps; i++) {
-      const indicator = document.getElementById(`step-indicator-${i}`);
-      if (i < currentStep) {
-        indicator.classList.remove("active");
-        indicator.classList.add("completed");
-        indicator.innerHTML = '<i class="bi bi-check"></i>';
-      } else if (i === currentStep) {
-        indicator.classList.remove("completed");
-        indicator.classList.add("active");
-        indicator.innerHTML = i;
-      } else {
-        indicator.classList.remove("active", "completed");
-        indicator.innerHTML = i;
-      }
+        const indicator = document.getElementById(`step-indicator-${i}`);
+        if (i < currentStep) {
+            indicator.classList.remove("active");
+            indicator.classList.add("completed");
+            indicator.innerHTML = '<i class="bi bi-check"></i>';
+        } else if (i === currentStep) {
+            indicator.classList.remove("completed");
+            indicator.classList.add("active");
+            indicator.innerHTML = i;
+        } else {
+            indicator.classList.remove("active", "completed");
+            indicator.innerHTML = i;
+        }
     }
 
     // Mostrar/Ocultar botões
     document
-      .getElementById("prevBtn")
-      .classList.toggle("d-none", currentStep === 1);
+        .getElementById("prevBtn")
+        .classList.toggle("d-none", currentStep === 1);
 
     if (currentStep === totalSteps) {
-      document.getElementById("nextBtn").classList.add("d-none");
-      document.getElementById("submitBtn").classList.remove("d-none");
+        document.getElementById("nextBtn").classList.add("d-none");
+        document.getElementById("submitBtn").classList.remove("d-none");
     } else {
-      document.getElementById("nextBtn").classList.remove("d-none");
-      document.getElementById("submitBtn").classList.add("d-none");
+        document.getElementById("nextBtn").classList.remove("d-none");
+        document.getElementById("submitBtn").classList.add("d-none");
     }
-  }
+}
 
-  function goToStep(n) {
+function goToStep(n) {
     if (n === currentStep) return;
     document.getElementById(`step-${currentStep}`).classList.remove("active");
     currentStep = n;
     document.getElementById(`step-${currentStep}`).classList.add("active");
     updateStepper();
     window.scrollTo(0, 0);
-  }
+}
 
-  function nextStep(n) {
+function nextStep(n) {
     // Validação removida a pedido do usuário
     // if (n === 1 && !validateStep()) return;
 
@@ -386,56 +447,56 @@ let currentStep = 1;
     document.getElementById(`step-${currentStep}`).classList.add("active");
     updateStepper();
     window.scrollTo(0, 0);
-  }
+}
 
-  function validateStep() {
+function validateStep() {
     const activeStep = document.getElementById(`step-${currentStep}`);
     const inputs = activeStep.querySelectorAll(
-      "input[required], select[required]",
+        "input[required], select[required]",
     );
     let valid = true;
     inputs.forEach((input) => {
-      if (!input.value) {
-        input.classList.add("is-invalid");
-        valid = false;
-      } else {
-        input.classList.remove("is-invalid");
-      }
+        if (!input.value) {
+            input.classList.add("is-invalid");
+            valid = false;
+        } else {
+            input.classList.remove("is-invalid");
+        }
     });
     return valid;
-  }
+}
 
-  function previewImage(input) {
+function previewImage(input) {
     const preview = document.getElementById("img-preview");
     const icon = document.getElementById("placeholder-icon");
     if (input.files && input.files[0]) {
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        preview.src = e.target.result;
-        preview.classList.remove("d-none");
-        icon.classList.add("d-none");
-      };
-      reader.readAsDataURL(input.files[0]);
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            preview.src = e.target.result;
+            preview.classList.remove("d-none");
+            icon.classList.add("d-none");
+        };
+        reader.readAsDataURL(input.files[0]);
     }
-  }
+}
 
-  function toggleLaudoUpload(checkbox) {
+function toggleLaudoUpload(checkbox) {
     const container = document.getElementById("laudo_upload_container");
     container.classList.toggle("d-none", !checkbox.checked);
-  }
+}
 
-  function updateFileName(id, input) {
+function updateFileName(id, input) {
     const label = document.getElementById(`name_${id}`);
     if (input.files[0]) {
-      const file = input.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Arquivo muito grande! Máximo 2MB.");
-        input.value = "";
-        label.innerText = "Clique para selecionar";
-        return;
-      }
-      label.innerText = file.name;
-      label.classList.remove("text-muted");
-      label.classList.add("text-primary", "fw-bold");
+        const file = input.files[0];
+        if (file.size > 2 * 1024 * 1024) {
+            alert("Arquivo muito grande! Máximo 2MB.");
+            input.value = "";
+            label.innerText = "Clique para selecionar";
+            return;
+        }
+        label.innerText = file.name;
+        label.classList.remove("text-muted");
+        label.classList.add("text-primary", "fw-bold");
     }
-  }
+}

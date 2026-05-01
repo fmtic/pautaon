@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/servico_social/forms/notificacao_violencia.css') }}">
+<style>
+    /* Customização para o tema VERDE */
+    .step-item.active { border-color: #198754 !important; background-color: #198754 !important; }
+    .form-step h5 { color: #198754 !important; border-bottom: 2px solid #e9f5ee !important; }
+    .text-success-custom { color: #198754 !important; }
+    .form-control:focus, .form-select:focus { border-color: #198754; box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.1); }
+    
+    {% if modo_impressao %}
+    .form-step { display: block !important; opacity: 1 !important; }
+    .no-print, .stepper-container, #nextBtn, #prevBtn, .btn-success { display: none !important; }
+    input, select, textarea { border: none !important; border-bottom: 1px solid #000 !important; background: transparent !important; padding: 0 !important; }
+    .card-header { background-color: #198754 !important; color: white !important; }
+    {% endif %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="card shadow">
+        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">{{ titulo }}</h3>
+            <div class="btn-group no-print">
+                <button type="button" class="btn btn-light btn-sm" onclick="window.print();">
+                    <i class="bi bi-printer"></i> Imprimir
+                </button>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <form method="POST" id="multiStepForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="stepper-container no-print px-5 mb-4">
+                    {% for i in range(1, 8) %}
+                    <div class="step-item {{ 'active' if i == 1 }}" data-step="{{ i }}" onclick="goToStep({{ i }})">{{ i }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="form-step active" id="step-1">
+                    <h5 class="mb-4"><i class="bi bi-person-lines-fill me-2"></i>1. Identificação do Usuário</h5>
+                    
+                    <div class="mb-4 p-4 bg-light rounded d-flex align-items-center gap-4">
+                        <div class="flex-grow-1">
+                            <label class="text-success fw-bold">Vincular a um aluno (opcional)</label>
+                            <select name="aluno_id" class="form-select" id="aluno_select">
+                                <option value="">-- Selecionar Aluno --</option>
+                                {% for a in alunos %}
+                                <option value="{{ a.id }}" {% if dados_preenchidos and dados_preenchidos.get('aluno_id')|string == a.id|string %}selected{% endif %}>
+                                    {{ a.nome }} ({{ a.matricula }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <img id="foto_aluno" src="{{ url_for('static', filename='img/default.png') }}" class="rounded-circle border" style="width: 80px; height: 80px; object-fit: cover;">
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label>Nome Completo</label>
+                            <input type="text" name="nome" class="form-control" value="{{ dados_preenchidos.get('nome', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label>Sexo</label>
+                            <select name="sexo" class="form-select">
+                                <option value="">Selecione</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('sexo') == 'Feminino' %}selected{% endif %}>Feminino</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('sexo') == 'Masculino' %}selected{% endif %}>Masculino</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label>Data de Nascimento</label>
+                            <input type="date" name="data_nascimento" class="form-control" value="{{ dados_preenchidos.get('data_nascimento', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Idade</label>
+                            <input type="text" id="idade_aluno" class="form-control bg-light" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Naturalidade</label>
+                            <input type="text" name="naturalidade" class="form-control" value="{{ dados_preenchidos.get('naturalidade', '') if dados_preenchidos else '' }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-2" style="display:none;">
+                    <h5 class="mb-4">2. Endereço e Filiação</h5>
+                    <div class="row g-3">
+                        <div class="col-md-9">
+                            <label>Endereço Residencial</label>
+                            <input type="text" name="endereco" class="form-control" value="{{ dados_preenchidos.get('endereco', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Tempo no endereço</label>
+                            <input type="text" name="tempo_residencia" class="form-control" value="{{ dados_preenchidos.get('tempo_residencia', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Nome da Mãe</label>
+                            <input type="text" name="mae" class="form-control" value="{{ dados_preenchidos.get('mae', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Nome do Pai</label>
+                            <input type="text" name="pai" class="form-control" value="{{ dados_preenchidos.get('pai', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label>Estado Civil</label>
+                            <input type="text" name="estado_civil" class="form-control" value="{{ dados_preenchidos.get('estado_civil', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label>Possui Documentação?</label>
+                            <select name="possui_documentacao" class="form-select">
+                                <option {% if dados_preenchidos and dados_preenchidos.get('possui_documentacao') == 'Sim' %}selected{% endif %}>Sim</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('possui_documentacao') == 'Não' %}selected{% endif %}>Não</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-3" style="display:none;">
+                    <h5 class="mb-4">3. Composição Familiar (Residentes na mesma casa)</h5>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm align-middle">
+                            <thead class="bg-light">
+                                <tr class="text-center">
+                                    <th>Nome</th>
+                                    <th style="width:80px;">Idade</th>
+                                    <th>Escolaridade</th>
+                                    <th>Ocupação</th>
+                                    <th>Renda (R$)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for i in range(1, 6) %}
+                                <tr>
+                                    <td><input type="text" name="fam_nome_{{i}}" class="form-control form-control-sm border-0" value="{{ dados_preenchidos.get('fam_nome_'~i, '') if dados_preenchidos else '' }}"></td>
+                                    <td><input type="text" name="fam_idade_{{i}}" class="form-control form-control-sm border-0" value="{{ dados_preenchidos.get('fam_idade_'~i, '') if dados_preenchidos else '' }}"></td>
+                                    <td><input type="text" name="fam_esc_{{i}}" class="form-control form-control-sm border-0" value="{{ dados_preenchidos.get('fam_esc_'~i, '') if dados_preenchidos else '' }}"></td>
+                                    <td><input type="text" name="fam_ocu_{{i}}" class="form-control form-control-sm border-0" value="{{ dados_preenchidos.get('fam_ocu_'~i, '') if dados_preenchidos else '' }}"></td>
+                                    <td><input type="text" name="fam_renda_{{i}}" class="form-control form-control-sm border-0" value="{{ dados_preenchidos.get('fam_renda_'~i, '') if dados_preenchidos else '' }}"></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-4" style="display:none;">
+                    <h5 class="mb-4">4. Situação de Trabalho e Benefícios</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Situação de Trabalho</label>
+                            <select name="situacao_trabalho" class="form-select">
+                                <option value="">Selecione...</option>
+                                {% for opt in ['CLT', 'Contrato', 'Autônomo', 'Desempregado', 'Outros'] %}
+                                <option {% if dados_preenchidos and dados_preenchidos.get('situacao_trabalho') == opt %}selected{% endif %}>{{ opt }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Recebe Benefício Assistencial?</label>
+                            <input type="text" name="quais_beneficios" class="form-control" placeholder="Quais?" value="{{ dados_preenchidos.get('quais_beneficios', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="d-block mb-2">Programas Sociais (Valores R$)</label>
+                            <div class="row">
+                                <div class="col-md-3"> Bolsa Família: <input type="text" name="v_bolsa_familia" class="form-control" value="{{ dados_preenchidos.get('v_bolsa_familia', '') if dados_preenchidos else '' }}"></div>
+                                <div class="col-md-3"> PETI: <input type="text" name="v_peti" class="form-control" value="{{ dados_preenchidos.get('v_peti', '') if dados_preenchidos else '' }}"></div>
+                                <div class="col-md-3"> BPC: <input type="text" name="v_bpc" class="form-control" value="{{ dados_preenchidos.get('v_bpc', '') if dados_preenchidos else '' }}"></div>
+                                <div class="col-md-3"> Outros: <input type="text" name="v_outros" class="form-control" value="{{ dados_preenchidos.get('v_outros', '') if dados_preenchidos else '' }}"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-5" style="display:none;">
+                    <h5 class="mb-4">5. Despesas e Situação Habitacional</h5>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3"> Luz: <input type="text" name="d_luz" class="form-control" value="{{ dados_preenchidos.get('d_luz', '') if dados_preenchidos else '' }}"></div>
+                        <div class="col-md-3"> Água: <input type="text" name="d_agua" class="form-control" value="{{ dados_preenchidos.get('d_agua', '') if dados_preenchidos else '' }}"></div>
+                        <div class="col-md-3"> Aluguel: <input type="text" name="d_aluguel" class="form-control" value="{{ dados_preenchidos.get('d_aluguel', '') if dados_preenchidos else '' }}"></div>
+                        <div class="col-md-3"> Alimentação: <input type="text" name="d_alimento" class="form-control" value="{{ dados_preenchidos.get('d_alimento', '') if dados_preenchidos else '' }}"></div>
+                    </div>
+                    <hr>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Tipo de Habitação</label>
+                            <select name="tipo_casa" class="form-select">
+                                <option {% if dados_preenchidos and dados_preenchidos.get('tipo_casa') == 'Alvenaria' %}selected{% endif %}>Alvenaria</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('tipo_casa') == 'Madeira' %}selected{% endif %}>Madeira</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('tipo_casa') == 'Misto' %}selected{% endif %}>Misto</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Condição</label>
+                            <select name="condicao_casa" class="form-select">
+                                <option {% if dados_preenchidos and dados_preenchidos.get('condicao_casa') == 'Própria' %}selected{% endif %}>Própria</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('condicao_casa') == 'Alugada' %}selected{% endif %}>Alugada</option>
+                                <option {% if dados_preenchidos and dados_preenchidos.get('condicao_casa') == 'Cedida' %}selected{% endif %}>Cedida</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-6" style="display:none;">
+                    <h5 class="mb-4">6. Saúde e Medidas de Proteção</h5>
+                    <div class="mb-3">
+                        <label>Faz uso de medicamentos?</label>
+                        <input type="text" name="medicamentos_obs" class="form-control" placeholder="Quais e há quanto tempo?" value="{{ dados_preenchidos.get('medicamentos_obs', '') if dados_preenchidos else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label>Já passou por atendimento psicológico/psiquiátrico? Onde?</label>
+                        <input type="text" name="atendimento_psi" class="form-control" value="{{ dados_preenchidos.get('atendimento_psi', '') if dados_preenchidos else '' }}">
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Sob Medida de Proteção?</label>
+                            <input type="text" name="medida_protecao" class="form-control" placeholder="Quais?" value="{{ dados_preenchidos.get('medida_protecao', '') if dados_preenchidos else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Medida Socioeducativa?</label>
+                            <input type="text" name="medida_socioeducativa" class="form-control" placeholder="Período/Quais" value="{{ dados_preenchidos.get('medida_socioeducativa', '') if dados_preenchidos else '' }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-7" style="display:none;">
+                    <h5 class="mb-4">7. Providências e Encaminhamentos</h5>
+                    <div class="mb-3">
+                        <label>Encaminhamentos Efetuados</label>
+                        <textarea name="encaminhamentos" class="form-control" rows="3">{{ dados_preenchidos.get('encaminhamentos', '') if dados_preenchidos else '' }}</textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label>Técnico Responsável</label>
+                        <input type="text" name="tecnico_responsavel" class="form-control" value="{{ dados_preenchidos.get('tecnico_responsavel', '') if dados_preenchidos else '' }}">
+                    </div>
+                    
+                    <div class="alert alert-success py-2">
+                        <i class="bi bi-info-circle me-2"></i> Esta ficha deve ser atualizada anualmente ou em caso de mudança significativa na renda.
+                    </div>
+
+                    <div class="text-end mt-4 no-print">
+                        <button type="submit" class="btn btn-success btn-lg px-5">Salvar Análise</button>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4 no-print border-top pt-3">
+                    <button type="button" class="btn btn-outline-secondary" id="prevBtn" onclick="changeStep(-1)" style="display:none;">Anterior</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Próximo Passo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.MODO_IMPRESSAO = {{ 'true' if modo_impressao else 'false' }};
+    window.DADOS_FORMULARIO = {{ dados_preenchidos | tojson | safe if dados_preenchidos else '{}' }};
+</script>
+<script src="{{ url_for('static', filename='js/servico_social/notificacao_violencia.js') }}"></script>
+{% endblock %}

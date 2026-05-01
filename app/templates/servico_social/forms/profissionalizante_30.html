@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/servico_social/forms/notificacao_violencia.css') }}">
+<style>
+    /* Tema Amarelo Projeto Grael */
+    .step-item.active {
+        border-color: #ffc107 !important;
+        background-color: #ffc107 !important;
+        color: #000 !important;
+    }
+
+    .form-step h5 {
+        color: #856404 !important;
+        border-bottom: 2px solid #fff3cd !important;
+        padding-bottom: 8px;
+        margin-top: 20px;
+    }
+
+    .bg-yellow {
+        background-color: #ffc107 !important;
+        color: #000 !important;
+    }
+
+    .btn-yellow {
+        background-color: #ffc107;
+        border-color: #ffc107;
+        color: #000;
+        font-weight: bold;
+    }
+
+    .btn-yellow:hover {
+        background-color: #e0a800;
+        color: #000;
+    }
+
+    .conditional-field {
+        display: none;
+        margin-top: 10px;
+        border-left: 3px solid #ffc107;
+        padding-left: 15px;
+    }
+
+    .section-header {
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 10px;
+        border-radius: 5px;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="card shadow">
+        <div class="card-header bg-yellow d-flex justify-content-between align-items-center">
+            <h3 class="mb-0"><i class="bi bi-person-workspace me-2"></i>Entrevista Profissionalizante - 30+</h3>
+            <span class="badge bg-dark text-white">Nova Entrevista</span>
+        </div>
+
+        <div class="card-body">
+            <form method="POST" id="multiStepForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="stepper-container no-print px-5 mb-4">
+                    {% for i in range(1, 5) %}
+                    <div class="step-item {{ 'active' if i == 1 }}" data-step="{{ i }}" onclick="goToStep({{ i }})">{{ i
+                        }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="form-step active" id="step-1">
+                    <div class="section-header">1. Identificação e Documentação</div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="check_nao_aluno"
+                                    onchange="toggleOrigemNome(this)">
+                                <label class="form-check-label fw-bold" for="check_nao_aluno">Candidato não cadastrado
+                                    (Inserção Manual)</label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-8" id="wrapper_aluno_select">
+                            <label class="fw-bold">Selecionar Aluno (+29 anos)</label>
+                            <select name="aluno_id" class="form-select border-warning" id="aluno_select">
+                                <option value="">-- Selecionar na lista --</option>
+                                {% for a in alunos %}
+                                {# Filtra apenas alunos com 30 anos ou mais #}
+                                {% if a.idade and a.idade >= 30 %}
+                                <option value="{{ a.id }}">{{ a.nome }} ({{ a.idade }} anos)</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-md-8" id="wrapper_nome_manual" style="display: none;">
+                            <label class="fw-bold">Nome Completo (Manual)</label>
+                            <input type="text" name="nome" class="form-control border-warning">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label>Curso Pretendido</label>
+                            <input type="text" name="curso_pretendido" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-5">
+                            <label>Nome Social</label>
+                            <input type="text" name="nome_social" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Data de Nascimento</label>
+                            <input type="date" name="data_nascimento" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Idade</label>
+                            <input type="number" name="idade" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Sexo</label>
+                            <select name="sexo" class="form-select">
+                                <option value="Feminino">Feminino</option>
+                                <option value="Masculino">Masculino</option>
+                                <option value="Outro">Outro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label>Endereço Completo</label>
+                            <input type="text" name="endereco" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Telefone</label>
+                            <input type="text" name="telefone" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Celular</label>
+                            <input type="text" name="celular" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-light rounded border mb-3">
+                        <label class="fw-bold small mb-2">Documentos que NÃO possui:</label>
+                        <div class="row">
+                            {% for doc in ['RG', 'CPF', 'Carteira de Trabalho', 'Título de Eleitor', 'Certificado de
+                            Reservista'] %}
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="docs_faltantes"
+                                        value="{{ doc }}" id="doc_{{ loop.index }}">
+                                    <label class="form-check-label small" for="doc_{{ loop.index }}">{{ doc }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-2" style="display:none;">
+                    <div class="section-header">2. Informações Sociodemográficas e Moradia</div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label>Cor/Raça</label>
+                            <select name="raca" class="form-select">
+                                <option>Branco(a)</option>
+                                <option>Preto(a)</option>
+                                <option>Pardo(a)</option>
+                                <option>Amarelo(a)</option>
+                                <option>Indígena</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label>Última Escola</label>
+                            <select name="tipo_escola" class="form-select">
+                                <option>Pública</option>
+                                <option>Privada</option>
+                                <option>Privada com bolsa</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label>Grau Escolaridade</label>
+                            <input type="text" name="escolaridade_grau" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="check_saude"
+                                onchange="toggleField('wrapper_saude', this)">
+                            <label class="form-check-label fw-bold" for="check_saude">Possui deficiência ou condição
+                                crônica?</label>
+                        </div>
+                        <div id="wrapper_saude" class="conditional-field">
+                            <input type="text" name="saude_qual" class="form-control" placeholder="Se sim, qual(is)?">
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Com quem reside?</label>
+                            <input type="text" name="residencia_com" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Situação da Moradia</label>
+                            <select name="situacao_moradia" class="form-select">
+                                <option>Própria</option>
+                                <option>Alugada</option>
+                                <option>Cedida</option>
+                                <option>Em posse</option>
+                                <option>Outra</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-3" style="display:none;">
+                    <div class="section-header">3. Situação de Trabalho e Renda</div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="check_renda"
+                                    onchange="toggleField('wrapper_renda', this)">
+                                <label class="form-check-label fw-bold" for="check_renda">Possui fonte de renda
+                                    atual?</label>
+                            </div>
+                            <div id="wrapper_renda" class="conditional-field">
+                                <input type="text" name="renda_qual" class="form-control" placeholder="Qual a fonte?">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="check_beneficio"
+                                    onchange="toggleField('wrapper_beneficio', this)">
+                                <label class="form-check-label fw-bold" for="check_beneficio">Recebe benefício
+                                    social?</label>
+                            </div>
+                            <div id="wrapper_beneficio" class="conditional-field">
+                                <input type="text" name="beneficio_qual" class="form-control"
+                                    placeholder="Qual benefício?">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="check_vinculo"
+                                onchange="toggleField('wrapper_vinculo', this)">
+                            <label class="form-check-label fw-bold" for="check_vinculo">Já participou de atividades no
+                                Projeto Grael?</label>
+                        </div>
+                        <div id="wrapper_vinculo" class="conditional-field">
+                            <textarea name="vinculo_anterior" class="form-control" rows="2"
+                                placeholder="Quais e impacto na vida?"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-4" style="display:none;">
+                    <div class="section-header">4. Motivação e Objetivos</div>
+                    <div class="mb-3">
+                        <label class="fw-bold">Motivação para procurar o Projeto Grael:</label>
+                        <textarea name="motivacao" class="form-control" rows="3"></textarea>
+                    </div>
+
+                    <div class="alert alert-warning border shadow-sm mt-4">
+                        <h6 class="fw-bold">Uso do Entrevistador(a)</h6>
+                        <textarea name="observacoes_entrevistador" class="form-control mb-3" rows="4"></textarea>
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <label class="small fw-bold">Entrevistador(a):</label>
+                                <input type="text" name="tecnico_nome"
+                                    class="form-control border-0 bg-transparent fw-bold"
+                                    value="{{ current_user.name if current_user.name else current_user.username }}"
+                                    readonly>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <button type="submit" class="btn btn-yellow btn-lg px-5 shadow-sm">Salvar
+                                    Registro</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4 no-print border-top pt-3">
+                    <button type="button" class="btn btn-outline-secondary" id="prevBtn" onclick="changeStep(-1)"
+                        style="display:none;">Anterior</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Próximo
+                        Passo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.totalSteps = 4;
+
+    function toggleField(id, checkbox) {
+        const field = document.getElementById(id);
+        field.style.display = checkbox.checked ? 'block' : 'none';
+        if (checkbox.checked) field.querySelector('input, textarea').focus();
+    }
+
+    function toggleOrigemNome(checkbox) {
+        const wrapperSelect = document.getElementById('wrapper_aluno_select');
+        const wrapperManual = document.getElementById('wrapper_nome_manual');
+        if (checkbox.checked) {
+            wrapperSelect.style.display = 'none';
+            wrapperManual.style.display = 'block';
+        } else {
+            wrapperSelect.style.display = 'block';
+            wrapperManual.style.display = 'none';
+        }
+    }
+
+    // Busca automática no banco
+    document.getElementById('aluno_select').addEventListener('change', function () {
+        if (this.value) {
+            fetch(`/servico-social/aluno/${this.value}/dados`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementsByName('data_nascimento')[0].value = data.data_nascimento || '';
+                    document.getElementsByName('idade')[0].value = data.idade || '';
+                    document.getElementsByName('sexo')[0].value = data.sexo || '';
+                    document.getElementsByName('endereco')[0].value = data.endereco || '';
+                    document.getElementsByName('telefone')[0].value = data.telefone || '';
+                });
+        }
+    });
+
+    // Correção dos botões no Passo 4
+    window.addEventListener('DOMContentLoaded', () => {
+        const originalUpdate = window.updateStepDisplay;
+        window.updateStepDisplay = function () {
+            if (typeof originalUpdate === 'function') originalUpdate();
+            const nextBtn = document.getElementById('nextBtn');
+            if (currentStep === 4) {
+                nextBtn.style.setProperty('display', 'none', 'important');
+            } else {
+                nextBtn.style.display = 'block';
+            }
+        };
+    });
+</script>
+<script src="{{ url_for('static', filename='js/servico_social/notificacao_violencia.js') }}"></script>
+{% endblock %}

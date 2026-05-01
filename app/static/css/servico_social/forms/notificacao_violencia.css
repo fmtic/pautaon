@@ -1,81 +1,110 @@
-/* Stepper customizado - igual ao usado em alunos */
+/* Customização do Stepper */
 .stepper-container {
     display: flex;
     justify-content: space-between;
     position: relative;
-    margin-bottom: 2rem;
+    margin-bottom: 3rem;
 }
+
 .stepper-container::before {
     content: '';
     position: absolute;
     top: 20px;
     left: 0;
     right: 0;
-    height: 2px;
-    background: #dee2e6;
+    height: 3px;
+    background: #e9ecef;
     z-index: 0;
 }
+
 .step-item {
-    width: 40px;
-    height: 40px;
+    width: 45px;
+    height: 45px;
     background: #fff;
-    border: 2px solid #dee2e6;
+    border: 3px solid #e9ecef;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: bold;
+    font-weight: 700;
     z-index: 1;
-    background-color: white;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.3s ease;
+    color: #6c757d;
 }
+
 .step-item.active {
-    border-color: #0d6efd;
-    background-color: #0d6efd;
+    border-color: #dc3545;
+    /* Cor danger para combinar com o tema */
+    background-color: #dc3545;
     color: white;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px rgba(220, 53, 69, 0.3);
 }
+
 .step-item.completed {
     border-color: #198754;
     background-color: #198754;
     color: white;
 }
-.form-step {
-    display: none;
+
+/* Melhorias no Formulário */
+.form-step h5 {
+    color: #dc3545;
+    border-bottom: 2px solid #f8f9fa;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    font-weight: 600;
 }
-.form-step.active {
-    display: block;
+
+label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #495057;
+    margin-bottom: 5px;
 }
+
+.form-control,
+.form-select {
+    border: 1px solid #ced4da;
+    padding: 0.6rem;
+    transition: border-color 0.2s;
+}
+
+.form-control:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.1);
+}
+
+.bg-light-custom {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+/* Checkboxes e Radios */
+.form-check-inline {
+    background: #fff;
+    padding: 8px 15px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+}
+
+.form-check-inline:hover {
+    border-color: #adb5bd;
+}
+
 @media print {
-    .no-print, .stepper-container, .btn-group, .btn, footer, nav, .card-header button, .text-end .btn, .modal {
+    .form-step {
+        display: block !important;
+        opacity: 1 !important;
+        position: relative !important;
+    }
+
+    .stepper-container,
+    .no-print,
+    .btn-group {
         display: none !important;
-    }
-    .container {
-        max-width: 100%;
-        padding: 0;
-    }
-    .card {
-        border: none;
-        box-shadow: none;
-    }
-    .card-body {
-        padding: 0;
-    }
-    input, select, textarea {
-        border: none;
-        background: transparent;
-        padding: 0;
-    }
-    .form-check-input {
-        display: none;
-    }
-    .form-check-label {
-        margin-left: 0;
-    }
-    .border-bottom, .alert {
-        border: none;
-    }
-    .rounded-circle {
-        border: 1px solid #ccc;
     }
 }

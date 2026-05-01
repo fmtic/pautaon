@@ -131,7 +131,7 @@ class User(db.Model, UserMixin):
     email: str = db.Column(db.String(120), unique=True, nullable=False)
     password: str = db.Column(db.String(200), nullable=False)
     
-    # Perfis comuns: 'admin', 'pedagogico', 'professor', 'secretaria', 'pendente'
+    # Perfis comuns: 'admin', 'pedagogico', 'professor', 'secretaria', 'serviço social','pendente'
     role: str = db.Column(db.String(20), nullable=False)
     
     is_active: bool = db.Column(db.Boolean, default=True, nullable=False)

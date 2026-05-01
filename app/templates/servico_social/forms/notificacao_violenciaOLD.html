@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/servico_social/forms/notificacao_violencia.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="card shadow">
+        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">{{ titulo }}</h3>
+            <div class="btn-group no-print">
+                <button type="button" class="btn btn-light btn-sm" onclick="window.print();">
+                    <i class="bi bi-printer"></i> Imprimir
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <form method="POST" id="multiStepForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <!-- Stepper (apenas visual, não imprime) -->
+                <div class="stepper-container no-print px-5 mb-4">
+                    <div class="step-item active" data-step="1" onclick="goToStep(1)">1</div>
+                    <div class="step-item" data-step="2" onclick="goToStep(2)">2</div>
+                    <div class="step-item" data-step="3" onclick="goToStep(3)">3</div>
+                    <div class="step-item" data-step="4" onclick="goToStep(4)">4</div>
+                    <div class="step-item" data-step="5" onclick="goToStep(5)">5</div>
+                    <div class="step-item" data-step="6" onclick="goToStep(6)">6</div>
+                    <div class="step-item" data-step="7" onclick="goToStep(7)">7</div>
+                </div>
+
+                <!-- PASSO 1: Vínculo e cabeçalho -->
+                <div class="form-step active" id="step-1">
+                    <h5 class="mb-4"><i class="bi bi-person-badge me-2"></i>1. Vínculo e Identificação da Ocorrência</h5>
+                    
+                    <div class="mb-4 p-4 bg-light-custom rounded shadow-sm d-flex align-items-center gap-4">
+                        <div class="flex-grow-1">
+                            <label class="text-danger fw-bold">Vincular a um aluno cadastrado (opcional)</label>
+                            <select name="aluno_id" class="form-select form-select-lg" id="aluno_select">
+                                <option value="">-- Clique para buscar aluno --</option>
+                                {% for aluno in alunos %}
+                                <option value="{{ aluno.id }}">{{ aluno.nome }} ({{ aluno.matricula }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Ao selecionar, os campos de identificação serão preenchidos automaticamente.</div>
+                        </div>
+                        <div class="text-center">
+                            <img id="foto_aluno" src="{{ url_for('static', filename='img/default.png') }}"
+                                class="rounded-circle border shadow-sm" style="width: 100px; height: 100px; object-fit: cover; background: white;">
+                        </div>
+                    </div>
+                
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Data da Notificação</label>
+                            <input type="date" name="data_notificacao" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Número da Ocorrência</label>
+                            <input type="text" class="form-control bg-light" value="Gerado automaticamente" readonly>
+                            <input type="hidden" name="numero_ocorrencia" value="Automático">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="d-block mb-2">Estado físico e emocional observado:</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" name="estado_fisico" value="Corte" id="f1">
+                            <label class="form-check-label" for="f1">Corte</label>
+                        </div>
+                        </div>
+                </div>
+
+                <!-- PASSO 2: Identificação da Criança/Adolescente (parte 1) -->
+                <div class="form-step" id="step-2">
+                    <h5 class="mb-3">2. Identificação da Criança/Adolescente (Pessoal)</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label>Nome completo</label>
+                            <input type="text" name="nome" class="form-control" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label>Turma</label>
+                            <input type="text" name="turma" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Data Nasc.</label>
+                            <input type="date" name="data_nascimento" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Idade</label>
+                            <input type="text" id="idade_aluno" class="form-control bg-light" readonly>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-2">
+                            <label>Sexo</label>
+                            <select name="sexo" class="form-select">
+                                <option value="">Selecione</option>
+                                <option>Feminino</option>
+                                <option>Masculino</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label>Raça/cor/etnia</label>
+                            <select name="raca_cor" class="form-select">
+                                <option value="">Selecione</option>
+                                <option>Preta</option>
+                                <option>Parda</option>
+                                <option>Branca</option>
+                                <option>Amarela</option>
+                                <option>Indígena</option>
+                                <option>outra</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Estuda?</label>
+                            <select name="estuda" class="form-select">
+                                <option>Sim</option>
+                                <option>Não</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PASSO 3: Filiação, responsável e endereço -->
+                <div class="form-step" id="step-3">
+                    <h5 class="mb-3">3. Filiação, Responsável e Endereço</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label>Nome da mãe</label>
+                            <input type="text" name="mae" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Nome do pai</label>
+                            <input type="text" name="pai" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label>Nome do responsável</label>
+                            <input type="text" name="responsavel_nome" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Parentesco</label>
+                            <input type="text" name="parentesco_responsavel" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Endereço de residência</label>
+                            <input type="text" name="endereco" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label>Telefone contato</label>
+                            <input type="text" name="telefone" class="form-control">
+                        </div>
+                        <div class="col-md-9">
+                            <label>Com quem vive</label>
+                            <div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Pai"> Pai</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Mãe"> Mãe</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Padrasto"> Padrasto</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Madrasta"> Madrasta</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Tio"> Tio</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Tia"> Tia</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Avô"> Avô</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Avó"> Avó</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Irmão"> Irmão(ã/ãs/aos)</div>
+                                <div class="form-check form-check-inline"><input class="form-check-input"
+                                        type="checkbox" name="convive" value="Outros"> Outros: <input type="text"
+                                        name="convive_outros" size="15"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PASSO 4: Escola, deficiência e detalhes do incidente -->
+                <div class="form-step" id="step-4">
+                    <h5 class="mb-3">4. Escola, Deficiência e Detalhes do Incidente</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label>Escola</label>
+                            <input type="text" name="escola" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Série</label>
+                            <input type="text" name="serie" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label>Turno</label>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
+                                    name="turno" value="M"> M</div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
+                                    name="turno" value="T"> T</div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="radio"
+                                    name="turno" value="N"> N</div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Possui algum tipo de deficiência ou transtorno</label><br>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="física"> física</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="mental"> mental</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="visual"> visual</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="auditiva"> auditiva</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="intelectual"> intelectual</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="nao_observada"> não observada</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="deficiencia" value="outros"> outros: <input type="text" name="deficiencia_outros"
+                                size="20"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label>O estado físico e emocional da criança/adolescente</label><br>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="estado_fisico" value="Corte"> Corte</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="estado_fisico" value="Mancha"> Mancha</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="estado_fisico" value="Mudança de humor"> Mudança de humor</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="estado_fisico" value="Mudança de comportamento"> Mudança de comportamento</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="estado_fisico" value="Outro"> Outro: <input type="text" name="estado_outro"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Você falou diretamente com a criança/adolescente?</label>
+                        <select name="falou_crianca" class="form-select w-25 d-inline-block mx-2">
+                            <option>Sim</option>
+                            <option>Não</option>
+                        </select>
+                        <span class="text-muted">(Se sim, anote nas observações)</span>
+                    </div>
+                    <div class="mb-3">
+                        <label>A criança/adolescente falou ou relatou sobre o abuso?</label>
+                        <select name="relatou_abuso" class="form-select w-25 d-inline-block mx-2">
+                            <option>Sim</option>
+                            <option>Não</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Se negativo, o que o(a) levou a suspeitar?</label>
+                        <textarea name="suspeita" rows="2" class="form-control"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label>Há testemunhas?</label>
+                        <select name="testemunhas" class="form-select w-25 d-inline-block mx-2">
+                            <option>Sim</option>
+                            <option>Não</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- PASSO 5: Caracterização da violência e autolesão -->
+                <div class="form-step" id="step-5">
+                    <h5 class="mb-3">5. Caracterização da Violência / Autolesão</h5>
+                    <div class="row mb-2">
+                        <div class="col-md-4">Suposto agressor(es): <input type="text" name="agressor_nome"
+                                class="form-control"></div>
+                        <div class="col-md-2">Sexo: <select name="agressor_sexo" class="form-select">
+                                <option>F</option>
+                                <option>M</option>
+                            </select></div>
+                        <div class="col-md-3">Idade: <input type="text" name="agressor_idade" class="form-control">
+                        </div>
+                        <div class="col-md-3">Grau de relacionamento: <input type="text" name="relacionamento_vitima"
+                                class="form-control"></div>
+                    </div>
+                    <div class="mb-2">
+                        <label>Relacionamento com o Projeto Grael ou parceiros</label>
+                        <input type="text" name="relacionamento_projeto" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label>Tipo(s) de violência</label><br>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Negligência"> Negligência</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Física"> Física</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Psicológica/moral"> Psicológica/moral</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Tortura"> Tortura</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Sexual"> Sexual</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Trabalho infantil"> Trabalho infantil</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="tipo_violencia" value="Outro"> Outro: <input type="text"
+                                name="tipo_violencia_outro"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Frequência da(s) agressão(ões)</label>
+                        <select name="frequencia" class="form-select w-50">
+                            <option>1 única vez</option>
+                            <option>2 a 5 vezes</option>
+                            <option>6 a 9 vezes</option>
+                            <option>10 ou mais vezes</option>
+                            <option>ignorado</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label>Local(is)</label><br>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="local" value="Residência"> Residência</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="local" value="Habitação coletiva"> Habitação coletiva</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="local" value="Escola"> Escola</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="local" value="Projeto Grael"> Projeto Grael</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="local" value="Outro"> Outro: <input type="text" name="local_outro"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Instrumento ou meio utilizado (autolesão)</label><br>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="arma de fogo"> arma de fogo</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="arma branca"> arma branca</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="enforcamento ou sufocação"> enforcamento/sufocação</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="afogamento"> afogamento</div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="intoxicação"> intoxicação (substância: <input type="text"
+                                name="substancia" size="10"></div>
+                        <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox"
+                                name="autolesao" value="outros"> outros: <input type="text" name="autolesao_outros"
+                                size="15"></div>
+                    </div>
+                </div>
+
+                <!-- PASSO 6: Atendimento, ações tomadas e responsável pelo preenchimento -->
+                <div class="form-step" id="step-6">
+                    <h5 class="mb-3">6. Atendimento, Ações e Responsável</h5>
+                    <div class="mb-2"><label>Atendimento Emergencial - Qual?</label> <input type="text"
+                            name="emergencial_qual" class="form-control"></div>
+                    <div class="mb-2"><label>Quando?</label> <input type="text" name="emergencial_quando"
+                            class="form-control"></div>
+                    <div class="mb-2"><label>Onde?</label> <input type="text" name="emergencial_onde"
+                            class="form-control"></div>
+                    <div class="mb-3"><label>Por quem?</label> <input type="text" name="emergencial_por_quem"
+                            class="form-control"></div>
+                    <div class="mb-3">
+                        <label>Ações Tomadas</label>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
+                                value="Conversa com os responsáveis"> Conversa com os responsáveis</div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
+                                value="Conversa com Assistente Social do Instituto"> Conversa com Assistente Social do
+                            Instituto</div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="acoes"
+                                value="Boletim de Ocorrência"> Boletim de Ocorrência</div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-md-6"><label>Nome do responsável pelo preenchimento</label> <input type="text"
+                                name="responsavel_nome_preenchimento" class="form-control"></div>
+                        <div class="col-md-6"><label>Cargo</label> <input type="text" name="responsavel_cargo"
+                                class="form-control"></div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-md-4"><label>Data da Notificação</label> <input type="date"
+                                name="data_notificacao_preenchimento" class="form-control"></div>
+                        <div class="col-md-4"><label>Horário</label> <input type="time" name="horario_notificacao"
+                                class="form-control"></div>
+                        <div class="col-md-4"><label>Local</label> <input type="text" name="local_notificacao"
+                                class="form-control"></div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="declaracao_veracidade" value="1">
+                        <label class="form-check-label">Declaro que as informações são verdadeiras.</label>
+                    </div>
+                </div>
+
+                <!-- PASSO 7: Observações, encaminhamentos e envio -->
+                <div class="form-step" id="step-7">
+                    <h5 class="mb-3">7. Observações, Encaminhamentos e Finalização</h5>
+                    <div class="mb-3">
+                        <label>Observações e outras informações relevantes</label>
+                        <textarea name="observacoes" rows="6" class="form-control"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label>Encaminhamentos</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Gerência do Projeto Grael"> Gerência do Projeto
+                                    Grael</div>
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Equipe de Coordenação"> Equipe de Coordenação
+                                </div>
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Familiares e/ou responsáveis"> Familiares e/ou
+                                    responsáveis</div>
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Conselho Tutelar"> Conselho Tutelar</div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Vara da Infância e Juventude"> Vara da Infância
+                                </div>
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="CRAS/CREAS"> CRAS/CREAS</div>
+                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                        name="encaminhamentos" value="Outros serviços"> Outros: <input type="text"
+                                        name="outros_servicos" class="d-inline-block w-50"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i> *Confidencial – Não compartilhar com pessoas não autorizados.<br>
+                        *Suspeito é inocente até prova contrária.<br>
+                        *Não informar ao suspeito sobre este formulário.
+                    </div>
+                    <div class="text-end mt-4">
+                        <button type="submit" class="btn btn-primary px-5 py-2">Salvar Respostas</button>
+                        <a href="{{ url_for('servico_social.listar_entrevistas') }}"
+                            class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </div>
+
+                <!-- Botões de navegação (não imprimem) -->
+                <div class="d-flex justify-content-between mt-4 no-print">
+                    <button type="button" class="btn btn-secondary" id="prevBtn" onclick="changeStep(-1)"
+                        style="display:none;">Anterior</button>
+                    <button type="button" class="btn btn-primary" id="nextBtn" onclick="changeStep(1)">Próximo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/servico_social/notificacao_violencia.js') }}"></script>
+
+{% endblock %}

@@ -6,7 +6,7 @@
   <title>Ficha de Inscrição - {{ aluno.nome }}</title>
   <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet" />
   <link href="{{ url_for('static', filename='bootstrap/icons/bootstrap.min.css') }}" rel="stylesheet" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/aluno_impressao.css') }}?v=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/impressao.css') }}?v=1" />
 </head>
 
 <body>
@@ -134,7 +134,7 @@
       <div class="signature-box">Coordenação / Secretaria</div>
     </div>
 
-    <div class="text-center mt-5 text-muted small">Documento gerado eletronicamente pelo sistema pautaon em {{ data_matricula.strftime('%d/%m/%Y %H:%M:%S') }}</div>
+    <div class="text-center mt-5 text-muted small">Documento gerado eletronicamente pelo sistema pautaON em {{ data_matricula.strftime('%d/%m/%Y %H:%M:%S') }}</div>
   </div>
 
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>

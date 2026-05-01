@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    :root { --cor-trans: rgb(220, 53, 69); --cor-suave: rgba(220, 53, 69, 0.08); }
+    
+    .step-item { cursor: pointer; transition: all 0.3s; border: 2px solid #dee2e6; }
+    .step-item.active { border-color: var(--cor-trans) !important; background-color: var(--cor-trans) !important; color: #fff !important; }
+    
+    .section-header { 
+        background-color: var(--cor-suave); 
+        color: #333; 
+        padding: 10px; 
+        border-radius: 5px; 
+        font-weight: bold; 
+        margin-bottom: 15px; 
+        border-left: 5px solid var(--cor-trans); 
+    }
+
+    .btn-pia { background-color: var(--cor-trans); border-color: var(--cor-trans); color: white; }
+    .btn-pia:hover { background-color: #a71d2a; color: white; }
+    
+    /* Garantia de que o botão não apareça no último passo */
+    .force-hide { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center border-bottom p-3">
+            <h3 class="mb-0" style="color: var(--cor-trans)"><i class="bi bi-person-heart me-2"></i>Atendimento a Crianças/Adolescentes Trans</h3>
+            <span class="badge border text-secondary">Atendimento Especializado</span>
+        </div>
+
+        <div class="card-body">
+            <form method="POST" id="multiStepForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="stepper-container d-flex justify-content-center gap-2 mb-4">
+                    {% for i in range(1, 11) %}
+                    <div class="step-item rounded-circle d-flex align-items-center justify-content-center {{ 'active' if i == 1 }}" 
+                         data-step="{{ i }}" style="width: 35px; height: 35px;">{{ i }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="form-step active" id="step-1">
+                    <div class="section-header">1. Identificação</div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-12">
+                            <label class="fw-bold">Selecionar Aluno</label>
+                            <select name="aluno_id" class="form-select" id="aluno_select">
+                                <option value="">-- Selecione --</option>
+                                {% for a in alunos %}
+                                <option value="{{ a.id }}">{{ a.nome }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label>Nome Social</label><input type="text" name="nome_social" class="form-control"></div>
+                        <div class="col-md-3"><label>Idade</label><input type="number" name="idade" class="form-control"></div>
+                        <div class="col-md-3"><label>Pronomes</label><input type="text" name="pronomes" class="form-control"></div>
+                    </div>
+                </div>
+
+                <div class="form-step" id="step-2" style="display:none;"><div class="section-header">2. Acolhimento Inicial</div><textarea name="acolhimento" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-3" style="display:none;"><div class="section-header">3. Demandas Identificadas</div><textarea name="demandas" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-4" style="display:none;"><div class="section-header">4. Escola e Projeto</div><textarea name="escola_obs" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-5" style="display:none;"><div class="section-header">5. Saúde Física e Mental</div><textarea name="saude_obs" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-6" style="display:none;"><div class="section-header">6. Família e Rede de Apoio</div><textarea name="familia_obs" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-7" style="display:none;"><div class="section-header">7. Riscos e Proteção</div><textarea name="riscos_obs" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-8" style="display:none;"><div class="section-header">8. Projetos de Vida</div><textarea name="vida_obs" class="form-control" rows="3"></textarea></div>
+                <div class="form-step" id="step-9" style="display:none;"><div class="section-header">9. Observações Técnicas</div><textarea name="tecnico_obs" class="form-control" rows="3"></textarea></div>
+
+                <div class="form-step" id="step-10" style="display:none;">
+                    <div class="section-header">10. Parecer Final</div>
+                    <div class="mb-4">
+                        <textarea name="parecer_social" class="form-control" rows="8" placeholder="Digite o parecer técnico..."></textarea>
+                    </div>
+
+                    <div class="p-3 mb-3 bg-light rounded border-start border-danger border-4 text-end">
+                        <small class="text-muted d-block">Técnico Responsável:</small>
+                        <strong class="text-dark"><i class="bi bi-person-badge me-1"></i>{{ current_user.name }}</strong>
+                    </div>
+
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-pia btn-lg px-5 shadow-sm">Gravar Atendimento</button>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4 border-top pt-3">
+                    <button type="button" class="btn btn-outline-secondary" id="prevBtn" style="display:none;">Anterior</button>
+                    <button type="button" class="btn btn-pia" id="nextBtn">Próximo Passo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentStep = 1;
+    const totalSteps = 10;
+
+    const updateUI = () => {
+        // Exibe o passo atual
+        document.querySelectorAll('.form-step').forEach((step, idx) => {
+            step.style.display = (idx + 1 === currentStep) ? 'block' : 'none';
+        });
+
+        // Atualiza as bolinhas do stepper
+        document.querySelectorAll('.step-item').forEach((item, idx) => {
+            item.classList.toggle('active', idx + 1 === currentStep);
+        });
+
+        // Controle dos botões
+        const nextBtn = document.getElementById('nextBtn');
+        const prevBtn = document.getElementById('prevBtn');
+
+        if (prevBtn) prevBtn.style.display = (currentStep === 1) ? 'none' : 'block';
+        
+        if (nextBtn) {
+            // Se for o último passo (10), esconde o botão "Próximo"
+            if (currentStep >= totalSteps) {
+                nextBtn.classList.add('force-hide');
+            } else {
+                nextBtn.classList.remove('force-hide');
+            }
+        }
+    };
+
+    // Eventos de clique
+    document.getElementById('nextBtn').addEventListener('click', () => {
+        if (currentStep < totalSteps) {
+            currentStep++;
+            updateUI();
+            window.scrollTo(0, 0);
+        }
+    });
+
+    document.getElementById('prevBtn').addEventListener('click', () => {
+        if (currentStep > 1) {
+            currentStep--;
+            updateUI();
+            window.scrollTo(0, 0);
+        }
+    });
+
+    // Clique direto nas bolinhas
+    document.querySelectorAll('.step-item').forEach(item => {
+        item.addEventListener('click', function() {
+            currentStep = parseInt(this.getAttribute('data-step'));
+            updateUI();
+        });
+    });
+
+    // Busca de dados do aluno
+    document.getElementById('aluno_select')?.addEventListener('change', async function() {
+        if (!this.value) return;
+        try {
+            const res = await fetch(`/servico-social/aluno/${this.value}/dados`);
+            const d = await res.json();
+            if(document.getElementsByName('nome_social')[0]) document.getElementsByName('nome_social')[0].value = d.nome_social || '';
+            if(document.getElementsByName('idade')[0]) document.getElementsByName('idade')[0].value = d.idade || '';
+        } catch(e) { console.error("Erro na busca", e); }
+    });
+
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', updateUI);
+</script>
+{% endblock %}
