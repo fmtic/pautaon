@@ -2,7 +2,7 @@ from datetime import datetime, date, timedelta, timezone
 from flask import current_app, session
 from flask_login import current_user
 from app.database import db
-from app.models import User, Turma, Aluno, Frequencia, TemaAula, RegistroAula, ConfiguracaoSistema, Inscricao
+from app.models import User, Turma, Aluno, Frequencia, TemaAula, RegistroAula, ConfiguracaoSistema, Inscricao, DiaBloqueadoTurma
 from typing import List, Dict, Tuple, Any, Optional
 
 from app.utils.timezone import get_local_now
@@ -105,6 +105,10 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
             periodo_letivo_id=turma.periodo_letivo_id
         ).all()
         blocked_dates = {d.data.strftime("%Y-%m-%d") for d in dias}
+
+        excecoes = DiaBloqueadoTurma.query.filter_by(turma_id=turma_id).all()
+        exception_dates = {e.data for e in excecoes}
+        blocked_dates = blocked_dates - exception_dates
 
     alunos = Aluno.query.join(Inscricao).filter(
         Inscricao.turma_id == turma_id,

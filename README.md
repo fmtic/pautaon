@@ -21,6 +21,7 @@ Versão de trabalho do projeto original preparada para evolução com menos risc
 - domínio `registros` promovido a pacote em [app/routes/registros](/C:/Users/FMtic/Documents/Nextcloud/MeusDados/Codeberg/pauta-online-refatorado/app/routes/registros/__init__.py:1)
 - núcleo principal mantido em [app/routes/registros/core.py](/C:/Users/FMtic/Documents/Nextcloud/MeusDados/Codeberg/pauta-online-refatorado/app/routes/registros/core.py:1)
 - rotas de período letivo e calendário extraídas para [app/routes/registros/periodos.py](/C:/Users/FMtic/Documents/Nextcloud/MeusDados/Codeberg/pauta-online-refatorado/app/routes/registros/periodos.py:1)
+- suporte a exceções de turmas para dias bloqueados do período, permitindo lançar pauta em turmas selecionadas mesmo em calendario marcado como sem aula
 - rotas do serviço social extraídas para [app/routes/registros/servico_social.py](/C:/Users/FMtic/Documents/Nextcloud/MeusDados/Codeberg/pauta-online-refatorado/app/routes/registros/servico_social.py:1)
 - arquivos sensíveis removidos da cópia e substituídos por [.env.example](/C:/Users/FMtic/Documents/Nextcloud/MeusDados/Codeberg/pauta-online-refatorado/.env.example:1)
 - scripts de migração ad hoc, cargas de teste antigas e assets redundantes removidos da cópia

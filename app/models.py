@@ -117,6 +117,25 @@ class DiaBloqueado(db.Model):
     unidade        = db.relationship('Unidade', backref='dias_bloqueados')
     criado_por     = db.relationship('User', backref='dias_bloqueados_criados', foreign_keys=[criado_por_id])
 
+
+class DiaBloqueadoTurma(db.Model):
+    """Registra turmas que são exceção a um dia bloqueado do período letivo."""
+    __tablename__ = 'dia_bloqueado_turma'
+    __table_args__ = (
+        db.UniqueConstraint('turma_id', 'data', name='uix_dia_bloqueado_turma'),
+    )
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
+    data: str = db.Column(db.String(10), nullable=False)
+    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
+    criado_por_id: int = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+
+    turma = db.relationship('Turma', backref=db.backref('dias_bloqueado_excecao', cascade='all, delete-orphan'))
+    unidade = db.relationship('Unidade', backref='dias_bloqueado_turma')
+    criado_por = db.relationship('User', backref='dias_bloqueado_turma_criados', foreign_keys=[criado_por_id])
+
 # ---------------------------------------------------------------------------
 # USUÁRIOS E AUTENTICAÇÃO
 # ---------------------------------------------------------------------------

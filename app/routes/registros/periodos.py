@@ -5,7 +5,7 @@ from flask import abort, current_app, flash, jsonify, redirect, render_template,
 from flask_login import current_user, login_required
 
 from app.database import db
-from app.models import Aluno, DiaBloqueado, Inscricao, PeriodoLetivo, Turma, Unidade
+from app.models import Aluno, DiaBloqueado, DiaBloqueadoTurma, Inscricao, PeriodoLetivo, Turma, Unidade
 from app.services.auth_service import register_security_log
 from app.utils.logica import get_unidade_id
 from . import bp
@@ -70,8 +70,14 @@ def calendario_salvar():
     if unidade_id and periodo.unidade_id != unidade_id:
         return jsonify({"success": False, "message": "Acesso negado a esta unidade"}), 403
 
+    excecoes_payload = payload.get("excecoes", {})
+
     try:
         DiaBloqueado.query.filter_by(periodo_letivo_id=periodo_id).delete()
+
+        turma_ids = [t.id for t in Turma.query.filter_by(periodo_letivo_id=periodo_id).all()]
+        if turma_ids:
+            DiaBloqueadoTurma.query.filter(DiaBloqueadoTurma.turma_id.in_(turma_ids)).delete(synchronize_session=False)
 
         bloqueios_adicionados = 0
         for item in novos_dias:
@@ -99,11 +105,40 @@ def calendario_salvar():
             )
             bloqueios_adicionados += 1
 
+        excecoes_adicionadas = 0
+        for data_str, turma_list in excecoes_payload.items():
+            if not data_str or not isinstance(turma_list, list):
+                continue
+            try:
+                datetime.strptime(data_str, "%Y-%m-%d")
+            except ValueError:
+                continue
+
+            for turma_id in turma_list:
+                try:
+                    turma_id_int = int(turma_id)
+                except (TypeError, ValueError):
+                    continue
+
+                turma_obj = Turma.query.get(turma_id_int)
+                if not turma_obj or turma_obj.periodo_letivo_id != periodo_id:
+                    continue
+
+                db.session.add(
+                    DiaBloqueadoTurma(
+                        turma_id=turma_obj.id,
+                        data=data_str,
+                        unidade_id=periodo.unidade_id,
+                        criado_por_id=current_user.id,
+                    )
+                )
+                excecoes_adicionadas += 1
+
         db.session.commit()
         return jsonify(
             {
                 "success": True,
-                "message": f"{bloqueios_adicionados} dias atualizados com sucesso.",
+                "message": f"{bloqueios_adicionados} dias atualizados e {excecoes_adicionadas} exceções salvas.",
             }
         )
     except Exception:
@@ -311,7 +346,28 @@ def periodo_letivo_calendario(id):
         for item in dias
     ]
 
-    return render_template("periodos/calendario.html", periodo=periodo, dias_json=dias_json)
+    turmas = (
+        Turma.query.filter_by(periodo_letivo_id=id, ativo=True)
+        .order_by(Turma.nome)
+        .all()
+    )
+    turmas_json = [{"id": t.id, "nome": t.nome} for t in turmas]
+    excecoes = (
+        DiaBloqueadoTurma.query.join(Turma)
+        .filter(Turma.periodo_letivo_id == id)
+        .all()
+    )
+    excecoes_json = {}
+    for item in excecoes:
+        excecoes_json.setdefault(item.data, []).append(item.turma_id)
+
+    return render_template(
+        "periodos/calendario.html",
+        periodo=periodo,
+        dias_json=dias_json,
+        turmas_json=turmas_json,
+        excecoes_json=excecoes_json,
+    )
 
 
 @bp.route("/periodo-letivo/relatorio/<int:id>")

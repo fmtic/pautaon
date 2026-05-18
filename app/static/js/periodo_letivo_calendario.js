@@ -11,6 +11,8 @@
   const PERIODO_INICIO = config.dataInicio;
   const PERIODO_FIM = config.dataFim;
   const DIAS_INICIAIS = config.dias || [];
+  const TURMAS = config.turmas || [];
+  const EXCECOES_INICIAIS = config.excecoes || {};
 
   const TIPOS = {
     FERIADO: { label: 'Feriado', cor: '#dc3545', icone: 'F' },
@@ -28,6 +30,7 @@
   let diasData = {};
   let tipoAtivo = 'FERIADO';
   let diaFoco = null;
+  let diasExcecoes = { ...EXCECOES_INICIAIS };
 
   // Elementos DOM
   const calGrade = document.getElementById('calGrade');
@@ -40,6 +43,9 @@
   const btnRemover = document.getElementById('btnRemoverDia');
   const btnSalvar = document.getElementById('btnSalvarCal');
   const btnLimpar = document.getElementById('btnLimparSel');
+  const turmasExcecao = document.getElementById('turmasExcecao');
+  const turmasExcecaoList = document.getElementById('turmasExcecaoList');
+  const turmasExcecaoStatus = document.getElementById('turmasExcecaoStatus');
   const calStatus = document.getElementById('calStatus');
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
@@ -72,6 +78,60 @@
         ano++;
       }
     }
+  }
+
+  function shouldShowTurmasExcecao(ds) {
+    return !!TURMAS.length && (!!diasData[ds] || (diasExcecoes[ds] && diasExcecoes[ds].length));
+  }
+
+  function renderTurmasExcecao(ds) {
+    if (!turmasExcecao || !turmasExcecaoList) {
+      return;
+    }
+    const selected = new Set((diasExcecoes[ds] || []).map(Number));
+    turmasExcecaoList.innerHTML = '';
+
+    if (!TURMAS.length) {
+      turmasExcecaoList.innerHTML = '<div class="col-12 text-muted small">Nenhuma turma disponível para exceção neste período.</div>';
+      turmasExcecao.classList.toggle('d-none', true);
+      return;
+    }
+
+    TURMAS.forEach(turma => {
+      const isChecked = selected.has(Number(turma.id));
+      const item = document.createElement('div');
+      item.className = 'col-12 col-md-6 col-lg-4';
+      item.innerHTML = `
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" value="${turma.id}" id="turma-excecao-${turma.id}" ${isChecked ? 'checked' : ''}>
+          <label class="form-check-label" for="turma-excecao-${turma.id}">${turma.nome}</label>
+        </div>
+      `;
+      turmasExcecaoList.appendChild(item);
+      const checkbox = item.querySelector('input[type="checkbox"]');
+      checkbox?.addEventListener('change', updateTurmasExcecaoStatus);
+    });
+
+    turmasExcecao.classList.toggle('d-none', !shouldShowTurmasExcecao(ds));
+    turmasExcecaoStatus.textContent = selected.size;
+  }
+
+  function getSelectedTurmas() {
+    const checked = [];
+    turmasExcecaoList.querySelectorAll('input[type="checkbox"]:checked').forEach(input => {
+      const turmaId = Number(input.value);
+      if (!Number.isNaN(turmaId)) {
+        checked.push(turmaId);
+      }
+    });
+    return checked;
+  }
+
+  function updateTurmasExcecaoStatus() {
+    if (!turmasExcecaoStatus) {
+      return;
+    }
+    turmasExcecaoStatus.textContent = getSelectedTurmas().length;
   }
 
   function buildMonth(year, month) {
@@ -148,6 +208,7 @@
     diaWeekday.textContent = DIAS_SEM[dataLocal.getDay()];
     diaTipoSel.value = diasData[ds]?.tipo || tipoAtivo;
     diaDescInput.value = diasData[ds]?.descricao || '';
+    renderTurmasExcecao(ds);
     panelDia.classList.remove('d-none');
   }
 
@@ -183,6 +244,12 @@
       tipo: diaTipoSel.value,
       descricao: diaDescInput.value.trim()
     };
+    const selectedTurmas = getSelectedTurmas();
+    if (selectedTurmas.length) {
+      diasExcecoes[diaFoco] = selectedTurmas;
+    } else {
+      delete diasExcecoes[diaFoco];
+    }
     const cell = calGrade.querySelector(`[data-date="${diaFoco}"]`);
     if (cell) paintCell(cell, diaFoco);
     panelDia.classList.add('d-none');
@@ -191,6 +258,7 @@
   btnRemover?.addEventListener('click', () => {
     if (!diaFoco) return;
     delete diasData[diaFoco];
+    delete diasExcecoes[diaFoco];
     const cell = calGrade.querySelector(`[data-date="${diaFoco}"]`);
     if (cell) {
       cell.classList.remove('selecionado');
@@ -203,6 +271,7 @@
   btnLimpar?.addEventListener('click', () => {
     if (!confirm('Limpar todos os dias marcados?')) return;
     diasData = {};
+    diasExcecoes = {};
     calGrade.querySelectorAll('.cal-day').forEach(c => {
       c.classList.remove('selecionado');
       c.style.removeProperty('--tipo-cor');
@@ -225,7 +294,7 @@
           'Content-Type': 'application/json',
           'X-CSRFToken': csrfToken
         },
-        body: JSON.stringify({ periodo_id: PERIODO_ID, dias })
+        body: JSON.stringify({ periodo_id: PERIODO_ID, dias, excecoes: diasExcecoes })
       });
       if (!res.ok) {
         showFloatingMessage('Erro ao salvar.', 'danger');

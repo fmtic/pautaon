@@ -105,6 +105,16 @@
         <i class="bi bi-x-lg me-1"></i>Remover
       </button>
     </div>
+    <div id="turmasExcecao" class="mt-3 d-none">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <strong>Turmas com aula nesta data</strong>
+          <p class="small text-muted mb-0">Mesmo sendo dia bloqueado no período, essas turmas ficarão disponíveis para lançamento de pauta.</p>
+        </div>
+        <span id="turmasExcecaoStatus" class="badge bg-secondary">0</span>
+      </div>
+      <div id="turmasExcecaoList" class="row gy-2"></div>
+    </div>
   </div>
   {% endif %}
 
@@ -121,7 +131,9 @@
     periodoId: {{ periodo.id }},
     dataInicio: '{{ periodo.data_inicio.strftime("%Y-%m-%d") }}',
     dataFim: '{{ periodo.data_fim.strftime("%Y-%m-%d") }}',
-    dias: {{ dias_json | tojson | safe }}
+    dias: {{ dias_json | tojson | safe }},
+    turmas: {{ turmas_json | tojson | safe }},
+    excecoes: {{ excecoes_json | tojson | safe }}
   };
 </script>
 <script src="{{ url_for('static', filename='js/periodo_letivo_calendario.js') }}"></script>
