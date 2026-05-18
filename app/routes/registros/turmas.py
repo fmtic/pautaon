@@ -29,7 +29,9 @@ def turma():
     if unidade_id:
         stmt = stmt.where(Turma.unidade_id == unidade_id)
 
-    turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
+    turmas = (
+        db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
+    )
     return render_template("turmas/listar.html", turmas=turmas)
 
 
@@ -64,13 +66,22 @@ def nova_turma():
         dias_selecionados = request.form.getlist("dias_semana")
         dias_string = ", ".join([dia for dia in dias_selecionados if dia])
         if not dias_string:
-            flash("Selecione pelo menos um dia da semana para geração do cronograma de frequência.", "warning")
+            flash(
+                "Selecione pelo menos um dia da semana para geração do cronograma de frequência.",
+                "warning",
+            )
             return redirect(url_for("registros.nova_turma"))
 
         professor_id = request.form.get("professor_id")
-        professor_id = int(professor_id) if professor_id and professor_id.isdigit() else None
+        professor_id = (
+            int(professor_id) if professor_id and professor_id.isdigit() else None
+        )
         periodo_letivo_id = request.form.get("periodo_letivo_id")
-        periodo_letivo_id = int(periodo_letivo_id) if periodo_letivo_id and periodo_letivo_id.isdigit() else None
+        periodo_letivo_id = (
+            int(periodo_letivo_id)
+            if periodo_letivo_id and periodo_letivo_id.isdigit()
+            else None
+        )
         turno = request.form.get("turno")
         centro_custo = request.form.get("centro_custo") or None
 
@@ -82,15 +93,26 @@ def nova_turma():
 
         if professor_id:
             professor = db.session.get(User, professor_id)
-            if not professor or professor.role != "professor" or (
-                periodo_letivo_id and professor.unidade_id != periodo_obj.unidade_id
-            ) or (unidade_id and professor.unidade_id != unidade_id):
-                flash("Professor inválido para esta unidade ou período letivo.", "warning")
+            if (
+                not professor
+                or professor.role != "professor"
+                or (
+                    periodo_letivo_id and professor.unidade_id != periodo_obj.unidade_id
+                )
+                or (unidade_id and professor.unidade_id != unidade_id)
+            ):
+                flash(
+                    "Professor inválido para esta unidade ou período letivo.", "warning"
+                )
                 return redirect(url_for("registros.nova_turma"))
 
         if centro_custo and periodo_letivo_id:
             periodo_obj = PeriodoLetivo.query.get(periodo_letivo_id)
-            centros_disponiveis = [c.strip() for c in periodo_obj.centro_custo.split(",")] if periodo_obj and periodo_obj.centro_custo else []
+            centros_disponiveis = (
+                [c.strip() for c in periodo_obj.centro_custo.split(",")]
+                if periodo_obj and periodo_obj.centro_custo
+                else []
+            )
             if centros_disponiveis and centro_custo not in centros_disponiveis:
                 flash("Centro de custo inválido para o período selecionado.", "warning")
                 return redirect(url_for("registros.nova_turma"))
@@ -109,7 +131,11 @@ def nova_turma():
             periodo_letivo_id=periodo_letivo_id,
             unidade_id=unidade_id,
             ordenacao=obter_proximo_ordenacao(periodo_letivo_id),
-            curso_id=int(request.form.get("curso_id")) if request.form.get("curso_id") else None,
+            curso_id=(
+                int(request.form.get("curso_id"))
+                if request.form.get("curso_id")
+                else None
+            ),
             ativo=True,
         )
 
@@ -120,16 +146,36 @@ def nova_turma():
             return redirect(url_for("registros.turma"))
         except Exception as exc:
             db.session.rollback()
-            flash(f"Quebra transacional ao salvar turma (Constraint db): {exc}", "danger")
+            flash(
+                f"Quebra transacional ao salvar turma (Constraint db): {exc}", "danger"
+            )
             return redirect(url_for("registros.nova_turma"))
 
     professores = User.query.filter_by(role="professor")
     if unidade_id:
         professores = professores.filter_by(unidade_id=unidade_id)
     professores = professores.order_by(User.name).all()
-    periodos = PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True).order_by(PeriodoLetivo.nome).all() if unidade_id else []
-    cursos = Curso.query.filter_by(ativo=True, unidade_id=unidade_id).order_by(Curso.nome).all() if unidade_id else []
-    return render_template("turmas/nova.html", professores=professores, periodos=periodos, periodo_ativo=None, cursos=cursos)
+    periodos = (
+        PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True)
+        .order_by(PeriodoLetivo.nome)
+        .all()
+        if unidade_id
+        else []
+    )
+    cursos = (
+        Curso.query.filter_by(ativo=True, unidade_id=unidade_id)
+        .order_by(Curso.nome)
+        .all()
+        if unidade_id
+        else []
+    )
+    return render_template(
+        "turmas/nova.html",
+        professores=professores,
+        periodos=periodos,
+        periodo_ativo=None,
+        cursos=cursos,
+    )
 
 
 @bp.route("/turma/<int:id>")
@@ -139,7 +185,10 @@ def ver_turma(id):
     try:
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
-        flash("O contexto da turma contém erros e não pode ser gerado. Reporte ao T.I.", "danger")
+        flash(
+            "O contexto da turma contém erros e não pode ser gerado. Reporte ao T.I.",
+            "danger",
+        )
         return redirect(url_for("registros.turma"))
 
     turma_obj = ctx.get("turma")
@@ -149,7 +198,9 @@ def ver_turma(id):
         ~Aluno.inscricoes.any((Inscricao.turma_id == id) & (Inscricao.ativo == True)),
     )
     if turma_obj.unidade_id:
-        alunos_disponiveis = alunos_disponiveis.filter(Aluno.unidade_id == turma_obj.unidade_id)
+        alunos_disponiveis = alunos_disponiveis.filter(
+            Aluno.unidade_id == turma_obj.unidade_id
+        )
     alunos_disponiveis = alunos_disponiveis.order_by(Aluno.nome).all()
     perguntas = PerguntaConselho.query.order_by(PerguntaConselho.id).all()
     alunos_ativos_count = (
@@ -191,7 +242,9 @@ def enturmar_alunos(turma_id):
                 if turma_obj not in aluno.turmas:
                     aluno.turmas.append(turma_obj)
             db.session.commit()
-            flash(f"{len(alunos)} alunos inscritos na turma {turma_obj.nome}!", "success")
+            flash(
+                f"{len(alunos)} alunos inscritos na turma {turma_obj.nome}!", "success"
+            )
         except Exception:
             db.session.rollback()
             flash("Falha interna de Foreign Key ao enturmar.", "danger")
@@ -224,31 +277,58 @@ def editar_turma(id):
             turma_obj.professor_id = request.form.get("professor_id") or None
 
             dias_selecionados = request.form.getlist("dias_semana")
-            turma_obj.dias_semana = ", ".join([dia for dia in dias_selecionados if dia]) or turma_obj.dias_semana
+            turma_obj.dias_semana = (
+                ", ".join([dia for dia in dias_selecionados if dia])
+                or turma_obj.dias_semana
+            )
 
             original_periodo_id = turma_obj.periodo_letivo_id
             novo_periodo_id = request.form.get("periodo_letivo_id")
-            novo_periodo_id = int(novo_periodo_id) if novo_periodo_id and novo_periodo_id.isdigit() else None
+            novo_periodo_id = (
+                int(novo_periodo_id)
+                if novo_periodo_id and novo_periodo_id.isdigit()
+                else None
+            )
             turma_obj.periodo_letivo_id = novo_periodo_id
 
             professor_id = turma_obj.professor_id
-            periodo_obj = PeriodoLetivo.query.get(novo_periodo_id) if novo_periodo_id else turma_obj.periodo_letivo
-            if novo_periodo_id and (not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id)):
+            periodo_obj = (
+                PeriodoLetivo.query.get(novo_periodo_id)
+                if novo_periodo_id
+                else turma_obj.periodo_letivo
+            )
+            if novo_periodo_id and (
+                not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id)
+            ):
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.editar_turma", id=id))
 
             if professor_id:
                 professor = db.session.get(User, int(professor_id))
-                if not professor or professor.role != "professor" or (periodo_obj and professor.unidade_id != periodo_obj.unidade_id):
-                    flash("Professor inválido para esta unidade ou período letivo.", "warning")
+                if (
+                    not professor
+                    or professor.role != "professor"
+                    or (periodo_obj and professor.unidade_id != periodo_obj.unidade_id)
+                ):
+                    flash(
+                        "Professor inválido para esta unidade ou período letivo.",
+                        "warning",
+                    )
                     return redirect(url_for("registros.editar_turma", id=id))
 
             centro_custo = request.form.get("centro_custo") or None
             if centro_custo and novo_periodo_id:
                 periodo_obj = PeriodoLetivo.query.get(novo_periodo_id)
-                centros_disponiveis = [c.strip() for c in periodo_obj.centro_custo.split(",")] if periodo_obj and periodo_obj.centro_custo else []
+                centros_disponiveis = (
+                    [c.strip() for c in periodo_obj.centro_custo.split(",")]
+                    if periodo_obj and periodo_obj.centro_custo
+                    else []
+                )
                 if centros_disponiveis and centro_custo not in centros_disponiveis:
-                    flash("Centro de custo inválido para o período selecionado.", "warning")
+                    flash(
+                        "Centro de custo inválido para o período selecionado.",
+                        "warning",
+                    )
                     return redirect(url_for("registros.editar_turma", id=id))
             turma_obj.centro_custo = centro_custo
 
@@ -271,11 +351,40 @@ def editar_turma(id):
     elif turma_obj.unidade_id:
         stmt_prof = stmt_prof.where(User.unidade_id == turma_obj.unidade_id)
     professores = db.session.execute(stmt_prof.order_by(User.name)).scalars().all()
-    periodos = PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True).order_by(PeriodoLetivo.nome).all() if unidade_id else []
+    periodos = (
+        PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True)
+        .order_by(PeriodoLetivo.nome)
+        .all()
+        if unidade_id
+        else []
+    )
     periodo_ativo = turma_obj.periodo_letivo
-    centros_custo = [c.strip() for c in periodo_ativo.centro_custo.split(",")] if periodo_ativo and periodo_ativo.centro_custo else []
-    cursos = Curso.query.filter_by(ativo=True, unidade_id=unidade_id or turma_obj.unidade_id).order_by(Curso.nome).all()
-    return render_template("turmas/editar.html", turma=turma_obj, professores=professores, programas=programas, periodos=periodos, periodo_ativo=periodo_ativo, centros_custo=centros_custo, cursos=cursos)
+    centros_custo = (
+        [c.strip() for c in periodo_ativo.centro_custo.split(",")]
+        if periodo_ativo and periodo_ativo.centro_custo
+        else []
+    )
+    cursos = (
+        Curso.query.filter_by(ativo=True, unidade_id=unidade_id or turma_obj.unidade_id)
+        .order_by(Curso.nome)
+        .all()
+    )
+    periodos_centros_edit = {
+        str(p.id): [c.strip() for c in p.centro_custo.split(",")]
+        if p.centro_custo else []
+        for p in periodos
+    }
+    return render_template(
+        "turmas/editar.html",
+        turma=turma_obj,
+        professores=professores,
+        programas=programas,
+        periodos=periodos,
+        periodo_ativo=periodo_ativo,
+        periodos_centros_edit=periodos_centros_edit,
+        centros_custo=centros_custo,
+        cursos=cursos,
+    )
 
 
 @bp.route("/turma/excluir/<int:id>", methods=["POST"])
@@ -291,7 +400,10 @@ def excluir_turma(id):
             for aluno in turma_obj.alunos.all():
                 turma_obj.alunos.remove(aluno)
             db.session.commit()
-            flash(f"Lógica Desativada: '{turma_obj.nome}' transferida para Storage Arquivo.", "success")
+            flash(
+                f"Lógica Desativada: '{turma_obj.nome}' transferida para Storage Arquivo.",
+                "success",
+            )
         except Exception:
             db.session.rollback()
             flash("Falha ao inativar ligações.", "danger")
@@ -315,7 +427,12 @@ def ver_observacoes(turma_id):
         .all()
     )
     turma_obj = Turma.query.get_or_404(turma_id)
-    return render_template("turmas/observacoes.html", obs=observacoes, turma=turma_obj, historico=observacoes)
+    return render_template(
+        "turmas/observacoes.html",
+        obs=observacoes,
+        turma=turma_obj,
+        historico=observacoes,
+    )
 
 
 @bp.route("/turma/<int:id>/imprimir-pauta")
@@ -327,7 +444,9 @@ def imprimir_pauta(id):
     try:
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
-        flash("Não há informações completas para montar arquitetura de pauta.", "warning")
+        flash(
+            "Não há informações completas para montar arquitetura de pauta.", "warning"
+        )
         return redirect(url_for("registros.ver_turma", id=id))
 
     mes_selecionado = request.args.get("mes")
