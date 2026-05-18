@@ -6,6 +6,7 @@ from app.database import db
 from app.models import (
     Aluno,
     Curso,
+    Frequencia,
     Inscricao,
     PeriodoLetivo,
     PerguntaConselho,
@@ -169,12 +170,19 @@ def nova_turma():
         if unidade_id
         else []
     )
+    periodos_centros = {
+        str(p.id): [c.strip() for c in p.centro_custo.split(",")]
+        if p.centro_custo
+        else []
+        for p in periodos
+    }
     return render_template(
         "turmas/nova.html",
         professores=professores,
         periodos=periodos,
         periodo_ativo=None,
         cursos=cursos,
+        periodos_centros=periodos_centros,
     )
 
 
@@ -267,19 +275,41 @@ def editar_turma(id):
 
     if request.method == "POST":
         try:
+            limpar_lancamentos = request.form.get("limpar_lancamentos") == "1"
+            novo_data_inicio = request.form.get("data_inicio") or ""
+            novo_data_fim = request.form.get("data_fim") or ""
+            dias_selecionados = request.form.getlist("dias_semana")
+            novo_dias_semana = ", ".join([dia for dia in dias_selecionados if dia])
+
+            dados_de_lancamento_alterados = (
+                novo_dias_semana != (turma_obj.dias_semana or "")
+                or novo_data_inicio != (turma_obj.data_inicio or "")
+                or novo_data_fim != (turma_obj.data_fim or "")
+            )
+
+            if dados_de_lancamento_alterados:
+                lancamentos_existentes = bool(
+                    Frequencia.query.filter_by(turma_id=id).first()
+                    or RegistroAula.query.filter_by(turma_id=id).first()
+                )
+                if lancamentos_existentes and not limpar_lancamentos:
+                    flash(
+                        "Alterar dias ou datas exige confirmação para limpar os lançamentos existentes.",
+                        "warning",
+                    )
+                    return redirect(url_for("registros.editar_turma", id=id))
+
             turma_obj.nome = request.form.get("turma")
             turma_obj.programa = request.form.get("programa")
             turma_obj.turno = request.form.get("turno")
-            turma_obj.data_inicio = request.form.get("data_inicio")
-            turma_obj.data_fim = request.form.get("data_fim")
+            turma_obj.data_inicio = novo_data_inicio or None
+            turma_obj.data_fim = novo_data_fim or None
             turma_obj.hora_inicio = request.form.get("hora_inicio")
             turma_obj.hora_fim = request.form.get("hora_fim")
             turma_obj.professor_id = request.form.get("professor_id") or None
 
-            dias_selecionados = request.form.getlist("dias_semana")
             turma_obj.dias_semana = (
-                ", ".join([dia for dia in dias_selecionados if dia])
-                or turma_obj.dias_semana
+                novo_dias_semana or turma_obj.dias_semana
             )
 
             original_periodo_id = turma_obj.periodo_letivo_id
@@ -335,6 +365,10 @@ def editar_turma(id):
             if original_periodo_id != novo_periodo_id or not turma_obj.ordenacao:
                 turma_obj.ordenacao = obter_proximo_ordenacao(novo_periodo_id)
 
+            if limpar_lancamentos and dados_de_lancamento_alterados:
+                Frequencia.query.filter_by(turma_id=id).delete(synchronize_session=False)
+                RegistroAula.query.filter_by(turma_id=id).delete(synchronize_session=False)
+
             curso_id = request.form.get("curso_id")
             turma_obj.curso_id = int(curso_id) if curso_id else None
 
@@ -374,6 +408,10 @@ def editar_turma(id):
         if p.centro_custo else []
         for p in periodos
     }
+    tem_lancamentos = bool(
+        Frequencia.query.filter_by(turma_id=id).first()
+        or RegistroAula.query.filter_by(turma_id=id).first()
+    )
     return render_template(
         "turmas/editar.html",
         turma=turma_obj,
@@ -384,6 +422,7 @@ def editar_turma(id):
         periodos_centros_edit=periodos_centros_edit,
         centros_custo=centros_custo,
         cursos=cursos,
+        tem_lancamentos=tem_lancamentos,
     )
 
 
@@ -399,6 +438,8 @@ def excluir_turma(id):
             turma_obj.ativo = False
             for aluno in turma_obj.alunos.all():
                 turma_obj.alunos.remove(aluno)
+            Frequencia.query.filter_by(turma_id=id).delete(synchronize_session=False)
+            RegistroAula.query.filter_by(turma_id=id).delete(synchronize_session=False)
             db.session.commit()
             flash(
                 f"Lógica Desativada: '{turma_obj.nome}' transferida para Storage Arquivo.",

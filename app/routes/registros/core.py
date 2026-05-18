@@ -190,13 +190,13 @@ def frequencia():
 
          # Injeta estats_freq e pode_receber_frequencia em cada aluno
          for aluno in ctx.get('alunos', []):
-             # Busca registros desta turma; fallback para qualquer registro do aluno
+             # Busca registros desta turma; fallback apenas para registros legados sem turma_id
              registros = Frequencia.query.filter_by(
                  aluno_id=aluno.id, turma_id=int(turma_id)
              ).all()
              if not registros:
                  # Compatibilidade com registros antigos sem turma_id
-                 registros = Frequencia.query.filter_by(aluno_id=aluno.id).all()
+                 registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
 
              total = len(registros)
              if total:

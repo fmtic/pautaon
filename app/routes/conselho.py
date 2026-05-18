@@ -328,8 +328,10 @@ def fechamento_turma(turma_id):
 
     dados_alunos = []
     for aluno in alunos:
-        # Aqui o código segue seu fluxo normal de cálculo de frequência...
-        registros = Frequencia.query.filter_by(aluno_id=aluno.id).all()
+        # Aqui o código segue seu fluxo normal de cálculo de frequência para esta turma
+        registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=turma.id).all()
+        if not registros:
+            registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
         total = len(registros)
 
         counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0, 'J': 0}

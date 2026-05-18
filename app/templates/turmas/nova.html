@@ -170,7 +170,7 @@
 
 {% block scripts %}
 <script>
-    window.periodosCentros = {{ periodos_centros | tojson }};
+    window.periodosCentros = {{ periodos_centros | default({}) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>
 {% endblock %}

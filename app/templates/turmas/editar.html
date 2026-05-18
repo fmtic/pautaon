@@ -7,6 +7,10 @@
 
     <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="original_dias_semana" id="original_dias_semana" value="{{ turma.dias_semana or '' }}">
+        <input type="hidden" name="original_data_inicio" id="original_data_inicio" value="{{ turma.data_inicio or '' }}">
+        <input type="hidden" name="original_data_fim" id="original_data_fim" value="{{ turma.data_fim or '' }}">
+        <input type="hidden" name="limpar_lancamentos" id="limpar_lancamentos" value="0">
 
         <div class="row mb-4">
             <div class="col-md-12">
@@ -121,6 +125,12 @@
             </div>
         </div>
 
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            Se alterar os dias ou as datas de início/fim, os lançamentos existentes de presença/falta e as porcentagens poderão ficar incompatíveis.
+            Será solicitado confirmar a limpeza dos lançamentos para que a nova agenda seja recriada corretamente.
+        </div>
+
         <div class="row">
             <div class="mb-3 col-md-3">
                 <label class="form-label fw-bold">Data Início</label>
@@ -155,6 +165,7 @@
 <script>
     window.periodosCentrosEdit = {{ periodos_centros_edit | tojson }};
     window.turmaCentroCusto = {{ turma.centro_custo | tojson }};
+    window.turmaTemLancamentos = {{ tem_lancamentos | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/turmas/editar.js') }}"></script>
 {% endblock %}

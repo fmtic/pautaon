@@ -30,7 +30,7 @@ Versão de trabalho do projeto original preparada para evolução com menos risc
 ```text
 pauta-online-refatorado/
 ├── app/
-│   ├── routes/         # Controllers HTTP e pacotes por domínio
+│   ├── routes/         # Controllers HTTP e pacotes por domínios
 │   ├── services/       # Regras de integração e bootstrap
 │   ├── utils/          # Funções utilitárias legadas e auxiliares
 │   ├── extensions.py   # Instâncias compartilhadas do Flask
@@ -41,6 +41,15 @@ pauta-online-refatorado/
 ├── config.py
 └── run.py
 ```
+
+## Comportamento de exclusão de turma
+
+- A exclusão de turma é feita como desativação parcial: o registro de `Turma` recebe `ativo=False`.
+- Ao excluir uma turma, o sistema também remove:
+  - lançamentos de frequência (`Frequencia`) ligados a essa turma;
+  - registros de aula (`RegistroAula`) ligados a essa turma;
+  - vínculos de alunos com a turma, para evitar resquícios em cálculos de frequência.
+- Essa regra garante que uma turma excluída não reproveite presenças/faltas antigas caso seja recriada.
 
 ## Como rodar
 
