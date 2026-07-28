@@ -1,3 +1,6 @@
+import json
+import logging
+
 from flask import Blueprint, render_template, request, redirect, flash, abort, url_for, jsonify
 from flask_login import login_required, current_user
 from app.models import (PerguntaConselho, Turma, Aluno, Frequencia,
@@ -8,7 +11,84 @@ from datetime import datetime, date
 from collections import OrderedDict
 from app.utils.logica import get_unidade_id
 
+logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
+
+
+def _build_turma_avaliacao_payload(form_data, perguntas) -> str:
+    """Serializa respostas de avaliação da turma em JSON, ignorando campos vazios.
+
+    Este fluxo usa os campos de avaliação já previstos no modelo de Turma para
+    preservar a estrutura atual do sistema acadêmico sem introduzir uma nova tabela.
+    """
+    respostas = {}
+    for pergunta in perguntas:
+        campo = f"resp_turma_{pergunta.id}"
+        valor = form_data.get(campo, "")
+        if valor is None:
+            continue
+        valor_limpo = str(valor).strip()
+        if valor_limpo:
+            respostas[str(pergunta.id)] = valor_limpo
+    return json.dumps(respostas, ensure_ascii=False)
+
+
+def _get_turma_avaliacao_respostas(turma: Turma, etapa: str) -> dict:
+    """Recupera respostas previamente gravadas para a avaliação da turma de uma etapa."""
+    campos = {
+        "INICIAL": "avaliacao_inicial",
+        "PERCURSO": "avaliacao_percurso",
+        "FINAL": "avaliacao_final",
+    }
+    valor = getattr(turma, campos.get(etapa, "avaliacao_inicial"), "") or ""
+    if not valor:
+        return {}
+
+    try:
+        dados = json.loads(valor)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(dados, dict):
+        return {}
+    return {str(chave): str(valor_item) for chave, valor_item in dados.items() if valor_item}
+
+
+def _normalize_conselho_request(form_data) -> dict:
+    """Normaliza os campos do formulário de conselho para evitar valores inválidos.
+
+    Esta função é usada para padronizar entradas vindas do formulário antes do
+    processamento, preservando o fluxo atual do sistema acadêmico sem novos módulos.
+    """
+    normalized = {
+        "turma_id": None,
+        "etapa": form_data.get("etapa", "INICIAL"),
+        "data_inicio": form_data.get("data_inicio", ""),
+        "data_fim": form_data.get("data_fim", ""),
+        "respostas": {},
+    }
+
+    turma_id = form_data.get("turma_id", "")
+    if turma_id not in (None, ""):
+        try:
+            normalized["turma_id"] = int(str(turma_id).strip())
+        except ValueError:
+            normalized["turma_id"] = None
+
+    for key, value in form_data.items():
+        if key.startswith("resp_turma_"):
+            pergunta_id = key.replace("resp_turma_", "")
+            if pergunta_id:
+                normalized["respostas"][f"turma_{pergunta_id}"] = str(value).strip()
+        elif key.startswith("resp_"):
+            parts = key.split("_")
+            if len(parts) >= 3:
+                aluno_id = parts[1]
+                pergunta_id = parts[2]
+                if aluno_id and pergunta_id:
+                    normalized["respostas"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
+
+    return normalized
 
 # ---------------------------------------------------------------------------
 # PAINEL GERAL
@@ -240,38 +320,47 @@ def lancamento_conselho():
 @bp.route('/conselho/salvar', methods=['POST'])
 @login_required
 def salvar_conselho():
-    turma_id = request.form.get('turma_id')
-    etapa    = request.form.get('etapa')
+    normalized = _normalize_conselho_request(request.form)
+    turma_id = normalized["turma_id"]
+    etapa = normalized["etapa"]
 
     if not turma_id or not etapa:
         flash("Dados insuficientes para salvar.", "warning")
         return redirect(url_for('conselho.lancamento_conselho'))
 
-    data_inicio = request.form.get('data_inicio')
-    data_fim    = request.form.get('data_fim')
+    data_inicio = normalized["data_inicio"]
+    data_fim = normalized["data_fim"]
 
     conselhos_turma = ConselhoClasse.query.filter_by(
-        turma_id=int(turma_id), etapa=etapa
+        turma_id=turma_id, etapa=etapa
     ).all()
     conselho_map = {c.aluno_id: c for c in conselhos_turma}
 
     for c in conselhos_turma:
         if data_inicio:
-            c.data_inicio = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+            try:
+                c.data_inicio = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Formato de data inicial inválido.", "warning")
+                return redirect(url_for('conselho.lancamento_conselho', turma=turma_id, etapa=etapa))
         if data_fim:
-            c.data_fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+            try:
+                c.data_fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Formato de data final inválido.", "warning")
+                return redirect(url_for('conselho.lancamento_conselho', turma=turma_id, etapa=etapa))
 
-    for key, value in request.form.items():
-        aluno_id    = None
+    for key, value in normalized["respostas"].items():
+        aluno_id = None
         pergunta_id = None
 
-        if key.startswith('resp_turma_'):
-            pergunta_id = int(key.replace('resp_turma_', ''))
-        elif key.startswith('resp_'):
+        if key.startswith('turma_'):
+            pergunta_id = int(key.replace('turma_', ''))
+        else:
             parts = key.split('_')
-            if len(parts) >= 3:
-                aluno_id    = int(parts[1])
-                pergunta_id = int(parts[2])
+            if len(parts) >= 2:
+                aluno_id = int(parts[0])
+                pergunta_id = int(parts[1])
 
         if pergunta_id is None:
             continue
@@ -396,8 +485,8 @@ def salvar_fechamento_data(turma_id):
 
     except Exception as e:
         db.session.rollback()
-        print(f"Erro no salvamento: {str(e)}")
-        return jsonify({"success": False, "message": str(e)})
+        logger.exception("Erro no salvamento do fechamento da turma %s", turma_id)
+        return jsonify({"success": False, "message": "Falha ao salvar o fechamento da turma. Veja o log para detalhes."})
 
 
 # ---------------------------------------------------------------------------
@@ -416,12 +505,27 @@ def avaliar_turma(turma_id):
     perguntas = PerguntaConselho.query.filter_by(
         tipo='TURMA', etapa=etapa_selecionada, ativo=True
     ).all()
-    respostas = {}
+    respostas = _get_turma_avaliacao_respostas(turma, etapa_selecionada)
 
     if request.method == 'POST':
-        # TODO: implementar salvamento das respostas de avaliação da turma
-        flash(f"Avaliação da turma {turma.nome} salva!", "success")
-        return redirect(url_for('registros.painel_professor'))
+        # Nota técnica: a avaliação geral da turma é persistida no próprio registro da turma
+        # para manter compatibilidade com o modelo acadêmico já existente e evitar uma nova tabela.
+        try:
+            payload = _build_turma_avaliacao_payload(request.form, perguntas)
+            campos = {
+                "INICIAL": "avaliacao_inicial",
+                "PERCURSO": "avaliacao_percurso",
+                "FINAL": "avaliacao_final",
+            }
+            setattr(turma, campos[etapa_selecionada], payload)
+            db.session.add(turma)
+            db.session.commit()
+            flash(f"Avaliação da turma {turma.nome} salva!", "success")
+            return redirect(url_for('registros.painel_professor'))
+        except Exception:
+            db.session.rollback()
+            logger.exception("Falha ao salvar avaliação da turma %s", turma_id)
+            flash("Não foi possível salvar a avaliação da turma. Tente novamente.", "danger")
 
     return render_template('conselho/turma_aval.html',
                            turma=turma,

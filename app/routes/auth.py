@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, render_template, request, redirect, fl
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.database import db
@@ -12,6 +13,29 @@ from app.services.auth_service import (
 )
 
 bp = Blueprint('auth', __name__)
+
+# Nota técnica: este controle básico evita tentativas repetidas de login em sequência
+# sem exigir uma nova estrutura de cache ou armazenamento externo.
+_FAILED_ATTEMPTS = defaultdict(list)
+_MAX_ATTEMPTS = 5
+_ATTEMPT_WINDOW_SECONDS = 900
+
+
+def _is_login_blocked(ip_address: str) -> bool:
+    """Bloqueia temporariamente IPs com muitas tentativas consecutivas de login."""
+    attempts = _FAILED_ATTEMPTS.get(ip_address, [])
+    now = datetime.now()
+    attempts[:] = [ts for ts in attempts if (now - ts).total_seconds() < _ATTEMPT_WINDOW_SECONDS]
+    _FAILED_ATTEMPTS[ip_address] = attempts
+    return len(attempts) >= _MAX_ATTEMPTS
+
+
+def _register_failed_attempt(ip_address: str) -> None:
+    """Registra uma tentativa falha para posterior bloqueio temporário."""
+    attempts = _FAILED_ATTEMPTS.get(ip_address, [])
+    attempts.append(datetime.now())
+    _FAILED_ATTEMPTS[ip_address] = attempts
+
 
 @bp.route('/aguardando-aprovacao')
 @login_required
@@ -33,9 +57,15 @@ def login():
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
 
+        ip_address = request.remote_addr or "unknown"
+        if _is_login_blocked(ip_address):
+            flash('Muitas tentativas de login foram detectadas. Tente novamente mais tarde.', 'danger')
+            return redirect(url_for('auth.login'))
+
         # Defensivo contra envio vazio
         if not email or not password:
             flash('Informe Email e Senha.', 'warning')
+            _register_failed_attempt(ip_address)
             return redirect(url_for('auth.login'))
 
         # Busca o usuário local
@@ -87,6 +117,7 @@ def login():
 
         # Falha total ou Desabilitado
         register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo de e-mail: {email}")
+        _register_failed_attempt(ip_address)
         flash('Credenciais recusadas pelo domínio e banco de dados.', 'danger')
 
     return render_template('login.html')
@@ -107,6 +138,9 @@ def painel_admin():
     if current_user.role != 'admin':
         flash("Quebra de Hierarquia: O Painel administrativo está bloqueado para você.", "danger")
         return redirect(url_for('main.dashboard'))
+
+    # Nota técnica: o painel administrativo só deve expor dados de usuários e unidades
+    # para o perfil de administrador, preservando o modelo RBAC atual.
 
     usuarios = db.session.execute(
         select(User).order_by(User.name)

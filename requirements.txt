@@ -34,6 +34,7 @@ pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
 pycryptodomex==3.23.0
+pytest==8.3.4
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1

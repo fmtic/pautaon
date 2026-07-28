@@ -21,9 +21,21 @@ def get_bool(name: str, default: bool = False) -> bool:
 
 
 class Config:
-    """Configuração central do sistema."""
+    """Configuração central do sistema.
 
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-key-substituir-em-producao")
+    Os valores padrão abaixo são apenas para desenvolvimento local. Em produção,
+    a chave secreta deve ser definida explicitamente no ambiente para evitar
+    sessões e cookies inseguros.
+    """
+
+    APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development"))
+    DEBUG = get_bool("FLASK_DEBUG", APP_ENV == "development")
+
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        if APP_ENV == "production":
+            raise RuntimeError("SECRET_KEY deve ser definido no ambiente para produção.")
+        SECRET_KEY = "dev-key-substituir-em-producao"
 
     REMEMBER_COOKIE_DURATION = timedelta(hours=8)
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
@@ -33,9 +45,6 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-
-    APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development"))
-    DEBUG = get_bool("FLASK_DEBUG", APP_ENV == "development")
 
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
     ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrador")

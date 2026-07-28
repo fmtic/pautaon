@@ -54,7 +54,7 @@
 
                             <textarea name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
                                 class="form-control" rows="3"
-                                placeholder="Digite sua observação...">{{ respostas.get('None_' ~ pergunta.id, '') }}</textarea>
+                                placeholder="Digite sua observação...">{{ respostas.get(pergunta.id|string, '') }}</textarea>
                         </div>
                     </div>
                     {% endfor %}

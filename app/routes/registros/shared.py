@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from flask import abort, current_app
 from werkzeug.utils import secure_filename
@@ -24,13 +25,29 @@ def obter_proximo_ordenacao(periodo_letivo_id):
 
 
 def assert_unidade_context(obj_unidade_id, unidade_id):
+    """Impede que dados de uma unidade sejam acessados em outra.
+
+    Este helper centraliza a regra de segurança por contexto de unidade e ajuda a
+    manter consistência entre os módulos do sistema acadêmico.
+    """
     if unidade_id and obj_unidade_id != unidade_id:
         abort(403)
 
 
+def _build_upload_path(*parts: str) -> str:
+    """Constrói um caminho de upload confiável, evitando traversal e caminhos maliciosos."""
+    base_path = Path(current_app.static_folder) / "uploads"
+    target_path = base_path.joinpath(*parts)
+    target_path = target_path.resolve()
+    base_resolved = base_path.resolve()
+    if not str(target_path).startswith(str(base_resolved)):
+        raise ValueError("Caminho de upload inválido.")
+    return str(target_path)
+
+
 def salvar_foto(foto, aluno):
     filename = secure_filename(f"aluno_{aluno.id}_{foto.filename}")
-    upload_path = os.path.join(current_app.static_folder, "uploads", "fotos")
+    upload_path = _build_upload_path("fotos")
     os.makedirs(upload_path, exist_ok=True)
     foto.save(os.path.join(upload_path, filename))
     aluno.foto_path = filename
@@ -45,9 +62,7 @@ def salvar_documento(documento, aluno, doc_id):
         return False
 
     mat_folder = aluno.matricula.replace(".", "_") if aluno.matricula else f"aluno_{aluno.id}"
-    upload_path = os.path.join(
-        current_app.static_folder, "uploads", "documentos", mat_folder
-    )
+    upload_path = _build_upload_path("documentos", mat_folder)
     os.makedirs(upload_path, exist_ok=True)
 
     filename = secure_filename(f"{doc_id}.pdf")

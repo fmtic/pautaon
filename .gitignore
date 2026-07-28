@@ -27,6 +27,7 @@ Thumbs.db
 
 # Pastas de uploads
 uploads/
+app/static/uploads/
 
 # Logs e cobertura
 *.log
@@ -34,6 +35,16 @@ uploads/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+.pytype/
+
+# Artefatos de execução e ambiente local
+*.sqlite
+*.sqlite3-journal
+*.db-journal
+instance/*.db-shm
+instance/*.db-wal
+.tmp/
+.tmp_*
 
 # Pasta do Nextcloud (arquivos temporários de sincronização)
 .sync_*.db
