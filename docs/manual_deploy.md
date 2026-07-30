@@ -99,6 +99,20 @@ from app import create_app
 application = create_app()
 ```
 
+### Configurar PostgreSQL
+Defina `DATABASE_URL` no `.env` para usar PostgreSQL em vez do SQLite:
+```env
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/pautaon
+```
+Use o mesmo driver nas dependências do projeto adicionando `psycopg[binary]`.
+
+### Gerar o schema PostgreSQL
+Há um script que gera o SQL de criação de tabelas e aplica o schema no banco:
+```bash
+python scripts/create_postgres_schema.py
+```
+Ele usa o `DATABASE_URL` do ambiente para conectar e criar as tabelas no PostgreSQL.
+
 ### Criar o VirtualHost
 Crie o arquivo `/etc/apache2/sites-available/pautaon.conf`:
 
