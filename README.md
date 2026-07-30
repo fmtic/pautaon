@@ -62,19 +62,38 @@ pip install -r requirements.txt
 ```
 
 3. Copie `.env.example` para `.env` e ajuste os valores necessários.
-4. Inicialize o banco:
+   - Para SQLite (padrão de desenvolvimento), deixe `DATABASE_URL` comentado ou defina:
+     ```env
+     DATABASE_URL=sqlite:///instance/database.db
+     ```
+   - Para PostgreSQL, defina algo como:
+     ```env
+    DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/pautaon
+4. Instale o driver PostgreSQL se estiver usando PostgreSQL:
+
+```bash
+pip install psycopg[binary]
+```
+
+5. Inicialize o banco:
 
 ```bash
 flask --app run init-db
 ```
 
-5. Crie o administrador inicial:
+6. Se estiver usando PostgreSQL, você pode gerar o schema e aplicar diretamente com:
+
+```bash
+python scripts/create_postgres_schema.py
+```
+
+7. Crie o administrador inicial:
 
 ```bash
 flask --app run seed-admin
 ```
 
-6. Execute a aplicação:
+8. Execute a aplicação:
 
 ```bash
 python run.py

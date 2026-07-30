@@ -7,6 +7,35 @@ from typing import List, Dict, Tuple, Any, Optional
 
 from app.utils.timezone import get_local_now
 
+NAME_LOWER_EXCEPTIONS = {
+    'da', 'de', 'do', 'dos', 'das', 'e', 'van', 'von', 'del', 'da', 'di', 'du', 'la', 'le', 'y', 'al'
+}
+
+
+def formatar_nome_proprio(nome: str | None) -> str | None:
+    """Normaliza um nome próprio para apresentação padrão.
+
+    Mantém preposições e conectores em minúsculas, mas capitaliza os nomes.
+    Exemplo: "adriely da conceição nunes" -> "Adriely da Conceição Nunes".
+    """
+    if not nome:
+        return None
+
+    def format_word(word: str, is_first: bool) -> str:
+        lower = word.lower()
+        if not is_first and lower in NAME_LOWER_EXCEPTIONS:
+            return lower
+        return '-'.join(part.capitalize() if part else '' for part in lower.split('-'))
+
+    parts = [p for p in nome.strip().split() if p]
+    if not parts:
+        return None
+
+    formatted_parts = [format_word(parts[0], True)]
+    formatted_parts += [format_word(word, False) for word in parts[1:]]
+
+    return ' '.join(formatted_parts)
+
 def get_unidade_id() -> Optional[int]:
     """Retorna o ID da unidade atual a partir da sessão HTTP."""
     if 'unidade_id' in session:

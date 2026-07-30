@@ -86,8 +86,10 @@ def login():
                 # O autoprovisionamento providencia a vida local de um AD Autorizado mas sem cadastro local
                 if not user:
                     try:
+                        from app.utils.logica import formatar_nome_proprio
+
                         user = User(
-                            name=email.split('@')[0].replace('.', ' ').title(),
+                            name=formatar_nome_proprio(email.split('@')[0].replace('.', ' ')),
                             email=email,
                             role='pendente', # Trava de segurança total no sistema
                             is_ad_user=True,

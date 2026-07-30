@@ -102,7 +102,7 @@ application = create_app()
 ### Configurar PostgreSQL
 Defina `DATABASE_URL` no `.env` para usar PostgreSQL em vez do SQLite:
 ```env
-DATABASE_URL=postgresql://usuario:senha@localhost:5432/pautaon
+DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/pautaon
 ```
 Use o mesmo driver nas dependências do projeto adicionando `psycopg[binary]`.
 

@@ -136,6 +136,8 @@ def novo_aluno():
     if request.method == "GET":
         return render_template("alunos/novo.html")
 
+    from app.utils.logica import formatar_nome_proprio
+
     nome = request.form.get("nome")
     if not nome:
         flash("O Campo 'Nome' não deve ser vazio no momento do Cadastro.", "warning")
@@ -147,8 +149,8 @@ def novo_aluno():
             datetime.strptime(nascimento, "%Y-%m-%d").date() if nascimento else None
         )
         novo = Aluno(
-            nome=nome,
-            nome_social=request.form.get("nome_social"),
+            nome=formatar_nome_proprio(nome),
+            nome_social=formatar_nome_proprio(request.form.get("nome_social")),
             nivel=request.form.get("nivel"),
             ativo=True,
             unidade_id=get_unidade_id(),
@@ -255,9 +257,11 @@ def editar_aluno(id):
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
 
     if request.method == "POST":
+        from app.utils.logica import formatar_nome_proprio
+
         try:
-            aluno.nome = request.form.get("nome")
-            aluno.nome_social = request.form.get("nome_social")
+            aluno.nome = formatar_nome_proprio(request.form.get("nome"))
+            aluno.nome_social = formatar_nome_proprio(request.form.get("nome_social"))
             nivel = request.form.get("nivel")
             if nivel is not None:
                 aluno.nivel = nivel
