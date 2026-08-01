@@ -484,7 +484,7 @@ def planejamento():
         q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
     cursos = q_cursos.order_by(Curso.nome).all()
 
-    return render_template('planejamento.html',
+    return render_template('planejamento/planejamento.html',
                            turmas=turmas,
                            temas=lista_temas,
                            programas=programas,
@@ -594,7 +594,7 @@ def imprimir_temas():
         q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
     cursos = q_cursos.order_by(Curso.nome).all()
 
-    return render_template('impressao_temas.html',
+    return render_template('planejamento/impressao_temas.html',
                            temas=temas,
                            cursos=cursos,
                            filtro_curso=filtro_curso,

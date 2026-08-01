@@ -16,6 +16,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     _register_blueprints(app)
     _register_context_processors(app)
     _register_cli(app)
+    _register_error_handlers(app)
 
     return app
 
@@ -111,3 +112,13 @@ def _register_cli(app: Flask) -> None:
     from app.services.bootstrap import register_bootstrap_commands
 
     register_bootstrap_commands(app)
+
+
+def _register_error_handlers(app: Flask) -> None:
+    from sqlalchemy.exc import OperationalError
+    from flask import render_template
+
+    @app.errorhandler(OperationalError)
+    def handle_db_down_error(e):
+        app.logger.error(f"Erro de conexão com o banco de dados interceptado: {e}")
+        return render_template('sistema_indisponivel.html'), 503
