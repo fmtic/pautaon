@@ -40,7 +40,13 @@ def _register_failed_attempt(ip_address: str) -> None:
 @bp.route('/aguardando-aprovacao')
 @login_required
 def aguardando_aprovacao():
-    """Intermediário visual que barra usuários AD Recém-logados de acessarem o sistema até liberação de Cargo e Perfis."""
+    """Exibe a página de espera para usuários AD/LDAP recém-provisionados.
+
+    Quando o usuário do domínio passa pela validação do servidor, ele é criado
+    localmente com perfil `pendente`. Enquanto essa etapa não for liberada pelo
+    administrador, o acesso ao sistema fica restrito a esta tela, evitando que
+    o perfil alcance áreas operacionais sem a devida classificação.
+    """
     if current_user.role != 'pendente':
         return redirect(url_for('main.dashboard'))
     return render_template('aguardando.html')
@@ -48,10 +54,12 @@ def aguardando_aprovacao():
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """
-    Controlador de Login com Autenticação de Dois Níveis Híbrida:
-    1º Camada Bando Local (Prioridade 1)
-    2º Camada Fallback/FirstTime AD (LDAP) -> Caso passe, cria user "pendente" automaticamente no db local.
+    """Controlador de login híbrido: local primeiro e LDAP/AD como fallback.
+
+    Usuários locais com senha persistida continuam no fluxo de troca
+    obrigatória na primeira autenticação. Usuários federados pelo AD/LDAP
+    são provisionados localmente apenas quando o servidor do domínio os
+    valida e não precisam de senha local persistida.
     """
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
@@ -68,20 +76,28 @@ def login():
             _register_failed_attempt(ip_address)
             return redirect(url_for('auth.login'))
 
-        # Busca o usuário local
+        # Busca o usuário já registrado localmente. Para contas federadas,
+        # a senha local pode estar ausente e o login é concluído pelo AD/LDAP.
         user = db.session.execute(
             select(User).where(User.email == email)
         ).scalars().first()
 
         login_ok = False
+        ldap_identity = email
+        if "@" not in ldap_identity and current_app.config.get("LDAP_DOMAIN"):
+            ldap_identity = f"{ldap_identity}@{current_app.config.get('LDAP_DOMAIN')}"
 
-        # === 1. TENTATIVA AUTENTICAÇÃO LOCAL (HASH) ===
-        if user and user.check_password(password):
+        # === 1. TENTATIVA DE AUTENTICAÇÃO LOCAL (HASH) ===
+        # Este fluxo é reservado a usuários que realmente possuem credencial
+        # local persistida no banco. Usuários AD/LDAP não dependem dessa senha.
+        if user and user.password and user.check_password(password):
             login_ok = True
 
-        # === 2. TENTATIVA AUTENTICAÇÃO DOMÍNIO AD ===
-        elif "@" in email:
-            if authenticate_against_ldap(email, password):
+        # === 2. TENTATIVA DE AUTENTICAÇÃO NO DOMÍNIO AD/LDAP ===
+        # Quando a validação no servidor do domínio acontece com sucesso, o
+        # sistema apenas provisiona a identidade local em status `pendente`.
+        else:
+            if authenticate_against_ldap(ldap_identity, password):
                 login_ok = True
                 # O autoprovisionamento providencia a vida local de um AD Autorizado mas sem cadastro local
                 if not user:
@@ -89,11 +105,12 @@ def login():
                         from app.utils.logica import formatar_nome_proprio
 
                         user = User(
-                            name=formatar_nome_proprio(email.split('@')[0].replace('.', ' ')),
-                            email=email,
+                            name=formatar_nome_proprio(ldap_identity.split('@')[0].replace('.', ' ')),
+                            email=ldap_identity,
                             role='pendente', # Trava de segurança total no sistema
                             is_ad_user=True,
-                            is_active=True
+                            is_active=True,
+                            first_login=False,
                         )
                         db.session.add(user)
                         db.session.commit()
@@ -110,8 +127,10 @@ def login():
 
             register_security_log("Acesso Aprovado", f"Usuário {user.name} acessou o sistema.")
 
-            # Força troca de senha no primeiro login (todos os tipos de usuário)
-            if user.first_login:
+            # A troca obrigatória de senha deve ocorrer apenas para usuários
+            # locais com senha persistida no banco. Usuários federados pelo AD
+            # seguem para a fase de aprovação do perfil e não passam por senha local.
+            if user.first_login and not user.is_ad_user:
                 flash('Bem-vindo! Por segurança, defina sua senha pessoal antes de continuar.', 'warning')
                 return redirect(url_for('auth.trocar_senha'))
 
@@ -225,6 +244,10 @@ def resetar_senha(id):
     
     usuario = db.session.get(User, id)
     if usuario:
+        if usuario.is_ad_user:
+            flash("Usuários federados pelo LDAP não possuem senha local para resetar no banco.", "warning")
+            return redirect(url_for('auth.painel_admin'))
+
         try:
             default_password = current_app.config.get("ADMIN_DEFAULT_PASSWORD")
             if not default_password:
@@ -443,6 +466,10 @@ def limpar_logs_antigos():
 @bp.route('/trocar-senha', methods=['GET', 'POST'])
 @login_required
 def trocar_senha():
+    if current_user.is_ad_user:
+        flash('Usuários federados pelo LDAP não precisam alterar uma senha local no banco.', 'info')
+        return redirect(url_for('main.dashboard'))
+
     if request.method == 'POST':
         nova     = request.form.get('nova_senha', '')
         confirma = request.form.get('confirma_senha', '')

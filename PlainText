@@ -2,7 +2,7 @@ templates/
 ├── base.html
 ├── login.html
 ├── trocar_senha.html
-├── guardando.html
+├── aguardando.html
 │
 ├── admin/
 │   ├── informacao_padrao.html

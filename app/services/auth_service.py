@@ -12,13 +12,44 @@ from app.database import db
 from app.models import LogAcao
 
 
+def _build_ldap_bind_user(identity: str, domain: str | None = None) -> str:
+    """Normaliza a identidade usada para o bind no AD.
+
+    Aceita tanto o UPN completo (`usuario@pgrael.local`) quanto o nome simples
+    (`usuario`). Quando o domínio estiver configurado, o nome simples é convertido
+    automaticamente para o formato de login do AD.
+    """
+    identity = identity.strip()
+    if not identity:
+        return identity
+    if "@" in identity:
+        return identity
+    if domain:
+        return f"{identity}@{domain}"
+    return identity
+
+
+def _build_ldap_tls(validate: bool = True, ca_certs_file: str | None = None) -> Tls:
+    """Constrói a configuração TLS para um servidor AD/LDAP seguro."""
+    tls_kwargs: dict[str, object] = {
+        "validate": ssl.CERT_REQUIRED if validate else ssl.CERT_NONE,
+        "version": ssl.PROTOCOL_TLSv1_2,
+    }
+    if ca_certs_file:
+        tls_kwargs["ca_certs_file"] = ca_certs_file
+    return Tls(**tls_kwargs)
+
+
 def authenticate_against_ldap(email: str, password: str) -> bool:
     """Autentica no LDAP apenas quando a integração estiver configurada."""
     server_uri = current_app.config.get("LDAP_SERVER_URI")
     if not server_uri:
         return False
 
-    tls = Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2)
+    tls = _build_ldap_tls(
+        validate=current_app.config.get("LDAP_VALIDATE_CERT", True),
+        ca_certs_file=current_app.config.get("LDAP_CA_CERT_FILE"),
+    )
     server = Server(
         server_uri,
         use_ssl=current_app.config.get("LDAP_USE_SSL", True),
@@ -26,9 +57,13 @@ def authenticate_against_ldap(email: str, password: str) -> bool:
         get_info=ALL,
         connect_timeout=current_app.config.get("LDAP_CONNECT_TIMEOUT", 10),
     )
+    bind_user = _build_ldap_bind_user(
+        email,
+        current_app.config.get("LDAP_DOMAIN"),
+    )
 
     try:
-        connection = Connection(server, user=email, password=password, auto_bind=True)
+        connection = Connection(server, user=bind_user, password=password, auto_bind=True)
         is_bound = connection.bound
         connection.unbind()
         return is_bound

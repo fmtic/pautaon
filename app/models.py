@@ -12,9 +12,6 @@ from typing import List, Optional
 # ---------------------------------------------------------------------------
 # TABELA DE ASSOCIAÇÃO (Muitos-para-Muitos: Aluno <-> Turma)
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# TABELA DE ASSOCIAÇÃO (Muitos-para-Muitos: Aluno <-> Turma)
-# ---------------------------------------------------------------------------
 class Inscricao(db.Model):
     __tablename__ = 'inscricoes'
     aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), primary_key=True)
@@ -149,7 +146,7 @@ class User(db.Model, UserMixin):
     id: int = db.Column(db.Integer, primary_key=True)
     name: str = db.Column(db.String(100), nullable=False)
     email: str = db.Column(db.String(120), unique=True, nullable=False)
-    password: str = db.Column(db.String(200), nullable=False)
+    password: str = db.Column(db.String(200), nullable=True)
     
     # Perfis comuns: 'admin', 'pedagogico', 'professor', 'secretaria', 'serviço social','pendente'
     role: str = db.Column(db.String(20), nullable=False)
@@ -167,8 +164,19 @@ class User(db.Model, UserMixin):
         self.password = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
-        """Compara a string em texto limpo com o hash armazenado no banco."""
-        return check_password_hash(self.password, password)
+        """Compara a senha informada com o hash local armazenado no banco.
+
+        Este método é usado apenas para contas locais com credencial persistida.
+        Usuários federados pelo AD/LDAP não possuem senha local gravada; por isso,
+        a validação deve retornar `False` e permitir que o fluxo siga para a
+        autenticação no servidor do domínio.
+        """
+        if not self.password:
+            return False
+        try:
+            return check_password_hash(self.password, password)
+        except Exception:
+            return False
 
 # ---------------------------------------------------------------------------
 # TURMAS E CURSOS

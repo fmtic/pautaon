@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 *.pem
+*.cer
 
 # Python
 __pycache__/

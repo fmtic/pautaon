@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,22 @@ def get_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_database_url(database_url: str) -> str:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme
+    username = parsed.username or ""
+
+    if scheme == "postgresql":
+        parsed = parsed._replace(scheme="postgresql+psycopg")
+    elif scheme == "postgresql+psycopg2":
+        parsed = parsed._replace(scheme="postgresql+psycopg")
+
+    if username.endswith("+psycopg"):
+        parsed = parsed._replace(netloc=parsed.netloc.replace(username, username.replace("+psycopg", ""), 1))
+
+    return urlunparse(parsed)
 
 
 class Config:
@@ -43,7 +60,9 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+    SQLALCHEMY_DATABASE_URI = normalize_database_url(
+        os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -54,6 +73,9 @@ class Config:
     LDAP_SERVER_URI = os.getenv("LDAP_SERVER_URI")
     LDAP_USE_SSL = get_bool("LDAP_USE_SSL", True)
     LDAP_CONNECT_TIMEOUT = int(os.getenv("LDAP_CONNECT_TIMEOUT", "10"))
+    LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
+    LDAP_VALIDATE_CERT = get_bool("LDAP_VALIDATE_CERT", True)
+    LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE")
 
     GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aguardando Aprovação de Acesso</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --text-color: #1f2937;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --muted-text: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+            max-width: 480px;
+            width: 100%;
+            padding: 2.5rem 2rem;
+            text-align: center;
+        }
+
+        /* Container da logo do sistema */
+        .system-logo {
+            margin-bottom: 1.5rem;
+        }
+
+        .system-logo img {
+            max-width: 180px;
+            height: auto;
+        }
+
+        .icon-container {
+            width: 72px;
+            height: 72px;
+            background-color: #eff6ff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem auto;
+            color: var(--primary-color);
+        }
+
+        .icon-container svg {
+            width: 36px;
+            height: 36px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text-color);
+        }
+
+        p {
+            color: var(--muted-text);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background-color: #fef3c7;
+            color: #92400e;
+            padding: 0.4rem 0.8rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            background-color: #d97706;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            display: inline-block;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: #ffffff;
+            border: 1px solid var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            color: var(--muted-text);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-outline:hover {
+            background-color: #f1f5f9;
+            color: var(--text-color);
+        }
+
+        .footer-note {
+            margin-top: 1.5rem;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+
+        /* Área da logo da empresa desenvolvedora */
+        .company-branding {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .company-branding span {
+            font-size: 0.75rem;
+            color: var(--muted-text);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .company-branding img {
+            max-width: 110px;
+            height: auto;
+            /* Ajuste o filtro caso o fundo da logo precise destacar melhor */
+            filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.05));
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <!-- Logo do Sistema (PautaOn) -->
+        <div class="system-logo">
+            <img src="../static/img/logo_textual_transparente.png" alt="PautaOn - Impacto, Educação, Gestão">
+        </div>
+
+        <div class="icon-container">
+            <!-- Ícone de Escudo / Checagem -->
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+        </div>
+
+        <div class="status-badge">
+            <span class="dot"></span>
+            Pendente de validação
+        </div>
+        
+        <p>
+            Agora é aguardar a liberação do administrador do sistema para ter acesso à plataforma.
+        </p>
+
+        <div class="actions">
+            <button onclick="window.location.reload();" class="btn btn-primary">
+                Verificar Status Novamente
+            </button>
+            <a href="/login" class="btn btn-outline">
+                Voltar para a Tela de Login
+            </a>
+        </div>
+
+        <!-- Marca da Empresa (FMtic) -->
+        <div class="company-branding">
+            <span>Desenvolvido por</span>
+            <span></span>FMtic - Transformamos Tecnologia em Soluções Inteligentes</span>
+        </div>
+    </div>
+
+</body>
+</html>

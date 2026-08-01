@@ -36,7 +36,7 @@ DEFAULTS = {
     "cnpj": "",
     "endereco": "",
     "telefones": "",
-    "logo_principal_path": "img/logo_textual_fundoPreto.png",
+    "logo_principal_path": "img/logo_textual.png",
     "logo_secundaria_path": "img/logo.png",
     "favicon_path": "img/logo_resumida.png",
     "foto_default_aluno_path": "img/default.png",

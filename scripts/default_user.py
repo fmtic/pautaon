@@ -1,8 +1,8 @@
-"""
-Compatibilidade com o fluxo antigo.
+"""Compatibilidade com o fluxo antigo de provisionamento local.
 
-Este script foi mantido apenas para apontar para o novo fluxo explícito de
-criação de administrador, evitando credenciais hardcoded dentro da base.
+Este arquivo é mantido apenas como ponte para o fluxo explícito de criação
+administrativa local, sem credenciais hardcoded dentro do banco. A fonte de
+verdade para o bootstrap do administrador é o comando `flask --app run seed-admin`.
 """
 
 raise SystemExit(

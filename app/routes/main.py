@@ -48,11 +48,15 @@ def home():
 @bp.route("/dashboard")
 @login_required
 def dashboard():
+    """Controlador central do painel do sistema.
+
+    A rota agrupa as visões operacionais do ambiente educacional. Caso o
+    usuário tenha sido provisionado via LDAP/AD e ainda esteja com o perfil
+    classificado como `pendente`, o sistema o envia para a tela de espera
+    (`aguardando.html`) para que um administrador conclua a autorização do
+    cargo e dos acessos pertinentes.
     """
-    Controlador central de visão.
-    Dependendo do papel (Role Based Access Control), renderiza métricas distintas (Admin vs Professor).
-    """
-    # 1. Trava anti-vazamento de sistema para não ativados
+    # 1. Trava anti-vazamento de sistema para perfis ainda não liberados.
     if current_user.role == "pendente":
         return redirect(url_for("auth.aguardando_aprovacao"))
 
