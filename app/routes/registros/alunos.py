@@ -41,7 +41,7 @@ def atualizar_nivel_aluno(aluno_id):
 @bp.route("/alunos")
 @login_required
 def gerenciar_alunos():
-    if current_user.role not in ["admin", "pedagogico", "secretaria", "servico_social"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia", "servico_social"]:
         abort(403)
 
     from app.utils.logica import calcular_idades

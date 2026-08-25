@@ -61,14 +61,14 @@ def dashboard():
         return redirect(url_for("auth.aguardando_aprovacao"))
 
     # 2. Visão Global (Gerencial)
-    if current_user.role in ["admin", "pedagogico"]:
+    if current_user.role in ["admin", "gerencia", "pedagogico"]:
         # Secretaria vai direto para o dashboard da secretaria
         pass
 
     if current_user.role == "secretaria":
         return redirect(url_for("main.dashboard_secretaria"))
 
-    if current_user.role in ["admin", "pedagogico"]:
+    if current_user.role in ["admin", "gerencia", "pedagogico"]:
         try:
             unidade_id = get_unidade_id()
             if unidade_id:
@@ -371,7 +371,7 @@ def dashboard_secretaria():
 @login_required
 def relatorio_geral():
     """Controlador que invoca os serviços analíticos agregados para tela do Gestor."""
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     try:
@@ -438,7 +438,7 @@ def exportar_relatorio():
     """
     Gera as métricas usando PANDAS e exporta em Excel nativamente via Streaming.
     """
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     try:
@@ -545,7 +545,7 @@ def alternar_conselho(turma_id):
 @login_required
 def relatorio_alunos():
     """Gera o painel de listagem de alunos com filtros dinâmicos e paginação sob demanda."""
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     from app.models import PeriodoLetivo
@@ -683,7 +683,7 @@ def relatorio_alunos():
 @login_required
 def exportar_relatorio_alunos():
     """Gera exportação Excel da listagem de alunos filtrada, respeitando os mesmos filtros."""
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     from app.models import PeriodoLetivo

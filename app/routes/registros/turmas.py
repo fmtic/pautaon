@@ -22,7 +22,7 @@ from .shared import assert_unidade_context, obter_proximo_ordenacao
 @bp.route("/turma")
 @login_required
 def turma():
-    if current_user.role not in ["admin", "pedagogico", "secretaria", "professor"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia", "professor"]:
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -45,7 +45,7 @@ def turma_listar():
 @bp.route("/turmas/lixeira")
 @login_required
 def turma_lixeira():
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "gerencia"]:
         abort(403)
     turmas = Turma.query.filter_by(ativo=False).all()
     return render_template("turma_lixeira.html", turmas=turmas)
@@ -54,7 +54,7 @@ def turma_lixeira():
 @bp.route("/turma/nova", methods=["GET", "POST"])
 @login_required
 def nova_turma():
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "gerencia"]:
         abort(403)
 
     unidade_id = get_unidade_id()

@@ -90,7 +90,7 @@ CREATE TABLE "user" (
 	is_active BOOLEAN NOT NULL, 
 	is_ad_user BOOLEAN NOT NULL, 
 	unidade_id INTEGER, 
-	first_login BOOLEAN DEFAULT TRUE, 
+	first_login BOOLEAN, 
 	PRIMARY KEY (id), 
 	UNIQUE (email), 
 	FOREIGN KEY(unidade_id) REFERENCES unidade (id)

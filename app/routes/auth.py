@@ -7,6 +7,7 @@ from collections import defaultdict
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.database import db
 from app.services.auth_service import (
+    _build_ldap_bind_user,
     authenticate_against_ldap,
     register_security_log,
     validate_password_strength,
@@ -78,8 +79,15 @@ def login():
 
         # Busca o usuário já registrado localmente. Para contas federadas,
         # a senha local pode estar ausente e o login é concluído pelo AD/LDAP.
+        # O usuário pode ter sido provisionado localmente com e-mail canônico do AD
+        # ou apenas com o nome curto do login; por isso, pesquisamos todas as formas
+        # possíveis de identidade antes de criar um novo cadastro.
+        lookup_candidates = _build_ldap_bind_user(
+            email,
+            current_app.config.get("LDAP_DOMAIN"),
+        ) or [email]
         user = db.session.execute(
-            select(User).where(User.email == email)
+            select(User).where(User.email.in_(lookup_candidates))
         ).scalars().first()
 
         login_ok = False
@@ -107,6 +115,7 @@ def login():
                         user = User(
                             name=formatar_nome_proprio(ldap_identity.split('@')[0].replace('.', ' ')),
                             email=ldap_identity,
+                            password="",
                             role='pendente', # Trava de segurança total no sistema
                             is_ad_user=True,
                             is_active=True,
@@ -118,6 +127,16 @@ def login():
                         db.session.rollback()
                         current_app.logger.exception("Falha no aprovisionamento automático via LDAP.")
                         flash("Erro no banco local ao registrar sua entrada AD.", "danger")
+                        login_ok = False
+                elif user.email != ldap_identity:
+                    try:
+                        user.email = ldap_identity
+                        db.session.add(user)
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                        current_app.logger.exception("Falha ao normalizar o e-mail do usuário AD no banco local.")
+                        flash("Erro ao normalizar seu cadastro local do AD.", "danger")
                         login_ok = False
 
         # === 3. CONCLUSÃO COM SUCESSO ===

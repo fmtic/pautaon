@@ -99,20 +99,6 @@ from app import create_app
 application = create_app()
 ```
 
-### Configurar PostgreSQL
-Defina `DATABASE_URL` no `.env` para usar PostgreSQL em vez do SQLite:
-```env
-DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/pautaon
-```
-Use o mesmo driver nas dependências do projeto adicionando `psycopg[binary]`.
-
-### Gerar o schema PostgreSQL
-Há um script que gera o SQL de criação de tabelas e aplica o schema no banco:
-```bash
-python scripts/create_postgres_schema.py
-```
-Ele usa o `DATABASE_URL` do ambiente para conectar e criar as tabelas no PostgreSQL.
-
 ### Criar o VirtualHost
 Crie o arquivo `/etc/apache2/sites-available/pautaon.conf`:
 
@@ -151,7 +137,42 @@ sudo systemctl restart apache2
 
 ---
 
-## 3. Notificador de Pauta Pendente (Google Chat)
+## 3. Autenticação AD/LDAP e logon de usuários corporativos
+
+A autenticação do Active Directory é feita no backend em `app/services/auth_service.py` a partir de uma lista de candidatos de login. O código agora normaliza as identidades do usuário para suportar:
+
+- `usuario`
+- `usuario@dominio.local`
+- `DOMINIO\usuario`
+
+Além disso, o bind AD só é executado quando `LDAP_ENABLED=true` e `LDAP_SERVER_URI` está definido. Em ambientes com certificado interno, o campo `LDAP_CA_CERT_FILE` e `LDAP_VALIDATE_CERT=true` devem ser configurados corretamente para evitar falhas com senha válida.
+
+### Variáveis recomendadas
+
+```env
+LDAP_ENABLED=true
+LDAP_SERVER_URI=ldaps://srv001.dominio.local
+LDAP_DOMAIN=dominio.local
+LDAP_USE_SSL=true
+LDAP_VALIDATE_CERT=true
+LDAP_CA_CERT_FILE=C:/certificados/ca-dominio.pem
+LDAP_CONNECT_TIMEOUT=10
+```
+
+### Diagnóstico rápido
+
+Se o usuário digitou a senha correta mas continua sem logar:
+
+1. verifique se `LDAP_ENABLED` está ativo;
+2. confirme se `LDAP_SERVER_URI` aponta para o controlador correto;
+3. confirme se o certificado do AD está no formato correto e acessível;
+4. teste os três formatos de login no AD: `usuario`, `usuario@dominio.local` e `DOMINIO\usuario`.
+
+> Importante: falha no certificado ou no formato do bind é tratada como falha de autenticação, mesmo quando a senha está correta.
+
+---
+
+## 4. Notificador de Pauta Pendente (Google Chat)
 
 Instruções completas de **Google Cloud**, credenciais, Calendar e Chat estão em **[manual_google_integracao.md](manual_google_integracao.md)** — use este item como referência rápida de execução.
 
@@ -192,7 +213,7 @@ python scripts/notificador.py
 
 ---
 
-## 4. Integração Google (Calendar e Chat) — manual completo
+## 5. Integração Google (Calendar e Chat) — manual completo
 
 Para criar o projeto no Google Cloud, ativar APIs, compartilhar calendário com a conta de serviço, escopos, variáveis de ambiente e solução de problemas, consulte:
 

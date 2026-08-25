@@ -10,7 +10,7 @@ from app.services.auth_service import register_security_log
 from app.utils.logica import get_unidade_id
 from . import bp
 
-_ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria"]
+_ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
 
 
 def _check_calendario_access(unidade_id):
@@ -192,7 +192,7 @@ def calendario_exportar(periodo_id):
 @login_required
 def periodo_letivo():
     """Lista os períodos letivos da unidade atual ou visão global."""
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
 
     unidade_id = get_unidade_id()
