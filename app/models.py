@@ -140,6 +140,15 @@ class User(db.Model, UserMixin):
     """
     Modelo responsável pela gestão de acessos e perfis do sistema (Admins, Professores, etc).
     O UserMixin acopla automaticamente métodos necessários para o Flask-Login.
+
+    Suporta três origens de identidade, que podem coexistir na mesma conta:
+      - Local: credencial de senha persistida no banco (campo ``password`` preenchido).
+      - AD/LDAP: autenticação delegada ao servidor de domínio (``is_ad_user=True``).
+      - Google OAuth2: identidade federada via conta Google (``google_id`` preenchido).
+
+    A unificação entre uma conta Google e uma conta AD preexistente é feita de forma
+    explícita pelo usuário, na tela de confirmação de vínculo, preservando os dados
+    originais (role, unidade, histórico) já atribuídos pelo administrador.
     """
     __tablename__ = 'user'
     
@@ -159,6 +168,28 @@ class User(db.Model, UserMixin):
     
     first_login: bool = db.Column(db.Boolean, default=True)
 
+    # ------------------------------------------------------------------
+    # Campos de identidade Google OAuth2
+    # ------------------------------------------------------------------
+    # ``google_id`` armazena o campo ``sub`` retornado pelo ID Token do Google.
+    # É o identificador permanente e imutável da conta Google — não muda mesmo
+    # que o usuário troque o endereço de e-mail da conta Google.
+    # O índice único garante que uma conta Google só possa ser vinculada a
+    # um único perfil local, evitando duplicatas silenciosas.
+    google_id: str | None = db.Column(
+        db.String(120), nullable=True, unique=True, index=True
+    )
+
+    # ``google_email`` guarda o e-mail Google no momento da última autenticação.
+    # Serve apenas para exibição informativa no painel admin; decisões de
+    # autenticação usam sempre ``google_id``.
+    google_email: str | None = db.Column(db.String(120), nullable=True)
+
+    @property
+    def has_google_linked(self) -> bool:
+        """Retorna ``True`` quando a conta Google já está vinculada a este perfil."""
+        return bool(self.google_id)
+
     def set_password(self, password: str) -> None:
         """Gera e armazena o hash criptografado da senha."""
         self.password = generate_password_hash(password)
@@ -168,7 +199,7 @@ class User(db.Model, UserMixin):
 
         Este método é usado apenas para contas locais com credencial persistida.
         Usuários federados pelo AD/LDAP não possuem senha local gravada; por isso,
-        a validação deve retornar `False` e permitir que o fluxo siga para a
+        a validação deve retornar ``False`` e permitir que o fluxo siga para a
         autenticação no servidor do domínio.
         """
         if not self.password:

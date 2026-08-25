@@ -77,6 +77,26 @@ class Config:
     LDAP_VALIDATE_CERT = get_bool("LDAP_VALIDATE_CERT", True)
     LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE")
 
+    # ------------------------------------------------------------------
+    # Google OAuth2 — Login de usuários
+    # ------------------------------------------------------------------
+    # Credenciais do aplicativo criado no Google Cloud Console
+    # (tipo "Aplicativo Web", com o URI de redirecionamento configurado).
+    # Quando GOOGLE_OAUTH_CLIENT_ID não estiver definido, o botão
+    # "Entrar com Google" é omitido automaticamente dos templates.
+    GOOGLE_OAUTH_CLIENT_ID: str | None = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    GOOGLE_OAUTH_CLIENT_SECRET: str | None = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+
+    # URI de redirecionamento cadastrado no Google Cloud Console.
+    # Deve terminar em /auth/google/callback e corresponder exatamente
+    # ao que está registrado no painel (incluindo http vs https).
+    # Exemplo produção: https://seudominio.com.br/auth/google/callback
+    # Exemplo dev:      http://localhost:5000/auth/google/callback
+    GOOGLE_OAUTH_REDIRECT_URI: str | None = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+
+    # ------------------------------------------------------------------
+    # Google Calendar — integração server-to-server (Serviço Social)
+    # ------------------------------------------------------------------
     GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
     GOOGLE_CALENDAR_DELEGATED_USER = os.getenv("GOOGLE_CALENDAR_DELEGATED_USER")

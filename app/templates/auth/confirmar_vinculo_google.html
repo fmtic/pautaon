@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+{#
+  Template: auth/confirmar_vinculo_google.html
+  Exibido quando o e-mail da conta Google coincide com uma conta local já
+  existente (tipicamente AD/LDAP) que ainda não possui google_id vinculado.
+
+  O usuário pode:
+    - Confirmar → google_id é gravado na conta local e o login prossegue.
+    - Recusar  → dados temporários são descartados da sessão; retorna ao login.
+
+  Variáveis esperadas do contexto (injetadas pela rota google_confirmar_vinculo):
+    google_email  — e-mail retornado pelo Google
+    google_name   — nome retornado pelo Google
+    user          — objeto User com a conta local encontrada
+#}
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vincular Conta Google | {{ informacao_padrao.nome_instituicao or 'pautaON' }}</title>
+  <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png">
+  <style>
+    body {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      min-height: 100vh;
+    }
+
+    .vinculo-card {
+      border: none;
+      border-radius: 15px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      max-width: 480px;
+      width: 100%;
+    }
+
+    /* Cabeçalho azul escuro igual ao padrão do sistema */
+    .card-header-custom {
+      background: #1e3c72;
+      border-radius: 15px 15px 0 0;
+      padding: 1.25rem 1.5rem;
+    }
+
+    /* Destaque visual para o bloco de informação da conta Google */
+    .conta-google-box {
+      background: #f0f4ff;
+      border: 1px solid #c7d4f5;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+
+    /* Destaque visual para o bloco da conta local */
+    .conta-local-box {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+
+    /* Ícone da seta de fusão */
+    .seta-fusao {
+      font-size: 1.5rem;
+      color: #6c757d;
+      line-height: 1;
+    }
+
+    /* Rótulo de origem da conta (AD, Google, etc.) */
+    .badge-origem {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+
+<body class="d-flex align-items-center justify-content-center py-4">
+
+  <div class="vinculo-card card">
+
+    {# ── Cabeçalho ── #}
+    <div class="card-header-custom text-white">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-link-45deg fs-4"></i>
+        <div>
+          <h5 class="mb-0 fw-bold">Vincular Conta Google</h5>
+          <small class="opacity-75">Encontramos uma conta existente com o mesmo e-mail</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body p-4">
+
+      {# ── Mensagens flash ── #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }} py-2 small border-0 shadow-sm" role="alert">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {# ── Explicação contextual ── #}
+      <p class="text-muted small mb-3">
+        Sua conta Google usa o mesmo endereço de e-mail de uma conta já cadastrada
+        neste sistema. Deseja vinculá-las para poder entrar com o Google no futuro?
+      </p>
+
+      {# ── Bloco visual de fusão ── #}
+      <div class="d-flex flex-column gap-2 mb-4">
+
+        {# Conta Google #}
+        <div class="conta-google-box">
+          <div class="d-flex align-items-center gap-2">
+            {# SVG do Google inline (sem CDN externo) #}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"
+                 width="22" height="22" style="flex-shrink:0;">
+              <path fill="#EA4335"
+                d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0
+                   14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4"
+                d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94
+                   c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05"
+                d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19
+                   C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853"
+                d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6
+                   c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19
+                   C6.51 42.62 14.62 48 24 48z"/>
+              <path fill="none" d="M0 0h48v48H0z"/>
+            </svg>
+            <div class="flex-grow-1 overflow-hidden">
+              <div class="fw-semibold text-truncate small">{{ google_name }}</div>
+              <div class="text-muted" style="font-size:0.78rem;">{{ google_email }}</div>
+            </div>
+            <span class="badge bg-primary badge-origem">Google</span>
+          </div>
+        </div>
+
+        {# Ícone de fusão #}
+        <div class="text-center seta-fusao">
+          <i class="bi bi-arrow-down"></i>
+        </div>
+
+        {# Conta local #}
+        <div class="conta-local-box">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-person-badge fs-5 text-secondary" style="flex-shrink:0;"></i>
+            <div class="flex-grow-1 overflow-hidden">
+              <div class="fw-semibold text-truncate small">{{ user.name }}</div>
+              <div class="text-muted" style="font-size:0.78rem;">{{ user.email }}</div>
+            </div>
+            {% if user.is_ad_user %}
+              <span class="badge bg-secondary badge-origem">AD / LDAP</span>
+            {% else %}
+              <span class="badge bg-light text-dark border badge-origem">Local</span>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+
+      {# ── Aviso de segurança ── #}
+      <div class="alert alert-warning py-2 small border-0 shadow-sm mb-4" role="alert">
+        <i class="bi bi-shield-exclamation me-1"></i>
+        Somente confirme se reconhecer <strong>ambas as contas</strong> como suas.
+        Após o vínculo, futuros logins com Google acessarão diretamente este perfil.
+      </div>
+
+      {# ── Formulários de ação ── #}
+      {#
+        São dois formulários separados para garantir que apenas uma ação seja
+        enviada por vez, cada um com CSRF próprio.
+      #}
+      <div class="d-grid gap-2">
+
+        {# Confirmar vínculo #}
+        <form method="POST" action="{{ url_for('auth.google_confirmar_vinculo') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="acao" value="confirmar">
+          <button type="submit" class="btn btn-primary w-100 fw-bold">
+            <i class="bi bi-link-45deg me-1"></i>
+            Sim, vincular minha conta Google
+          </button>
+        </form>
+
+        {# Recusar vínculo #}
+        <form method="POST" action="{{ url_for('auth.google_confirmar_vinculo') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="acao" value="recusar">
+          <button type="submit" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-x-circle me-1"></i>
+            Não, usar minhas credenciais normais
+          </button>
+        </form>
+
+      </div>
+
+    </div>
+
+    {# ── Rodapé ── #}
+    <div class="card-footer text-center py-2 bg-transparent border-0">
+      <small class="text-muted">
+        Licenciado para {{ informacao_padrao.nome_instituicao or 'pautaON' }}
+      </small>
+    </div>
+
+  </div>
+
+</body>
+</html>
