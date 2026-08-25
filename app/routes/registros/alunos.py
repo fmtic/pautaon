@@ -250,7 +250,7 @@ def novo_aluno():
 @bp.route("/aluno/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_aluno(id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)

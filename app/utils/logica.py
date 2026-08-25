@@ -37,12 +37,25 @@ def formatar_nome_proprio(nome: str | None) -> str | None:
     return ' '.join(formatted_parts)
 
 def get_unidade_id() -> Optional[int]:
-    """Retorna o ID da unidade atual a partir da sessão HTTP."""
+    """Retorna o ID da unidade efetiva para o usuário logado.
+
+    Perfis operacionais vinculados a uma unidade não podem cair em visão global
+    por sessão vazia ou stale. Admin e gerência continuam usando o contexto
+    selecionado na sessão.
+    """
+    global_roles = {"admin", "gerencia"}
+    if current_user.is_authenticated and current_user.role not in global_roles:
+        if current_user.unidade_id:
+            session["unidade_id"] = current_user.unidade_id
+            return current_user.unidade_id
+        session.pop("unidade_id", None)
+        return None
+
     if 'unidade_id' in session:
         try:
             return int(session.get('unidade_id'))
         except (ValueError, TypeError):
-            pass
+            session.pop("unidade_id", None)
     return None
 
 def gerar_datas(turma: Turma, incluir_futuro: bool = False,

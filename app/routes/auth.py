@@ -124,6 +124,10 @@ def login():
         if login_ok and user and user.is_active:
             login_user(user)
             session.permanent = True
+            if user.unidade_id:
+                session["unidade_id"] = user.unidade_id
+            else:
+                session.pop("unidade_id", None)
 
             register_security_log("Acesso Aprovado", f"Usuário {user.name} acessou o sistema.")
 

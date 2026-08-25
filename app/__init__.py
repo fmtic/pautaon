@@ -60,6 +60,7 @@ def _register_context_processors(app: Flask) -> None:
 
         from app.models import Unidade
         from app.informacao_padrao import get_informacao_padrao_context
+        from app.utils.logica import get_unidade_id
 
         try:
             informacao_padrao = get_informacao_padrao_context()
@@ -85,8 +86,11 @@ def _register_context_processors(app: Flask) -> None:
             }
 
         try:
-            unidades = Unidade.query.filter_by(ativo=True).order_by(Unidade.nome).all()
-            unidade_id = session.get("unidade_id")
+            unidade_id = get_unidade_id()
+            unidades_query = Unidade.query.filter_by(ativo=True)
+            if current_user.role not in {"admin", "gerencia"} and current_user.unidade_id:
+                unidades_query = unidades_query.filter_by(id=current_user.unidade_id)
+            unidades = unidades_query.order_by(Unidade.nome).all()
             unidade_contexto = "Visão Global"
 
             if unidade_id:
