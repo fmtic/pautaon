@@ -1,6 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
+
+{# ── Macro reutilizável de paginação ── #}
+{% macro paginacao(pos) %}
+{% if pagination.pages > 1 %}
+<nav class="{{ 'mt-0 mb-3' if pos == 'topo' else 'mt-4 pb-4' }}">
+  <ul class="pagination justify-content-center {{ 'pagination-sm mb-0' if pos == 'topo' else '' }}">
+    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+      <a class="page-link border-0 shadow-sm mx-1 rounded" title="Primeira página"
+         href="{{ url_for('registros.gerenciar_alunos', page=1, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
+        <i class="bi bi-chevron-double-left"></i>
+      </a>
+    </li>
+    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+      <a class="page-link border-0 shadow-sm mx-1 rounded"
+         href="{{ url_for('registros.gerenciar_alunos', page=pagination.prev_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
+        <i class="bi bi-chevron-left"></i> Anterior
+      </a>
+    </li>
+    <li class="page-item active">
+      <span class="page-link border-0 shadow-sm mx-1 rounded">
+        Página {{ pagination.page }} de {{ pagination.pages }}
+      </span>
+    </li>
+    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+      <a class="page-link border-0 shadow-sm mx-1 rounded"
+         href="{{ url_for('registros.gerenciar_alunos', page=pagination.next_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
+        Próximo <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+      <a class="page-link border-0 shadow-sm mx-1 rounded" title="Última página"
+         href="{{ url_for('registros.gerenciar_alunos', page=pagination.pages, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
+        <i class="bi bi-chevron-double-right"></i>
+      </a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+{% endmacro %}
+
+<div class="d-flex align-items-center justify-content-between mb-2">
   <h2 class="fw-bold mb-0">
     <i class="bi bi-people me-2 text-primary"></i>Gerenciar Alunos
   </h2>
@@ -10,6 +50,8 @@
   </a>
   {% endif %}
 </div>
+
+{{ paginacao('topo') }}
 
 <div class="card shadow-sm border-0 mb-4">
   <div class="card-body p-3">
@@ -206,23 +248,7 @@
     </table>
   </div>
 
-  {% if pagination.pages > 1 %}
-  <nav class="mt-4 pb-4">
-    <ul class="pagination justify-content-center">
-      <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-        <a class="page-link border-0 shadow-sm mx-1 rounded" href="{{ url_for('registros.gerenciar_alunos', page=pagination.prev_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
-          <i class="bi bi-chevron-left"></i> Anterior
-        </a>
-      </li>
-      <li class="page-item active"><span class="page-link border-0 shadow-sm mx-1 rounded">Página {{ pagination.page }} de {{ pagination.pages }}</span></li>
-      <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-        <a class="page-link border-0 shadow-sm mx-1 rounded" href="{{ url_for('registros.gerenciar_alunos', page=pagination.next_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
-          Próximo <i class="bi bi-chevron-right"></i>
-        </a>
-      </li>
-    </ul>
-  </nav>
-  {% endif %}
+  {{ paginacao('rodape') }}
 </div>
 
 {# ── MODAL DE ATENDIMENTO (reutilizado de atendimentos.html) ── #}
