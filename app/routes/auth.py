@@ -3,6 +3,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
 from collections import defaultdict
+import secrets
 
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.database import db
@@ -82,10 +83,14 @@ def login():
         # O usuário pode ter sido provisionado localmente com e-mail canônico do AD
         # ou apenas com o nome curto do login; por isso, pesquisamos todas as formas
         # possíveis de identidade antes de criar um novo cadastro.
-        lookup_candidates = _build_ldap_bind_user(
-            email,
-            current_app.config.get("LDAP_DOMAIN"),
-        ) or [email]
+        lookup_candidates = [
+            _build_ldap_bind_user(
+                email,
+                current_app.config.get("LDAP_DOMAIN"),
+            )
+        ]
+        if lookup_candidates[0] != email:
+            lookup_candidates.append(email)
         user = db.session.execute(
             select(User).where(User.email.in_(lookup_candidates))
         ).scalars().first()
@@ -172,6 +177,197 @@ def logout():
     register_security_log("Logoff", "Sessão encerrada voluntariamente.")
     logout_user()
     return redirect(url_for('auth.login'))
+
+
+# ====================== GOOGLE OAUTH2 ======================
+
+_GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URI = "https://openidconnect.googleapis.com/v1/userinfo"
+_GOOGLE_SCOPES = ["openid", "email", "profile"]
+
+
+@bp.route('/auth/google/login')
+def google_login():
+    """Inicia o fluxo OAuth2 PKCE com o Google.
+
+    Gera um ``state`` aleatório para proteção contra CSRF, armazena na sessão
+    e redireciona o navegador para a tela de consentimento do Google.
+    O Google retorna o usuário para ``google_callback`` com um código de
+    autorização que é trocado por um ID Token com os dados do perfil.
+    """
+    client_id = current_app.config.get("GOOGLE_OAUTH_CLIENT_ID")
+    redirect_uri = current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
+
+    if not client_id or not redirect_uri:
+        flash("Login com Google não está configurado neste servidor.", "warning")
+        return redirect(url_for("auth.login"))
+
+    # State anti-CSRF: valor aleatório que o Google devolve no callback e que
+    # verificamos antes de processar qualquer resposta da autenticação.
+    state = secrets.token_urlsafe(32)
+    session["google_oauth_state"] = state
+
+    try:
+        from google_auth_oauthlib.flow import Flow
+
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": current_app.config.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+                    "auth_uri": _GOOGLE_AUTH_URI,
+                    "token_uri": _GOOGLE_TOKEN_URI,
+                    "redirect_uris": [redirect_uri],
+                }
+            },
+            scopes=_GOOGLE_SCOPES,
+            state=state,
+        )
+        flow.redirect_uri = redirect_uri
+
+        authorization_url, _ = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="select_account",
+        )
+        return redirect(authorization_url)
+
+    except Exception:
+        current_app.logger.exception("Falha ao iniciar fluxo OAuth Google.")
+        flash("Não foi possível iniciar o login com Google. Tente outra forma de acesso.", "danger")
+        return redirect(url_for("auth.login"))
+
+
+@bp.route('/auth/google/callback')
+def google_callback():
+    """Processa o retorno do Google após a tela de consentimento.
+
+    Valida o state anti-CSRF, troca o código de autorização por tokens,
+    obtém o perfil do usuário via UserInfo e faz o login local —
+    criando ou vinculando a conta se necessário.
+    """
+    # --- 1. Verificação CSRF ---
+    state_retornado = request.args.get("state", "")
+    state_esperado = session.pop("google_oauth_state", None)
+    if not state_esperado or state_retornado != state_esperado:
+        flash("Falha de segurança na verificação do estado OAuth. Tente novamente.", "danger")
+        return redirect(url_for("auth.login"))
+
+    # Erro explícito do Google (usuário cancelou ou conta bloqueada)
+    error = request.args.get("error")
+    if error:
+        flash(f"Acesso Google recusado: {error}", "warning")
+        return redirect(url_for("auth.login"))
+
+    client_id = current_app.config.get("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = current_app.config.get("GOOGLE_OAUTH_CLIENT_SECRET")
+    redirect_uri = current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
+
+    try:
+        from google_auth_oauthlib.flow import Flow
+        import requests as http_requests
+
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": _GOOGLE_AUTH_URI,
+                    "token_uri": _GOOGLE_TOKEN_URI,
+                    "redirect_uris": [redirect_uri],
+                }
+            },
+            scopes=_GOOGLE_SCOPES,
+            state=state_retornado,
+        )
+        flow.redirect_uri = redirect_uri
+
+        # Troca o código de autorização pelos tokens de acesso
+        flow.fetch_token(authorization_response=request.url)
+
+        # --- 2. Obtém dados do perfil via UserInfo ---
+        credentials = flow.credentials
+        userinfo_resp = http_requests.get(
+            _GOOGLE_USERINFO_URI,
+            headers={"Authorization": f"Bearer {credentials.token}"},
+            timeout=10,
+        )
+        userinfo_resp.raise_for_status()
+        userinfo = userinfo_resp.json()
+
+    except Exception:
+        current_app.logger.exception("Falha no callback OAuth Google.")
+        flash("Não foi possível concluir a autenticação com o Google.", "danger")
+        return redirect(url_for("auth.login"))
+
+    google_id = userinfo.get("sub")
+    google_email = userinfo.get("email", "")
+    google_name = userinfo.get("name") or google_email.split("@")[0]
+
+    if not google_id:
+        flash("O Google não retornou um identificador de conta válido.", "danger")
+        return redirect(url_for("auth.login"))
+
+    # --- 3. Localiza ou cria o perfil local ---
+    # Prioridade: (a) conta já vinculada pelo google_id;
+    #             (b) conta existente com mesmo e-mail → vincula automaticamente;
+    #             (c) novo provisionamento com perfil pendente.
+    user = db.session.execute(
+        select(User).where(User.google_id == google_id)
+    ).scalars().first()
+
+    if not user and google_email:
+        user = db.session.execute(
+            select(User).where(User.email == google_email)
+        ).scalars().first()
+
+    try:
+        if user:
+            # Vincula/atualiza o google_id se ainda não estava registrado
+            if not user.google_id:
+                user.google_id = google_id
+            user.google_email = google_email
+            db.session.commit()
+        else:
+            # Auto-provisionamento: conta Google nova no sistema
+            user = User(
+                name=google_name,
+                email=google_email,
+                password="",
+                role="pendente",
+                is_ad_user=False,
+                is_active=True,
+                first_login=False,
+                google_id=google_id,
+                google_email=google_email,
+            )
+            db.session.add(user)
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao persistir identidade Google OAuth.")
+        flash("Erro interno ao registrar sua conta Google. Tente novamente.", "danger")
+        return redirect(url_for("auth.login"))
+
+    if not user.is_active:
+        flash("Sua conta está desativada. Entre em contato com o administrador.", "danger")
+        return redirect(url_for("auth.login"))
+
+    login_user(user)
+    session.permanent = True
+    if user.unidade_id:
+        session["unidade_id"] = user.unidade_id
+    else:
+        session.pop("unidade_id", None)
+
+    register_security_log("Acesso via Google", f"Usuário {user.name} ({google_email}) autenticado pelo Google OAuth.")
+
+    if user.role == "pendente":
+        flash("Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.", "info")
+        return redirect(url_for("auth.aguardando_aprovacao"))
+
+    return redirect(url_for("main.dashboard"))
 
 
 # ====================== ROTAS ADMINISTRAÇÃO ======================

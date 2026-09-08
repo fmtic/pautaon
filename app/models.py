@@ -666,3 +666,55 @@ class RespostaFormulario(db.Model):
     # relacionamentos (aproveitando os modelos já existentes)
     aluno = db.relationship('Aluno', backref='formularios')
     usuario = db.relationship('User', backref='formularios_preenchidos')
+
+
+# ---------------------------------------------------------------------------
+# ATENDIMENTOS
+# ---------------------------------------------------------------------------
+class Atendimento(db.Model):
+    """Registro de atendimento individualizado de um aluno.
+
+    Qualquer perfil operacional (pedagógico, serviço social, secretaria, admin)
+    pode registrar uma ocorrência de atendimento. O campo ``setor`` identifica
+    a origem do registro para fins de filtragem e relatório.
+
+    O conteúdo detalhado fica em ``dados`` (JSON), permitindo que cada setor
+    acrescente campos específicos sem alterar o esquema do banco.
+    """
+    __tablename__ = 'atendimento'
+
+    id: int = db.Column(db.Integer, primary_key=True)
+
+    aluno_id: int = db.Column(
+        db.Integer, db.ForeignKey('aluno.id'), nullable=False, index=True
+    )
+    # Setor que registrou: 'pedagogico', 'servico_social', 'secretaria', 'admin'
+    setor: str = db.Column(db.String(30), nullable=False)
+
+    data_atendimento: datetime = db.Column(db.Date, nullable=False)
+
+    # Resumo curto visível na listagem (≤ 255 chars)
+    resumo: str = db.Column(db.String(255), nullable=True)
+
+    # Detalhamento livre em JSON — campos definidos pelo formulário de atendimento
+    dados: dict = db.Column(db.JSON, nullable=True)
+
+    # Auditoria
+    atendido_por_id: int = db.Column(
+        db.Integer, db.ForeignKey('user.id'), nullable=False
+    )
+    atendido_por_nome: str = db.Column(db.String(100), nullable=True)
+
+    unidade_id: int = db.Column(
+        db.Integer, db.ForeignKey('unidade.id'), nullable=True
+    )
+
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+    updated_at: datetime = db.Column(
+        db.DateTime, default=get_local_now, onupdate=get_local_now
+    )
+
+    # --- Relacionamentos ---
+    aluno = db.relationship('Aluno', backref=db.backref('atendimentos', lazy='dynamic'))
+    atendido_por = db.relationship('User', backref='atendimentos_registrados')
+    unidade = db.relationship('Unidade', backref='atendimentos_unidade')

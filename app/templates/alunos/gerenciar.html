@@ -169,15 +169,35 @@
               <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id) }}" class="btn btn-sm btn-outline-warning py-1 px-2" title="Transferir">
                 <i class="bi bi-arrow-left-right" style="font-size: 0.85rem;"></i>
               </a>
+              <button type="button"
+                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
+                      title="Registrar Atendimento"
+                      data-aluno-id="{{ aluno.id }}"
+                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
+                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
+              </button>
               <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2" onclick="return confirm('Excluir aluno?');" title="Excluir">
                 <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
               </a>
             </div>
             {% else %}
-            <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}"
-               target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
-              <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
-            </a>
+            <div class="btn-group btn-group-sm gap-1">
+              <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}"
+                 target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
+                <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
+              </a>
+              <button type="button"
+                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
+                      title="Registrar Atendimento"
+                      data-aluno-id="{{ aluno.id }}"
+                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
+                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
+              </button>
+            </div>
             {% endif %}
           </td>
         </tr>
@@ -205,8 +225,169 @@
   {% endif %}
 </div>
 
+{# ── MODAL DE ATENDIMENTO (reutilizado de atendimentos.html) ── #}
+<div class="modal fade" id="modalAtendimento" tabindex="-1" aria-labelledby="modalAtendimentoLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold" id="modalAtendimentoLabel">
+          <i class="bi bi-clipboard2-plus me-2 text-success"></i>Registrar Atendimento
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body px-4" id="formAtendimento">
+        <input type="hidden" id="mf-aluno-id">
+        <input type="hidden" id="mf-atendimento-id">
+
+        <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
+          <img id="mf-foto" src="" alt="Foto"
+               style="width:36px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
+          <div>
+            <div class="fw-bold small" id="mf-nome"></div>
+            <div class="text-muted" style="font-size:.75rem;" id="mf-matricula"></div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-data">Data do Atendimento</label>
+            <input type="date" id="mf-data" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-setor">Setor</label>
+            <select id="mf-setor" class="form-select form-select-sm">
+              <option value="pedagogico">Pedagógico</option>
+              <option value="servico_social">Serviço Social</option>
+              <option value="secretaria">Secretaria</option>
+              <option value="admin">Administração</option>
+            </select>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-resumo">
+              Resumo <small class="text-muted fw-normal">(máx. 255 chars)</small>
+            </label>
+            <input type="text" id="mf-resumo" class="form-control form-control-sm"
+                   placeholder="Breve descrição do atendimento…" maxlength="255">
+          </div>
+          <div class="col-12"><hr class="my-1"></div>
+          <div class="col-md-12">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-descricao">Descrição / Relato</label>
+            <textarea id="mf-descricao" class="form-control form-control-sm" rows="4"
+                      placeholder="Descreva o atendimento com detalhes relevantes…"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-encaminhamento">Encaminhamento</label>
+            <input type="text" id="mf-encaminhamento" class="form-control form-control-sm"
+                   placeholder="Ex.: Encaminhado ao CRAS, retorno marcado…">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-retorno">Data de Retorno Previsto</label>
+            <input type="date" id="mf-retorno" class="form-control form-control-sm">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-bold text-uppercase" style="font-size:.75rem;" for="mf-observacoes">Observações Adicionais</label>
+            <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"
+                      placeholder="Informações complementares…"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" id="btnSalvarAtendimento">
+          <i class="bi bi-check-circle me-1"></i>Salvar Atendimento
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/calcularIdade.js') }}"></script>
 <script src="{{ url_for('static', filename='js/aluno_form.js') }}"></script>
+<script>
+(function () {
+  'use strict';
+
+  const modalAtendimento = new bootstrap.Modal(document.getElementById('modalAtendimento'));
+
+  function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
+  // Abre o modal preenchido com os dados do aluno
+  function abrirNovoAtendimento(btn) {
+    const id        = btn.dataset.alunoId;
+    const nome      = btn.dataset.alunoNome;
+    const matricula = btn.dataset.alunoMatricula;
+    const foto      = btn.dataset.alunoFoto;
+
+    document.getElementById('mf-aluno-id').value       = id;
+    document.getElementById('mf-atendimento-id').value = '';
+    document.getElementById('mf-foto').src             = foto;
+    document.getElementById('mf-nome').textContent     = nome;
+    document.getElementById('mf-matricula').textContent = matricula;
+    document.getElementById('mf-data').value           = new Date().toISOString().slice(0, 10);
+    document.getElementById('mf-resumo').value         = '';
+    document.getElementById('mf-descricao').value      = '';
+    document.getElementById('mf-encaminhamento').value  = '';
+    document.getElementById('mf-retorno').value        = '';
+    document.getElementById('mf-observacoes').value    = '';
+
+    modalAtendimento.show();
+  }
+
+  document.querySelectorAll('.btn-novo-atendimento').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      abrirNovoAtendimento(btn);
+    });
+  });
+
+  document.getElementById('btnSalvarAtendimento').addEventListener('click', async () => {
+    const alunoId = parseInt(document.getElementById('mf-aluno-id').value);
+    const payload = {
+      data_atendimento: document.getElementById('mf-data').value,
+      setor:            document.getElementById('mf-setor').value,
+      resumo:           document.getElementById('mf-resumo').value,
+      dados: {
+        descricao:      document.getElementById('mf-descricao').value,
+        encaminhamento: document.getElementById('mf-encaminhamento').value,
+        retorno:        document.getElementById('mf-retorno').value,
+        observacoes:    document.getElementById('mf-observacoes').value,
+      }
+    };
+
+    if (!payload.data_atendimento) {
+      alert('Informe a data do atendimento.');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/alunos/${alunoId}/atendimentos/novo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json();
+      if (json.ok) {
+        modalAtendimento.hide();
+        // Feedback visual sem recarregar a página
+        const btn = document.querySelector(`.btn-novo-atendimento[data-aluno-id="${alunoId}"]`);
+        if (btn) {
+          btn.classList.replace('btn-outline-success', 'btn-success');
+          setTimeout(() => btn.classList.replace('btn-success', 'btn-outline-success'), 2000);
+        }
+      } else {
+        alert(json.erro || 'Erro ao salvar atendimento.');
+      }
+    } catch {
+      alert('Falha na requisição.');
+    }
+  });
+})();
+</script>
 {% endblock %}
 {% endblock %}

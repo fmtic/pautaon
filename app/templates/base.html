@@ -51,7 +51,25 @@
 
             {# ACESSO RESTRITO: Admin, Pedagógico, Gerência e Secretaria #}
             {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'servico_social'] %}
-            <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-light btn-sm me-2">Alunos</a>
+            <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-people me-1"></i> Alunos
+                </button>
+                <ul class="dropdown-menu shadow">
+                    <li>
+                        <a class="dropdown-item {% if request.endpoint == 'registros.gerenciar_alunos' %}active{% endif %}"
+                           href="{{ url_for('registros.gerenciar_alunos') }}">
+                            <i class="bi bi-person-lines-fill me-2"></i>Gerenciar Alunos
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item {% if request.endpoint == 'registros.listar_atendimentos' %}active{% endif %}"
+                           href="{{ url_for('registros.listar_atendimentos') }}">
+                            <i class="bi bi-clipboard2-pulse me-2"></i>Atendimentos
+                        </a>
+                    </li>
+                </ul>
+            </div>
             {% endif %}
             {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
             <a href="{{ url_for('registros.turma') }}" class="btn btn-outline-warning btn-sm me-2">Turmas</a>

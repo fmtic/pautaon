@@ -1,0 +1,636 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/atendimentos.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="fw-bold mb-0">
+    <i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Atendimentos
+  </h2>
+  <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-secondary btn-sm fw-bold">
+    <i class="bi bi-people me-1"></i> Lista de Alunos
+  </a>
+</div>
+
+{# ── FILTROS ── #}
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3 text-primary" style="font-size:.9rem;">
+      <i class="bi bi-search me-2"></i>FILTRAR ATENDIMENTOS
+    </h6>
+    <form action="{{ url_for('registros.listar_atendimentos') }}" method="GET" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Nome do Aluno</label>
+        <input type="text" name="nome" class="form-control form-control-sm"
+               placeholder="Nome..." value="{{ search_nome }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Matrícula</label>
+        <input type="text" name="matricula" class="form-control form-control-sm"
+               placeholder="00001.2026" value="{{ search_matr }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Setor</label>
+        <select name="setor" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for key, info in setores.items() %}
+          <option value="{{ key }}" {% if search_setor == key %}selected{% endif %}>{{ info.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">De</label>
+        <input type="date" name="data_inicio" class="form-control form-control-sm" value="{{ data_inicio }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Até</label>
+        <input type="date" name="data_fim" class="form-control form-control-sm" value="{{ data_fim }}">
+      </div>
+      <div class="col-md-1 d-flex gap-1">
+        <button type="submit" class="btn btn-primary btn-sm fw-bold flex-grow-1" title="Pesquisar">
+          <i class="bi bi-search"></i>
+        </button>
+        <a href="{{ url_for('registros.listar_atendimentos') }}" class="btn btn-outline-secondary btn-sm fw-bold" title="Limpar">
+          <i class="bi bi-eraser-fill"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── CONTAGEM ── #}
+<div class="row mb-3 px-2">
+  <div class="col">
+    <small class="text-muted">
+      Mostrando <strong>{{ pagination.items|length }}</strong>
+      de <strong>{{ pagination.total }}</strong> alunos com atendimento registrado
+    </small>
+  </div>
+</div>
+
+{# ── TABELA ── #}
+<div class="card shadow-sm border-0">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr class="small text-uppercase text-muted text-center">
+          <th class="ps-3" style="width:110px;">Matrícula</th>
+          <th class="ps-2" style="width:70px;">Foto</th>
+          <th style="min-width:260px;">Nome Completo</th>
+          <th class="text-center" style="width:170px;">Último Atendimento</th>
+          <th class="text-center pe-3" style="width:120px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno, ultimo_atendimento in pagination.items %}
+        <tr class="row-atendimento"
+            data-aluno-id="{{ aluno.id }}"
+            data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+            data-aluno-matricula="{{ aluno.matricula or '-' }}"
+            data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+
+          <td class="text-center ps-3">
+            <span class="text-primary fw-bold small">{{ aluno.matricula or '-' }}</span>
+          </td>
+
+          <td class="text-center">
+            <div class="foto-cell mx-auto">
+              <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                   alt="Foto {{ aluno.nome }}">
+            </div>
+          </td>
+
+          <td>
+            <div class="fw-bold">{{ aluno.nome }}</div>
+            {% if aluno.nome_social and aluno.nome_social != '-' %}
+            <small class="text-muted">Social: {{ aluno.nome_social }}</small>
+            {% endif %}
+          </td>
+
+          <td class="text-center">
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary px-2 py-1 btn-ver-atendimentos"
+                    style="font-size:.8rem;"
+                    data-aluno-id="{{ aluno.id }}"
+                    title="Ver histórico de atendimentos">
+              <i class="bi bi-clock-history me-1"></i>
+              {{ ultimo_atendimento.strftime('%d/%m/%Y') if ultimo_atendimento else '-' }}
+            </button>
+          </td>
+
+          <td class="text-center pe-3">
+            <button type="button"
+                    class="btn btn-sm btn-success btn-novo-atendimento px-2 py-1"
+                    style="font-size:.8rem;"
+                    data-aluno-id="{{ aluno.id }}"
+                    data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                    title="Registrar novo atendimento">
+              <i class="bi bi-plus-circle me-1"></i>Novo
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-4">
+            <i class="bi bi-inbox display-6 d-block mb-2 opacity-25"></i>
+            Nenhum aluno com atendimento encontrado.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── PAGINAÇÃO ── #}
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-transparent border-top-0 pt-0 pb-2">
+    <nav class="d-flex justify-content-center mt-2">
+      <ul class="pagination pagination-sm mb-0">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+          <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
+              page=pagination.prev_num, nome=search_nome, matricula=search_matr,
+              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+            &laquo;
+          </a>
+        </li>
+        {% endif %}
+        {% for p in range(1, pagination.pages + 1) %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
+              page=p, nome=search_nome, matricula=search_matr,
+              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+            {{ p }}
+          </a>
+        </li>
+        {% endfor %}
+        {% if pagination.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
+              page=pagination.next_num, nome=search_nome, matricula=search_matr,
+              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+            &raquo;
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+
+
+{# =========================================================
+   MODAL — HISTÓRICO DE ATENDIMENTOS DO ALUNO
+   ========================================================= #}
+<div class="modal fade" id="modalHistorico" tabindex="-1" aria-labelledby="modalHistoricoLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <div class="modal-header bg-primary text-white py-2">
+        <div class="d-flex align-items-center gap-3">
+          <img id="mh-foto" src="" alt="Foto"
+               style="width:40px;height:52px;object-fit:cover;border-radius:4px;border:2px solid rgba(255,255,255,.4)">
+          <div>
+            <h6 class="modal-title mb-0 fw-bold" id="modalHistoricoLabel">Histórico de Atendimentos</h6>
+            <small id="mh-matricula" class="opacity-75"></small>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body px-4 py-3">
+
+        {# Cabeçalho do aluno no modal #}
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 id="mh-nome" class="fw-bold mb-0 text-dark"></h6>
+          <button type="button" class="btn btn-success btn-sm fw-bold btn-novo-do-modal"
+                  id="btnNovoDoModal">
+            <i class="bi bi-plus-circle me-1"></i>Registrar Atendimento
+          </button>
+        </div>
+
+        {# Estado de carregamento #}
+        <div id="mh-loading" class="text-center py-4 d-none">
+          <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+          <span class="ms-2 text-muted small">Carregando…</span>
+        </div>
+
+        {# Estado vazio #}
+        <div id="mh-vazio" class="text-center text-muted py-4 d-none">
+          <i class="bi bi-clipboard-x display-6 d-block mb-2 opacity-25"></i>
+          <p class="mb-0 small">Nenhum atendimento registrado para este aluno.</p>
+        </div>
+
+        {# Timeline de atendimentos #}
+        <div id="mh-timeline" class="timeline"></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{# =========================================================
+   MODAL — FORMULÁRIO DE ATENDIMENTO (NOVO / EDITAR)
+   ========================================================= #}
+<div class="modal fade" id="modalAtendimento" tabindex="-1" aria-labelledby="modalAtendimentoLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold" id="modalAtendimentoLabel">
+          <i class="bi bi-clipboard2-plus me-2 text-success"></i>
+          <span id="mf-titulo">Registrar Atendimento</span>
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body px-4" id="formAtendimento">
+        <input type="hidden" id="mf-aluno-id">
+        <input type="hidden" id="mf-atendimento-id">
+
+        <div id="mf-aluno-info" class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
+          <img id="mf-foto" src="" alt="Foto"
+               style="width:36px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
+          <div>
+            <div class="fw-bold small" id="mf-nome"></div>
+            <div class="text-muted" style="font-size:.75rem;" id="mf-matricula"></div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" for="mf-data">Data do Atendimento</label>
+            <input type="date" id="mf-data" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="mf-setor">Setor</label>
+            <select id="mf-setor" class="form-select form-select-sm">
+              {% for key, info in setores.items() %}
+              <option value="{{ key }}">{{ info.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label" for="mf-resumo">Resumo <small class="text-muted fw-normal">(máx. 255 chars)</small></label>
+            <input type="text" id="mf-resumo" class="form-control form-control-sm"
+                   placeholder="Breve descrição do atendimento…" maxlength="255">
+          </div>
+
+          {# ── Campos detalhados do formulário de atendimento ──
+             Estes campos são armazenados no JSON `dados`.
+             Expanda conforme as necessidades de cada setor. #}
+          <div class="col-12">
+            <hr class="my-1">
+            <p class="text-muted mb-2" style="font-size:.75rem;">
+              <i class="bi bi-info-circle me-1"></i>
+              Preencha os campos abaixo conforme o tipo de atendimento.
+            </p>
+          </div>
+
+          <div class="col-md-12">
+            <label class="form-label" for="mf-descricao">Descrição / Relato</label>
+            <textarea id="mf-descricao" class="form-control form-control-sm" rows="4"
+                      placeholder="Descreva o atendimento com detalhes relevantes…"></textarea>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="mf-encaminhamento">Encaminhamento</label>
+            <input type="text" id="mf-encaminhamento" class="form-control form-control-sm"
+                   placeholder="Ex.: Encaminhado ao CRAS, retorno marcado…">
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="mf-retorno">Data de Retorno Previsto</label>
+            <input type="date" id="mf-retorno" class="form-control form-control-sm">
+          </div>
+
+          <div class="col-md-12">
+            <label class="form-label" for="mf-observacoes">Observações Adicionais</label>
+            <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"
+                      placeholder="Informações complementares…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" id="btnSalvarAtendimento">
+          <i class="bi bi-check-circle me-1"></i>Salvar Atendimento
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  // ── Referências aos modais Bootstrap ──
+  const modalHistorico    = new bootstrap.Modal(document.getElementById('modalHistorico'));
+  const modalAtendimento  = new bootstrap.Modal(document.getElementById('modalAtendimento'));
+
+  // Estado interno
+  let _alunoAtual = {};   // { id, nome, matricula, foto }
+
+  // ── Helpers ──
+  function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
+
+  function setAlunoAtual(id, nome, matricula, foto) {
+    _alunoAtual = { id, nome, matricula, foto };
+  }
+
+  function preencherCabecalhoModal(prefixo) {
+    document.getElementById(`${prefixo}-foto`).src      = _alunoAtual.foto;
+    document.getElementById(`${prefixo}-nome`).textContent      = _alunoAtual.nome;
+    document.getElementById(`${prefixo}-matricula`).textContent = _alunoAtual.matricula;
+  }
+
+  // ── Badge de setor ──
+  const COR_SETOR = {{ setores | tojson }};
+  function badgeSetor(setor, label) {
+    const info  = COR_SETOR[setor] || { color: 'secondary' };
+    return `<span class="badge bg-${info.color} badge-setor">${label}</span>`;
+  }
+
+  // ── Renderiza a timeline no modal de histórico ──
+  function renderTimeline(atendimentos) {
+    const container = document.getElementById('mh-timeline');
+    const vazio     = document.getElementById('mh-vazio');
+
+    if (!atendimentos.length) {
+      container.innerHTML = '';
+      vazio.classList.remove('d-none');
+      return;
+    }
+    vazio.classList.add('d-none');
+
+    container.innerHTML = atendimentos.map(a => {
+      const editBtn = a.pode_editar
+        ? `<button class="btn btn-xs btn-outline-primary py-0 px-2 btn-editar-atendimento"
+                   style="font-size:.7rem;"
+                   data-id="${a.id}">
+             <i class="bi bi-pencil"></i>
+           </button>
+           <button class="btn btn-xs btn-outline-danger py-0 px-2 btn-excluir-atendimento"
+                   style="font-size:.7rem;"
+                   data-id="${a.id}">
+             <i class="bi bi-trash"></i>
+           </button>`
+        : '';
+
+      const descricao     = a.dados?.descricao     || '';
+      const encaminhamento = a.dados?.encaminhamento || '';
+      const retorno       = a.dados?.retorno        || '';
+      const observacoes   = a.dados?.observacoes    || '';
+
+      return `
+        <div class="timeline-item" data-id="${a.id}">
+          <div class="timeline-dot bg-${COR_SETOR[a.setor]?.color || 'secondary'}"></div>
+          <div class="timeline-card">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <div>
+                ${badgeSetor(a.setor, a.setor_label)}
+                <strong class="ms-2 small">${a.data_atendimento}</strong>
+              </div>
+              <div class="d-flex gap-1">${editBtn}</div>
+            </div>
+            ${a.resumo ? `<p class="mb-1 small fw-semibold text-dark">${a.resumo}</p>` : ''}
+            ${descricao      ? `<p class="mb-1 small text-muted">${descricao}</p>` : ''}
+            ${encaminhamento ? `<p class="mb-1 small"><span class="fw-bold text-muted">Encaminhamento:</span> ${encaminhamento}</p>` : ''}
+            ${retorno        ? `<p class="mb-1 small"><span class="fw-bold text-muted">Retorno previsto:</span> ${retorno}</p>` : ''}
+            ${observacoes    ? `<p class="mb-1 small text-muted fst-italic">${observacoes}</p>` : ''}
+            <div class="text-end">
+              <small class="text-muted" style="font-size:.68rem;">
+                <i class="bi bi-person-check me-1"></i>${a.atendido_por_nome}
+                &nbsp;·&nbsp; ${a.created_at}
+              </small>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Delegação de eventos para editar/excluir dentro da timeline
+    container.querySelectorAll('.btn-editar-atendimento').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        abrirEdicao(parseInt(btn.dataset.id));
+      });
+    });
+    container.querySelectorAll('.btn-excluir-atendimento').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        confirmarExclusao(parseInt(btn.dataset.id));
+      });
+    });
+  }
+
+  // ── Carrega e exibe histórico ──
+  async function abrirHistorico(aluno) {
+    setAlunoAtual(aluno.id, aluno.nome, aluno.matricula, aluno.foto);
+    preencherCabecalhoModal('mh');
+
+    document.getElementById('mh-loading').classList.remove('d-none');
+    document.getElementById('mh-timeline').innerHTML = '';
+    document.getElementById('mh-vazio').classList.add('d-none');
+    document.getElementById('btnNovoDoModal').dataset.alunoId = aluno.id;
+
+    modalHistorico.show();
+
+    try {
+      const resp = await fetch(`/alunos/${aluno.id}/atendimentos`, {
+        headers: { 'X-CSRFToken': csrfToken() }
+      });
+      const dados = await resp.json();
+      document.getElementById('mh-loading').classList.add('d-none');
+      renderTimeline(dados);
+    } catch (err) {
+      document.getElementById('mh-loading').classList.add('d-none');
+      document.getElementById('mh-timeline').innerHTML =
+        '<p class="text-danger small">Falha ao carregar atendimentos.</p>';
+    }
+  }
+
+  // ── Abre formulário de NOVO atendimento ──
+  function abrirNovoAtendimento(alunoId, alunoNome, foto, matricula) {
+    setAlunoAtual(alunoId, alunoNome, matricula || '', foto || '');
+    preencherCabecalhoModal('mf');
+
+    document.getElementById('mf-titulo').textContent = 'Registrar Atendimento';
+    document.getElementById('mf-aluno-id').value     = alunoId;
+    document.getElementById('mf-atendimento-id').value = '';
+
+    // Limpa campos
+    document.getElementById('mf-data').value          = new Date().toISOString().slice(0,10);
+    document.getElementById('mf-resumo').value        = '';
+    document.getElementById('mf-descricao').value     = '';
+    document.getElementById('mf-encaminhamento').value = '';
+    document.getElementById('mf-retorno').value       = '';
+    document.getElementById('mf-observacoes').value   = '';
+
+    modalAtendimento.show();
+  }
+
+  // ── Abre formulário de EDIÇÃO ──
+  async function abrirEdicao(atendimentoId) {
+    try {
+      const resp = await fetch(`/atendimentos/${atendimentoId}`, {
+        headers: { 'X-CSRFToken': csrfToken() }
+      });
+      const a = await resp.json();
+
+      document.getElementById('mf-titulo').textContent    = 'Editar Atendimento';
+      document.getElementById('mf-aluno-id').value        = a.aluno_id;
+      document.getElementById('mf-atendimento-id').value  = a.id;
+      document.getElementById('mf-data').value            = a.data_atendimento;
+      document.getElementById('mf-setor').value           = a.setor;
+      document.getElementById('mf-resumo').value          = a.resumo;
+      document.getElementById('mf-descricao').value       = a.dados?.descricao      || '';
+      document.getElementById('mf-encaminhamento').value  = a.dados?.encaminhamento || '';
+      document.getElementById('mf-retorno').value         = a.dados?.retorno        || '';
+      document.getElementById('mf-observacoes').value     = a.dados?.observacoes    || '';
+
+      modalAtendimento.show();
+    } catch {
+      alert('Não foi possível carregar o atendimento.');
+    }
+  }
+
+  // ── Confirma e executa exclusão ──
+  async function confirmarExclusao(atendimentoId) {
+    if (!confirm('Excluir este atendimento? Esta ação não pode ser desfeita.')) return;
+
+    try {
+      const resp = await fetch(`/atendimentos/${atendimentoId}/excluir`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json' }
+      });
+      const json = await resp.json();
+      if (json.ok) {
+        // Remove o item da timeline sem recarregar
+        document.querySelector(`.timeline-item[data-id="${atendimentoId}"]`)?.remove();
+        if (!document.querySelector('.timeline-item')) {
+          document.getElementById('mh-vazio').classList.remove('d-none');
+        }
+      } else {
+        alert(json.erro || 'Erro ao excluir.');
+      }
+    } catch {
+      alert('Falha na requisição.');
+    }
+  }
+
+  // ── Salva (novo ou edição) ──
+  document.getElementById('btnSalvarAtendimento').addEventListener('click', async () => {
+    const alunoId       = parseInt(document.getElementById('mf-aluno-id').value);
+    const atendimentoId = document.getElementById('mf-atendimento-id').value;
+    const isEdicao      = !!atendimentoId;
+
+    const payload = {
+      data_atendimento: document.getElementById('mf-data').value,
+      setor:            document.getElementById('mf-setor').value,
+      resumo:           document.getElementById('mf-resumo').value,
+      dados: {
+        descricao:      document.getElementById('mf-descricao').value,
+        encaminhamento: document.getElementById('mf-encaminhamento').value,
+        retorno:        document.getElementById('mf-retorno').value,
+        observacoes:    document.getElementById('mf-observacoes').value,
+      }
+    };
+
+    if (!payload.data_atendimento) {
+      alert('Informe a data do atendimento.');
+      return;
+    }
+
+    const url    = isEdicao
+      ? `/atendimentos/${atendimentoId}/editar`
+      : `/alunos/${alunoId}/atendimentos/novo`;
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken(),
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json();
+
+      if (json.ok) {
+        modalAtendimento.hide();
+        // Recarrega a página para refletir o novo último atendimento na tabela
+        window.location.reload();
+      } else {
+        alert(json.erro || 'Erro ao salvar atendimento.');
+      }
+    } catch {
+      alert('Falha na requisição.');
+    }
+  });
+
+  // ── Listeners: botões "Ver atendimentos" na tabela ──
+  document.querySelectorAll('.btn-ver-atendimentos').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      abrirHistorico({
+        id:        parseInt(row.dataset.alunoId),
+        nome:      row.dataset.alunoNome,
+        matricula: row.dataset.alunoMatricula,
+        foto:      row.dataset.alunoFoto,
+      });
+    });
+  });
+
+  // ── Listeners: clique na linha da tabela também abre histórico ──
+  document.querySelectorAll('.row-atendimento').forEach(row => {
+    row.addEventListener('click', () => {
+      abrirHistorico({
+        id:        parseInt(row.dataset.alunoId),
+        nome:      row.dataset.alunoNome,
+        matricula: row.dataset.alunoMatricula,
+        foto:      row.dataset.alunoFoto,
+      });
+    });
+  });
+
+  // ── Listeners: botões "Novo" na tabela ──
+  document.querySelectorAll('.btn-novo-atendimento').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      abrirNovoAtendimento(
+        parseInt(btn.dataset.alunoId),
+        btn.dataset.alunoNome,
+        row.dataset.alunoFoto,
+        row.dataset.alunoMatricula,
+      );
+    });
+  });
+
+  // ── Listener: botão "Registrar Atendimento" dentro do modal de histórico ──
+  document.getElementById('btnNovoDoModal').addEventListener('click', () => {
+    modalHistorico.hide();
+    abrirNovoAtendimento(
+      _alunoAtual.id,
+      _alunoAtual.nome,
+      _alunoAtual.foto,
+      _alunoAtual.matricula,
+    );
+  });
+
+})();
+</script>
+{% endblock %}

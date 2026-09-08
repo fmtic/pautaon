@@ -1,0 +1,69 @@
+/* ── Foto do aluno na tabela ── */
+.foto-cell {
+  width: 42px;
+  height: 56px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f8f9fa;
+}
+.foto-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Badge de setor ── */
+.badge-setor {
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+}
+
+/* ── Linha clicável ── */
+.row-atendimento { cursor: pointer; }
+.row-atendimento:hover td { background-color: #f0f4ff !important; }
+
+/* ── Timeline de atendimentos no modal ── */
+.timeline {
+  position: relative;
+  padding-left: 1.5rem;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 0.6rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #dee2e6;
+}
+.timeline-item {
+  position: relative;
+  margin-bottom: 1.25rem;
+}
+.timeline-dot {
+  position: absolute;
+  left: -1.5rem;
+  top: 0.3rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #adb5bd;
+}
+.timeline-card {
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+}
+.timeline-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Formulário de novo atendimento ── */
+#formAtendimento .form-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}

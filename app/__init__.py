@@ -8,8 +8,16 @@ from app.extensions import csrf, db, login_manager
 
 def create_app(config_class: type[Config] = Config) -> Flask:
     """Cria a aplicação Flask sem efeitos colaterais no import."""
+    import os
+
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Permite redirect URI com http:// em desenvolvimento.
+    # A biblioteca google-auth-oauthlib exige HTTPS por padrão em produção.
+    # NUNCA habilite em produção — o .env.example documenta este comportamento.
+    if app.config.get("DEBUG"):
+        os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
     _configure_extensions(app)
     _register_user_loader()
