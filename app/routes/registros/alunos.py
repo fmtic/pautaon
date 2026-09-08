@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.database import db
 from app.models import Aluno, Frequencia, Inscricao, Turma
-from app.utils.logica import get_unidade_id
+from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, salvar_documento, salvar_foto
 
@@ -176,6 +176,8 @@ def novo_aluno():
             "responsavel_tipo": request.form.get("responsavel_tipo"),
             "responsavel_nome": request.form.get("responsavel_nome"),
             "responsavel_cpf": request.form.get("responsavel_cpf"),
+            "vai_acompanhado_aulas": bool(request.form.get("vai_acompanhado_aulas")),
+            "acompanhante_aulas": request.form.get("acompanhante_aulas") if request.form.get("vai_acompanhado_aulas") else None,
             "telefone_resp": request.form.get("telefone_resp"),
             "endereco": {
                 "cep": request.form.get("cep"),
@@ -184,6 +186,10 @@ def novo_aluno():
                 "bairro": request.form.get("bairro"),
                 "cidade": request.form.get("cidade"),
                 "uf": request.form.get("uf"),
+                "zona": request.form.get("zona", "Urbana"),
+                "possui_acesso_internet": not bool(
+                    request.form.get("nao_possui_acesso_internet")
+                ),
             },
         }
         novo.socioeconomico_json = {
@@ -194,6 +200,7 @@ def novo_aluno():
             "beneficio_social_status": request.form.get("beneficio_social_status"),
             "beneficio_social_nome": request.form.get("beneficio_social_nome"),
             "meio_transporte": request.form.get("meio_transporte"),
+            "vulnerabilidade_social": bool(request.form.get("vulnerabilidade_social")),
         }
         novo.diversidade_json = {
             "genero": request.form.get("genero"),
@@ -202,6 +209,7 @@ def novo_aluno():
             "saude_medicacao": request.form.get("saude_medicacao"),
             "saude_medicamento_nome": request.form.get("saude_medicamento_nome"),
             "saude_observacoes": request.form.get("saude_observacoes"),
+            "informacoes_para_professor": request.form.get("informacoes_para_professor"),
             "autorizacao_imagem": bool(request.form.get("autorizacao_imagem")),
         }
         ids_turmas = request.form.getlist("turmas_selecionadas")
@@ -287,6 +295,8 @@ def editar_aluno(id):
                 "responsavel_tipo": request.form.get("responsavel_tipo"),
                 "responsavel_nome": request.form.get("responsavel_nome"),
                 "responsavel_cpf": request.form.get("responsavel_cpf"),
+                "vai_acompanhado_aulas": bool(request.form.get("vai_acompanhado_aulas")),
+                "acompanhante_aulas": request.form.get("acompanhante_aulas") if request.form.get("vai_acompanhado_aulas") else None,
                 "telefone_resp": request.form.get("telefone_resp"),
                 "endereco": {
                     "cep": request.form.get("cep"),
@@ -295,6 +305,10 @@ def editar_aluno(id):
                     "bairro": request.form.get("bairro"),
                     "cidade": request.form.get("cidade"),
                     "uf": request.form.get("uf"),
+                    "zona": request.form.get("zona", "Urbana"),
+                    "possui_acesso_internet": not bool(
+                        request.form.get("nao_possui_acesso_internet")
+                    ),
                 },
             }
             aluno.socioeconomico_json = {
@@ -305,6 +319,7 @@ def editar_aluno(id):
                 "beneficio_social_status": request.form.get("beneficio_social_status"),
                 "beneficio_social_nome": request.form.get("beneficio_social_nome"),
                 "meio_transporte": request.form.get("meio_transporte"),
+                "vulnerabilidade_social": bool(request.form.get("vulnerabilidade_social")),
             }
             aluno.diversidade_json = {
                 "genero": request.form.get("genero"),
@@ -313,6 +328,7 @@ def editar_aluno(id):
                 "saude_medicacao": request.form.get("saude_medicacao"),
                 "saude_medicamento_nome": request.form.get("saude_medicamento_nome"),
                 "saude_observacoes": request.form.get("saude_observacoes"),
+                "informacoes_para_professor": request.form.get("informacoes_para_professor"),
                 "autorizacao_imagem": bool(request.form.get("autorizacao_imagem")),
             }
 
@@ -464,12 +480,9 @@ def historico_aluno(aluno_id):
             continue
 
         freqs = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id).all()
-        total = len(freqs)
-        presentes = sum(1 for freq in freqs if freq.conceito in ("A", "B", "C", "D"))
-        faltas = sum(1 for freq in freqs if freq.conceito == "F")
-        justif = sum(1 for freq in freqs if freq.conceito == "J")
-        contaveis = presentes + faltas
-        pct_presenca = round(presentes / contaveis * 100, 1) if contaveis else 0
+        estatisticas = calcular_estatisticas_frequencia(
+            freq.conceito for freq in freqs
+        )
 
         def get_conselho(etapa):
             return ConselhoClasse.query.filter_by(
@@ -492,10 +505,10 @@ def historico_aluno(aluno_id):
                 "data_fim": turma.data_fim or "—",
                 "nivel": insc.nivel or aluno.nivel or "—",
                 "total_aulas": total,
-                "presencas": presentes,
-                "faltas": faltas,
-                "justificadas": justif,
-                "pct_presenca": pct_presenca,
+                "presencas": estatisticas["presencas"],
+                "faltas": estatisticas["faltas"],
+                "justificadas": estatisticas["justificadas"],
+                "pct_presenca": estatisticas["presenca_percentual"],
                 "status_inicial": c_inicial.situacao_final if c_inicial else "—",
                 "status_percurso": c_percurso.situacao_final if c_percurso else "—",
                 "situacao_final": c_final.situacao_final if c_final else "—",

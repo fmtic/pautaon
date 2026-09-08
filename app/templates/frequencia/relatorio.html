@@ -59,6 +59,7 @@
                     <th class="ps-4">Aluno</th>
                     <th class="text-center">Total Aulas</th>
                     <th class="text-center">Presenças</th>
+                    <th class="text-center">Justificadas</th>
                     <th class="text-center">Frequência (%)</th>
                 </tr>
             </thead>
@@ -68,6 +69,7 @@
                     <td class="ps-4 fw-bold">{{ d.nome }}</td>
                     <td class="text-center">{{ d.total }}</td>
                     <td class="text-center text-success fw-bold">{{ d.presencas }}</td>
+                    <td class="text-center text-warning-emphasis fw-bold">{{ d.justificadas }}</td>
                     <td class="text-center">
                         <div class="d-flex align-items-center justify-content-center">
                             <div class="progress w-50 me-2" style="height: 6px;">
@@ -81,7 +83,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="4" class="text-center py-4 text-muted">Nenhum registro de frequência encontrado para
+                    <td colspan="5" class="text-center py-4 text-muted">Nenhum registro de frequência encontrado para
                         este período.</td>
                 </tr>
                 {% endfor %}

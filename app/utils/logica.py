@@ -12,6 +12,34 @@ NAME_LOWER_EXCEPTIONS = {
 }
 
 
+def calcular_estatisticas_frequencia(conceitos) -> Dict[str, Any]:
+    """Calcula frequência por conceito sem contar justificativas como aula válida."""
+    counts = {conceito: 0 for conceito in ('A', 'B', 'C', 'D', 'F', 'J')}
+    for conceito in conceitos:
+        if conceito in counts:
+            counts[conceito] += 1
+
+    presencas = counts['A'] + counts['B'] + counts['C'] + counts['D']
+    faltas = counts['F']
+    justificadas = counts['J']
+    total_validas = presencas + faltas
+
+    def percentual(valor: int, total: int = total_validas) -> float:
+        return round(valor / total * 100, 1) if total else 0.0
+
+    return {
+        'counts': counts,
+        'total': total_validas,
+        'total_registros': sum(counts.values()),
+        'presencas': presencas,
+        'faltas': faltas,
+        'justificadas': justificadas,
+        'presenca_percentual': percentual(presencas),
+        'falta_percentual': percentual(faltas),
+        'justificada_percentual': percentual(justificadas, sum(counts.values())),
+    }
+
+
 def formatar_nome_proprio(nome: str | None) -> str | None:
     """Normaliza um nome próprio para apresentação padrão.
 
@@ -324,45 +352,48 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
     }
 
 def calcular_frequencias_relatorio(todas_as_turmas: List[Turma], unidade_id: Optional[int] = None) -> Tuple[float, Dict[str, float], Dict[str, float], Dict[str, float]]:
-    def calc_pc(p: int, f: int) -> float:
-        """Presença = A+B+C+D, Falta = F. J não entra no denominador."""
-        total = p + f
-        return round((p / total * 100), 1) if total > 0 else 0.0
+    def calc_pc(query) -> float:
+        estatisticas = calcular_estatisticas_frequencia(
+            registro.conceito for registro in query.all()
+        )
+        return estatisticas['presenca_percentual']
 
-    q_geral = Frequencia.query.join(Aluno).join(Aluno.turmas).filter(Turma.ativo == True)
+    q_geral = Frequencia.query.join(
+        Turma, Frequencia.turma_id == Turma.id
+    ).filter(Turma.ativo == True)
     if unidade_id:
         q_geral = q_geral.filter(Turma.unidade_id == unidade_id)
-    p_geral = calc_pc(q_geral.filter(Frequencia.presente == True).count(),
-                      q_geral.filter(Frequencia.conceito == 'F').count())
+    p_geral = calc_pc(q_geral)
 
     f_prog: Dict[str, float] = {}
     prog_query = db.session.query(Turma.programa).distinct().filter(Turma.ativo == True)
     if unidade_id:
         prog_query = prog_query.filter(Turma.unidade_id == unidade_id)
     for prog, in prog_query.all():
-        q = Frequencia.query.join(Aluno).join(Aluno.turmas).filter(Turma.programa == prog, Turma.ativo == True)
+        q = Frequencia.query.join(
+            Turma, Frequencia.turma_id == Turma.id
+        ).filter(Turma.programa == prog, Turma.ativo == True)
         if unidade_id:
             q = q.filter(Turma.unidade_id == unidade_id)
-        f_prog[prog] = calc_pc(q.filter(Frequencia.presente == True).count(), 
-                               q.filter(Frequencia.conceito == 'F').count())
+        f_prog[prog] = calc_pc(q)
 
     f_turma: Dict[str, float] = {}
     for t in todas_as_turmas:
         q = Frequencia.query.filter(Frequencia.turma_id == t.id)
-        f_turma[t.nome] = calc_pc(q.filter(Frequencia.presente == True).count(),
-                                  q.filter(Frequencia.conceito == 'F').count())
+        f_turma[t.nome] = calc_pc(q)
 
     f_prof: Dict[str, float] = {}
     prof_query = User.query.filter_by(role='professor')
     if unidade_id:
         prof_query = prof_query.filter_by(unidade_id=unidade_id)
     for prof in prof_query.all():
-        q = Frequencia.query.join(Aluno).join(Aluno.turmas).filter(Turma.professor_id == prof.id, Turma.ativo == True)
+        q = Frequencia.query.join(
+            Turma, Frequencia.turma_id == Turma.id
+        ).filter(Turma.professor_id == prof.id, Turma.ativo == True)
         if unidade_id:
             q = q.filter(Turma.unidade_id == unidade_id)
         if q.count() > 0:
-            f_prof[prof.name] = calc_pc(q.filter(Frequencia.presente == True).count(),
-                                        q.filter(Frequencia.conceito == 'F').count())
+            f_prof[prof.name] = calc_pc(q)
 
     return p_geral, f_prog, f_turma, f_prof
 

@@ -9,7 +9,8 @@ from flask import (
     flash,
 )
 from flask_login import login_required, current_user
-from sqlalchemy import select, func
+from sqlalchemy import cast, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from app.database import db
 from datetime import date, datetime
 from app.models import (
@@ -550,8 +551,6 @@ def relatorio_alunos():
 
     from app.models import PeriodoLetivo
     from app.utils.logica import get_unidade_id
-    from sqlalchemy import or_
-
     # 1. Captura parâmetros
     periodo_id = request.args.get("periodo_letivo_id", type=int)
     selected_cols = request.args.getlist("colunas")
@@ -567,6 +566,9 @@ def relatorio_alunos():
     cidade = request.args.get("cidade")
     bairro = request.args.get("bairro")
     beneficio_social = request.args.get("beneficio_social")
+    vulnerabilidade_social = request.args.get("vulnerabilidade_social")
+    zona = request.args.get("zona")
+    acesso_internet = request.args.get("acesso_internet")
 
     # 3. Se for primeiro acesso sem colunas, define padrão
     if not selected_cols and not gerar:
@@ -618,6 +620,30 @@ def relatorio_alunos():
         elif beneficio_social == "0":
             query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext != "Sim")
 
+        vulnerabilidade = cast(Aluno._socioeconomico_json, JSONB)[
+            "vulnerabilidade_social"
+        ].astext
+        if vulnerabilidade_social == "1":
+            query = query.filter(vulnerabilidade == "true")
+        elif vulnerabilidade_social == "0":
+            query = query.filter(
+                or_(vulnerabilidade == "false", vulnerabilidade.is_(None))
+            )
+
+        zona_residencia = cast(Aluno._identificacao_json, JSONB)["endereco"]["zona"].astext
+        if zona:
+            query = query.filter(zona_residencia == zona)
+
+        possui_internet = cast(Aluno._identificacao_json, JSONB)[
+            "possui_acesso_internet"
+        ].astext
+        if acesso_internet == "1":
+            query = query.filter(
+                or_(possui_internet == "true", possui_internet.is_(None))
+            )
+        elif acesso_internet == "0":
+            query = query.filter(possui_internet == "false")
+
         # Filtro por idade (calculada em tempo real, mais complexo – opcional)
         # Neste exemplo, vamos pular idade pois depende de cálculo dinâmico.
         # Se necessário, implemente usando uma subconsulta ou faça no Python após paginar.
@@ -641,6 +667,7 @@ def relatorio_alunos():
                 "idade": idade,
                 "nivel": a.nivel or "-",
                 "pcd": a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False,
+                "acompanhante_aulas": a.identificacao_json.get("acompanhante_aulas") or "-",
                 "turmas_aluno": True,
             }
             turmas_vinculadas = a.turmas[:3] if hasattr(a, "turmas") else []
@@ -657,6 +684,7 @@ def relatorio_alunos():
         {"key": "idade", "label": "Idade"},
         {"key": "nivel", "label": "Nível"},
         {"key": "pcd", "label": "PCD"},
+        {"key": "acompanhante_aulas", "label": "Acompanhante para as aulas"},
         {"key": "turmas_aluno", "label": "Turmas Vinculadas"},
     ]
 
@@ -705,6 +733,9 @@ def exportar_relatorio_alunos():
     cidade = request.args.get("cidade")
     bairro = request.args.get("bairro")
     beneficio_social = request.args.get("beneficio_social")
+    vulnerabilidade_social = request.args.get("vulnerabilidade_social")
+    zona = request.args.get("zona")
+    acesso_internet = request.args.get("acesso_internet")
 
     u_id = get_unidade_id()
     query = Aluno.query.filter_by(ativo=True)
@@ -727,6 +758,30 @@ def exportar_relatorio_alunos():
     elif beneficio_social == "0":
         query = query.filter(Aluno.socioeconomico_json['beneficio_social_status'].astext != "Sim")
 
+    vulnerabilidade = cast(Aluno._socioeconomico_json, JSONB)[
+        "vulnerabilidade_social"
+    ].astext
+    if vulnerabilidade_social == "1":
+        query = query.filter(vulnerabilidade == "true")
+    elif vulnerabilidade_social == "0":
+        query = query.filter(
+            or_(vulnerabilidade == "false", vulnerabilidade.is_(None))
+        )
+
+    zona_residencia = cast(Aluno._identificacao_json, JSONB)["endereco"]["zona"].astext
+    if zona:
+        query = query.filter(zona_residencia == zona)
+
+    possui_internet = cast(Aluno._identificacao_json, JSONB)[
+        "possui_acesso_internet"
+    ].astext
+    if acesso_internet == "1":
+        query = query.filter(
+            or_(possui_internet == "true", possui_internet.is_(None))
+        )
+    elif acesso_internet == "0":
+        query = query.filter(possui_internet == "false")
+
     alunos_lista = query.distinct().order_by(Aluno.matricula.asc(), Aluno.id.asc()).all()
 
     # Mapeamento de Labels
@@ -737,6 +792,7 @@ def exportar_relatorio_alunos():
         "idade": "Idade",
         "nivel": "Nível",
         "pcd": "PCD",
+        "acompanhante_aulas": "Acompanhante para as aulas",
         "turmas_aluno": "Turmas",
     }
 
@@ -752,6 +808,8 @@ def exportar_relatorio_alunos():
             elif col == "pcd":
                 pcd = a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False
                 row[column_labels[col]] = "Sim" if pcd else "Não"
+            elif col == "acompanhante_aulas":
+                row[column_labels[col]] = a.identificacao_json.get("acompanhante_aulas") or "-"
             elif col == "data_nascimento":
                 row[column_labels[col]] = a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-"
             else:

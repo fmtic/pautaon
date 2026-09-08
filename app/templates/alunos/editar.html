@@ -397,6 +397,15 @@
                                     <option value="Outro" {{ 'selected' if mt=='Outro' }}>Outro</option>
                                 </select>
                             </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" name="vulnerabilidade_social"
+                                        id="vulnerabilidade_social" {{ 'checked' if socio.get('vulnerabilidade_social') }}>
+                                    <label class="form-check-label small fw-bold" for="vulnerabilidade_social">
+                                        Em vulnerabilidade social?
+                                    </label>
+                                </div>
+                            </div>
 
                             <div class="col-md-12 bg-light p-3 rounded mt-4 border">
                                 <div class="row g-3">

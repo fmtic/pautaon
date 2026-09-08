@@ -4,10 +4,16 @@ from app.models import (Registro, Turma, Aluno, Frequencia, RegistroAula,
                     TemaAula, PerguntaConselho, User, ConfiguracaoSistema, PeriodoLetivo,
                     Inscricao, Curso)
 from app.database import db
-from sqlalchemy import select, func, not_
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
-from app.utils.logica import carregar_contexto_turma, carregar_frequencias, salvar_frequencia, get_unidade_id
+from app.utils.logica import (
+    calcular_estatisticas_frequencia,
+    carregar_contexto_turma,
+    carregar_frequencias,
+    get_unidade_id,
+    salvar_frequencia,
+)
 from . import bp
 import json
 
@@ -143,6 +149,13 @@ def frequencia():
             if not turma_post or turma_post.professor_id != current_user.id:
                 abort(403)
 
+        data_post = (request.form.get('data') or request.form.get('data_hidden') or '').strip()
+        if turma_post_id.isdigit() and data_post:
+            contexto = carregar_contexto_turma(int(turma_post_id))
+            if data_post not in contexto.get('datas', []):
+                flash('A data informada não pertence ao calendário válido da turma.', 'warning')
+                return redirect(url_for('registros.frequencia', turma_id=turma_post_id))
+
         turma_id, data = salvar_frequencia(request.form)
         if not data:
             flash("Preencha a data da aula antes de salvar.", "warning")
@@ -198,22 +211,16 @@ def frequencia():
                  # Compatibilidade com registros antigos sem turma_id
                  registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
 
-             total = len(registros)
-             if total:
-                 presentes = sum(1 for r in registros if r.conceito in ('A','B','C','D'))
-                 faltas    = sum(1 for r in registros if r.conceito == 'F')
-                 justif    = sum(1 for r in registros if r.conceito == 'J')
-                 contaveis = presentes + faltas   # J não entra no denominador
-                 aluno.estats_freq = type('E', (), {
-                     'presenca':    round(presentes / contaveis * 100, 1) if contaveis else 0,
-                     'falta':       round(faltas    / contaveis * 100, 1) if contaveis else 0,
-                     'justificada': round(justif    / total     * 100, 1) if total else 0,
-                     'total_aulas': total,
-                 })()
-             else:
-                 aluno.estats_freq = type('E', (), {
-                     'presenca': 0, 'falta': 0, 'justificada': 0, 'total_aulas': 0
-                 })()
+             estatisticas = calcular_estatisticas_frequencia(
+                 registro.conceito for registro in registros
+             )
+             aluno.estats_freq = type('E', (), {
+                 'presenca': estatisticas['presenca_percentual'],
+                 'falta': estatisticas['falta_percentual'],
+                 'justificada': estatisticas['justificada_percentual'],
+                 'justificadas': estatisticas['justificadas'],
+                 'total_aulas': estatisticas['total'],
+             })()
 
              # Verifica se a inscrição do aluno nesta turma está ativa
              insc = Inscricao.query.filter_by(
@@ -246,39 +253,51 @@ def frequencia_relatorio():
     data_inicio = request.args.get('inicio')
     data_fim   = request.args.get('fim')
 
-    turmas            = Turma.query.all()
+    unidade_id = get_unidade_id()
+    turmas_query = Turma.query.filter_by(ativo=True)
+    if unidade_id:
+        turmas_query = turmas_query.filter_by(unidade_id=unidade_id)
+    turmas = turmas_query.order_by(Turma.nome).all()
     resultado         = []
     turma_selecionada = None
 
     if turma_id:
-        turma_selecionada = Turma.query.get(int(turma_id))
+        turma_selecionada = next(
+            (turma for turma in turmas if turma.id == int(turma_id)), None
+        )
+        if not turma_selecionada:
+            abort(404)
         alunos = db.session.execute(
-            select(Aluno).where(Aluno.turma_id == turma_id)
+            select(Aluno)
+            .join(Inscricao, Inscricao.aluno_id == Aluno.id)
+            .where(
+                Inscricao.turma_id == turma_selecionada.id,
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
+            .order_by(Aluno.nome)
         ).scalars().all()
 
         for aluno in alunos:
-            stmt_total = select(func.count()).select_from(Frequencia).where(
-                Frequencia.aluno_id == aluno.id
-            )
-            stmt_pres = select(func.count()).select_from(Frequencia).where(
-                (Frequencia.aluno_id == aluno.id) & (Frequencia.presente == True)
+            stmt = select(Frequencia.conceito).where(
+                Frequencia.aluno_id == aluno.id,
+                Frequencia.turma_id == turma_selecionada.id,
             )
             if data_inicio:
-                stmt_total = stmt_total.where(Frequencia.data >= data_inicio)
-                stmt_pres  = stmt_pres.where(Frequencia.data >= data_inicio)
+                stmt = stmt.where(Frequencia.data >= data_inicio)
             if data_fim:
-                stmt_total = stmt_total.where(Frequencia.data <= data_fim)
-                stmt_pres  = stmt_pres.where(Frequencia.data <= data_fim)
+                stmt = stmt.where(Frequencia.data <= data_fim)
 
-            total    = db.session.execute(stmt_total).scalar() or 0
-            presencas = db.session.execute(stmt_pres).scalar() or 0
-            percentual = round((presencas / total) * 100, 2) if total > 0 else 0
+            estatisticas = calcular_estatisticas_frequencia(
+                db.session.execute(stmt).scalars().all()
+            )
 
             resultado.append({
                 "nome": aluno.nome,
-                "total": total,
-                "presencas": presencas,
-                "percentual": percentual
+                "total": estatisticas['total'],
+                "presencas": estatisticas['presencas'],
+                "justificadas": estatisticas['justificadas'],
+                "percentual": estatisticas['presenca_percentual'],
             })
 
     return render_template('frequencia/relatorio.html',

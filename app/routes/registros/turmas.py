@@ -1,6 +1,7 @@
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import select
+from datetime import datetime
 
 from app.database import db
 from app.models import (
@@ -480,9 +481,14 @@ def ver_observacoes(turma_id):
 @login_required
 def imprimir_pauta(id):
     if current_user.role not in ["admin", "pedagogico", "secretaria"]:
-        abort(403)
+        if current_user.role != "professor":
+            abort(403)
 
     try:
+        turma = Turma.query.get_or_404(id)
+        if current_user.role == "professor" and turma.professor_id != current_user.id:
+            abort(403)
+        assert_unidade_context(turma.unidade_id, get_unidade_id())
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
         flash(
@@ -493,6 +499,25 @@ def imprimir_pauta(id):
     mes_selecionado = request.args.get("mes")
     if mes_selecionado:
         ctx["datas"] = [data for data in ctx["datas"] if f"-{mes_selecionado}-" in data]
-        ctx["mes_nome"] = mes_selecionado
+        nomes_meses = {
+            "01": "Janeiro", "02": "Fevereiro", "03": "Março",
+            "04": "Abril", "05": "Maio", "06": "Junho",
+            "07": "Julho", "08": "Agosto", "09": "Setembro",
+            "10": "Outubro", "11": "Novembro", "12": "Dezembro",
+        }
+        ctx["mes_nome"] = nomes_meses.get(mes_selecionado, mes_selecionado)
 
-    return render_template("imprimir_pauta.html", **ctx)
+    registros = Frequencia.query.filter(
+        Frequencia.turma_id == id,
+        Frequencia.data.in_(ctx["datas"]),
+    ).all() if ctx["datas"] else []
+    frequencias = {}
+    for registro in registros:
+        frequencias.setdefault(registro.data, {})[registro.aluno_id] = registro.conceito
+
+    return render_template(
+        "frequencia/imprimir_pauta.html",
+        **ctx,
+        frequencias=frequencias,
+        now=datetime.now(),
+    )

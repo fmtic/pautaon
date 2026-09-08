@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pauta de Frequência - {{ turma.nome }}</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <style>
+    body { background: #f5f6f8; color: #212529; font-family: Arial, sans-serif; }
+    .print-page { max-width: 1400px; margin: 1.5rem auto; background: #fff; padding: 1.5rem; }
+    .pauta-table { font-size: 0.72rem; }
+    .pauta-table th, .pauta-table td { border: 1px solid #adb5bd; padding: 0.28rem; text-align: center; vertical-align: middle; }
+    .pauta-table th:first-child, .pauta-table td:first-child { text-align: left; min-width: 220px; }
+    .pauta-table thead th { background: #e9ecef; white-space: nowrap; }
+    .conceito-A, .conceito-B, .conceito-C, .conceito-D { color: #146c43; font-weight: 700; }
+    .conceito-F { color: #b02a37; font-weight: 700; }
+    .conceito-J { color: #997404; font-weight: 700; }
+    .legenda span { margin-right: 0.8rem; }
+    @media print {
+      @page { size: landscape; margin: 0.7cm; }
+      body { background: #fff; }
+      .print-page { max-width: none; margin: 0; padding: 0; }
+      .no-print { display: none !important; }
+      .pauta-table { font-size: 0.62rem; }
+      .pauta-table th:first-child, .pauta-table td:first-child { min-width: 180px; }
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="print-page">
+    <div class="no-print d-flex justify-content-between align-items-center mb-3">
+      <a href="javascript:window.close()" class="btn btn-outline-secondary btn-sm">Voltar</a>
+      <button type="button" onclick="window.print()" class="btn btn-primary btn-sm">
+        Imprimir pauta
+      </button>
+    </div>
+
+    <header class="border-bottom pb-3 mb-3">
+      <div class="row align-items-end">
+        <div class="col-8">
+          <h2 class="mb-1 fw-bold">Pauta de Frequência</h2>
+          <div class="text-muted">{{ informacao_padrao.nome_instituicao or 'Instituição' }}</div>
+        </div>
+        <div class="col-4 text-end small">
+          <div><strong>Turma:</strong> {{ turma.nome }}</div>
+          <div><strong>Programa:</strong> {{ turma.programa or '-' }}</div>
+          <div><strong>Professor:</strong> {{ turma.professor.name if turma.professor else 'Não atribuído' }}</div>
+          {% if mes_nome %}<div><strong>Mês:</strong> {{ mes_nome }}</div>{% endif %}
+        </div>
+      </div>
+    </header>
+
+    <div class="table-responsive">
+      <table class="table pauta-table mb-2">
+        <thead>
+          <tr>
+            <th>Aluno</th>
+            {% for data in datas %}
+            <th>{{ data[8:10] }}/{{ data[5:7] }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for aluno in alunos %}
+          <tr>
+            <td>
+              <strong>{{ aluno.nome_social or aluno.nome }}</strong>
+              {% if aluno.nome_social %}<small class="d-block text-muted">{{ aluno.nome }}</small>{% endif %}
+            </td>
+            {% for data in datas %}
+              {% set conceito = frequencias.get(data, {}).get(aluno.id, '') %}
+              <td class="conceito-{{ conceito }}">{{ conceito or '-' }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ (datas|length) + 1 }}" class="text-muted">Nenhum aluno ativo nesta turma.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if not datas %}
+    <div class="alert alert-warning">Não há datas de aula cadastradas para este período.</div>
+    {% endif %}
+
+    <div class="legenda small border-top pt-2 mt-2">
+      <strong>Legenda:</strong>
+      <span><strong class="text-success">A-D</strong> Presença</span>
+      <span><strong class="text-danger">F</strong> Falta</span>
+      <span><strong class="text-warning-emphasis">J</strong> Justificada</span>
+    </div>
+
+    <footer class="small text-muted text-end mt-3">
+      Documento gerado em {{ now.strftime('%d/%m/%Y %H:%M') if now else '' }}
+    </footer>
+  </main>
+</body>
+</html>

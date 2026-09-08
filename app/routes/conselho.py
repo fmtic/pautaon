@@ -9,7 +9,7 @@ from app.database import db
 from sqlalchemy import select, case
 from datetime import datetime, date
 from collections import OrderedDict
-from app.utils.logica import get_unidade_id
+from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
@@ -400,8 +400,13 @@ def salvar_conselho():
 def fechamento_turma(turma_id):
     turma = Turma.query.get_or_404(turma_id)
     
-    # CORREÇÃO DO ERRO: Filtramos a lista usando Python (List Comprehension)
-    alunos = [aluno for aluno in turma.alunos if aluno.ativo]
+    alunos = [
+        aluno for aluno in turma.alunos
+        if aluno.ativo and any(
+            inscricao.turma_id == turma.id and inscricao.ativo
+            for inscricao in aluno.inscricoes
+        )
+    ]
 
     # BLOQUEIO: Se não houver alunos ativos, não prossegue para os cálculos
     if not alunos:
@@ -417,26 +422,23 @@ def fechamento_turma(turma_id):
 
     dados_alunos = []
     for aluno in alunos:
-        # Aqui o código segue seu fluxo normal de cálculo de frequência para esta turma
         registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=turma.id).all()
-        if not registros:
-            registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
-        total = len(registros)
-
-        counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0, 'J': 0}
-        for r in registros:
-            if r.conceito in counts:
-                counts[r.conceito] += 1
-
-        def perc(qtd):
-            return round((qtd / total * 100), 1) if total > 0 else 0
+        estatisticas = calcular_estatisticas_frequencia(
+            registro.conceito for registro in registros
+        )
 
         dados_alunos.append({
             'obj':      aluno,
-            'counts':   counts,
-            'percs':    {k: perc(v) for k, v in counts.items()},
-            'presenca': perc(counts['A'] + counts['B'] + counts['C'] + counts['D']),
-            'falta':    perc(counts['F'])
+            'counts':   estatisticas['counts'],
+            'percs': {
+                conceito: round(
+                    quantidade / estatisticas['total_registros'] * 100, 1
+                ) if estatisticas['total_registros'] else 0
+                for conceito, quantidade in estatisticas['counts'].items()
+            },
+            'presenca': estatisticas['presenca_percentual'],
+            'falta':    estatisticas['falta_percentual'],
+            'justificadas': estatisticas['justificadas'],
         })
 
     return render_template('conselho/fechamento.html',
