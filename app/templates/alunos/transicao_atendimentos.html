@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+  .card-opcao {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    border: 2px solid transparent;
+  }
+  .card-opcao:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12) !important;
+  }
+  .card-opcao-pedagogico:hover {
+    border-color: #0d6efd;
+  }
+  .card-opcao-social:hover {
+    border-color: #198754;
+  }
+  .icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    margin: 0 auto 1.25rem auto;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  
+  {# Cabecalho de Boas-vindas #}
+  <div class="row justify-content-center text-center mb-5">
+    <div class="col-lg-8">
+      <h2 class="fw-bold mb-2">
+        <i class="bi bi-grid-1x2 me-2 text-primary"></i>Módulos de Atendimento
+      </h2>
+      <p class="text-muted">
+        Selecione a área desejada para acessar a lista de alunos, formulários e históricos de atendimento.
+      </p>
+    </div>
+  </div>
+
+  {# Opcoes de Selecao #}
+  <div class="row justify-content-center g-4">
+
+    {# ── OPÇÃO 1: ATENDIMENTO PEDAGÓGICO ── #}
+    {% if current_user.has_role('pedagogico') or current_user.has_role('admin') %}
+    <div class="col-md-5 col-lg-4">
+      <div class="card h-100 shadow-sm border-0 card-opcao card-opcao-pedagogico text-center p-3">
+        <div class="card-body d-flex flex-column align-items-center justify-content-between">
+          <div>
+            <div class="icon-wrapper bg-primary bg-opacity-10 text-primary">
+              <i class="bi bi-clipboard2-pulse"></i>
+            </div>
+            <h4 class="card-title fw-bold text-dark mb-2">Atendimento Pedagógico</h4>
+            <p class="card-text text-muted small mb-4">
+              Registro e histórico de atendimentos individuais para alunos e seus responsáveis, acompanhamento de faltas e encaminhamentos internos.
+            </p>
+          </div>
+          <a href="{{ url_for('registros.listar_atendimentos') }}" class="btn btn-primary w-100 fw-bold py-2">
+            Acessar Pedagógico <i class="bi bi-arrow-right ms-1"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── OPÇÃO 2: SERVIÇO SOCIAL ── #}
+    {% if current_user.has_role('servico_social') or current_user.has_role('admin') %}
+    <div class="col-md-5 col-lg-4">
+      <div class="card h-100 shadow-sm border-0 card-opcao card-opcao-social text-center p-3">
+        <div class="card-body d-flex flex-column align-items-center justify-content-between">
+          <div>
+            <div class="icon-wrapper bg-success bg-opacity-10 text-success">
+              <i class="bi bi-files"></i>
+            </div>
+            <h4 class="card-title fw-bold text-dark mb-2">Serviço Social</h4>
+            <p class="card-text text-muted small mb-4">
+              Formulários socioeconômicos, fichas de notificação de violência, plano individual e entrevistas especializadas do Serviço Social.
+            </p>
+          </div>
+          <a href="{{ url_for('servico_social.listar_entrevistas') }}" class="btn btn-success w-100 fw-bold py-2">
+            Acessar Serviço Social <i class="bi bi-arrow-right ms-1"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {# Fallback caso o usuario nao tenha nenhuma permissao especifica #}
+  {% if not (current_user.has_role('pedagogico') or current_user.has_role('servico_social') or current_user.has_role('admin')) %}
+  <div class="row justify-content-center mt-4">
+    <div class="col-md-6 text-center">
+      <div class="alert alert-warning border-0 shadow-sm" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Você não possui permissões atribuídas para acessar os módulos de Atendimento. Solicite acesso ao administrador.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Botao Voltar ao Dashboard #}
+  <div class="row justify-content-center mt-5">
+    <div class="col-auto">
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary btn-sm fw-bold">
+        <i class="bi bi-arrow-left me-1"></i> Voltar ao Painel Principal
+      </a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

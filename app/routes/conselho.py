@@ -280,8 +280,10 @@ def lancamento_conselho():
     try:
         db.session.commit()
     except Exception as e:
+        from app.utils.errors import flash_and_log
+
         db.session.rollback()
-        flash(f'Erro ao inicializar conselho: {e}', 'danger')
+        flash_and_log(e, location='conselho.salvar_conselho', hint='db')
         return redirect(url_for('conselho.lancamento_conselho', etapa=etapa))
 
     # Usa o primeiro registro para referência de conselho_id nas respostas

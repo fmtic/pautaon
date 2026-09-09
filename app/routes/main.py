@@ -7,6 +7,7 @@ from flask import (
     redirect,
     url_for,
     flash,
+    current_app,
 )
 from flask_login import login_required, current_user
 from sqlalchemy import cast, func, or_, select
@@ -98,8 +99,9 @@ def dashboard():
                 total_alunos=total_alunos,
                 total_professores=total_professores,
             )
-        except Exception as e:
-            flash(f"Erro ao computar dados para o dashboard gerencial: {e}", "danger")
+        except Exception:
+            current_app.logger.exception("Falha ao computar dados para o dashboard gerencial.")
+            flash("Erro ao computar dados para o dashboard gerencial. Contate o suporte.", "danger")
             return render_template(
                 "dashboard/index.html",
                 total_turmas=0,
@@ -429,7 +431,9 @@ def relatorio_geral():
             total_outro=total_outro,
         )
     except Exception as e:
-        flash(f"Ocorreu um erro gerando o relatório dinâmico: {e}", "danger")
+        from app.utils.errors import flash_and_log
+
+        flash_and_log(e, location='main.relatorio_geral')
         return redirect(url_for("main.dashboard"))
 
 
@@ -518,8 +522,10 @@ def salvar_configuracao_conselho():
             db.session.commit()
             flash("Parâmetros do conselho gravados de forma segura!", "success")
         except Exception as e:
+            from app.utils.errors import flash_and_log
+
             db.session.rollback()
-            flash(f"Falha de gravação de Parâmetro: {e}", "danger")
+            flash_and_log(e, location='main.salvar_configuracao_conselho', hint='db')
 
     return redirect(url_for("registros.planejamento"))
 

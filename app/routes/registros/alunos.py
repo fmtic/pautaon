@@ -30,8 +30,10 @@ def atualizar_nivel_aluno(aluno_id):
         db.session.commit()
         flash(f"Nível do aluno {aluno.nome} atualizado com sucesso!", "success")
     except Exception as exc:
+        from app.utils.errors import flash_and_log
+
         db.session.rollback()
-        flash(f"Falha ao atualizar o nível do aluno: {exc}", "danger")
+        flash_and_log(exc, location='registros.atualizar_nivel_aluno', hint='db')
 
     if turma_id:
         return redirect(url_for("registros.ver_turma", id=turma_id))
@@ -249,8 +251,10 @@ def novo_aluno():
             f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!", "success"
         )
     except Exception as exc:
+        from app.utils.errors import flash_and_log
+
         db.session.rollback()
-        flash(f"Erro em cascata local a nível de Banco: {exc}", "danger")
+        flash_and_log(exc, location='registros.novo_aluno', hint='db')
 
     return redirect(url_for("registros.gerenciar_alunos"))
 
@@ -364,8 +368,10 @@ def editar_aluno(id):
             )
             return redirect(url_for("registros.gerenciar_alunos"))
         except Exception as exc:
+            from app.utils.errors import flash_and_log
+
             db.session.rollback()
-            flash(f"Atenção, falha de integridade referencial: {exc}", "danger")
+            flash_and_log(exc, location='registros.editar_aluno', hint='db')
 
     return render_template("alunos/editar.html", aluno=aluno)
 
@@ -654,8 +660,10 @@ def transferir_aluno(aluno_id):
         db.session.commit()
         flash(f"Aluno {aluno.nome} transferido para a turma {turma_destino.nome} com sucesso!", "success")
     except Exception as e:
+        from app.utils.errors import flash_and_log
+
         db.session.rollback()
-        flash(f"Erro ao transferir aluno: {str(e)}", "danger")
+        flash_and_log(e, location='registros.transferir_aluno', hint='db')
 
     # Redireciona de volta para a página da turma de origem
     return redirect(url_for("registros.ver_turma", id=turma_origem_id))

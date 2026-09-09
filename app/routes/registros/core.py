@@ -38,8 +38,10 @@ def form():
             db.session.commit()
             return redirect(url_for('main.dashboard'))
         except Exception as e:
+            from app.utils.errors import flash_and_log
+
             db.session.rollback()
-            flash(f"Falha ao persistir formulário dinâmico: {e}", "danger")
+            flash_and_log(e, location='registros.form', hint='db')
 
     turmas = Turma.get_ativas()
     return render_template('form.html', turmas=turmas)
@@ -354,7 +356,10 @@ def novo_curso():
         return jsonify({'success': True, 'id': curso.id, 'nome': curso.nome, 'descricao': curso.descricao or ''})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        from app.utils.errors import log_error_code
+
+        code = log_error_code(e, location='registros.novo_curso', hint='db')
+        return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
 
 
 @bp.route('/cursos/<int:curso_id>/editar', methods=['POST'])
@@ -385,7 +390,10 @@ def editar_curso(curso_id):
         })
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        from app.utils.errors import log_error_code
+
+        code = log_error_code(e, location='registros.editar_curso', hint='db')
+        return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
 
 
 @bp.route('/cursos/<int:curso_id>/excluir', methods=['POST'])
@@ -405,7 +413,10 @@ def excluir_curso(curso_id):
         return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        from app.utils.errors import log_error_code
+
+        code = log_error_code(e, location='registros.excluir_curso', hint='db')
+        return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -454,8 +465,10 @@ def planejamento():
                 db.session.commit()
                 flash(f"Tema '{titulo_tema}' adicionado ao curso '{curso.nome if curso else ''}'!", "success")
             except Exception as e:
+                from app.utils.errors import flash_and_log
+
                 db.session.rollback()
-                flash(f"Erro ao salvar tema: {e}", "danger")
+                flash_and_log(e, location='registros.planejamento_tema_salvar', hint='db')
         elif not curso_id:
             flash("Selecione um curso.", "warning")
         elif not titulo_tema:
@@ -641,8 +654,10 @@ def salvar_configuracao_conselho():
         db.session.commit()
         flash('Ciclos Letivos (Start-End Points) alterados no Server-Side.', 'success')
     except Exception as e:
-         db.session.rollback()
-         flash(f"Impedimento do banco ao gravar configuração: {e}", "warning")
+        from app.utils.errors import flash_and_log
+
+        db.session.rollback()
+        flash_and_log(e, location='registros.salvar_configuracao_conselho', hint='db')
 
     return redirect(url_for('registros.planejamento'))
 
