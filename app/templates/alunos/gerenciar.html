@@ -211,15 +211,11 @@
               <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id) }}" class="btn btn-sm btn-outline-warning py-1 px-2" title="Transferir">
                 <i class="bi bi-arrow-left-right" style="font-size: 0.85rem;"></i>
               </a>
-              <button type="button"
-                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
-                      title="Registrar Atendimento"
-                      data-aluno-id="{{ aluno.id }}"
-                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+                <a href="{{ url_for('registros.transicao_atendimentos', aluno_id=aluno.id) }}"
+                  class="btn btn-sm btn-outline-success py-1 px-2"
+                  title="Registrar Atendimento">
                 <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
-              </button>
+                </a>
               <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2" onclick="return confirm('Excluir aluno?');" title="Excluir">
                 <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
               </a>
@@ -230,15 +226,11 @@
                  target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
                 <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
               </a>
-              <button type="button"
-                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
-                      title="Registrar Atendimento"
-                      data-aluno-id="{{ aluno.id }}"
-                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+                <a href="{{ url_for('registros.transicao_atendimentos', aluno_id=aluno.id) }}"
+                  class="btn btn-sm btn-outline-success py-1 px-2"
+                  title="Registrar Atendimento">
                 <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
-              </button>
+                </a>
             </div>
             {% endif %}
           </td>
@@ -251,7 +243,7 @@
   {{ paginacao('rodape') }}
 </div>
 
-{# ── MODAL DE ATENDIMENTO (reutilizado de atendimentos.html) ── #}
+{# ── MODAL DE ATENDIMENTO ── #}
 <div class="modal fade" id="modalAtendimento" tabindex="-1" aria-labelledby="modalAtendimentoLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">

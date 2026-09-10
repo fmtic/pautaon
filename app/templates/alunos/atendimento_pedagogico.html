@@ -7,7 +7,7 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4">
   <h2 class="fw-bold mb-0">
-    <i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Atendimentos
+    <i class="bi bi-clipboard2-pulse me-2 text-primary"></i>Atendimentos Pedagógicos
   </h2>
   <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-secondary btn-sm fw-bold">
     <i class="bi bi-people me-1"></i> Lista de Alunos
@@ -79,17 +79,28 @@
           <th class="ps-3" style="width:110px;">Matrícula</th>
           <th class="ps-2" style="width:70px;">Foto</th>
           <th style="min-width:260px;">Nome Completo</th>
+          <th style="min-width:180px;">Registrado por</th>
           <th class="text-center" style="width:170px;">Último Atendimento</th>
           <th class="text-center pe-3" style="width:120px;">Ações</th>
         </tr>
       </thead>
       <tbody>
-        {% for aluno, ultimo_atendimento in pagination.items %}
+        {% for aluno, ultimo_atendimento, atendido_por_nome in pagination.items %}
+        {% set inscricao_atual = (aluno.inscricoes | selectattr('ativo') | list | first) %}
+        {% set turma_atual = inscricao_atual.turma if inscricao_atual else none %}
+        {% set identificacao = aluno.identificacao_json %}
         <tr class="row-atendimento"
             data-aluno-id="{{ aluno.id }}"
             data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
             data-aluno-matricula="{{ aluno.matricula or '-' }}"
-            data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}">
+            data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+            data-aluno-turma="{{ turma_atual.nome if turma_atual else '' }}"
+            data-aluno-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '' }}"
+            data-aluno-horario="{{ (turma_atual.hora_inicio or '') ~ (' - ' ~ turma_atual.hora_fim if turma_atual and turma_atual.hora_fim else '') if turma_atual else '' }}"
+            data-aluno-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '' }}"
+            data-responsavel-mae="{{ identificacao.get('nome_mae', '') }}"
+            data-responsavel-pai="{{ identificacao.get('nome_pai', '') }}"
+            data-responsavel-legal="{{ identificacao.get('responsavel_nome', '') }}">
 
           <td class="text-center ps-3">
             <span class="text-primary fw-bold small">{{ aluno.matricula or '-' }}</span>
@@ -107,6 +118,10 @@
             {% if aluno.nome_social and aluno.nome_social != '-' %}
             <small class="text-muted">Social: {{ aluno.nome_social }}</small>
             {% endif %}
+          </td>
+
+          <td>
+            <span class="small">{{ atendido_por_nome or '-' }}</span>
           </td>
 
           <td class="text-center">
@@ -133,7 +148,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="text-center text-muted py-4">
+          <td colspan="6" class="text-center text-muted py-4">
             <i class="bi bi-inbox display-6 d-block mb-2 opacity-25"></i>
             Nenhum aluno com atendimento encontrado.
           </td>
@@ -253,11 +268,15 @@
         <input type="hidden" id="mf-atendimento-id">
 
         <div id="mf-aluno-info" class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
-          <img id="mf-foto" src="" alt="Foto"
-               style="width:36px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
-          <div>
-            <div class="fw-bold small" id="mf-nome"></div>
-            <div class="text-muted" style="font-size:.75rem;" id="mf-matricula"></div>
+          <img id="mf-foto" src="" alt="Foto do aluno"
+               style="width:56px;height:72px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
+          <div class="flex-grow-1">
+            <div class="fw-bold" id="mf-nome"></div>
+            <div class="text-muted small" id="mf-matricula"></div>
+            <div class="text-muted small" id="mf-turma"></div>
+            <div class="text-muted small" id="mf-curso"></div>
+            <div class="text-muted small" id="mf-horario"></div>
+            <div class="text-muted small" id="mf-instrutor"></div>
           </div>
         </div>
 
@@ -266,52 +285,60 @@
             <label class="form-label" for="mf-data">Data do Atendimento</label>
             <input type="date" id="mf-data" class="form-control form-control-sm" required>
           </div>
+          <input type="hidden" id="mf-setor" value="pedagogico">
+
           <div class="col-md-4">
-            <label class="form-label" for="mf-setor">Setor</label>
-            <select id="mf-setor" class="form-select form-select-sm">
-              {% for key, info in setores.items() %}
-              <option value="{{ key }}">{{ info.label }}</option>
-              {% endfor %}
+            <label class="form-label" for="mf-origem">Origem do Atendimento</label>
+            <select id="mf-origem" class="form-select form-select-sm" required>
+              <option value="">Selecione...</option>
+              <option value="Educando">Educando</option>
+              <option value="Família">Família</option>
+              <option value="Equipe">Equipe</option>
             </select>
           </div>
-          <div class="col-md-12">
-            <label class="form-label" for="mf-resumo">Resumo <small class="text-muted fw-normal">(máx. 255 chars)</small></label>
-            <input type="text" id="mf-resumo" class="form-control form-control-sm"
-                   placeholder="Breve descrição do atendimento…" maxlength="255">
+          <div class="col-md-4">
+            <label class="form-label" for="mf-responsavel">Responsável presente</label>
+            <select id="mf-responsavel" class="form-select form-select-sm">
+              <option value="">Não se aplica</option>
+              <option value="__novo__">Outro responsável</option>
+            </select>
           </div>
 
-          {# ── Campos detalhados do formulário de atendimento ──
-             Estes campos são armazenados no JSON `dados`.
-             Expanda conforme as necessidades de cada setor. #}
-          <div class="col-12">
-            <hr class="my-1">
-            <p class="text-muted mb-2" style="font-size:.75rem;">
-              <i class="bi bi-info-circle me-1"></i>
-              Preencha os campos abaixo conforme o tipo de atendimento.
-            </p>
-          </div>
-
-          <div class="col-md-12">
-            <label class="form-label" for="mf-descricao">Descrição / Relato</label>
-            <textarea id="mf-descricao" class="form-control form-control-sm" rows="4"
-                      placeholder="Descreva o atendimento com detalhes relevantes…"></textarea>
+          <div class="col-md-6 d-none" id="mf-novo-responsavel-wrap">
+            <label class="form-label" for="mf-novo-responsavel">Nome do novo responsável</label>
+            <input type="text" id="mf-novo-responsavel" class="form-control form-control-sm">
           </div>
 
           <div class="col-md-6">
-            <label class="form-label" for="mf-encaminhamento">Encaminhamento</label>
-            <input type="text" id="mf-encaminhamento" class="form-control form-control-sm"
-                   placeholder="Ex.: Encaminhado ao CRAS, retorno marcado…">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label" for="mf-retorno">Data de Retorno Previsto</label>
-            <input type="date" id="mf-retorno" class="form-control form-control-sm">
+            <label class="form-label" for="mf-motivo">Motivo</label>
+            <textarea id="mf-motivo" class="form-control form-control-sm" rows="2" required></textarea>
           </div>
 
           <div class="col-md-12">
-            <label class="form-label" for="mf-observacoes">Observações Adicionais</label>
-            <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"
-                      placeholder="Informações complementares…"></textarea>
+            <label class="form-label" for="mf-apontamentos">Apontamentos</label>
+            <textarea id="mf-apontamentos" class="form-control form-control-sm" rows="3"></textarea>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="mf-acordos-educando">Acordos com o educando</label>
+            <textarea id="mf-acordos-educando" class="form-control form-control-sm" rows="3"></textarea>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label" for="mf-acordos-familia">Acordos com a família</label>
+            <textarea id="mf-acordos-familia" class="form-control form-control-sm" rows="3"></textarea>
+          </div>
+
+          <div class="col-md-12">
+            <label class="form-label" for="mf-observacoes">Observações</label>
+            <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+
+          <div class="col-md-12">
+            <label class="form-label" for="mf-anexo">Anexo <small class="text-muted fw-normal">(PDF, DOCX e similares, máximo 2 MB)</small></label>
+            <input type="file" id="mf-anexo" class="form-control form-control-sm"
+                   accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.png,.jpg,.jpeg">
+            <small id="mf-anexo-atual" class="text-muted"></small>
           </div>
         </div>
       </div>
@@ -346,14 +373,20 @@
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
 
-  function setAlunoAtual(id, nome, matricula, foto) {
-    _alunoAtual = { id, nome, matricula, foto };
+  function setAlunoAtual(aluno) {
+    _alunoAtual = aluno;
   }
 
   function preencherCabecalhoModal(prefixo) {
     document.getElementById(`${prefixo}-foto`).src      = _alunoAtual.foto;
     document.getElementById(`${prefixo}-nome`).textContent      = _alunoAtual.nome;
     document.getElementById(`${prefixo}-matricula`).textContent = _alunoAtual.matricula;
+    if (prefixo === 'mf') {
+      document.getElementById('mf-turma').textContent = _alunoAtual.turma ? `Turma: ${_alunoAtual.turma}` : '';
+      document.getElementById('mf-curso').textContent = _alunoAtual.curso ? `Curso: ${_alunoAtual.curso}` : '';
+      document.getElementById('mf-horario').textContent = _alunoAtual.horario ? `Horário: ${_alunoAtual.horario}` : '';
+      document.getElementById('mf-instrutor').textContent = _alunoAtual.instrutor ? `Instrutor: ${_alunoAtual.instrutor}` : '';
+    }
   }
 
   // ── Badge de setor ──
@@ -389,9 +422,12 @@
            </button>`
         : '';
 
-      const descricao     = a.dados?.descricao     || '';
-      const encaminhamento = a.dados?.encaminhamento || '';
-      const retorno       = a.dados?.retorno        || '';
+      const origem        = a.dados?.origem        || '';
+      const responsavel   = a.dados?.responsavel_nome || '';
+      const motivo        = a.dados?.motivo        || a.resumo || '';
+      const apontamentos  = a.dados?.apontamentos  || a.dados?.descricao || '';
+      const acordosEducando = a.dados?.acordos_educando || '';
+      const acordosFamilia = a.dados?.acordos_familia || '';
       const observacoes   = a.dados?.observacoes    || '';
 
       return `
@@ -405,11 +441,14 @@
               </div>
               <div class="d-flex gap-1">${editBtn}</div>
             </div>
-            ${a.resumo ? `<p class="mb-1 small fw-semibold text-dark">${a.resumo}</p>` : ''}
-            ${descricao      ? `<p class="mb-1 small text-muted">${descricao}</p>` : ''}
-            ${encaminhamento ? `<p class="mb-1 small"><span class="fw-bold text-muted">Encaminhamento:</span> ${encaminhamento}</p>` : ''}
-            ${retorno        ? `<p class="mb-1 small"><span class="fw-bold text-muted">Retorno previsto:</span> ${retorno}</p>` : ''}
+            ${origem         ? `<p class="mb-1 small"><span class="fw-bold text-muted">Origem:</span> ${origem}</p>` : ''}
+            ${responsavel    ? `<p class="mb-1 small"><span class="fw-bold text-muted">Presente:</span> ${responsavel}</p>` : ''}
+            ${motivo         ? `<p class="mb-1 small"><span class="fw-bold text-muted">Motivo:</span> ${motivo}</p>` : ''}
+            ${apontamentos   ? `<p class="mb-1 small text-muted"><span class="fw-bold">Apontamentos:</span> ${apontamentos}</p>` : ''}
+            ${acordosEducando ? `<p class="mb-1 small"><span class="fw-bold text-muted">Acordos com o educando:</span> ${acordosEducando}</p>` : ''}
+            ${acordosFamilia ? `<p class="mb-1 small"><span class="fw-bold text-muted">Acordos com a família:</span> ${acordosFamilia}</p>` : ''}
             ${observacoes    ? `<p class="mb-1 small text-muted fst-italic">${observacoes}</p>` : ''}
+            ${a.dados?.anexo?.nome ? `<p class="mb-1 small"><i class="bi bi-paperclip me-1"></i><a href="/static/uploads/documentos/${a.dados.anexo.arquivo}" target="_blank" rel="noopener">${a.dados.anexo.nome}</a></p>` : ''}
             <div class="text-end">
               <small class="text-muted" style="font-size:.68rem;">
                 <i class="bi bi-person-check me-1"></i>${a.atendido_por_nome}
@@ -437,7 +476,7 @@
 
   // ── Carrega e exibe histórico ──
   async function abrirHistorico(aluno) {
-    setAlunoAtual(aluno.id, aluno.nome, aluno.matricula, aluno.foto);
+    setAlunoAtual(aluno);
     preencherCabecalhoModal('mh');
 
     document.getElementById('mh-loading').classList.remove('d-none');
@@ -462,21 +501,48 @@
   }
 
   // ── Abre formulário de NOVO atendimento ──
-  function abrirNovoAtendimento(alunoId, alunoNome, foto, matricula) {
-    setAlunoAtual(alunoId, alunoNome, matricula || '', foto || '');
+  function preencherResponsaveis(responsaveis, selecionado = '') {
+    const select = document.getElementById('mf-responsavel');
+    select.innerHTML = '<option value="">Não se aplica</option>';
+    responsaveis.filter(Boolean).forEach(nome => {
+      const option = document.createElement('option');
+      option.value = nome;
+      option.textContent = nome;
+      select.appendChild(option);
+    });
+    if (selecionado && !responsaveis.includes(selecionado)) {
+      const option = document.createElement('option');
+      option.value = selecionado;
+      option.textContent = selecionado;
+      select.appendChild(option);
+    }
+    const outro = document.createElement('option');
+    outro.value = '__novo__';
+    outro.textContent = 'Outro responsável';
+    select.appendChild(outro);
+    select.value = selecionado || '';
+    document.getElementById('mf-novo-responsavel-wrap').classList.toggle('d-none', select.value !== '__novo__');
+  }
+
+  function abrirNovoAtendimento(aluno) {
+    setAlunoAtual(aluno);
     preencherCabecalhoModal('mf');
 
     document.getElementById('mf-titulo').textContent = 'Registrar Atendimento';
-    document.getElementById('mf-aluno-id').value     = alunoId;
+    document.getElementById('mf-aluno-id').value     = aluno.id;
     document.getElementById('mf-atendimento-id').value = '';
 
     // Limpa campos
     document.getElementById('mf-data').value          = new Date().toISOString().slice(0,10);
-    document.getElementById('mf-resumo').value        = '';
-    document.getElementById('mf-descricao').value     = '';
-    document.getElementById('mf-encaminhamento').value = '';
-    document.getElementById('mf-retorno').value       = '';
+    document.getElementById('mf-origem').value        = '';
+    document.getElementById('mf-motivo').value        = '';
+    document.getElementById('mf-apontamentos').value  = '';
+    document.getElementById('mf-acordos-educando').value = '';
+    document.getElementById('mf-acordos-familia').value = '';
     document.getElementById('mf-observacoes').value   = '';
+    document.getElementById('mf-anexo').value         = '';
+    document.getElementById('mf-anexo-atual').textContent = '';
+    preencherResponsaveis([aluno.responsavelMae, aluno.responsavelPai, aluno.responsavelLegal]);
 
     modalAtendimento.show();
   }
@@ -494,11 +560,15 @@
       document.getElementById('mf-atendimento-id').value  = a.id;
       document.getElementById('mf-data').value            = a.data_atendimento;
       document.getElementById('mf-setor').value           = a.setor;
-      document.getElementById('mf-resumo').value          = a.resumo;
-      document.getElementById('mf-descricao').value       = a.dados?.descricao      || '';
-      document.getElementById('mf-encaminhamento').value  = a.dados?.encaminhamento || '';
-      document.getElementById('mf-retorno').value         = a.dados?.retorno        || '';
+      document.getElementById('mf-origem').value          = a.dados?.origem || '';
+      document.getElementById('mf-motivo').value          = a.dados?.motivo || a.resumo || '';
+      document.getElementById('mf-apontamentos').value    = a.dados?.apontamentos || a.dados?.descricao || '';
+      document.getElementById('mf-acordos-educando').value = a.dados?.acordos_educando || '';
+      document.getElementById('mf-acordos-familia').value = a.dados?.acordos_familia || '';
       document.getElementById('mf-observacoes').value     = a.dados?.observacoes    || '';
+      document.getElementById('mf-anexo').value           = '';
+      document.getElementById('mf-anexo-atual').textContent = a.dados?.anexo?.nome ? `Atual: ${a.dados.anexo.nome}` : '';
+      preencherResponsaveis([], a.dados?.responsavel_nome || '');
 
       modalAtendimento.show();
     } catch {
@@ -531,25 +601,41 @@
   }
 
   // ── Salva (novo ou edição) ──
+  document.getElementById('mf-responsavel').addEventListener('change', event => {
+    document.getElementById('mf-novo-responsavel-wrap').classList.toggle(
+      'd-none', event.target.value !== '__novo__'
+    );
+  });
+
   document.getElementById('btnSalvarAtendimento').addEventListener('click', async () => {
     const alunoId       = parseInt(document.getElementById('mf-aluno-id').value);
     const atendimentoId = document.getElementById('mf-atendimento-id').value;
     const isEdicao      = !!atendimentoId;
 
+    const responsavelSelecionado = document.getElementById('mf-responsavel').value;
+    const responsavelNovo = document.getElementById('mf-novo-responsavel').value.trim();
+    const motivo = document.getElementById('mf-motivo').value.trim();
     const payload = {
       data_atendimento: document.getElementById('mf-data').value,
       setor:            document.getElementById('mf-setor').value,
-      resumo:           document.getElementById('mf-resumo').value,
+      resumo:           motivo.slice(0, 255),
       dados: {
-        descricao:      document.getElementById('mf-descricao').value,
-        encaminhamento: document.getElementById('mf-encaminhamento').value,
-        retorno:        document.getElementById('mf-retorno').value,
+        origem:         document.getElementById('mf-origem').value,
+        responsavel_nome: responsavelSelecionado === '__novo__' ? responsavelNovo : responsavelSelecionado,
+        motivo:         motivo,
+        apontamentos:   document.getElementById('mf-apontamentos').value,
+        acordos_educando: document.getElementById('mf-acordos-educando').value,
+        acordos_familia: document.getElementById('mf-acordos-familia').value,
         observacoes:    document.getElementById('mf-observacoes').value,
       }
     };
 
-    if (!payload.data_atendimento) {
-      alert('Informe a data do atendimento.');
+    if (!payload.data_atendimento || !payload.dados.origem || !motivo) {
+      alert('Informe a data, a origem e o motivo do atendimento.');
+      return;
+    }
+    if (responsavelSelecionado === '__novo__' && !responsavelNovo) {
+      alert('Informe o nome do novo responsável.');
       return;
     }
 
@@ -558,13 +644,15 @@
       : `/alunos/${alunoId}/atendimentos/novo`;
 
     try {
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify(payload));
+      const anexo = document.getElementById('mf-anexo').files[0];
+      if (anexo) formData.append('anexo', anexo);
+
       const resp = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken(),
-        },
-        body: JSON.stringify(payload),
+        headers: { 'X-CSRFToken': csrfToken() },
+        body: formData,
       });
       const json = await resp.json();
 
@@ -590,6 +678,13 @@
         nome:      row.dataset.alunoNome,
         matricula: row.dataset.alunoMatricula,
         foto:      row.dataset.alunoFoto,
+        turma:     row.dataset.alunoTurma,
+        curso:     row.dataset.alunoCurso,
+        horario:   row.dataset.alunoHorario,
+        instrutor: row.dataset.alunoInstrutor,
+        responsavelMae: row.dataset.responsavelMae,
+        responsavelPai: row.dataset.responsavelPai,
+        responsavelLegal: row.dataset.responsavelLegal,
       });
     });
   });
@@ -602,6 +697,13 @@
         nome:      row.dataset.alunoNome,
         matricula: row.dataset.alunoMatricula,
         foto:      row.dataset.alunoFoto,
+        turma:     row.dataset.alunoTurma,
+        curso:     row.dataset.alunoCurso,
+        horario:   row.dataset.alunoHorario,
+        instrutor: row.dataset.alunoInstrutor,
+        responsavelMae: row.dataset.responsavelMae,
+        responsavelPai: row.dataset.responsavelPai,
+        responsavelLegal: row.dataset.responsavelLegal,
       });
     });
   });
@@ -612,10 +714,19 @@
       e.stopPropagation();
       const row = btn.closest('tr');
       abrirNovoAtendimento(
-        parseInt(btn.dataset.alunoId),
-        btn.dataset.alunoNome,
-        row.dataset.alunoFoto,
-        row.dataset.alunoMatricula,
+        {
+          id: parseInt(btn.dataset.alunoId),
+          nome: btn.dataset.alunoNome,
+          matricula: row.dataset.alunoMatricula,
+          foto: row.dataset.alunoFoto,
+          turma: row.dataset.alunoTurma,
+          curso: row.dataset.alunoCurso,
+          horario: row.dataset.alunoHorario,
+          instrutor: row.dataset.alunoInstrutor,
+          responsavelMae: row.dataset.responsavelMae,
+          responsavelPai: row.dataset.responsavelPai,
+          responsavelLegal: row.dataset.responsavelLegal,
+        }
       );
     });
   });
@@ -624,10 +735,7 @@
   document.getElementById('btnNovoDoModal').addEventListener('click', () => {
     modalHistorico.hide();
     abrirNovoAtendimento(
-      _alunoAtual.id,
-      _alunoAtual.nome,
-      _alunoAtual.foto,
-      _alunoAtual.matricula,
+      _alunoAtual
     );
   });
 

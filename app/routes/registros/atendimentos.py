@@ -4,17 +4,21 @@ Qualquer perfil operacional pode registrar e consultar atendimentos.
 Apenas o próprio autor ou um admin pode editar/excluir um registro.
 """
 
+import json
+import os
 from datetime import date, datetime
+from pathlib import Path
 
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
+from werkzeug.utils import secure_filename
 
 from app.database import db
 from app.models import Aluno, Atendimento
 from app.utils.logica import get_unidade_id
 from . import bp
-from .shared import assert_unidade_context
+from .shared import _build_upload_path, assert_unidade_context
 
 # Roles com acesso ao módulo de atendimentos
 _ROLES_ATENDIMENTO = {"admin", "pedagogico", "gerencia", "secretaria", "servico_social"}
@@ -27,6 +31,51 @@ SETORES = {
     "admin":         {"label": "Administração", "color": "danger"},
 }
 
+_ANEXOS_PERMITIDOS = {
+    "pdf", "doc", "docx", "odt", "rtf", "txt", "png", "jpg", "jpeg"
+}
+_MAX_ANEXO_BYTES = 2 * 1024 * 1024
+
+
+def _ler_payload() -> dict:
+    payload = request.get_json(silent=True) or {}
+    if not payload and request.form:
+        try:
+            payload = json.loads(request.form.get("payload", "{}"))
+        except (TypeError, ValueError):
+            return {}
+    return payload
+
+
+def _salvar_anexo(aluno_id: int) -> dict | None:
+    anexo = request.files.get("anexo")
+    if not anexo or not anexo.filename:
+        return None
+
+    extensao = Path(anexo.filename).suffix.lower().lstrip(".")
+    if extensao not in _ANEXOS_PERMITIDOS:
+        raise ValueError("Tipo de anexo não permitido.")
+
+    anexo.stream.seek(0, os.SEEK_END)
+    tamanho = anexo.stream.tell()
+    anexo.stream.seek(0)
+    if tamanho > _MAX_ANEXO_BYTES:
+        raise ValueError("O anexo deve ter no máximo 2 MB.")
+
+    nome_original = anexo.filename
+    nome_seguro = secure_filename(nome_original)
+    pasta = _build_upload_path("documentos", "atendimentos")
+    os.makedirs(pasta, exist_ok=True)
+    nome_final = secure_filename(
+        f"atendimento_{aluno_id}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{nome_seguro}"
+    )
+    anexo.save(os.path.join(pasta, nome_final))
+    return {
+        "nome": nome_original,
+        "arquivo": f"atendimentos/{nome_final}",
+        "tamanho": tamanho,
+    }
+
 
 def _setor_do_usuario() -> str:
     """Mapeia o role do usuário para o setor padrão do atendimento."""
@@ -38,6 +87,19 @@ def _setor_do_usuario() -> str:
         "gerencia":      "admin",
     }
     return mapa.get(current_user.role, "admin")
+
+
+# ---------------------------------------------------------------------------
+# SELEÇÃO DO MÓDULO DE ATENDIMENTO
+# ---------------------------------------------------------------------------
+@bp.route("/alunos/atendimentos/transicao")
+@login_required
+def transicao_atendimentos():
+    """Exibe os módulos de atendimento disponíveis para o usuário."""
+    if current_user.role not in _ROLES_ATENDIMENTO:
+        abort(403)
+
+    return render_template("alunos/transicao_atendimentos.html")
 
 
 # ---------------------------------------------------------------------------
@@ -58,19 +120,27 @@ def listar_atendimentos():
     data_inicio = request.args.get("data_inicio", "").strip()
     data_fim = request.args.get("data_fim", "").strip()
 
-    # Sub-query: data do último atendimento por aluno
-    sub = (
-        db.session.query(
-            Atendimento.aluno_id,
-            func.max(Atendimento.data_atendimento).label("ultimo_atendimento"),
+    # Seleciona um único atendimento mais recente por aluno, incluindo o autor.
+    ultimo_atendimento_id = (
+        select(Atendimento.id)
+        .where(Atendimento.aluno_id == Aluno.id)
+        .order_by(
+            Atendimento.data_atendimento.desc(),
+            Atendimento.created_at.desc(),
+            Atendimento.id.desc(),
         )
-        .group_by(Atendimento.aluno_id)
-        .subquery()
+        .limit(1)
+        .correlate(Aluno)
+        .scalar_subquery()
     )
 
     query = (
-        db.session.query(Aluno, sub.c.ultimo_atendimento)
-        .join(sub, Aluno.id == sub.c.aluno_id)
+        db.session.query(
+            Aluno,
+            Atendimento.data_atendimento,
+            Atendimento.atendido_por_nome,
+        )
+        .join(Atendimento, Atendimento.id == ultimo_atendimento_id)
         .filter(Aluno.ativo == True)
     )
 
@@ -127,7 +197,7 @@ def listar_atendimentos():
         except ValueError:
             pass
 
-    query = query.order_by(sub.c.ultimo_atendimento.desc())
+    query = query.order_by(Atendimento.data_atendimento.desc())
 
     per_page = 20
     total = query.count()
@@ -148,7 +218,7 @@ def listar_atendimentos():
     pagination = Paginator(rows, page, per_page, total)
 
     return render_template(
-        "alunos/atendimentos.html",
+        "alunos/atendimento_pedagogico.html",
         pagination=pagination,
         setores=SETORES,
         search_nome=search_nome,
@@ -206,14 +276,16 @@ def historico_atendimentos(aluno_id):
 @bp.route("/alunos/<int:aluno_id>/atendimentos/novo", methods=["POST"])
 @login_required
 def registrar_atendimento(aluno_id):
-    """Persiste um novo registro de atendimento via AJAX (JSON)."""
+    """Persiste um novo registro de atendimento via AJAX (JSON ou multipart)."""
     if current_user.role not in _ROLES_ATENDIMENTO:
         abort(403)
 
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
 
-    payload = request.get_json(silent=True) or {}
+    payload = _ler_payload()
+    if not payload:
+        return jsonify({"ok": False, "erro": "Dados do atendimento inválidos."}), 400
 
     data_str = payload.get("data_atendimento", "")
     try:
@@ -227,6 +299,17 @@ def registrar_atendimento(aluno_id):
 
     resumo = (payload.get("resumo") or "").strip()[:255]
     dados = payload.get("dados") or {}
+    if dados.get("origem") not in {"Educando", "Família", "Equipe"}:
+        return jsonify({"ok": False, "erro": "Origem do atendimento inválida."}), 400
+    if not str(dados.get("motivo") or "").strip():
+        return jsonify({"ok": False, "erro": "O motivo do atendimento é obrigatório."}), 400
+
+    try:
+        anexo = _salvar_anexo(aluno_id)
+    except ValueError as exc:
+        return jsonify({"ok": False, "erro": str(exc)}), 400
+    if anexo:
+        dados["anexo"] = anexo
 
     try:
         novo = Atendimento(
@@ -290,7 +373,9 @@ def editar_atendimento(id):
     if current_user.id != a.atendido_por_id and current_user.role != "admin":
         return jsonify({"ok": False, "erro": "Sem permissão para editar este registro."}), 403
 
-    payload = request.get_json(silent=True) or {}
+    payload = _ler_payload()
+    if not payload:
+        return jsonify({"ok": False, "erro": "Dados do atendimento inválidos."}), 400
 
     data_str = payload.get("data_atendimento", "")
     try:
@@ -305,6 +390,17 @@ def editar_atendimento(id):
     a.setor = setor
     a.resumo = (payload.get("resumo") or "").strip()[:255]
     a.dados = payload.get("dados") or a.dados
+    if a.dados.get("origem") not in {"Educando", "Família", "Equipe"}:
+        return jsonify({"ok": False, "erro": "Origem do atendimento inválida."}), 400
+    if not str(a.dados.get("motivo") or "").strip():
+        return jsonify({"ok": False, "erro": "O motivo do atendimento é obrigatório."}), 400
+
+    try:
+        anexo = _salvar_anexo(a.aluno_id)
+    except ValueError as exc:
+        return jsonify({"ok": False, "erro": str(exc)}), 400
+    if anexo:
+        a.dados = {**(a.dados or {}), "anexo": anexo}
 
     try:
         db.session.commit()
