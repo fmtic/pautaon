@@ -36,6 +36,11 @@ class Inscricao(db.Model):
 # UNIDADES (Multitenancy)
 # ---------------------------------------------------------------------------
 class Unidade(db.Model):
+    """Representa uma unidade operacional do sistema.
+
+    A unidade funciona como fronteira de multitenancy e é a base para segmentar
+    usuários, turmas, alunos, períodos letivos e demais registros do domínio.
+    """
     __tablename__ = 'unidade'
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
@@ -137,25 +142,20 @@ class DiaBloqueadoTurma(db.Model):
 # USUÁRIOS E AUTENTICAÇÃO
 # ---------------------------------------------------------------------------
 class User(db.Model, UserMixin):
-    """
-    Modelo responsável pela gestão de acessos e perfis do sistema (Admins, Professores, etc).
-    O UserMixin acopla automaticamente métodos necessários para o Flask-Login.
+    """Modelo responsável pela gestão de acessos e perfis do sistema.
 
-    Suporta três origens de identidade, que podem coexistir na mesma conta:
-      - Local: credencial de senha persistida no banco (campo ``password`` preenchido).
-      - AD/LDAP: autenticação delegada ao servidor de domínio (``is_ad_user=True``).
-      - Google OAuth2: identidade federada via conta Google (``google_id`` preenchido).
-
-    A unificação entre uma conta Google e uma conta AD preexistente é feita de forma
-    explícita pelo usuário, na tela de confirmação de vínculo, preservando os dados
-    originais (role, unidade, histórico) já atribuídos pelo administrador.
+    Um usuário pode estar ligado a uma unidade, ter perfis diferentes e, dependendo
+    do fluxo de autenticação, ser local, vinculado ao AD/LDAP ou pendente de aprovação.
     """
     __tablename__ = 'user'
     
     id: int = db.Column(db.Integer, primary_key=True)
     name: str = db.Column(db.String(100), nullable=False)
     email: str = db.Column(db.String(120), unique=True, nullable=False)
-    password: str = db.Column(db.String(200), nullable=True)
+    # Senha local opcional: usuários AD/LDAP podem não ter hash local e utilizar
+    # a autenticação do domínio. Em bancos PostgreSQL herdados, o campo precisa
+    # aceitar NULL para evitar falha ao provisionar a conta do AD.
+    password: str | None = db.Column(db.String(200), nullable=True)
     
     # Perfis comuns: 'admin', 'pedagogico', 'professor', 'secretaria', 'serviço social','pendente'
     role: str = db.Column(db.String(20), nullable=False)
@@ -168,28 +168,6 @@ class User(db.Model, UserMixin):
     
     first_login: bool = db.Column(db.Boolean, default=True)
 
-    # ------------------------------------------------------------------
-    # Campos de identidade Google OAuth2
-    # ------------------------------------------------------------------
-    # ``google_id`` armazena o campo ``sub`` retornado pelo ID Token do Google.
-    # É o identificador permanente e imutável da conta Google — não muda mesmo
-    # que o usuário troque o endereço de e-mail da conta Google.
-    # O índice único garante que uma conta Google só possa ser vinculada a
-    # um único perfil local, evitando duplicatas silenciosas.
-    google_id: str | None = db.Column(
-        db.String(120), nullable=True, unique=True, index=True
-    )
-
-    # ``google_email`` guarda o e-mail Google no momento da última autenticação.
-    # Serve apenas para exibição informativa no painel admin; decisões de
-    # autenticação usam sempre ``google_id``.
-    google_email: str | None = db.Column(db.String(120), nullable=True)
-
-    @property
-    def has_google_linked(self) -> bool:
-        """Retorna ``True`` quando a conta Google já está vinculada a este perfil."""
-        return bool(self.google_id)
-
     def set_password(self, password: str) -> None:
         """Gera e armazena o hash criptografado da senha."""
         self.password = generate_password_hash(password)
@@ -199,7 +177,7 @@ class User(db.Model, UserMixin):
 
         Este método é usado apenas para contas locais com credencial persistida.
         Usuários federados pelo AD/LDAP não possuem senha local gravada; por isso,
-        a validação deve retornar ``False`` e permitir que o fluxo siga para a
+        a validação deve retornar `False` e permitir que o fluxo siga para a
         autenticação no servidor do domínio.
         """
         if not self.password:
@@ -213,8 +191,10 @@ class User(db.Model, UserMixin):
 # TURMAS E CURSOS
 # ---------------------------------------------------------------------------
 class Turma(db.Model):
-    """
-    Representa o agrupamento de alunos em uma dada disciplina/programa, ministrado por um professor.
+    """Representa o agrupamento de alunos em um programa, disciplina ou ciclo.
+
+    As turmas pertencem a uma unidade e podem estar associadas a um período letivo,
+    a um curso e a um professor, formando o contexto operacional da rotina pedagógica.
     """
     __tablename__ = 'turma'
     
@@ -291,8 +271,11 @@ class Turma(db.Model):
 # ALUNOS
 # ---------------------------------------------------------------------------
 class Aluno(db.Model):
-    """
-    Estudante matriculado. Contém relacionamento M-N com Turma para que um indivíduo possa cursar vários programas simultaneamente.
+    """Estudante matriculado no sistema.
+
+    O aluno pode estar vinculado a uma unidade e participar de várias turmas ao
+    mesmo tempo por meio da associação com a tabela de inscrição, preservando a
+    flexibilidade de acompanhamento pedagógico.
     """
     __tablename__ = 'aluno'
     
@@ -395,6 +378,12 @@ class Aluno(db.Model):
     unidade = db.relationship('Unidade', backref='alunos_unidade')
     created_by = db.relationship('User', backref='alunos_criados', foreign_keys=[created_by_id])
 
+    situacao_escolar = db.relationship(
+        'SituacaoEscolar',
+        back_populates='aluno',
+        uselist=False,
+        cascade='all, delete-orphan',
+    )
     # Relacionamento M:N cruzado na tabela inscricoes
     turmas = db.relationship(
         'Turma',
@@ -418,6 +407,33 @@ class Aluno(db.Model):
         return hoje.year - self.data_nascimento.year - (
             (hoje.month, hoje.day) < (self.data_nascimento.month, self.data_nascimento.day)
         )
+
+class SituacaoEscolar(db.Model):
+    """Situação escolar atual, separada dos documentos digitais legados."""
+    __tablename__ = 'situacao_escolar'
+    __table_args__ = (
+        db.Index('ix_situacao_escolar_unidade_nome', 'unidade_id', 'nome_instituicao'),
+    )
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False, unique=True)
+    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
+    escolaridade: str = db.Column(db.String(40), nullable=True)
+    ensino_superior_periodo: int = db.Column(db.Integer, nullable=True)
+    escolaridade_outro: str = db.Column(db.String(150), nullable=True)
+    status: str = db.Column(db.String(20), nullable=True)
+    status_outro: str = db.Column(db.String(150), nullable=True)
+    nome_instituicao: str = db.Column(db.String(200), nullable=True)
+    tipo_instituicao: str = db.Column(db.String(20), nullable=True)
+    bolsista: bool = db.Column(db.Boolean, default=False, nullable=False)
+    tipo_instituicao_outro: str = db.Column(db.String(150), nullable=True)
+    turno: str = db.Column(db.String(20), nullable=True)
+    turno_outro: str = db.Column(db.String(100), nullable=True)
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now, nullable=False)
+    updated_at: datetime = db.Column(db.DateTime, default=get_local_now, onupdate=get_local_now, nullable=False)
+
+    aluno = db.relationship('Aluno', back_populates='situacao_escolar')
+    unidade = db.relationship('Unidade', backref='situacoes_escolares')
 
 # ---------------------------------------------------------------------------
 # FREQUÊNCIA E DIÁRIO DE AULA MÓDULO PÚBLICO
@@ -477,6 +493,32 @@ class TemaAula(db.Model):
     unidade = db.relationship('Unidade', backref='temas_unidade')
     turma   = db.relationship('Turma',   backref='temas_disponiveis')
     curso   = db.relationship('Curso',   backref='temas')
+
+
+class Atendimento(db.Model):
+    """Registro de atendimento individual do aluno, mantendo dados flexíveis em JSON.
+
+    O campo `setor` foi mantido apenas como compatibilidade de dados legados.
+    O fluxo operacional atual é exclusivamente pedagógico e não deve depender
+    desse valor em frontend, backend nem em interfaces de consulta.
+    """
+    __tablename__ = 'atendimento'
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False)
+    setor: str = db.Column(db.String(50), nullable=False, default='pedagogico')
+    data_atendimento: date = db.Column(db.Date, nullable=False)
+    resumo: str = db.Column(db.String(255))
+    dados: dict = db.Column(db.JSON, nullable=False, default=dict)
+    atendido_por_id: int = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    atendido_por_nome: str = db.Column(db.String(150), nullable=True)
+    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+    updated_at: datetime = db.Column(db.DateTime, default=get_local_now, onupdate=get_local_now)
+
+    aluno = db.relationship('Aluno', backref='atendimentos')
+    unidade = db.relationship('Unidade', backref='atendimentos')
+    atendido_por = db.relationship('User', backref='atendimentos_registrados', foreign_keys=[atendido_por_id])
 
 
 class Registro(db.Model):
@@ -666,55 +708,3 @@ class RespostaFormulario(db.Model):
     # relacionamentos (aproveitando os modelos já existentes)
     aluno = db.relationship('Aluno', backref='formularios')
     usuario = db.relationship('User', backref='formularios_preenchidos')
-
-
-# ---------------------------------------------------------------------------
-# ATENDIMENTOS
-# ---------------------------------------------------------------------------
-class Atendimento(db.Model):
-    """Registro de atendimento individualizado de um aluno.
-
-    Qualquer perfil operacional (pedagógico, serviço social, secretaria, admin)
-    pode registrar uma ocorrência de atendimento. O campo ``setor`` identifica
-    a origem do registro para fins de filtragem e relatório.
-
-    O conteúdo detalhado fica em ``dados`` (JSON), permitindo que cada setor
-    acrescente campos específicos sem alterar o esquema do banco.
-    """
-    __tablename__ = 'atendimento'
-
-    id: int = db.Column(db.Integer, primary_key=True)
-
-    aluno_id: int = db.Column(
-        db.Integer, db.ForeignKey('aluno.id'), nullable=False, index=True
-    )
-    # Setor que registrou: 'pedagogico', 'servico_social', 'secretaria', 'admin'
-    setor: str = db.Column(db.String(30), nullable=False)
-
-    data_atendimento: datetime = db.Column(db.Date, nullable=False)
-
-    # Resumo curto visível na listagem (≤ 255 chars)
-    resumo: str = db.Column(db.String(255), nullable=True)
-
-    # Detalhamento livre em JSON — campos definidos pelo formulário de atendimento
-    dados: dict = db.Column(db.JSON, nullable=True)
-
-    # Auditoria
-    atendido_por_id: int = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False
-    )
-    atendido_por_nome: str = db.Column(db.String(100), nullable=True)
-
-    unidade_id: int = db.Column(
-        db.Integer, db.ForeignKey('unidade.id'), nullable=True
-    )
-
-    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
-    updated_at: datetime = db.Column(
-        db.DateTime, default=get_local_now, onupdate=get_local_now
-    )
-
-    # --- Relacionamentos ---
-    aluno = db.relationship('Aluno', backref=db.backref('atendimentos', lazy='dynamic'))
-    atendido_por = db.relationship('User', backref='atendimentos_registrados')
-    unidade = db.relationship('Unidade', backref='atendimentos_unidade')

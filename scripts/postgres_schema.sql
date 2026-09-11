@@ -140,6 +140,33 @@ CREATE TABLE aluno (
 );
 
 
+CREATE TABLE situacao_escolar (
+	id SERIAL NOT NULL,
+	aluno_id INTEGER NOT NULL,
+	unidade_id INTEGER,
+	escolaridade VARCHAR(40),
+	ensino_superior_periodo INTEGER,
+	escolaridade_outro VARCHAR(150),
+	status VARCHAR(20),
+	status_outro VARCHAR(150),
+	nome_instituicao VARCHAR(200),
+	tipo_instituicao VARCHAR(20),
+	bolsista BOOLEAN NOT NULL,
+	tipo_instituicao_outro VARCHAR(150),
+	turno VARCHAR(20),
+	turno_outro VARCHAR(100),
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (aluno_id),
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id),
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
+CREATE INDEX ix_situacao_escolar_unidade_nome ON situacao_escolar (unidade_id, nome_instituicao);
+
+
 CREATE TABLE dia_bloqueado (
 	id SERIAL NOT NULL, 
 	data DATE NOT NULL, 

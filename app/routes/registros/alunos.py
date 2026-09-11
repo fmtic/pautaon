@@ -1,14 +1,108 @@
 from datetime import datetime, timedelta
 
 from flask import abort, flash, redirect, render_template, request, url_for
+from flask import jsonify
 from flask_login import current_user, login_required
 from sqlalchemy import select
 
 from app.database import db
 from app.models import Aluno, Frequencia, Inscricao, Turma
+from app.models import SituacaoEscolar
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, salvar_documento, salvar_foto
+
+
+def _validar_cpf(cpf: str) -> bool:
+    """Valida dígitos verificadores do CPF. Retorna True se válido ou vazio."""
+    cpf = (cpf or "").strip().replace(".", "").replace("-", "").replace(" ", "")
+    if not cpf:
+        return True  # campo opcional — vazio é aceito
+    if len(cpf) != 11 or not cpf.isdigit() or len(set(cpf)) == 1:
+        return False
+    # Primeiro dígito verificador
+    soma = sum(int(cpf[i]) * (10 - i) for i in range(9))
+    d1 = 11 - (soma % 11)
+    if d1 >= 10:
+        d1 = 0
+    if d1 != int(cpf[9]):
+        return False
+    # Segundo dígito verificador
+    soma = sum(int(cpf[i]) * (11 - i) for i in range(10))
+    d2 = 11 - (soma % 11)
+    if d2 >= 10:
+        d2 = 0
+    return d2 == int(cpf[10])
+
+
+def _sanitizar_cpf(cpf: str) -> str:
+    """Remove tudo que não for dígito e devolve None se vazio."""
+    if not cpf:
+        return None
+    limpo = "".join(c for c in cpf if c.isdigit())
+    return limpo if limpo else None
+
+
+def _salvar_situacao_escolar(aluno: Aluno) -> None:
+    nome = (request.form.get('nome_instituicao') or '').strip() or None
+    campos_situacao = (
+        'escolaridade',
+        'status_escolar',
+        'tipo_instituicao',
+        'turno_escolar',
+        'nome_instituicao',
+    )
+    form_tem_situacao = any(campo in request.form for campo in campos_situacao)
+    tem_conteudo = any((
+        request.form.get('escolaridade'),
+        request.form.get('status_escolar'),
+        request.form.get('tipo_instituicao'),
+        request.form.get('turno_escolar'),
+        nome,
+    ))
+    if not tem_conteudo:
+        if form_tem_situacao and aluno.situacao_escolar:
+            db.session.delete(aluno.situacao_escolar)
+        return
+    situacao = aluno.situacao_escolar or SituacaoEscolar(aluno=aluno)
+    situacao.unidade_id = aluno.unidade_id
+    situacao.escolaridade = request.form.get('escolaridade')
+    periodo = request.form.get('ensino_superior_periodo', type=int)
+    situacao.ensino_superior_periodo = periodo if situacao.escolaridade == 'Ensino superior' and periodo in range(1, 11) else None
+    situacao.escolaridade_outro = (request.form.get('escolaridade_outro') or '').strip() if situacao.escolaridade == 'Outros' else None
+    situacao.status = request.form.get('status_escolar')
+    situacao.status_outro = (
+        (request.form.get('status_escolar_outro') or '').strip() or None
+        if situacao.status == 'Outros' else None
+    )
+    situacao.nome_instituicao = nome
+    situacao.tipo_instituicao = request.form.get('tipo_instituicao')
+    situacao.bolsista = bool(request.form.get('bolsista')) if situacao.tipo_instituicao == 'Privada' else False
+    situacao.tipo_instituicao_outro = (request.form.get('tipo_instituicao_outro') or '').strip() if situacao.tipo_instituicao == 'Outro' else None
+    situacao.turno = request.form.get('turno_escolar')
+    situacao.turno_outro = (request.form.get('turno_escolar_outro') or '').strip() if situacao.turno == 'Outros' else None
+    db.session.add(situacao)
+
+
+@bp.route('/alunos/instituicoes')
+@login_required
+def buscar_instituicoes():
+    termo = (request.args.get('q') or '').strip()
+    if len(termo) < 2:
+        return jsonify([])
+
+    consulta = (
+        db.session.query(SituacaoEscolar.nome_instituicao)
+        .filter(SituacaoEscolar.nome_instituicao.isnot(None))
+        .filter(SituacaoEscolar.nome_instituicao.ilike(f'%{termo}%'))
+        .distinct()
+    )
+    unidade_id = get_unidade_id()
+    if unidade_id:
+        consulta = consulta.filter(SituacaoEscolar.unidade_id == unidade_id)
+    return jsonify([
+        nome for (nome,) in consulta.order_by(SituacaoEscolar.nome_instituicao).limit(10)
+    ])
 
 
 
@@ -145,6 +239,11 @@ def novo_aluno():
         flash("O Campo 'Nome' não deve ser vazio no momento do Cadastro.", "warning")
         return redirect(url_for("registros.gerenciar_alunos"))
 
+    cpf_raw = request.form.get("cpf", "")
+    if not _validar_cpf(cpf_raw):
+        flash("CPF inválido. Informe somente os 11 dígitos numéricos do CPF.", "danger")
+        return redirect(url_for("registros.novo_aluno"))
+
     try:
         nascimento = request.form.get("data_nascimento")
         data_nascimento = (
@@ -156,8 +255,8 @@ def novo_aluno():
             nivel=request.form.get("nivel"),
             ativo=True,
             unidade_id=get_unidade_id(),
-            cpf=request.form.get("cpf"),
-            rg=request.form.get("rg"),
+            cpf=_sanitizar_cpf(cpf_raw),
+            rg=request.form.get("rg") or None,
             whatsapp=request.form.get("whatsapp"),
             email=request.form.get("email"),
             data_nascimento=data_nascimento,
@@ -220,6 +319,7 @@ def novo_aluno():
 
         db.session.add(novo)
         db.session.flush()
+        _salvar_situacao_escolar(novo)
 
         foto = request.files.get("foto")
         if foto and foto.filename:
@@ -277,10 +377,16 @@ def editar_aluno(id):
             nivel = request.form.get("nivel")
             if nivel is not None:
                 aluno.nivel = nivel
-            aluno.cpf = request.form.get("cpf")
-            aluno.rg = request.form.get("rg")
-            aluno.whatsapp = request.form.get("whatsapp")
-            aluno.email = request.form.get("email")
+
+            cpf_raw = request.form.get("cpf", "")
+            if not _validar_cpf(cpf_raw):
+                flash("CPF inválido. Informe somente os 11 dígitos numéricos do CPF.", "danger")
+                return redirect(url_for("registros.editar_aluno", id=aluno.id))
+            aluno.cpf = _sanitizar_cpf(cpf_raw)
+
+            aluno.rg = request.form.get("rg") or None
+            aluno.whatsapp = request.form.get("whatsapp") or None
+            aluno.email = request.form.get("email") or None
 
             nascimento = request.form.get("data_nascimento")
             if nascimento:
@@ -335,6 +441,7 @@ def editar_aluno(id):
                 "informacoes_para_professor": request.form.get("informacoes_para_professor"),
                 "autorizacao_imagem": bool(request.form.get("autorizacao_imagem")),
             }
+            _salvar_situacao_escolar(aluno)
 
             foto = request.files.get("foto")
             if foto and foto.filename:

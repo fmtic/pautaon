@@ -25,6 +25,7 @@
         <div class="step-item" id="step-indicator-3" onclick="window.goToStep(3)">3</div>
         <div class="step-item" id="step-indicator-4" onclick="window.goToStep(4)">4</div>
         <div class="step-item" id="step-indicator-5" onclick="window.goToStep(5)">5</div>
+        <div class="step-item" id="step-indicator-6" onclick="window.goToStep(6)">6</div>
       </div>
 
       <form method="POST" enctype="multipart/form-data" id="multiStepForm">
@@ -189,6 +190,25 @@
                     class="form-control mask-cpf validate-cpf">
                   <div class="invalid-feedback">CPF inválido</div>
                 </div>
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" name="vai_acompanhado_aulas"
+                    id="vai_acompanhado_aulas" onchange="window.toggleAcompanhanteAulas(this)">
+                  <label class="form-check-label small" for="vai_acompanhado_aulas">
+                    Vai acompanhado para as aulas?
+                  </label>
+                </div>
+                <div class="mb-3 d-none" id="acompanhante_aulas_div">
+                  <label class="form-label small">Quem acompanha?</label>
+                  <select name="acompanhante_aulas" class="form-select">
+                    <option value="">Selecione...</option>
+                    <option value="Mãe">Mãe</option>
+                    <option value="Pai">Pai</option>
+                    <option value="Avô/Avó">Avô/Avó</option>
+                    <option value="Irmão/Tio">Irmão/Tio</option>
+                    <option value="Outro">Outro</option>
+                    <option value="Vai sozinho">Vai sozinho</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -221,6 +241,13 @@
                 <label class="form-label fw-bold small">UF</label>
                 <input type="text" name="uf" id="uf" class="form-control" value="SP" maxlength="2">
               </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small">Zona urbana ou rural</label>
+                <select name="zona" class="form-select">
+                  <option value="Urbana">Urbana</option>
+                  <option value="Rural">Rural</option>
+                </select>
+              </div>
               <div class="col-md-12 border-top mt-4 pt-3">
                 <div class="row g-3">
                   <div class="col-md-4">
@@ -234,6 +261,15 @@
                   <div class="col-md-4">
                     <label class="form-label fw-bold small">E-mail Principal</label>
                     <input type="email" name="email" class="form-control">
+                  </div>
+                  <div class="col-md-4 d-flex align-items-end">
+                    <div class="form-check form-switch mb-2">
+                      <input class="form-check-input" type="checkbox" name="nao_possui_acesso_internet"
+                        id="nao_possui_acesso_internet">
+                      <label class="form-check-label small fw-bold" for="nao_possui_acesso_internet">
+                        Não possui acesso a internet
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -393,6 +429,11 @@
                     <label class="form-label small fw-bold">Observações de Saúde / Alergias</label>
                     <textarea name="saude_observacoes" class="form-control" rows="2"></textarea>
                   </div>
+                  <div class="col-md-12">
+                    <label class="form-label small fw-bold">Informações para o professor da turma</label>
+                    <textarea name="informacoes_para_professor" class="form-control" rows="3"
+                      placeholder="Informações relevantes para o professor da turma"></textarea>
+                  </div>
                 </div>
               </div>
               <!-- Termo de Consentimento -->
@@ -419,10 +460,26 @@
               </div>
             </div>
           </div>
+          <!-- STEP 6: SITUAÇÃO ESCOLAR -->
+          <div class="form-step" id="step-6">
+            <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa VI: Situação Escolar</h4>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label fw-bold small">Escolaridade</label><select name="escolaridade" id="escolaridade" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Ensino fundamental</option><option>Ensino médio</option><option>Ensino médio técnico</option><option>Ensino superior</option><option>EJA</option><option>Outros</option></select></div>
+              <div class="col-md-6"><label class="form-label fw-bold small">Status</label><select name="status_escolar" id="status_escolar" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Cursando</option><option>Concluinte</option><option>Trancado</option><option>Outros</option></select></div>
+              <div class="col-md-6 d-none" id="status-outro"><label class="form-label fw-bold small">Descreva o status</label><input name="status_escolar_outro" class="form-control"></div>
+              <div class="col-md-3 d-none" id="periodo-superior"><label class="form-label fw-bold small">Período (Ensino Superior)</label><select name="ensino_superior_periodo" class="form-select"><option value="">Selecione...</option>{% for periodo in range(1, 11) %}<option value="{{ periodo }}">{{ periodo }}</option>{% endfor %}</select></div>
+              <div class="col-md-6 d-none" id="escolaridade-outro"><label class="form-label fw-bold small">Outra escolaridade</label><input name="escolaridade_outro" class="form-control"></div>
+              <div class="col-md-8 position-relative"><label class="form-label fw-bold small">Escola / Universidade</label><input name="nome_instituicao" id="nome_instituicao" class="form-control" autocomplete="off" placeholder="Digite ao menos 2 letras"><div id="sugestoes-instituicao" class="list-group position-absolute w-100 shadow d-none" style="z-index:1050"></div></div>
+              <div class="col-md-4"><label class="form-label fw-bold small">Tipo de instituição</label><select name="tipo_instituicao" id="tipo_instituicao" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Pública</option><option>Privada</option><option>Outro</option></select></div>
+              <div class="col-md-4 d-none" id="bolsista-div"><div class="form-check mt-4 pt-2"><input class="form-check-input" type="checkbox" name="bolsista" id="bolsista"><label class="form-check-label" for="bolsista">É bolsista?</label></div></div>
+              <div class="col-md-6 d-none" id="instituicao-outro"><label class="form-label fw-bold small">Outro tipo de instituição</label><input name="tipo_instituicao_outro" class="form-control"></div>
+              <div class="col-md-4"><label class="form-label fw-bold small">Turno</label><select name="turno_escolar" id="turno_escolar" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Manhã</option><option>Tarde</option><option>Noite</option><option>EAD</option><option>Outros</option></select></div>
+              <div class="col-md-6 d-none" id="turno-outro"><label class="form-label fw-bold small">Outro turno</label><input name="turno_escolar_outro" class="form-control"></div>
+            </div>
+          </div>
         </div>
 
-        <!-- Footer / Navigation -->
-        <div class="d-flex justify-content-between align-items-center">
+        <!-- Footer / Navigation -->        <div class="d-flex justify-content-between align-items-center">
           <button type="button" class="btn btn-secondary fw-bold px-4 d-none" id="prevBtn"
             onclick="window.nextStep(-1)">
             ANTERIOR
@@ -473,5 +530,6 @@
 <script src="{{ url_for('static', filename='js/alunos/aluno_form.js') }}"></script>
 <script src="{{ url_for('static', filename='js/alunos/calcularIdade.js') }}"></script>
 
+<script src="{{ url_for('static', filename='js/alunos/situacao_escolar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/alunos/novo.js') }}"></script>
 {% endblock %}

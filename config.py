@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
 
@@ -21,22 +20,6 @@ def get_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def normalize_database_url(database_url: str) -> str:
-    parsed = urlparse(database_url)
-    scheme = parsed.scheme
-    username = parsed.username or ""
-
-    if scheme == "postgresql":
-        parsed = parsed._replace(scheme="postgresql+psycopg")
-    elif scheme == "postgresql+psycopg2":
-        parsed = parsed._replace(scheme="postgresql+psycopg")
-
-    if username.endswith("+psycopg"):
-        parsed = parsed._replace(netloc=parsed.netloc.replace(username, username.replace("+psycopg", ""), 1))
-
-    return urlunparse(parsed)
-
-
 class Config:
     """Configuração central do sistema.
 
@@ -47,6 +30,7 @@ class Config:
 
     APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development"))
     DEBUG = get_bool("FLASK_DEBUG", APP_ENV == "development")
+    TEMPLATES_AUTO_RELOAD = True
 
     SECRET_KEY = os.getenv("SECRET_KEY")
     if not SECRET_KEY:
@@ -60,9 +44,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 
-    SQLALCHEMY_DATABASE_URI = normalize_database_url(
-        os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
-    )
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -70,33 +52,15 @@ class Config:
     ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD")
     ADMIN_FORCE_PASSWORD_CHANGE = get_bool("ADMIN_FORCE_PASSWORD_CHANGE", True)
 
-    LDAP_SERVER_URI = os.getenv("LDAP_SERVER_URI")
+    LDAP_ENABLED = get_bool("LDAP_ENABLED", False)
+    LDAP_SERVER_URI = os.getenv("LDAP_SERVER_URI", os.getenv("LDAP_SERVER"))
+    LDAP_PORT = int(os.getenv("LDAP_PORT", "636"))
+    LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
+    LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE")
+    LDAP_VALIDATE_CERT = get_bool("LDAP_VALIDATE_CERT", True)
     LDAP_USE_SSL = get_bool("LDAP_USE_SSL", True)
     LDAP_CONNECT_TIMEOUT = int(os.getenv("LDAP_CONNECT_TIMEOUT", "10"))
-    LDAP_DOMAIN = os.getenv("LDAP_DOMAIN")
-    LDAP_VALIDATE_CERT = get_bool("LDAP_VALIDATE_CERT", True)
-    LDAP_CA_CERT_FILE = os.getenv("LDAP_CA_CERT_FILE")
 
-    # ------------------------------------------------------------------
-    # Google OAuth2 — Login de usuários
-    # ------------------------------------------------------------------
-    # Credenciais do aplicativo criado no Google Cloud Console
-    # (tipo "Aplicativo Web", com o URI de redirecionamento configurado).
-    # Quando GOOGLE_OAUTH_CLIENT_ID não estiver definido, o botão
-    # "Entrar com Google" é omitido automaticamente dos templates.
-    GOOGLE_OAUTH_CLIENT_ID: str | None = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-    GOOGLE_OAUTH_CLIENT_SECRET: str | None = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
-
-    # URI de redirecionamento cadastrado no Google Cloud Console.
-    # Deve terminar em /auth/google/callback e corresponder exatamente
-    # ao que está registrado no painel (incluindo http vs https).
-    # Exemplo produção: https://seudominio.com.br/auth/google/callback
-    # Exemplo dev:      http://localhost:5000/auth/google/callback
-    GOOGLE_OAUTH_REDIRECT_URI: str | None = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
-
-    # ------------------------------------------------------------------
-    # Google Calendar — integração server-to-server (Serviço Social)
-    # ------------------------------------------------------------------
     GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
     GOOGLE_CALENDAR_DELEGATED_USER = os.getenv("GOOGLE_CALENDAR_DELEGATED_USER")

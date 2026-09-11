@@ -31,20 +31,11 @@
         <input type="text" name="matricula" class="form-control form-control-sm"
                placeholder="00001.2026" value="{{ search_matr }}">
       </div>
-      <div class="col-md-2">
-        <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Setor</label>
-        <select name="setor" class="form-select form-select-sm">
-          <option value="">Todos</option>
-          {% for key, info in setores.items() %}
-          <option value="{{ key }}" {% if search_setor == key %}selected{% endif %}>{{ info.label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">De</label>
         <input type="date" name="data_inicio" class="form-control form-control-sm" value="{{ data_inicio }}">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label fw-bold text-muted text-uppercase" style="font-size:.65rem;">Até</label>
         <input type="date" name="data_fim" class="form-control form-control-sm" value="{{ data_fim }}">
       </div>
@@ -65,7 +56,7 @@
   <div class="col">
     <small class="text-muted">
       Mostrando <strong>{{ pagination.items|length }}</strong>
-      de <strong>{{ pagination.total }}</strong> alunos com atendimento registrado
+      de <strong>{{ pagination.total }}</strong> registros de atendimento
     </small>
   </div>
 </div>
@@ -73,22 +64,24 @@
 {# ── TABELA ── #}
 <div class="card shadow-sm border-0">
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <table class="table table-sm align-middle mb-0 lista-atendimentos">
       <thead class="table-light">
-        <tr class="small text-uppercase text-muted text-center">
+        <tr class="text-center">
           <th class="ps-3" style="width:110px;">Matrícula</th>
           <th class="ps-2" style="width:70px;">Foto</th>
-          <th style="min-width:260px;">Nome Completo</th>
-          <th style="min-width:180px;">Registrado por</th>
-          <th class="text-center" style="width:170px;">Último Atendimento</th>
+          <th style="min-width:220px;">Aluno</th>
+          <th style="width:120px;">Data</th>
+          <th style="min-width:220px;">Resumo</th>
+          <th style="min-width:160px;">Registrado por</th>
           <th class="text-center pe-3" style="width:120px;">Ações</th>
         </tr>
       </thead>
       <tbody>
-        {% for aluno, ultimo_atendimento, atendido_por_nome in pagination.items %}
+        {% for atendimento in pagination.items %}
+        {% set aluno = atendimento.aluno %}
         {% set inscricao_atual = (aluno.inscricoes | selectattr('ativo') | list | first) %}
         {% set turma_atual = inscricao_atual.turma if inscricao_atual else none %}
-        {% set identificacao = aluno.identificacao_json %}
+        {% set identificacao = aluno.identificacao_json or {} %}
         <tr class="row-atendimento"
             data-aluno-id="{{ aluno.id }}"
             data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
@@ -114,43 +107,55 @@
           </td>
 
           <td>
-            <div class="fw-bold">{{ aluno.nome }}</div>
-            {% if aluno.nome_social and aluno.nome_social != '-' %}
-            <small class="text-muted">Social: {{ aluno.nome_social }}</small>
-            {% endif %}
-          </td>
-
-          <td>
-            <span class="small">{{ atendido_por_nome or '-' }}</span>
+            <div class="registro-aluno">
+              <div class="registro-aluno__nome">{{ aluno.nome }}</div>
+              {% if aluno.nome_social and aluno.nome_social != '-' %}
+              <small class="text-muted">Social: {{ aluno.nome_social }}</small>
+              {% endif %}
+              {% if turma_atual %}
+              <span class="registro-mini"><i class="bi bi-people-fill"></i>{{ turma_atual.nome }}</span>
+              {% endif %}
+            </div>
           </td>
 
           <td class="text-center">
-            <button type="button"
-                    class="btn btn-sm btn-outline-primary px-2 py-1 btn-ver-atendimentos"
-                    style="font-size:.8rem;"
-                    data-aluno-id="{{ aluno.id }}"
-                    title="Ver histórico de atendimentos">
-              <i class="bi bi-clock-history me-1"></i>
-              {{ ultimo_atendimento.strftime('%d/%m/%Y') if ultimo_atendimento else '-' }}
-            </button>
+            <span class="small fw-semibold">{{ atendimento.data_atendimento.strftime('%d/%m/%Y') if atendimento.data_atendimento else '-' }}</span>
+          </td>
+
+          <td>
+            <div class="registro-resumo">
+              {{ (atendimento.resumo or (atendimento.dados.motivo if atendimento.dados else '') or 'Sem resumo')[:120] }}
+            </div>
+          </td>
+
+          <td>
+            <div class="registro-autor">
+              <i class="bi bi-person-check"></i>
+              <span>{{ atendimento.atendido_por_nome or '-' }}</span>
+            </div>
           </td>
 
           <td class="text-center pe-3">
-            <button type="button"
-                    class="btn btn-sm btn-success btn-novo-atendimento px-2 py-1"
-                    style="font-size:.8rem;"
-                    data-aluno-id="{{ aluno.id }}"
-                    data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                    title="Registrar novo atendimento">
-              <i class="bi bi-plus-circle me-1"></i>Novo
-            </button>
+            <div class="lista-acoes">
+              <button type="button"
+                      class="btn btn-sm btn-outline-primary btn-ver-atendimentos"
+                      data-aluno-id="{{ aluno.id }}"
+                      title="Ver histórico de atendimentos">
+                <i class="bi bi-clock-history"></i>
+              </button>
+              <button type="button"
+                      class="btn btn-sm btn-success btn-novo-atendimento"
+                      title="Registrar novo atendimento">
+                <i class="bi bi-plus-circle"></i>
+              </button>
+            </div>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" class="text-center text-muted py-4">
+          <td colspan="7" class="text-center text-muted py-4">
             <i class="bi bi-inbox display-6 d-block mb-2 opacity-25"></i>
-            Nenhum aluno com atendimento encontrado.
+            Nenhum registro de atendimento encontrado.
           </td>
         </tr>
         {% endfor %}
@@ -167,7 +172,7 @@
         <li class="page-item">
           <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
               page=pagination.prev_num, nome=search_nome, matricula=search_matr,
-              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+              data_inicio=data_inicio, data_fim=data_fim) }}">
             &laquo;
           </a>
         </li>
@@ -176,7 +181,7 @@
         <li class="page-item {% if p == pagination.page %}active{% endif %}">
           <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
               page=p, nome=search_nome, matricula=search_matr,
-              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+              data_inicio=data_inicio, data_fim=data_fim) }}">
             {{ p }}
           </a>
         </li>
@@ -185,7 +190,7 @@
         <li class="page-item">
           <a class="page-link" href="{{ url_for('registros.listar_atendimentos',
               page=pagination.next_num, nome=search_nome, matricula=search_matr,
-              setor=search_setor, data_inicio=data_inicio, data_fim=data_fim) }}">
+              data_inicio=data_inicio, data_fim=data_fim) }}">
             &raquo;
           </a>
         </li>
@@ -232,6 +237,9 @@
           <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
           <span class="ms-2 text-muted small">Carregando…</span>
         </div>
+
+        {# Resumo do último registro #}
+        <div id="mh-resumo-ultimo" class="border rounded p-3 mb-3 bg-light-subtle d-none"></div>
 
         {# Estado vazio #}
         <div id="mh-vazio" class="text-center text-muted py-4 d-none">
@@ -281,13 +289,12 @@
         </div>
 
         <div class="row g-3">
-          <div class="col-md-4">
+          <div class="col-md-6">
             <label class="form-label" for="mf-data">Data do Atendimento</label>
             <input type="date" id="mf-data" class="form-control form-control-sm" required>
           </div>
-          <input type="hidden" id="mf-setor" value="pedagogico">
 
-          <div class="col-md-4">
+          <div class="col-md-6">
             <label class="form-label" for="mf-origem">Origem do Atendimento</label>
             <select id="mf-origem" class="form-select form-select-sm" required>
               <option value="">Selecione...</option>
@@ -389,14 +396,34 @@
     }
   }
 
-  // ── Badge de setor ──
-  const COR_SETOR = {{ setores | tojson }};
-  function badgeSetor(setor, label) {
-    const info  = COR_SETOR[setor] || { color: 'secondary' };
-    return `<span class="badge bg-${info.color} badge-setor">${label}</span>`;
+  // ── Renderiza a timeline no modal de histórico ──
+  function renderResumoUltimo(atendimento) {
+    const container = document.getElementById('mh-resumo-ultimo');
+    if (!atendimento) {
+      container.classList.add('d-none');
+      container.innerHTML = '';
+      return;
+    }
+
+    const dados = atendimento.dados || {};
+    const origem = dados.origem || '-';
+    const motivo = dados.motivo || atendimento.resumo || 'Sem resumo';
+    const responsavel = dados.responsavel_nome || 'Não informado';
+
+    container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div>
+          <div class="fw-bold text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">Último registro</div>
+          <div class="mt-2 small"><span class="fw-bold text-muted">Data:</span> ${atendimento.data_atendimento}</div>
+          <div class="small"><span class="fw-bold text-muted">Origem:</span> ${origem}</div>
+          <div class="small"><span class="fw-bold text-muted">Responsável:</span> ${responsavel}</div>
+          <div class="small"><span class="fw-bold text-muted">Motivo:</span> ${motivo}</div>
+        </div>
+      </div>
+    `;
+    container.classList.remove('d-none');
   }
 
-  // ── Renderiza a timeline no modal de histórico ──
   function renderTimeline(atendimentos) {
     const container = document.getElementById('mh-timeline');
     const vazio     = document.getElementById('mh-vazio');
@@ -432,12 +459,11 @@
 
       return `
         <div class="timeline-item" data-id="${a.id}">
-          <div class="timeline-dot bg-${COR_SETOR[a.setor]?.color || 'secondary'}"></div>
+          <div class="timeline-dot bg-primary"></div>
           <div class="timeline-card">
             <div class="d-flex justify-content-between align-items-start mb-1">
               <div>
-                ${badgeSetor(a.setor, a.setor_label)}
-                <strong class="ms-2 small">${a.data_atendimento}</strong>
+                <strong class="small">${a.data_atendimento}</strong>
               </div>
               <div class="d-flex gap-1">${editBtn}</div>
             </div>
@@ -492,6 +518,7 @@
       });
       const dados = await resp.json();
       document.getElementById('mh-loading').classList.add('d-none');
+      renderResumoUltimo(dados[0] || null);
       renderTimeline(dados);
     } catch (err) {
       document.getElementById('mh-loading').classList.add('d-none');
@@ -559,7 +586,6 @@
       document.getElementById('mf-aluno-id').value        = a.aluno_id;
       document.getElementById('mf-atendimento-id').value  = a.id;
       document.getElementById('mf-data').value            = a.data_atendimento;
-      document.getElementById('mf-setor').value           = a.setor;
       document.getElementById('mf-origem').value          = a.dados?.origem || '';
       document.getElementById('mf-motivo').value          = a.dados?.motivo || a.resumo || '';
       document.getElementById('mf-apontamentos').value    = a.dados?.apontamentos || a.dados?.descricao || '';
@@ -617,7 +643,6 @@
     const motivo = document.getElementById('mf-motivo').value.trim();
     const payload = {
       data_atendimento: document.getElementById('mf-data').value,
-      setor:            document.getElementById('mf-setor').value,
       resumo:           motivo.slice(0, 255),
       dados: {
         origem:         document.getElementById('mf-origem').value,

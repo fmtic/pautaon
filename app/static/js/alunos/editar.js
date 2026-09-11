@@ -5,27 +5,16 @@
     // Configuração recebida do servidor
     const config = window.alunoEditConfig || {};
 
-    // Elementos DOM
-    const stepIndicators = {
-        1: document.getElementById('step-indicator-1'),
-        2: document.getElementById('step-indicator-2'),
-        3: document.getElementById('step-indicator-3'),
-        4: document.getElementById('step-indicator-4'),
-        5: document.getElementById('step-indicator-5')
-    };
-    const steps = {
-        1: document.getElementById('step-1'),
-        2: document.getElementById('step-2'),
-        3: document.getElementById('step-3'),
-        4: document.getElementById('step-4'),
-        5: document.getElementById('step-5')
-    };
+    const stepIds = Array.from(document.querySelectorAll('.form-step'))
+        .map(step => Number(step.id.replace('step-', '')))
+        .filter(Number.isInteger)
+        .sort((a, b) => a - b);
+    const lastStepId = stepIds[stepIds.length - 1] || 1;
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const submitBtn = document.getElementById('submitBtn');
 
     let currentStep = 1;
-    const totalSteps = 5;
 
     // Funções públicas
     window.updateStepper = updateStepper;
@@ -39,8 +28,14 @@
 
     // Função para atualizar a aparência do stepper e visibilidade dos botões
     function updateStepper() {
-        for (let i = 1; i <= totalSteps; i++) {
-            const indicator = stepIndicators[i];
+        for (let i = 1; i <= 6; i++) {
+            const indicator = document.getElementById(`step-indicator-${i}`);
+            if (!indicator) continue;
+
+            const hasStep = stepIds.includes(i);
+            indicator.classList.toggle('d-none', !hasStep);
+            if (!hasStep) continue;
+
             if (i < currentStep) {
                 indicator.classList.remove('active');
                 indicator.classList.add('completed');
@@ -57,7 +52,7 @@
 
         if (prevBtn) prevBtn.classList.toggle('d-none', currentStep === 1);
 
-        if (currentStep === totalSteps) {
+        if (currentStep === lastStepId) {
             if (nextBtn) nextBtn.classList.add('d-none');
             if (submitBtn) submitBtn.classList.remove('d-none');
         } else {
@@ -67,18 +62,22 @@
     }
 
     function goToStep(n) {
-        if (n === currentStep) return;
-        steps[currentStep].classList.remove('active');
+        if (n === currentStep || !stepIds.includes(n)) return;
+        document.getElementById(`step-${currentStep}`)?.classList.remove('active');
         currentStep = n;
-        steps[currentStep].classList.add('active');
+        document.getElementById(`step-${currentStep}`)?.classList.add('active');
         updateStepper();
         window.scrollTo(0, 0);
     }
 
     function nextStep(n) {
-        steps[currentStep].classList.remove('active');
-        currentStep += n;
-        steps[currentStep].classList.add('active');
+        const currentIndex = stepIds.indexOf(currentStep);
+        const nextStepId = stepIds[currentIndex + n];
+        if (!nextStepId) return;
+
+        document.getElementById(`step-${currentStep}`)?.classList.remove('active');
+        currentStep = nextStepId;
+        document.getElementById(`step-${currentStep}`)?.classList.add('active');
         updateStepper();
         window.scrollTo(0, 0);
     }

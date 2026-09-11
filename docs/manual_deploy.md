@@ -172,7 +172,58 @@ Se o usuário digitou a senha correta mas continua sem logar:
 
 ---
 
-## 4. Notificador de Pauta Pendente (Google Chat)
+## 4. Diagnóstico operacional e códigos de erro
+
+Em produção, a aplicação usa tratamento centralizado de exceções para evitar vazamento de informações sensíveis ao usuário e manter a página de indisponibilidade estável.
+
+### Comportamento atual
+
+- exceções inesperadas são registradas com stack trace completo em `instance/error.log`;
+- o usuário recebe uma mensagem genérica, sem expor detalhes internos do servidor;
+- em casos críticos, a aplicação renderiza o template `sistema_indisponivel.html` com HTTP 503 ou 500 conforme o cenário;
+- endpoints JSON também retornam `message` genérica e incluem um `code` para suporte.
+
+### Causa raiz de falha já observada
+
+Durante a correção de incidentes, foi identificado um erro clássico de template: a rota `registros.listar_atendimentos` estava sendo usada em `url_for()` no template base, mas essa rota não existia. O resultado foi um `BuildError` de URL, que quebrava a renderização do dashboard e causava 500.
+
+A correção foi substituir a referência quebrada por uma rota válida e manter a renderização do template de indisponibilidade em caso de falhas inesperadas.
+
+### Esquema de códigos
+
+Os códigos são gerados em `app/utils/errors.py` com o seguinte padrão:
+
+```text
+CC-YYYYMMDDThhmmss-XXXXXX
+```
+
+Exemplo:
+
+```text
+99-20260909T144745-1153e2
+```
+
+Mapeamento sugerido:
+
+- `01`: banco de dados / SQLAlchemy
+- `02`: APIs externas / HTTP
+- `03`: LDAP / Active Directory
+- `04`: template / URL building
+- `05`: autenticação / autorização
+- `06`: validação de entrada
+- `99`: desconhecido / outros
+
+### Como consultar no suporte
+
+1. peça ao usuário o código exibido na tela;
+2. pesquise esse código em `instance/error.log`;
+3. leia o stack trace e o módulo associado para identificar a causa exata.
+
+> Importante: os códigos são para triagem operacional e nunca substituem o registro completo do stack trace.
+
+---
+
+## 5. Notificador de Pauta Pendente (Google Chat)
 
 Instruções completas de **Google Cloud**, credenciais, Calendar e Chat estão em **[manual_google_integracao.md](manual_google_integracao.md)** — use este item como referência rápida de execução.
 
@@ -213,7 +264,7 @@ python scripts/notificador.py
 
 ---
 
-## 5. Integração Google (Calendar e Chat) — manual completo
+## 6. Integração Google (Calendar e Chat) — manual completo
 
 Para criar o projeto no Google Cloud, ativar APIs, compartilhar calendário com a conta de serviço, escopos, variáveis de ambiente e solução de problemas, consulte:
 

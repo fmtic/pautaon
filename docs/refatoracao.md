@@ -42,6 +42,37 @@ Valores fixos como:
 
 foram empurrados para variáveis de ambiente.
 
+### 3.1. Tratamento uniforme de erros e observabilidade
+
+Uma correção importante desta etapa foi remover a prática de expor exceções diretamente no front-end. Antes, algumas rotas e flashes mostravam mensagens com conteúdo bruto de erro, o que era ruim para UX e para segurança.
+
+Hoje o padrão é:
+
+- registrar o stack trace completo em log;
+- gerar um código curto para suporte;
+- exibir uma mensagem genérica ao usuário;
+- manter a página de indisponibilidade consistente quando a falha for crítica.
+
+Esse comportamento foi centralizado em `app/utils/errors.py` e reforçado em `app/__init__.py` para captar exceções globais e renderizar o template `sistema_indisponivel.html`.
+
+O caso mais visível foi um erro de template em `url_for()` com rota inexistente. O erro foi rastreado até a referência quebrada em `app/templates/base.html` e corrigido sem deixar o sistema em 500 para o usuário final.
+
+### 3.2. Códigos de erro para suporte
+
+O esquema atual usa o formato:
+
+```text
+CC-YYYYMMDDThhmmss-XXXXXX
+```
+
+exemplo:
+
+```text
+99-20260909T144745-1153e2
+```
+
+Esse código é gravado junto ao stack trace em `instance/error.log`, permitindo correlacionar a falha com o momento exato do incidente sem expor o detalhe bruto ao cliente.
+
 ## Convenções adotadas
 
 - comentários curtos só onde ajudam a explicar decisão estrutural

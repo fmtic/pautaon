@@ -9,23 +9,18 @@
     <div class="d-flex justify-content-between align-items-center mb-4 no-print">
         <div>
             <h2 class="fw-bold mb-1 text-dark"><i class="fas fa-users-cog text-primary me-2"></i>Lista de Alunos</h2>
-            <p class="text-muted small mb-0">Gerencie e visualize dados de alunos que já passaram por turmas.</p>
+            <p class="text-muted small mb-0">Exporte dados dos alunos que já passaram por turmas.</p>
         </div>
         <div class="d-flex gap-2">
             <a href="{{ url_for('main.relatorio_geral') }}" class="btn btn-light border">
                 <i class="fas fa-chevron-left me-1"></i> Painel Geral
             </a>
-            <button class="btn btn-success" type="button" onclick="exportarRelatorioAlunos()" {% if not alunos
-                %}disabled{% endif %}>
-                <i class="fas fa-file-excel me-1"></i> Exportar
-            </button>
         </div>
     </div>
 
     <div class="card report-card shadow-sm mb-4 no-print border-0">
         <div class="card-body p-4">
-            <form method="get" action="{{ url_for('main.relatorio_alunos') }}" id="filtroForm">
-                <input type="hidden" name="gerar" value="1">
+            <form method="get" action="{{ url_for('main.exportar_relatorio_alunos') }}" id="filtroForm">
                 <div class="row g-4">
                     <div class="col-lg-3 border-end">
                         <label class="form-label fw-bold text-uppercase small text-muted">Escopo Temporal</label>
@@ -115,6 +110,39 @@
                                         %}>Não</option>
                                 </select>
                             </div>
+                            <!-- Vulnerabilidade social -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Em vulnerabilidade social?</label>
+                                <select class="form-select" name="vulnerabilidade_social">
+                                    <option value="">Todos</option>
+                                    <option value="1" {% if request.args.get('vulnerabilidade_social')=='1' %}selected{% endif
+                                        %}>Sim</option>
+                                    <option value="0" {% if request.args.get('vulnerabilidade_social')=='0' %}selected{% endif
+                                        %}>Não</option>
+                                </select>
+                            </div>
+                            <!-- Zona de residência -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Zona urbana ou rural</label>
+                                <select class="form-select" name="zona">
+                                    <option value="">Todas</option>
+                                    <option value="Urbana" {% if request.args.get('zona')=='Urbana' %}selected{% endif
+                                        %}>Urbana</option>
+                                    <option value="Rural" {% if request.args.get('zona')=='Rural' %}selected{% endif
+                                        %}>Rural</option>
+                                </select>
+                            </div>
+                            <!-- Acesso à internet -->
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-muted">Acesso à internet</label>
+                                <select class="form-select" name="acesso_internet">
+                                    <option value="">Todos</option>
+                                    <option value="1" {% if request.args.get('acesso_internet')=='1' %}selected{% endif
+                                        %}>Possui acesso</option>
+                                    <option value="0" {% if request.args.get('acesso_internet')=='0' %}selected{% endif
+                                        %}>Não possui acesso</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -145,7 +173,7 @@
 
                     <div class="col-12 text-end pt-3 border-top">
                         <button type="submit" class="btn btn-primary px-5 shadow-sm">
-                            <i class="fas fa-sync-alt me-2"></i> Gerar Tabela
+                            <i class="bi bi-file-earmark-excel me-2"></i> Gerar e Exportar
                         </button>
                         <a href="{{ url_for('main.relatorio_alunos') }}" class="btn btn-outline-secondary ms-2">
                             <i class="bi bi-eraser me-1"></i> Limpar
@@ -156,122 +184,16 @@
         </div>
     </div>
 
-    <!-- Exibição da tabela e paginação apenas quando 'gerar' está presente -->
-    {% if gerar %}
-    {% if alunos and selected_cols|length > 0 %}
-    <div class="card report-card shadow-sm mb-5">
-        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-0">
-            <h5 class="mb-0 fw-bold"><i class="fas fa-table me-2 text-primary"></i>Lista de Resultados</h5>
-            <span class="badge bg-light text-dark border px-3 py-2 rounded-pill">{{ total }} registros
-                encontrados</span>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead>
-                        <tr>
-                            {% for coluna in column_options if coluna.key in selected_cols %}
-                            {% if coluna.key == 'turmas_aluno' %}
-                            <th class="px-3">Turma 1</th>
-                            <th class="px-3">Turma 2</th>
-                            <th class="px-3">Turma 3</th>
-                            {% else %}
-                            <th class="px-3">{{ coluna.label }}</th>
-                            {% endif %}
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for aluno in alunos %}
-                        <tr>
-                            {% for coluna in column_options if coluna.key in selected_cols %}
-                            {% if coluna.key == 'turmas_aluno' %}
-                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_1 or '-' }}</td>
-                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_2 or '-' }}</td>
-                            <td class="px-3 py-3 small text-secondary">{{ aluno.turma_3 or '-' }}</td>
-                            {% else %}
-                            <td class="px-3 py-3 small text-secondary">
-                                {% if coluna.key == 'pcd' %}
-                                {% if aluno[coluna.key] %}
-                                <span
-                                    class="badge bg-danger-subtle text-danger border border-danger-subtle badge-pcd">Sim</span>
-                                {% else %}
-                                <span class="text-muted">Não</span>
-                                {% endif %}
-                                {% else %}
-                                {{ aluno[coluna.key] or '-' }}
-                                {% endif %}
-                            </td>
-                            {% endif %}
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Paginação (apenas quando há colunas e mais de uma página) -->
-    {% if pagination and pagination.pages > 1 %}
-    {% set args = request.args.to_dict() %}
-    {% if 'page' in args %}{% set _ = args.pop('page') %}{% endif %}
-    <nav>
-        <ul class="pagination justify-content-center">
-            {% if pagination.has_prev %}
-            <li class="page-item">
-                <a class="page-link"
-                    href="{{ url_for('main.relatorio_alunos', page=pagination.prev_num, **args) }}">Anterior</a>
-            </li>
-            {% else %}
-            <li class="page-item disabled"><span class="page-link">Anterior</span></li>
-            {% endif %}
-
-            <li class="page-item disabled"><span class="page-link">Página {{ pagination.page }} de {{ pagination.pages
-                    }}</span></li>
-
-            {% if pagination.has_next %}
-            <li class="page-item">
-                <a class="page-link"
-                    href="{{ url_for('main.relatorio_alunos', page=pagination.next_num, **args) }}">Próxima</a>
-            </li>
-            {% else %}
-            <li class="page-item disabled"><span class="page-link">Próxima</span></li>
-            {% endif %}
-        </ul>
-    </nav>
-    {% endif %}
-
-    {% elif alunos and selected_cols|length == 0 %}
-    <div class="alert alert-warning mt-3">
-        <i class="bi bi-exclamation-triangle me-2"></i> Nenhuma coluna selecionada. Marque ao menos um dado para
-        visualizar a tabela.
-    </div>
-    {% elif not alunos %}
-    <div class="alert alert-info mt-3">
-        <i class="bi bi-info-circle me-2"></i> Nenhum aluno encontrado com os filtros selecionados.
-    </div>
-    {% endif %}
-    {% else %}
     <div class="alert alert-secondary mt-3 text-center">
-        <i class="bi bi-search me-2"></i> Utilize os filtros e clique em <strong>Gerar Tabela</strong> para exibir os
-        resultados.
+        <i class="bi bi-file-earmark-excel me-2"></i> Selecione os filtros e dados desejados e clique em
+        <strong>Gerar e Exportar</strong> para baixar a planilha.
     </div>
-    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/relatorios/alunos.js') }}"></script>
 <script>
-    function exportarRelatorioAlunos() {
-        const form = document.getElementById('filtroForm');
-        const params = new URLSearchParams(new FormData(form));
-        params.set('gerar', '1');
-        params.delete('page');
-        window.location.href = "{{ url_for('main.exportar_relatorio_alunos') }}?" + params.toString();
-    }
-
     document.getElementById('select_all_dados_aluno')?.addEventListener('change', function (e) {
         document.querySelectorAll('input[name="colunas"]').forEach(cb => cb.checked = e.target.checked);
     });

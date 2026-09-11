@@ -1,8 +1,5 @@
-"""Script utilitário para resetar ou criar um usuário administrador local.
-
-Este helper é reservado para o perfil administrativo local do sistema. Ele
-não deve ser usado para contas federadas via LDAP/AD, porque essas contas
-são validadas no servidor do domínio e não possuem senha local persistida.
+"""
+Script utilitário para resetar ou criar um usuário administrador.
 
 Uso:
     python scripts/reset_admin.py admin@example.com nova_senha
@@ -29,23 +26,15 @@ def setup_admin(email: str, password: str) -> None:
         user = User.query.filter_by(email=email).first()
 
         if user:
-            print(f"Usuário {email} já existe. Atualizando senha local...")
+            print(f"Usuário {email} já existe. Atualizando senha...")
             user.set_password(password)
             user.role = "admin"
-            user.is_ad_user = False
-            user.is_active = True
             user.first_login = True
         else:
-            print(f"Criando novo usuário administrador local: {email}")
-            user = User(
-                name="Administrador",
-                email=email,
-                role="admin",
-                is_ad_user=False,
-                is_active=True,
-                first_login=True,
-            )
+            print(f"Criando novo usuário administrador: {email}")
+            user = User(name="Administrador", email=email, role="admin")
             user.set_password(password)
+            user.first_login = True
             db.session.add(user)
 
         try:

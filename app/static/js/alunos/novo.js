@@ -20,7 +20,7 @@
     window.toggleMedicacao = toggleMedicacao;
 
     function updateStepper() {
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 6; i++) {
             const indicator = document.getElementById(`step-indicator-${i}`);
             if (!indicator) continue;
 

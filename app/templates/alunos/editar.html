@@ -10,6 +10,7 @@
 {% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
 {% set docs = edu.get('doc_entregue', {}) %}
 {% set div = aluno.diversidade_json if aluno.diversidade_json else {} %}
+{% set sit = aluno.situacao_escolar %}
 
 <div class="container py-4">
     <div class="row justify-content-center">
@@ -32,6 +33,7 @@
                 <div class="step-item" id="step-indicator-3" onclick="goToStep(3)">3</div>
                 <div class="step-item" id="step-indicator-4" onclick="goToStep(4)">4</div>
                 <div class="step-item" id="step-indicator-5" onclick="goToStep(5)">5</div>
+                <div class="step-item" id="step-indicator-6" onclick="goToStep(6)">6</div>
             </div>
 
             <form method="POST" enctype="multipart/form-data" id="multiStepForm">
@@ -130,12 +132,12 @@
                                     <div class="col-md-4">
                                         <label class="form-label fw-bold text-uppercase">CPF do Aluno</label>
                                         <input type="text" name="cpf" class="form-control mask-cpf validate-cpf"
-                                            value="{{ aluno.cpf }}" placeholder="000.000.000-00">
+                                            value="{{ aluno.cpf | format_cpf }}" placeholder="000.000.000-00">
                                         <div class="invalid-feedback">CPF inválido</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-bold text-uppercase">RG / Registro</label>
-                                        <input type="text" name="rg" class="form-control" value="{{ aluno.rg }}"
+                                        <input type="text" name="rg" class="form-control" value="{{ aluno.rg or '' }}"
                                             placeholder="Número do RG">
                                     </div>
                                     <div class="col-md-4">
@@ -223,6 +225,29 @@
                                         value="{{ ident.get('responsavel_cpf', '') }}">
                                     <div class="invalid-feedback">CPF inválido</div>
                                 </div>
+                                {% set vai_acompanhado = ident.get('vai_acompanhado_aulas', false) %}
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" name="vai_acompanhado_aulas"
+                                        id="vai_acompanhado_aulas" onchange="window.toggleAcompanhanteAulas(this)"
+                                        {{ 'checked' if vai_acompanhado }}>
+                                    <label class="form-check-label small" for="vai_acompanhado_aulas">
+                                        Vai acompanhado para as aulas?
+                                    </label>
+                                </div>
+                                <div class="mb-3 {{ '' if vai_acompanhado else 'd-none' }}"
+                                    id="acompanhante_aulas_div">
+                                    <label class="form-label small">Quem acompanha?</label>
+                                    {% set acompanhante = ident.get('acompanhante_aulas', '') %}
+                                    <select name="acompanhante_aulas" class="form-select">
+                                        <option value="">Selecione...</option>
+                                        <option value="Mãe" {{ 'selected' if acompanhante == 'Mãe' }}>Mãe</option>
+                                        <option value="Pai" {{ 'selected' if acompanhante == 'Pai' }}>Pai</option>
+                                        <option value="Avô/Avó" {{ 'selected' if acompanhante == 'Avô/Avó' }}>Avô/Avó</option>
+                                        <option value="Irmão/Tio" {{ 'selected' if acompanhante == 'Irmão/Tio' }}>Irmão/Tio</option>
+                                        <option value="Outro" {{ 'selected' if acompanhante == 'Outro' }}>Outro</option>
+                                        <option value="Vai sozinho" {{ 'selected' if acompanhante == 'Vai sozinho' }}>Vai sozinho</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -261,15 +286,23 @@
                                 <input type="text" name="uf" id="uf" class="form-control"
                                     value="{{ end.get('uf', 'SP') }}" maxlength="2">
                             </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Zona urbana ou rural</label>
+                                <select name="zona" class="form-select">
+                                    {% set zona = end.get('zona', 'Urbana') %}
+                                    <option value="Urbana" {{ 'selected' if zona == 'Urbana' }}>Urbana</option>
+                                    <option value="Rural" {{ 'selected' if zona == 'Rural' }}>Rural</option>
+                                </select>
+                            </div>
                             <div class="col-md-12 border-top mt-4 pt-3">
                                 <div class="row g-3">
                                     <div class="col-md-4">
-                                        <label class="form-label fw-bold small">WhatsApp Aluno</label>
+                                        <label class="form-label fw-bold small">Tel./WhatsApp Aluno</label>
                                         <input type="text" name="whatsapp" class="form-control mask-phone"
                                             value="{{ aluno.whatsapp or '' }}">
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label fw-bold small">Telefone Responsável</label>
+                                        <label class="form-label fw-bold small">Tel./WhatsApp Responsável</label>
                                         <input type="text" name="telefone_resp" class="form-control mask-phone"
                                             value="{{ ident.get('telefone_resp', '') }}">
                                     </div>
@@ -277,6 +310,17 @@
                                         <label class="form-label fw-bold small">E-mail Principal</label>
                                         <input type="email" name="email" class="form-control"
                                             value="{{ aluno.email or '' }}">
+                                    </div>
+                                    <div class="col-md-4 d-flex align-items-end">
+                                        <div class="form-check form-switch mb-2">
+                                            <input class="form-check-input" type="checkbox"
+                                                name="nao_possui_acesso_internet" id="nao_possui_acesso_internet"
+                                                {{ 'checked' if not ident.get('possui_acesso_internet', True) }}>
+                                            <label class="form-check-label small fw-bold"
+                                                for="nao_possui_acesso_internet">
+                                                Não possui acesso a internet
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -454,6 +498,11 @@
                                         <textarea name="saude_observacoes" class="form-control"
                                             rows="2">{{ div.get('saude_observacoes', '') }}</textarea>
                                     </div>
+                                    <div class="col-md-12">
+                                        <label class="form-label small fw-bold">Informações para o professor da turma</label>
+                                        <textarea name="informacoes_para_professor" class="form-control" rows="3"
+                                            placeholder="Informações relevantes para o professor da turma">{{ div.get('informacoes_para_professor', '') }}</textarea>
+                                    </div>
                                 </div>
                             </div>
                             <!-- Termo de Consentimento -->
@@ -480,6 +529,88 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- STEP 6: SITUAÇÃO ESCOLAR -->
+                    <div class="form-step" id="step-6">
+                        <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa VI: Situação Escolar</h4>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Escolaridade</label>
+                                {% set escolaridade_atual = sit.escolaridade if sit else '' %}
+                                <select name="escolaridade" id="escolaridade" class="form-select" onchange="toggleSituacaoEscolar()">
+                                    <option value="">Selecione...</option>
+                                    {% for opcao in ['Ensino fundamental', 'Ensino médio', 'Ensino médio técnico', 'Ensino superior', 'EJA', 'Outros'] %}
+                                    <option value="{{ opcao }}" {{ 'selected' if escolaridade_atual == opcao }}>{{ opcao }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Status</label>
+                                {% set status_atual = sit.status if sit else '' %}
+                                <select name="status_escolar" id="status_escolar" class="form-select" onchange="toggleSituacaoEscolar()">
+                                    <option value="">Selecione...</option>
+                                    {% for opcao in ['Cursando', 'Concluinte', 'Trancado', 'Outros'] %}
+                                    <option value="{{ opcao }}" {{ 'selected' if status_atual == opcao }}>{{ opcao }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 {{ 'd-none' if status_atual != 'Outros' }}" id="status-outro">
+                                <label class="form-label fw-bold small">Descreva o status</label>
+                                <input name="status_escolar_outro" class="form-control" value="{{ (sit.status_outro if sit else '') or '' }}">
+                            </div>
+                            <div class="col-md-3 {{ 'd-none' if escolaridade_atual != 'Ensino superior' }}" id="periodo-superior">
+                                <label class="form-label fw-bold small">Período (Ensino Superior)</label>
+                                <select name="ensino_superior_periodo" class="form-select">
+                                    <option value="">Selecione...</option>
+                                    {% for periodo in range(1, 11) %}
+                                    <option value="{{ periodo }}" {{ 'selected' if sit and sit.ensino_superior_periodo == periodo }}>{{ periodo }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 {{ 'd-none' if escolaridade_atual != 'Outros' }}" id="escolaridade-outro">
+                                <label class="form-label fw-bold small">Outra escolaridade</label>
+                                <input name="escolaridade_outro" class="form-control" value="{{ (sit.escolaridade_outro if sit else '') or '' }}">
+                            </div>
+                            <div class="col-md-8 position-relative">
+                                <label class="form-label fw-bold small">Escola / Universidade</label>
+                                <input name="nome_instituicao" id="nome_instituicao" class="form-control" autocomplete="off" placeholder="Digite ao menos 2 letras" value="{{ (sit.nome_instituicao if sit else '') or '' }}">
+                                <div id="sugestoes-instituicao" class="list-group position-absolute w-100 shadow d-none" style="z-index:1050"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Tipo de instituição</label>
+                                {% set tipo_atual = sit.tipo_instituicao if sit else '' %}
+                                <select name="tipo_instituicao" id="tipo_instituicao" class="form-select" onchange="toggleSituacaoEscolar()">
+                                    <option value="">Selecione...</option>
+                                    {% for opcao in ['Pública', 'Privada', 'Outro'] %}
+                                    <option value="{{ opcao }}" {{ 'selected' if tipo_atual == opcao }}>{{ opcao }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 {{ 'd-none' if tipo_atual != 'Privada' }}" id="bolsista-div">
+                                <div class="form-check mt-4 pt-2">
+                                    <input class="form-check-input" type="checkbox" name="bolsista" id="bolsista" {{ 'checked' if sit and sit.bolsista }}>
+                                    <label class="form-check-label" for="bolsista">É bolsista?</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 {{ 'd-none' if tipo_atual != 'Outro' }}" id="instituicao-outro">
+                                <label class="form-label fw-bold small">Outro tipo de instituição</label>
+                                <input name="tipo_instituicao_outro" class="form-control" value="{{ (sit.tipo_instituicao_outro if sit else '') or '' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small">Turno</label>
+                                {% set turno_atual = sit.turno if sit else '' %}
+                                <select name="turno_escolar" id="turno_escolar" class="form-select" onchange="toggleSituacaoEscolar()">
+                                    <option value="">Selecione...</option>
+                                    {% for opcao in ['Manhã', 'Tarde', 'Noite', 'EAD', 'Outros'] %}
+                                    <option value="{{ opcao }}" {{ 'selected' if turno_atual == opcao }}>{{ opcao }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 {{ 'd-none' if turno_atual != 'Outros' }}" id="turno-outro">
+                                <label class="form-label fw-bold small">Outro turno</label>
+                                <input name="turno_escolar_outro" class="form-control" value="{{ (sit.turno_outro if sit else '') or '' }}">
                             </div>
                         </div>
                     </div>
@@ -535,6 +666,7 @@
 
 <script src="{{ url_for('static', filename='js/alunos/aluno_form.js') }}"></script>
 <script src="{{ url_for('static', filename='js/alunos/calcularIdade.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alunos/situacao_escolar.js') }}"></script>
 
 <script>
     // Configuração injetada pelo servidor

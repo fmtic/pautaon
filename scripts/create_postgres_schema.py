@@ -1,15 +1,9 @@
 import os
-import sys
 from pathlib import Path
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateTable
 
 from app import create_app
@@ -47,10 +41,7 @@ def generate_schema_sql(path: Path) -> None:
 
 
 def create_tables_in_database() -> None:
-    url = make_url(DATABASE_URL)
-    if url.drivername == "postgresql":
-        url = url.set(drivername="postgresql+psycopg")
-    engine = create_engine(url, future=True)
+    engine = create_engine(DATABASE_URL, future=True)
     ensure_models_imported()
     db.metadata.create_all(bind=engine)
     print("Tabelas criadas com sucesso no banco PostgreSQL configurado.")
