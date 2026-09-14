@@ -238,25 +238,47 @@ def enturmar_alunos(turma_id):
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
     aluno_ids = request.form.getlist("aluno_ids[]")
 
-    if aluno_ids:
+    aluno_ids_int = [int(x) for x in aluno_ids if str(x).isdigit()]
+    if aluno_ids_int:
         try:
-            alunos = Aluno.query.filter(Aluno.id.in_(aluno_ids))
+            alunos = Aluno.query.filter(Aluno.id.in_(aluno_ids_int))
             if turma_obj.unidade_id:
                 alunos = alunos.filter(Aluno.unidade_id == turma_obj.unidade_id)
             alunos = alunos.all()
+            enturmados = 0
             for aluno in alunos:
-                nivel = request.form.get(f"nivel_{aluno.id}")
-                if nivel:
-                    aluno.nivel = None if nivel == "Não se aplica" else nivel
-                if turma_obj not in aluno.turmas:
-                    aluno.turmas.append(turma_obj)
+                nivel_form = request.form.get(f"nivel_{aluno.id}")
+                nivel_val = None if nivel_form == "Não se aplica" else nivel_form
+
+                # Atualiza o nível padrão do aluno se informado
+                if nivel_form:
+                    aluno.nivel = nivel_val
+
+                # Verifica se já existe inscrição ativa nesta turma
+                inscricao_existente = Inscricao.query.filter_by(
+                    aluno_id=aluno.id, turma_id=turma_obj.id, ativo=True
+                ).first()
+                if inscricao_existente:
+                    continue  # já enturmado, pula
+
+                # Cria a inscrição explicitamente para garantir todos os campos obrigatórios
+                nova_inscricao = Inscricao(
+                    aluno_id=aluno.id,
+                    turma_id=turma_obj.id,
+                    nivel=nivel_val,
+                    ativo=True,
+                    data_inicio=datetime.utcnow().date(),
+                )
+                db.session.add(nova_inscricao)
+                enturmados += 1
+
             db.session.commit()
             flash(
-                f"{len(alunos)} alunos inscritos na turma {turma_obj.nome}!", "success"
+                f"{enturmados} aluno(s) inscrito(s) na turma {turma_obj.nome}!", "success"
             )
         except Exception:
             db.session.rollback()
-            flash("Falha interna de Foreign Key ao enturmar.", "danger")
+            raise  # propaga para o debugger em modo debug
     else:
         flash("Rejeitado: Nenhum aluno foi parametrizado.", "warning")
 

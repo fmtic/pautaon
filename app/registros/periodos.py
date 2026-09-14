@@ -220,6 +220,7 @@ def periodo_letivo():
         periodos=periodos,
         anos=anos_disponiveis,
         ano_filtro=ano_filtro,
+        hoje=date.today(),
     )
 
 

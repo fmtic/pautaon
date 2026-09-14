@@ -181,7 +181,7 @@ Não foi feito teste E2E no browser (login + cliques) nesta sessão.
 
 ---
 
-## 8. Arquivos tocados nesta sessão
+## 8. Arquivos tocados nesta sessão (1ª parte — manhã)
 
 | Arquivo | Alteração |
 |---|---|
@@ -195,3 +195,125 @@ Não foi feito teste E2E no browser (login + cliques) nesta sessão.
 | `app/templates/relatorios/relatorio_alunos.html` | CSS existente |
 | `app/LEIA-ME.md` | seção de integração |
 | `docs/relatorioDia.md` | este relatório |
+
+---
+
+## 9. Sessão da tarde — 14/09/2026
+
+### 9.1 Texto de commit sugerido
+
+```
+feat: PeriodoConselho, PK própria de Inscricao e informações do conselho
+
+Novo domínio
+- Adiciona model PeriodoConselho (tabela periodo_conselho) vinculado a
+  PeriodoLetivo + unidade, com flag conselho_final.
+- Migration 99f0996802e6: cria a tabela periodo_conselho.
+- Migration 26e459a7e00a: troca PK composta (aluno_id, turma_id) de
+  inscricoes por PK autoincrementada (id), permitindo re-enturmação.
+
+Rotas e templates de conselho
+- app/conselho.py: adiciona rota GET/POST /informacoes (informacoes())
+  e API JSON POST /api/conselho-periodo + DELETE
+  /api/conselho-periodo/<id> para CRUD de períodos de conselho via AJAX.
+  Importa PeriodoConselho e PeriodoLetivo nos modelos usados pelo blueprint.
+- app/templates/conselho/informacoes.html: novo template com KPI de
+  turmas pendentes, listagem de períodos de conselho e modal de
+  cadastro/edição via fetch JSON.
+- app/static/js/periodos/conselhos.js: lógica JS para o modal de
+  cadastro de PeriodoConselho (novo arquivo).
+
+Modelos
+- app/models.py: adiciona model PeriodoConselho com relacionamentos para
+  PeriodoLetivo e Unidade; converte PK de Inscricao para id próprio
+  (campo nivel preservado).
+
+Módulo registros
+- app/registros/periodos.py: refatora listagem de períodos letivos com
+  filtro por ano; adiciona rota de certificado com leitura de nível via
+  Inscricao.nivel em vez de campo legado.
+- app/registros/turmas.py: importa Inscricao explicitamente; cria
+  Inscricao com todos os campos obrigatórios (nivel, data_inicio) ao
+  enturmar alunos.
+- app/registros/core.py: sem mudança de lógica; import de Inscricao
+  já presente (colateral da refatoração do model).
+
+Factory e context processor
+- app/__init__.py: sem mudança nesta sessão (já corrigido na manhã).
+
+CSS e templates auxiliares
+- app/static/css/planejamento/planejamento.css: adiciona estilos de
+  calendário de bloqueios, setas de mover temas e media queries de
+  impressão; organiza em seções comentadas.
+- app/templates/base.html: sem mudança de lógica; apenas formatação.
+- app/templates/dashboard/index.html: ajustes de layout (sem mudança
+  de rota).
+- app/templates/periodos/lista.html: adiciona filtro por ano e botão de
+  calendário por período.
+- app/templates/planejamento/planejamento.html: integra modal de cursos
+  e calendário com fetch do novo endpoint.
+- app/templates/turmas/nova.html: adiciona select de centro de custo
+  dinâmico com JS inline.
+- app/templates/planejamento/planejamentoOLD.html: arquivo OLD mantido
+  como referência histórica (não importar).
+```
+
+---
+
+### 9.2 Problemas resolvidos nesta sessão
+
+| # | Problema | Arquivo(s) | Correção |
+|---|---|---|---|
+| 1 | Múltiplas inscrições (ativo/inativo) do mesmo par aluno+turma eram impossíveis com PK composta | `app/models.py`, migration `26e459a7e00a` | PK trocada para `id` autoincrement; `nivel` preservado na linha da inscrição |
+| 2 | Não existia forma de cadastrar/visualizar os períodos de conselho por período letivo | `app/conselho.py`, `conselho/informacoes.html`, `conselhos.js` | Novo model `PeriodoConselho` + rotas CRUD + template + migration |
+| 3 | Lista de períodos letivos sem filtro por ano (poluía a tela com muitos períodos) | `app/registros/periodos.py`, `periodos/lista.html` | Filtro por ano com seleção via query param `?ano=` |
+| 4 | Formulário de nova turma sem suporte a centro de custo dinâmico por período | `turmas/nova.html` | Select de centro de custo populado via JS com dados do período |
+| 5 | CSS de planejamento sem estilos de calendário de bloqueios e setas de mover temas | `planejamento.css` | Adicionadas seções de calendário, setas ↑↓ e regras de impressão |
+
+---
+
+### 9.3 Novos endpoints (blueprint `conselho`)
+
+| Método | Rota | Endpoint | Descrição |
+|---|---|---|---|
+| GET \| POST | `/informacoes` | `conselho.informacoes` | Painel de informações de conselho por período |
+| POST | `/api/conselho-periodo` | `conselho.salvar_periodo_conselho` | Cria/edita `PeriodoConselho` via JSON |
+| DELETE | `/api/conselho-periodo/<id>` | `conselho.deletar_periodo_conselho` | Remove `PeriodoConselho` via JSON |
+
+---
+
+### 9.4 Migrations pendentes de aplicar
+
+| Arquivo | O que faz | Depende de |
+|---|---|---|
+| `99f0996802e6_add_periodo_conselho.py` | Cria tabela `periodo_conselho` | `b2c3d4e5` |
+| `26e459a7e00a_inscricao_pk_propria.py` | Troca PK de `inscricoes` para `id` autoincrement | `99f0996802e6` |
+
+Aplicar em ordem com `flask db upgrade` antes de subir para produção.
+
+> [!WARNING]
+> A migration `26e459a7e00a` altera a chave primária da tabela `inscricoes`.
+> Faça backup do banco antes de aplicar em produção.
+
+---
+
+### 9.5 Arquivos tocados nesta sessão (tarde)
+
+| Arquivo | Tipo | Alteração |
+|---|---|---|
+| `app/models.py` | modificado | novo model `PeriodoConselho`; `Inscricao` com PK `id` e campo `nivel` |
+| `app/conselho.py` | modificado | rotas `informacoes`, `salvar_periodo_conselho`, `deletar_periodo_conselho`; imports de `PeriodoConselho` e `PeriodoLetivo` |
+| `app/registros/periodos.py` | modificado | listagem com filtro por ano; relatório de certificado lê `Inscricao.nivel` |
+| `app/registros/turmas.py` | modificado | `enturmar_alunos` cria `Inscricao` com campos completos |
+| `app/registros/core.py` | modificado | imports alinhados ao novo model de `Inscricao` |
+| `app/static/css/planejamento/planejamento.css` | modificado | estilos de calendário, setas ↑↓, impressão e layout lado a lado |
+| `app/templates/base.html` | modificado | formatação / sem mudança de rota |
+| `app/templates/dashboard/index.html` | modificado | ajustes de layout |
+| `app/templates/periodos/lista.html` | modificado | filtro por ano; botão de calendário |
+| `app/templates/planejamento/planejamento.html` | modificado | integração modal de cursos e calendário de bloqueios |
+| `app/templates/turmas/nova.html` | modificado | select de centro de custo dinâmico |
+| `app/templates/conselho/informacoes.html` | **novo** | template do painel de informações do conselho |
+| `app/static/js/periodos/conselhos.js` | **novo** | lógica JS do modal de `PeriodoConselho` |
+| `app/templates/planejamento/planejamentoOLD.html` | **novo** | cópia histórica do template antigo (não usar em import) |
+| `migrations/versions/99f0996802e6_add_periodo_conselho.py` | **novo** | cria tabela `periodo_conselho` |
+| `migrations/versions/26e459a7e00a_inscricao_pk_propria.py` | **novo** | migra PK de `inscricoes` para `id` autoincrement |

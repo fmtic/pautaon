@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">
+        <i class="bi bi-info-circle text-primary me-2"></i>Informações do Conselho
+    </h2>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 bg-primary text-white h-100">
+            <div class="card-body">
+                <h6 class="text-uppercase fw-bold opacity-75 mb-1">Turmas Pendentes (Conselho Final)</h6>
+                <h2 class="mb-0 display-4 fw-bold">{{ turmas_pendentes }}</h2>
+                <div class="mt-2 small opacity-75">
+                    <i class="bi bi-exclamation-circle me-1"></i>Aguardando fechamento do conselho
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 fw-bold">Períodos de Conselho Cadastrados</h5>
+        <button type="button" class="btn btn-sm btn-primary" onclick="openModal()">
+            <i class="bi bi-plus-lg me-1"></i>Novo Conselho
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="ps-3">Período Letivo</th>
+                        <th>Nome do Conselho</th>
+                        <th>Período</th>
+                        <th>Final?</th>
+                        <th class="text-end pe-3">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in conselhos %}
+                    <tr data-id="{{ c.id }}">
+                        <td class="ps-3"><span class="badge bg-secondary">{{ c.periodo_letivo.nome }}</span></td>
+                        <td class="fw-semibold">{{ c.nome }}</td>
+                        <td>
+                            <i class="bi bi-calendar3 text-muted me-1 small"></i>
+                            {{ c.data_inicio.strftime('%d/%m/%Y') }} - {{ c.data_fim.strftime('%d/%m/%Y') }}
+                        </td>
+                        <td>
+                            {% if c.conselho_final %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Sim</span>
+                            {% else %}
+                            <span class="badge bg-light text-muted">Não</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <button class="btn btn-sm btn-outline-primary border-0" 
+                                onclick="editConselho({{ c.id }}, '{{ c.nome }}', '{{ c.data_inicio.strftime('%Y-%m-%d') }}', '{{ c.data_fim.strftime('%Y-%m-%d') }}', {{ 'true' if c.conselho_final else 'false' }}, {{ c.periodo_letivo_id }})"
+                                title="Editar">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger border-0" 
+                                onclick="deleteConselho({{ c.id }})"
+                                title="Excluir">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-5">
+                            <i class="bi bi-calendar-x d-block mb-3 fs-1 opacity-25"></i>
+                            Nenhum conselho cadastrado.<br>
+                            Clique em <strong>Novo Conselho</strong> para começar.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalConselho" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header modal-header-dark">
+                <h5 class="modal-title h6 fw-bold" id="modalTitle">
+                    <i class="bi bi-calendar-check me-2"></i>Novo Conselho
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formConselho">
+                    <input type="hidden" id="conselhoId">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted text-uppercase">Período Letivo (Ativos)</label>
+                        <select class="form-select" id="periodoLetivoId" required>
+                            <option value="">Selecione...</option>
+                            {% for p in periodos_ativos %}
+                            <option value="{{ p.id }}">{{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} a {{ p.data_fim.strftime('%d/%m/%Y') }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Apenas períodos letivos ativos são permitidos. As datas do conselho devem estar dentro das datas do período selecionado.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted text-uppercase">Nome do Conselho</label>
+                        <input type="text" class="form-control" id="nome" required placeholder="Ex: Conselho Inicial">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted text-uppercase">Início</label>
+                            <input type="date" class="form-control" id="dataInicio" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted text-uppercase">Fim</label>
+                            <input type="date" class="form-control" id="dataFim" required>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="conselhoFinal">
+                        <label class="form-check-label fw-bold" for="conselhoFinal">Este é o conselho final</label>
+                        <div class="form-text">Se marcado, irá substituir o atual conselho final, caso exista.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm px-4 fw-bold shadow-sm" onclick="saveConselho()">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal = new bootstrap.Modal(document.getElementById('modalConselho'));
+
+function openModal() {
+    document.getElementById('formConselho').reset();
+    document.getElementById('conselhoId').value = '';
+    document.getElementById('modalTitle').innerHTML = '<i class="bi bi-calendar-check me-2"></i>Novo Conselho';
+    modal.show();
+}
+
+function editConselho(id, nome, dataInicio, dataFim, isFinal, periodoLetivoId) {
+    document.getElementById('conselhoId').value = id;
+    document.getElementById('nome').value = nome;
+    document.getElementById('dataInicio').value = dataInicio;
+    document.getElementById('dataFim').value = dataFim;
+    document.getElementById('conselhoFinal').checked = isFinal;
+    document.getElementById('periodoLetivoId').value = periodoLetivoId;
+    document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Conselho';
+    modal.show();
+}
+
+async function saveConselho() {
+    const id = document.getElementById('conselhoId').value;
+    const nome = document.getElementById('nome').value;
+    const dataInicio = document.getElementById('dataInicio').value;
+    const dataFim = document.getElementById('dataFim').value;
+    const isFinal = document.getElementById('conselhoFinal').checked;
+    const periodoLetivoId = document.getElementById('periodoLetivoId').value;
+
+    if (!nome || !dataInicio || !dataFim || !periodoLetivoId) {
+        alert("Preencha todos os campos obrigatórios.");
+        return;
+    }
+
+    try {
+        const response = await fetch("{{ url_for('conselho.salvar_periodo_conselho') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id: id,
+                nome: nome,
+                data_inicio: dataInicio,
+                data_fim: dataFim,
+                conselho_final: isFinal,
+                periodo_letivo_id: periodoLetivoId
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.msg || "Erro ao salvar.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Erro de comunicação com o servidor.");
+    }
+}
+
+async function deleteConselho(id) {
+    if (!confirm("Tem certeza que deseja excluir este conselho?")) return;
+
+    try {
+        const response = await fetch(`{{ url_for('conselho.deletar_periodo_conselho', conselho_id=0) }}`.replace('0', id), {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.msg || "Erro ao excluir.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Erro de comunicação com o servidor.");
+    }
+}
+</script>
+{% endblock %}

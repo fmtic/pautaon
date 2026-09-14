@@ -166,7 +166,8 @@ def frequencia():
         flash('Frequência salva com sucesso!', 'success')
         return redirect(url_for('registros.frequencia', turma_id=turma_id, data=data))
 
-    turma_id = request.args.get('turma_id')
+    turma_id_raw = request.args.get('turma_id')
+    turma_id = int(turma_id_raw) if turma_id_raw and str(turma_id_raw).isdigit() else None
     data     = request.args.get('data')
 
     unidade_id = get_unidade_id()
@@ -187,7 +188,7 @@ def frequencia():
 
     # Garante que o professor não acesse turma de outro professor via URL direta
     if turma_id and current_user.role == 'professor':
-        turma_ids_permitidos = {str(t.id) for t in turmas}
+        turma_ids_permitidos = {t.id for t in turmas}
         if turma_id not in turma_ids_permitidos:
             flash('Você não tem permissão para acessar esta turma.', 'danger')
             return redirect(url_for('registros.frequencia'))
@@ -207,7 +208,7 @@ def frequencia():
          for aluno in ctx.get('alunos', []):
              # Busca registros desta turma; fallback apenas para registros legados sem turma_id
              registros = Frequencia.query.filter_by(
-                 aluno_id=aluno.id, turma_id=int(turma_id)
+                 aluno_id=aluno.id, turma_id=turma_id
              ).all()
              if not registros:
                  # Compatibilidade com registros antigos sem turma_id

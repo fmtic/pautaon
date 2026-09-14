@@ -310,3 +310,48 @@ tr.flash-move {
     border: 1px solid #000;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   LAYOUT LADO A LADO — Formulário + Lista de Temas
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Card "Adicionar Novo Tema" fica "sticky" no desktop */
+@media (min-width: 992px) {
+  .card-novo-tema {
+    position: sticky;
+    top: 20px;
+    align-self: flex-start;
+  }
+}
+
+/* Em telas pequenas o layout empilha normalmente */
+@media (max-width: 991.98px) {
+  .card-novo-tema {
+    position: static;
+  }
+}
+
+/* Padding lateral mais compacto na tabela da coluna estreita */
+.tabela-temas th.ps-4,
+.tabela-temas td.ps-4 {
+  padding-left: 1rem !important;
+}
+.tabela-temas th.pe-4,
+.tabela-temas td.pe-4 {
+  padding-right: 1rem !important;
+}
+
+/* Badge do curso — quebra de linha se o nome for longo */
+.tabela-temas td .badge.rounded-pill {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+}
+
+/* Em telas estreitas, o filtro/busca quebram bem */
+@media (max-width: 767.98px) {
+  .card-header .input-group[style*="width:180px"] {
+    width: 100% !important;
+  }
+}

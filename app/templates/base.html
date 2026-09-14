@@ -58,13 +58,13 @@
                 <ul class="dropdown-menu shadow">
                     <li>
                         <a class="dropdown-item {% if request.endpoint == 'registros.gerenciar_alunos' %}active{% endif %}"
-                           href="{{ url_for('registros.gerenciar_alunos') }}">
+                            href="{{ url_for('registros.gerenciar_alunos') }}">
                             <i class="bi bi-person-lines-fill me-2"></i>Gerenciar Alunos
                         </a>
                     </li>
                     <li>
-                                <a class="dropdown-item {% if request.endpoint == 'registros.transicao_atendimentos' %}active{% endif %}"
-                                    href="{{ url_for('registros.transicao_atendimentos') }}">
+                        <a class="dropdown-item {% if request.endpoint == 'registros.transicao_atendimentos' %}active{% endif %}"
+                            href="{{ url_for('registros.transicao_atendimentos') }}">
                             <i class="bi bi-clipboard2-pulse me-2"></i>Atendimentos
                         </a>
                     </li>
@@ -80,6 +80,11 @@
                     <i class="bi bi-journal-check me-1"></i> Conselho
                 </button>
                 <ul class="dropdown-menu shadow">
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('conselho.informacoes') }}">
+                            <i class="bi bi-info-circle me-2"></i>Data-Informações
+                        </a>
+                    </li>
                     <li>
                         <a class="dropdown-item" href="{{ url_for('conselho.index_conselho') }}">
                             <i class="bi bi-grid-3x3-gap me-2"></i>Painel de Turmas

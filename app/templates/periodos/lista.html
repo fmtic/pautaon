@@ -48,6 +48,7 @@
             <th>Centro de Custo</th>
             <th class="text-center">Estimativa</th>
             <th class="text-center">Enturmados</th>
+            <th class="text-center">Conselhos</th>
             <th class="text-center">Status</th>
             <th class="text-center pe-3">Ações</th>
           </tr>
@@ -57,7 +58,6 @@
           <tr class="{{ 'opacity-60' if not p.ativo }}">
             <td class="ps-3 fw-semibold">
               {% if not p.ativo %}
-              {# Período inativo: nome clicável leva às turmas em modo consulta #}
               <a href="{{ url_for('registros.turma') }}?periodo_id={{ p.id }}"
                  class="text-secondary text-decoration-none"
                  title="Consultar turmas deste período (somente leitura)">
@@ -72,6 +72,32 @@
             <td class="text-muted small">{{ p.centro_custo or '—' }}</td>
             <td class="text-center">{{ p.estimativa_alunos }}</td>
             <td class="text-center">{{ p.alunos_enturmados() }}</td>
+
+            {# ── Coluna nova: Conselhos de Classe ── #}
+            <td class="text-center">
+              {% set qtd = p.conselhos|length %}
+              {% if qtd %}
+                {# Encontra o próximo conselho (data_fim >= hoje) #}
+                {% set proximo = namespace(value=none) %}
+                {% for c in p.conselhos|sort(attribute='data_inicio') %}
+                  {% if proximo.value is none and c.data_fim >= hoje %}
+                    {% set proximo.value = c %}
+                  {% endif %}
+                {% endfor %}
+                <span class="badge bg-primary-subtle text-primary-emphasis border rounded-pill"
+                      title="{% for c in p.conselhos %}{{ c.nome }}: {{ c.data_inicio.strftime('%d/%m') }}–{{ c.data_fim.strftime('%d/%m') }}{{ '\n' if not loop.last }}{% endfor %}">
+                  <i class="bi bi-calendar-check me-1"></i>{{ qtd }}
+                </span>
+                {% if proximo.value %}
+                <div class="small text-muted mt-1" style="font-size:.68rem;">
+                  Próx.: {{ proximo.value.data_inicio.strftime('%d/%m') }}
+                </div>
+                {% endif %}
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+
             <td class="text-center">
               {% if p.ativo %}
               <span class="badge bg-success">Ativo</span>
@@ -83,7 +109,9 @@
               <div class="d-flex gap-1 justify-content-center flex-wrap">
                 {% if p.ativo %}
                 <a href="{{ url_for('registros.periodo_letivo_editar', id=p.id) }}"
-                   class="btn btn-sm btn-outline-primary">Editar</a>
+                   class="btn btn-sm btn-outline-primary" title="Editar período e conselhos">
+                  <i class="bi bi-pencil"></i>
+                </a>
                 <a href="{{ url_for('registros.periodo_letivo_calendario', id=p.id) }}"
                    class="btn btn-sm btn-outline-dark" title="Calendário de dias sem aula">
                   <i class="bi bi-calendar-x"></i>

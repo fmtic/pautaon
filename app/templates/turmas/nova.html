@@ -62,7 +62,8 @@
                             </div>
 
                             <div class="col-md-4">
-                                <label class="form-label fw-bold small">Curso <span class="text-muted fw-normal">(opcional)</span></label>
+                                <label class="form-label fw-bold small">Curso <span
+                                        class="text-muted fw-normal">(opcional)</span></label>
                                 <select name="curso_id" class="form-select">
                                     <option value="">-- Sem curso vinculado --</option>
                                     {% for c in cursos %}
@@ -102,7 +103,8 @@
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small">Centro de Custo</label>
-                                <select name="centro_custo" id="centro_custo_select" class="form-select" disabled required>
+                                <select name="centro_custo" id="centro_custo_select" class="form-select" disabled
+                                    required>
                                     <option value="">-- Selecione um período primeiro --</option>
                                 </select>
                                 <small id="centro_custo_help" class="text-muted">Os centros listados dependem do período
@@ -129,13 +131,11 @@
                                 <label class="form-label fw-bold">Data de Início</label>
                                 <input type="date" name="data_inicio" class="form-control"
                                     value="{{ periodo_ativo.data_inicio if periodo_ativo else '' }}">
-                                <small class="text-muted">Pré-preenchido com o período ativo.</small>
                             </div>
                             <div class="mb-3 col-md-3">
                                 <label class="form-label fw-bold">Data de Término</label>
                                 <input type="date" name="data_fim" class="form-control"
                                     value="{{ periodo_ativo.data_fim if periodo_ativo else '' }}">
-                                <small class="text-muted">Pré-preenchido com o período ativo.</small>
                             </div>
 
                             <div class="mb-3 col-md-3">
@@ -170,7 +170,7 @@
 
 {% block scripts %}
 <script>
-    window.periodosCentros = {{ periodos_centros | default({}) | tojson }};
+    window.periodosCentros = {{ periodos_centros | default ({}) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>
 {% endblock %}

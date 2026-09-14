@@ -14,8 +14,11 @@ from typing import List, Optional
 # ---------------------------------------------------------------------------
 class Inscricao(db.Model):
     __tablename__ = 'inscricoes'
-    aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), primary_key=True)
-    turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), primary_key=True)
+
+    # PK própria para permitir múltiplas inscrições (ativo/inativo) do mesmo aluno na mesma turma
+    id: int = db.Column(db.Integer, primary_key=True)
+    aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False)
+    turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
 
     # Nível do aluno nesta turma específica
     nivel: str = db.Column(db.String(30))
@@ -583,6 +586,20 @@ class Nivel(db.Model):
     nome: str = db.Column(db.String(100), unique=True, nullable=False)
     ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'))
+class PeriodoConselho(db.Model):
+    """Cadastro central de períodos de conselho, vinculado a um período letivo ativo."""
+    __tablename__ = 'periodo_conselho'
+    id: int = db.Column(db.Integer, primary_key=True)
+    nome: str = db.Column(db.String(100), nullable=False)
+    data_inicio: date = db.Column(db.Date, nullable=False)
+    data_fim: date = db.Column(db.Date, nullable=False)
+    conselho_final: bool = db.Column(db.Boolean, default=False, nullable=False)
+    
+    periodo_letivo_id: int = db.Column(db.Integer, db.ForeignKey('periodo_letivo.id'), nullable=False)
+    periodo_letivo = db.relationship('PeriodoLetivo', backref=db.backref('conselhos', cascade='all, delete-orphan'))
+    
+    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=False)
+    unidade = db.relationship('Unidade', backref='periodos_conselho')
 
 
 class ConselhoClasse(db.Model):

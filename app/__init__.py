@@ -172,6 +172,8 @@ def _register_error_handlers(app: Flask) -> None:
     @app.errorhandler(OperationalError)
     def handle_db_down_error(e):
         app.logger.error(f"Erro de conexão com o banco de dados interceptado: {e}")
+        if app.debug:
+            raise e
         return render_template('sistema_indisponivel.html'), 503
 
     @app.errorhandler(HTTPException)
@@ -182,6 +184,8 @@ def _register_error_handlers(app: Flask) -> None:
         recebam o código apropriado, mas sempre mostramos a mesma página ao usuário.
         """
         app.logger.warning(f"HTTP Exception interceptada: {e.code} {e.description}")
+        if app.debug:
+            return e
         return render_template('sistema_indisponivel.html'), e.code
 
     @app.errorhandler(Exception)
@@ -191,4 +195,6 @@ def _register_error_handlers(app: Flask) -> None:
         Registra a stack trace no logger para investigação posterior.
         """
         app.logger.exception("Unhandled exception: %s", e)
+        if app.debug:
+            raise e
         return render_template('sistema_indisponivel.html'), 500

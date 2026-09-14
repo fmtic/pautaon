@@ -4,8 +4,10 @@ import logging
 from flask import Blueprint, render_template, request, redirect, flash, abort, url_for, jsonify
 from flask_login import login_required, current_user
 from app.models import (PerguntaConselho, Turma, Aluno, Frequencia,
-                    OpcaoProximaTurma, ConselhoClasse, ConselhoResposta, Inscricao)
+                    OpcaoProximaTurma, ConselhoClasse, ConselhoResposta, Inscricao,
+                    PeriodoConselho, PeriodoLetivo)
 from app.database import db
+from app.extensions import csrf
 from sqlalchemy import select, case
 from datetime import datetime, date
 from collections import OrderedDict
@@ -536,3 +538,125 @@ def avaliar_turma(turma_id):
                            etapa_atual=etapa_selecionada,
                            perguntas=perguntas,
                            respostas=respostas)
+
+# ---------------------------------------------------------------------------
+# INFORMAÇÕES DE CONSELHO (PERÍODOS)
+# ---------------------------------------------------------------------------
+
+@bp.route('/informacoes', methods=['GET', 'POST'])
+@login_required
+def informacoes():
+    unidade_id = get_unidade_id()
+    if request.method == 'POST':
+        # Handled via API/AJAX below or standard form POST, but we'll use a separate API endpoint for simplicity,
+        # or we handle form post here. We'll handle it here.
+        pass
+
+    periodos_ativos = PeriodoLetivo.query.filter_by(ativo=True, unidade_id=unidade_id).order_by(PeriodoLetivo.id.desc()).all()
+    conselhos = PeriodoConselho.query.filter_by(unidade_id=unidade_id).join(PeriodoLetivo).filter(PeriodoLetivo.ativo == True).order_by(PeriodoLetivo.id.desc(), PeriodoConselho.data_inicio).all()
+    
+    turmas_pendentes = Turma.query.filter_by(ativo=True, conselho_concluido=False, unidade_id=unidade_id).count()
+
+    return render_template('conselho/informacoes.html',
+                           conselhos=conselhos,
+                           periodos_ativos=periodos_ativos,
+                           turmas_pendentes=turmas_pendentes)
+
+@bp.route('/api/conselho-periodo', methods=['POST'])
+@csrf.exempt
+@login_required
+def salvar_periodo_conselho():
+    try:
+        unidade_id = get_unidade_id()
+        data = request.get_json(force=True, silent=True)
+        if data is None:
+            logger.error("salvar_periodo_conselho: body JSON inválido ou ausente. Content-Type: %s | Body: %s",
+                         request.content_type, request.get_data(as_text=True)[:500])
+            return jsonify({"success": False, "msg": "Requisição inválida (JSON não recebido)."}), 400
+        logger.debug("salvar_periodo_conselho: unidade_id=%s data=%s", unidade_id, data)
+    except Exception:
+        logger.exception("salvar_periodo_conselho: erro ao inicializar requisição.")
+        return jsonify({"success": False, "msg": "Erro ao processar requisição."}), 500
+
+    conselho_id = data.get('id') or None
+    if conselho_id:
+        try:
+            conselho_id = int(conselho_id)
+        except (ValueError, TypeError):
+            conselho_id = None
+    nome = data.get('nome')
+    data_inicio = data.get('data_inicio')
+    data_fim = data.get('data_fim')
+    conselho_final = data.get('conselho_final', False)
+    periodo_letivo_id = data.get('periodo_letivo_id')
+    try:
+        periodo_letivo_id = int(periodo_letivo_id) if periodo_letivo_id else None
+    except (ValueError, TypeError):
+        periodo_letivo_id = None
+
+    if not nome or not data_inicio or not data_fim or not periodo_letivo_id:
+        return jsonify({"success": False, "msg": "Preencha todos os campos obrigatórios."}), 400
+
+    periodo_letivo = PeriodoLetivo.query.filter_by(id=periodo_letivo_id, unidade_id=unidade_id, ativo=True).first()
+    if not periodo_letivo:
+        return jsonify({"success": False, "msg": "Período letivo inválido ou inativo."}), 400
+
+    try:
+        dt_ini = datetime.strptime(data_inicio, '%Y-%m-%d').date()
+        dt_fim = datetime.strptime(data_fim, '%Y-%m-%d').date()
+        
+        if dt_ini < periodo_letivo.data_inicio or dt_fim > periodo_letivo.data_fim:
+            return jsonify({"success": False, "msg": f"As datas do conselho devem estar dentro do período letivo ({periodo_letivo.data_inicio.strftime('%d/%m/%Y')} a {periodo_letivo.data_fim.strftime('%d/%m/%Y')})."}), 400
+    except Exception:
+        return jsonify({"success": False, "msg": "Datas inválidas."}), 400
+
+    if conselho_final:
+        # Desmarca o anterior se houver
+        PeriodoConselho.query.filter_by(unidade_id=unidade_id, conselho_final=True).update({'conselho_final': False})
+
+    if conselho_id:
+        conselho = PeriodoConselho.query.filter_by(id=conselho_id, unidade_id=unidade_id).first()
+        if not conselho:
+            return jsonify({"success": False, "msg": "Conselho não encontrado."}), 404
+        conselho.nome = nome
+        conselho.data_inicio = dt_ini
+        conselho.data_fim = dt_fim
+        conselho.conselho_final = conselho_final
+        conselho.periodo_letivo_id = periodo_letivo_id
+    else:
+        conselho = PeriodoConselho(
+            nome=nome,
+            data_inicio=dt_ini,
+            data_fim=dt_fim,
+            conselho_final=conselho_final,
+            periodo_letivo_id=periodo_letivo_id,
+            unidade_id=unidade_id
+        )
+        db.session.add(conselho)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Erro ao salvar período de conselho.")
+        return jsonify({"success": False, "msg": "Erro interno ao salvar. Tente novamente."}), 500
+    return jsonify({"success": True})
+
+@bp.route('/api/conselho-periodo/<int:conselho_id>', methods=['DELETE'])
+@csrf.exempt
+@login_required
+def deletar_periodo_conselho(conselho_id):
+    unidade_id = get_unidade_id()
+    conselho = PeriodoConselho.query.filter_by(id=conselho_id, unidade_id=unidade_id).first()
+    if not conselho:
+        return jsonify({"success": False, "msg": "Conselho não encontrado."}), 404
+        
+    try:
+        db.session.delete(conselho)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Erro ao deletar período de conselho.")
+        return jsonify({"success": False, "msg": "Erro interno ao excluir. Tente novamente."}), 500
+    return jsonify({"success": True})
+
