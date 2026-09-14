@@ -4,7 +4,7 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 from flask_login import current_user, login_required
 
 from app.database import db
-from app.informacao_padrao import get_informacao_padrao_values, upsert_informacao_padrao
+from app.services.informacao_padrao import get_informacao_padrao_values, upsert_informacao_padrao
 from app.services.auth_service import register_security_log
 
 bp = Blueprint("informacao_padrao", __name__)

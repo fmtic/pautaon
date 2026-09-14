@@ -79,16 +79,23 @@ def _register_user_loader() -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    from app.routes import auth, conselho, informacao_padrao, main
-    from app.routes.registros import bp as registros_bp
-    from app.routes.registros.servico_social import bp as servico_social_bp
+    from app.auth import bp as auth_bp
+    from app.conselho import bp as conselho_bp
+    from app.informacao_padrao import bp as informacao_padrao_bp
+    from app.main import bp as main_bp
+    from app.registros import bp as registros_bp
+    from app.registros.servico_social import bp as servico_social_bp
+    from app.relatorios import bp_relatorios
+    from app.planejamento import bp_planejamento
 
-    app.register_blueprint(auth.bp)
-    app.register_blueprint(main.bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(main_bp)
     app.register_blueprint(registros_bp)
-    app.register_blueprint(conselho.bp)
-    app.register_blueprint(informacao_padrao.bp)
+    app.register_blueprint(conselho_bp)
+    app.register_blueprint(informacao_padrao_bp)
     app.register_blueprint(servico_social_bp)
+    app.register_blueprint(bp_relatorios)
+    app.register_blueprint(bp_planejamento)
 
 
 def _register_context_processors(app: Flask) -> None:
@@ -98,7 +105,7 @@ def _register_context_processors(app: Flask) -> None:
         from flask_login import current_user
 
         from app.models import Unidade
-        from app.informacao_padrao import get_informacao_padrao_context
+        from app.services.informacao_padrao import get_informacao_padrao_context
         from app.utils.logica import get_unidade_id
 
         try:

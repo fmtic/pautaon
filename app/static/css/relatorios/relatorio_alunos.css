@@ -1,0 +1,35 @@
+.category-card {
+    border: 1px solid #e0e6ed;
+    border-radius: 10px;
+    transition: all 0.25s ease;
+    background-color: #ffffff;
+}
+.category-card:hover {
+    box-shadow: 0 6px 15px rgba(0,0,0,0.06);
+}
+.field-box {
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background-color: #fafafa;
+    transition: all 0.2s ease;
+}
+.field-box:hover {
+    border-color: #0d6efd;
+    background-color: #ffffff;
+}
+.field-box.active-selection {
+    background-color: #eef6ff;
+    border-color: #8bb9fe;
+}
+.preset-pill {
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+.filter-drawer {
+    background-color: #f8f9fa;
+    border-top: 1px dashed #dee2e6;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}

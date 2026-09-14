@@ -168,6 +168,10 @@ class User(db.Model, UserMixin):
     
     first_login: bool = db.Column(db.Boolean, default=True)
 
+    # Campos para autenticação federada via Google OAuth
+    google_id: str | None = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    google_email: str | None = db.Column(db.String(120), nullable=True)
+
     def set_password(self, password: str) -> None:
         """Gera e armazena o hash criptografado da senha."""
         self.password = generate_password_hash(password)
@@ -489,6 +493,7 @@ class TemaAula(db.Model):
     programa: str = db.Column(db.String(50))
     ativo: bool   = db.Column(db.Boolean, default=True, nullable=False)
     data: str     = db.Column(db.String(20))
+    ordem: int    = db.Column(db.Integer, default=0, nullable=False) 
 
     unidade = db.relationship('Unidade', backref='temas_unidade')
     turma   = db.relationship('Turma',   backref='temas_disponiveis')

@@ -1,155 +1,304 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-  <div class="row">
-    <div class="col-md-3 d-print-none">
-      <div class="card shadow-sm border-0 sticky-top" style="top: 20px;">
-        <div class="card-header bg-primary text-white fw-bold">
-          <i class="fas fa-cog"></i> Gestão do Conselho
+{# ────────────────────────────────────────────────────────────────
+   Config para o JS (lida do data-*)
+   ──────────────────────────────────────────────────────────────── #}
+<div id="planejamentoConfig"
+     data-csrf="{{ csrf_token() }}"
+     hidden></div>
+
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/planejamento/planejamento.css') }}">
+
+<div class="container-fluid mt-4 pb-5">
+
+  {# ═══════════════ CABEÇALHO ═══════════════ #}
+  <div class="d-flex flex-wrap justify-content-between align-items-start mb-4 gap-3">
+    <div>
+      <h2 class="mb-1 fw-bold text-dark">
+        <i class="bi bi-journal-text text-primary me-2"></i>Planejamento Pedagógico
+      </h2>
+      <p class="text-muted mb-0">
+        Cronograma de temas, gestão de níveis e acompanhamento do conselho de classe.
+      </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#modalCursos"
+        title="Gerenciar cursos disponíveis para as turmas">
+        <i class="bi bi-mortarboard me-2"></i>Cursos
+      </button>
+      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalCalendario"
+        title="Marcar dias sem aula por período letivo">
+        <i class="bi bi-calendar-x me-2"></i>Dias Bloqueados
+      </button>
+    </div>
+  </div>
+
+  {# ═══════════════ CARDS KPI ═══════════════ #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-mortarboard-fill"></i></div>
+          <div>
+            <div class="kpi-label">Cursos</div>
+            <div class="h4 mb-0 fw-bold">{{ cursos|length }}</div>
+          </div>
         </div>
-        <div class="card-body">
-          <form action="{{ url_for('registros.salvar_configuracao_conselho') }}" method="POST" class="mb-4">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label class="small fw-bold text-muted mb-2 text-uppercase">Período do Conselho</label>
-            <div class="mb-3">
-              <label class="form-label small mb-0">Início:</label>
-              <input type="date" name="inicio_conselho" class="form-control form-control-sm"
-                value="{{ data_inicio_atual }}">
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-card-checklist"></i></div>
+          <div>
+            <div class="kpi-label">Temas</div>
+            <div class="h4 mb-0 fw-bold">{{ temas|length }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-bar-chart-fill"></i></div>
+          <div>
+            <div class="kpi-label">Níveis</div>
+            <div class="h4 mb-0 fw-bold">{{ niveis|length }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon bg-warning-subtle text-warning-emphasis"><i class="bi bi-people-fill"></i></div>
+          <div>
+            <div class="kpi-label">Conselho</div>
+            <div class="h4 mb-0 fw-bold">
+              {{ turmas|selectattr('conselho_concluido')|list|length }}<span
+                class="text-muted fs-6 fw-normal">/{{ turmas|length }}</span>
             </div>
-            <div class="mb-3">
-              <label class="form-label small mb-0">Fim:</label>
-              <input type="date" name="fim_conselho" class="form-control form-control-sm" value="{{ data_fim_atual }}">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ═══════════════ LINHA PRINCIPAL ═══════════════ #}
+  <div class="row g-4">
+
+    {# ─── SIDEBAR — Gestão do Conselho ─── #}
+    <div class="col-lg-3 d-print-none">
+      <div class="card shadow-sm border-0 sticky-top" style="top:20px;">
+        <div class="card-header bg-white py-3 border-bottom">
+          <h6 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-people-fill text-primary me-2"></i>Gestão do Conselho
+          </h6>
+        </div>
+        <div class="card-body p-3">
+
+          <form action="{{ url_for('planejamento.salvar_configuracao_conselho') }}" method="POST" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="section-label">
+              <i class="bi bi-calendar-range me-1"></i>Período do Conselho
+            </label>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small text-muted mb-1">Início</label>
+                <input type="date" name="inicio_conselho" class="form-control form-control-sm"
+                  value="{{ data_inicio_atual }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-muted mb-1">Fim</label>
+                <input type="date" name="fim_conselho" class="form-control form-control-sm"
+                  value="{{ data_fim_atual }}">
+              </div>
             </div>
             <button type="submit" class="btn btn-sm btn-primary w-100">
-              <i class="fas fa-save"></i> Atualizar Datas
+              <i class="bi bi-save me-1"></i>Atualizar Datas
             </button>
           </form>
 
-          <hr>
+          <hr class="my-3">
 
-          <label class="small fw-bold text-muted mb-2 text-uppercase">Check-list de Turmas</label>
-          <div class="list-group list-group-flush border rounded shadow-sm"
-            style="max-height: 350px; overflow-y: auto;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="section-label mb-0">
+              <i class="bi bi-check2-square me-1"></i>Check-list de Turmas
+            </label>
+            <span class="badge bg-primary-subtle text-primary-emphasis rounded-pill">
+              {{ turmas|selectattr('conselho_concluido')|list|length }}/{{ turmas|length }}
+            </span>
+          </div>
+          <div class="list-group list-group-flush border rounded turmas-scroll">
             {% for t in turmas %}
             <div class="list-group-item d-flex justify-content-between align-items-center p-2">
-              <span class="small text-truncate" style="max-width: 110px;" title="{{ t.nome }}">{{ t.nome }}</span>
-              <a href="{{ url_for('main.alternar_conselho', turma_id=t.id) }}"
-                class="btn btn-sm {{ 'btn-success' if t.conselho_concluido else 'btn-outline-secondary' }}"
-                style="padding: 2px 6px; font-size: 0.65rem; min-width: 65px;">
+              <span class="small text-truncate turma-nome" title="{{ t.nome }}">{{ t.nome }}</span>
+              <a href="{{ url_for('planejamento.alternar_conselho', turma_id=t.id) }}"
+                class="badge rounded-pill text-decoration-none status-pill {{ 'bg-success' if t.conselho_concluido else 'bg-secondary-subtle text-secondary-emphasis border' }}">
                 {{ 'Concluído' if t.conselho_concluido else 'Pendente' }}
               </a>
             </div>
+            {% else %}
+            <div class="list-group-item text-center text-muted small py-4">
+              <i class="bi bi-inbox d-block fs-4 opacity-25 mb-1"></i>
+              Nenhuma turma cadastrada.
+            </div>
             {% endfor %}
           </div>
-          <small class="text-muted mt-2 d-block" style="font-size: 0.7rem;">
-            * Clique no botão para alternar o status da reunião.
+          <small class="text-muted d-block mt-2" style="font-size:.7rem;">
+            <i class="bi bi-info-circle me-1"></i>Clique no status para alternar.
           </small>
         </div>
       </div>
     </div>
 
-    <div class="col-md-9">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <h2 class="mb-0">Planejamento Pedagógico</h2>
-          <p class="text-muted">Cronograma de assuntos e temas por curso.</p>
-        </div>
-        <div>
-          <button class="btn btn-outline-success me-2" data-bs-toggle="modal" data-bs-target="#modalCursos"
-            title="Gerenciar cursos disponíveis para as turmas">
-            <i class="bi bi-mortarboard me-2"></i>Cursos
-          </button>
-          <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalCalendario"
-            title="Marcar dias sem aula por período letivo">
-            <i class="bi bi-calendar-x me-2"></i>Dias Bloqueados
-          </button>
-        </div>
-      </div>
+    {# ─── ÁREA PRINCIPAL — Abas ─── #}
+    <div class="col-lg-9">
 
-      <div class="card shadow-sm p-4 mb-4 border-0">
-        <form method="POST" action="{{ url_for('registros.planejamento') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="tipo_post" value="tema">
-          <div class="row g-3">
-            <div class="col-md-5">
-              <label class="form-label fw-bold small">Curso</label>
-              <select name="curso_id" class="form-select shadow-sm" required>
-                <option value="">Selecione o curso…</option>
-                {% for c in cursos %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-                {% endfor %}
-              </select>
-              {% if not cursos %}
-              <small class="text-warning d-block mt-1">
-                <i class="bi bi-exclamation-triangle me-1"></i>
-                Nenhum curso cadastrado. <a href="#" data-bs-toggle="modal" data-bs-target="#modalCursos">Cadastrar agora</a>.
-              </small>
-              {% endif %}
-            </div>
-            <div class="col-md-5">
-              <label class="form-label fw-bold small">Novo Tema</label>
-              <input type="text" name="titulo" class="form-control shadow-sm" placeholder="Ex: Conhecendo as partes do barco"
-                required>
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-              <button type="submit" class="btn btn-primary w-100 shadow-sm">Adicionar</button>
+      <ul class="nav nav-pills mb-3 gap-2" id="planejamentoTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active fw-semibold" id="pill-temas" data-bs-toggle="pill"
+            data-bs-target="#tabTemas" type="button" role="tab">
+            <i class="bi bi-card-checklist me-1"></i>Temas
+            <span class="badge bg-white text-primary ms-1">{{ temas|length }}</span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill"
+            data-bs-target="#tabNiveis" type="button" role="tab">
+            <i class="bi bi-bar-chart-fill me-1"></i>Níveis
+            <span class="badge bg-white text-secondary ms-1">{{ niveis|length }}</span>
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content">
+
+        {# ═══ ABA TEMAS ═══ #}
+        <div class="tab-pane fade show active" id="tabTemas" role="tabpanel">
+
+          <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body p-3">
+              <h6 class="fw-bold text-dark mb-3">
+                <i class="bi bi-plus-circle text-success me-1"></i>Adicionar Novo Tema
+              </h6>
+              <form method="POST" action="{{ url_for('registros.planejamento') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="tipo_post" value="tema">
+                <div class="row g-2 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1 fw-semibold">Curso</label>
+                    <select name="curso_id" class="form-select form-select-sm" required>
+                      <option value="">Selecione o curso…</option>
+                      {% for c in cursos %}
+                      <option value="{{ c.id }}">{{ c.nome }}</option>
+                      {% endfor %}
+                    </select>
+                    {% if not cursos %}
+                    <small class="text-warning d-block mt-1" style="font-size:.7rem;">
+                      <i class="bi bi-exclamation-triangle me-1"></i>
+                      Nenhum curso. <a href="#" data-bs-toggle="modal" data-bs-target="#modalCursos">Cadastrar agora</a>.
+                    </small>
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label small text-muted mb-1 fw-semibold">Tema / Assunto</label>
+                    <input type="text" name="titulo" class="form-control form-control-sm"
+                      placeholder="Ex: Tour pelo Projeto" required>
+                  </div>
+                  <div class="col-md-2">
+                    <button type="submit" class="btn btn-success btn-sm w-100">
+                      <i class="bi bi-plus-lg me-1"></i>Adicionar
+                    </button>
+                  </div>
+                </div>
+                <small class="text-muted d-block mt-2" style="font-size:.72rem;">
+                  <i class="bi bi-info-circle me-1"></i>
+                  O tema recebe automaticamente a próxima ordem do curso. Ajuste depois editando o tema.
+                </small>
+              </form>
             </div>
           </div>
-        </form>
-      </div>
 
-      <div class="row g-4">
-        <!-- Temas Cadastrados -->
-        <div class="col-md-7">
-          <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-              <h5 class="mb-0 fw-bold text-dark">Temas Cadastrados</h5>
-              <div class="d-flex gap-2 align-items-center">
-                <form method="GET" action="{{ url_for('registros.planejamento') }}"
-                  class="d-flex gap-2 align-items-center">
-                  <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                    <option value="">Todos os Cursos</option>
-                    {% for c in cursos %}
-                    <option value="{{ c.id }}" {{ 'selected' if c.id|string == filtro_curso }}>{{ c.nome }}</option>
-                    {% endfor %}
-                  </select>
-                </form>
-                <a href="{{ url_for('registros.imprimir_temas', programa=prog_filtro) }}" target="_blank"
-                  class="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center">
-                  <i class="bi bi-printer"></i>
-                </a>
+          <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 border-bottom">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-bold text-dark">
+                  <i class="bi bi-list-ul text-secondary me-1"></i>Temas Cadastrados
+                </h6>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                  <div class="input-group input-group-sm" style="width:220px;">
+                    <span class="input-group-text bg-white border-end-0">
+                      <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" id="temaSearch" class="form-control border-start-0"
+                      placeholder="Buscar tema…">
+                  </div>
+                  <form method="GET" action="{{ url_for('registros.planejamento') }}">
+                    <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()"
+                      style="min-width:150px;">
+                      <option value="">Todos os Cursos</option>
+                      {% for c in cursos %}
+                      <option value="{{ c.id }}" {{ 'selected' if c.id|string == filtro_curso }}>{{ c.nome }}</option>
+                      {% endfor %}
+                    </select>
+                  </form>
+                  <a href="{{ url_for('registros.imprimir_temas', programa=prog_filtro) }}" target="_blank"
+                    class="btn btn-sm btn-outline-primary" title="Imprimir lista de temas">
+                    <i class="bi bi-printer"></i>
+                  </a>
+                </div>
               </div>
             </div>
             <div class="card-body p-0">
               <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle tabela-temas">
                   <thead class="table-light text-muted small text-uppercase">
                     <tr>
-                      <th class="ps-4">Curso</th>
+                      <th class="ps-4" style="width:220px;">Curso</th>
                       <th>Tema / Assunto</th>
-                      <th class="text-center pe-4">Ações</th>
+                      <th class="text-center pe-4" style="width:180px;">Ações</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody id="temasTbody">
                     {% for tema in temas %}
-                    <tr class="align-middle {{ 'opacity-50 bg-light' if not tema.ativo }}">
+                    <tr class="align-middle {{ 'opacity-50 bg-light' if not tema.ativo }}"
+                      data-tema-id="{{ tema.id }}"
+                      data-tema="{{ '%02d'|format(tema.ordem) }} {{ tema.titulo|lower }} {{ (tema.curso.nome if tema.curso else '')|lower }}">
+
+                      {# ─── Coluna Curso ─── #}
                       <td class="ps-4">
-                        <span class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle">
+                        {% set curso_hash = (tema.curso.nome|length + tema.curso.id) % 10 if tema.curso else 7 %}
+                        <span
+                          class="badge rounded-pill border curso-badge-{{ curso_hash }}">
                           {{ tema.curso.nome if tema.curso else '—' }}
                         </span>
                       </td>
+
+                      {# ─── Coluna Tema (número + título) ─── #}
                       <td class="fw-medium text-dark">
-                        {{ tema.titulo }}
+                        <span class="tema-linha">
+                          <span class="tema-numero" title="Ordem sugerida de ministração">
+                            {{ '%02d'|format(tema.ordem) }}
+                          </span>
+                          <span class="tema-titulo">{{ tema.titulo }}</span>
+                        </span>
                         {% if not tema.ativo %}
                         <span class="badge bg-secondary-subtle text-secondary border ms-2"
-                          style="font-size: 0.65rem;">INATIVO</span>
+                          style="font-size:.65rem;">INATIVO</span>
                         {% endif %}
                       </td>
+
+                      {# ─── Coluna Ações ─── #}
                       <td class="text-center pe-4">
                         <div class="btn-group shadow-sm">
-                          <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Tema"
-                            data-bs-toggle="modal" data-bs-target="#modalEditTema{{ tema.id }}">
+
+
+                          <button type="button" class="btn btn-sm btn-white border text-primary"
+                            title="Editar Tema" data-bs-toggle="modal"
+                            data-bs-target="#modalEditTema{{ tema.id }}">
                             <i class="bi bi-pencil-square"></i>
                           </button>
 
@@ -166,7 +315,7 @@
                       </td>
                     </tr>
 
-                    <!-- Modal Editar Tema -->
+                    {# Modal Editar Tema #}
                     <div class="modal fade" id="modalEditTema{{ tema.id }}" tabindex="-1" aria-hidden="true">
                       <div class="modal-dialog modal-dialog-centered">
                         <div class="modal-content border-0 shadow-lg">
@@ -174,26 +323,48 @@
                             <h5 class="modal-title h6 fw-bold text-dark">
                               <i class="bi bi-pencil-square me-2"></i>Editar Planejamento
                             </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                              aria-label="Close"></button>
                           </div>
                           <form action="{{ url_for('registros.editar_tema', id=tema.id) }}" method="POST">
                             <div class="modal-body p-4">
                               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                              <div class="mb-3">
-                                <label class="form-label small fw-bold text-muted text-uppercase">Título do Tema /
-                                  Assunto</label>
-                                <input type="text" name="titulo" class="form-control" value="{{ tema.titulo }}"
-                                  required>
+
+                              <div class="row g-3">
+                                <div class="col-4">
+                                  <label class="form-label small fw-bold text-muted text-uppercase">
+                                    Ordem
+                                  </label>
+                                  <input type="number" name="ordem" class="form-control"
+                                    value="{{ tema.ordem }}" min="1" max="999"
+                                    title="Posição sugerida na sequência do curso">
+                                </div>
+                                <div class="col-8">
+                                  <label class="form-label small fw-bold text-muted text-uppercase">
+                                    Título do Tema / Assunto
+                                  </label>
+                                  <input type="text" name="titulo" class="form-control"
+                                    value="{{ tema.titulo }}" required>
+                                </div>
                               </div>
-                              <div class="p-3 bg-light rounded border">
-                                <p class="small mb-0"><strong>Curso:</strong> {{ tema.curso.nome if tema.curso else '—' }}</p>
+
+                              <div class="p-3 bg-light rounded border mt-3">
+                                <p class="small mb-0">
+                                  <i class="bi bi-info-circle text-primary me-1"></i>
+                                  <strong>Ordem</strong> é uma sugestão de sequência — pode ser alterada a
+                                  qualquer momento digitando um número aqui. Os demais temas serão reorganizados.
+                                </p>
+                                <hr class="my-2">
+                                <p class="small mb-0">
+                                  <strong>Curso:</strong> {{ tema.curso.nome if tema.curso else '—' }}
+                                </p>
                               </div>
                             </div>
                             <div class="modal-footer bg-light border-0">
                               <button type="button" class="btn btn-sm btn-secondary fw-bold"
                                 data-bs-dismiss="modal">Cancelar</button>
-                              <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar
-                                Alterações</button>
+                              <button type="submit"
+                                class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar Alterações</button>
                             </div>
                           </form>
                         </div>
@@ -202,7 +373,7 @@
 
                     {% else %}
                     <tr>
-                      <td colspan="4" class="text-center p-5">
+                      <td colspan="3" class="text-center p-5">
                         <div class="text-muted">
                           <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
                           <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
@@ -218,19 +389,22 @@
           </div>
         </div>
 
-        <!-- Gestão de Níveis -->
-        <div class="col-md-5">
-          <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white py-3">
-              <h5 class="mb-0 fw-bold text-dark">Níveis de Alunos</h5>
+        {# ═══ ABA NÍVEIS ═══ #}
+        <div class="tab-pane fade" id="tabNiveis" role="tabpanel">
+          <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 border-bottom">
+              <h6 class="mb-0 fw-bold text-dark">
+                <i class="bi bi-bar-chart-fill text-info me-1"></i>Níveis de Alunos
+              </h6>
             </div>
-            <div class="card-body">
-              <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-4">
+            <div class="card-body p-3">
+              <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="tipo_post" value="nivel">
+                <label class="form-label small text-muted mb-1 fw-semibold">Adicionar novo nível</label>
                 <div class="input-group shadow-sm">
                   <input type="text" name="nome_nivel" class="form-control border-end-0"
-                    placeholder="Novo Nível (Ex: Nível 1)" required>
+                    placeholder="Ex: Nível 1 - Iniciante" required>
                   <button class="btn btn-success px-3" type="submit" title="Adicionar Nível">
                     <i class="bi bi-plus-lg"></i>
                   </button>
@@ -238,35 +412,82 @@
               </form>
 
               <div class="table-responsive">
-                <table class="table table-sm table-hover align-middle">
+                <table class="table table-hover align-middle mb-0">
                   <thead class="table-light text-muted small text-uppercase">
                     <tr>
                       <th class="ps-2">Nível</th>
-                      <th class="text-end pe-2">Ação</th>
+                      <th class="text-end pe-2" style="width:80px;">Ação</th>
                     </tr>
                   </thead>
                   <tbody>
                     {% for nivel in niveis %}
-                    <tr>
-                      <td class="fw-bold text-secondary ps-2">
+                    <tr class="{{ 'opacity-50 bg-light' if not nivel.ativo }}">
+                      <td class="fw-semibold text-secondary ps-2">
                         <i class="bi bi-bar-chart-fill me-2 small opacity-50"></i>{{ nivel.nome }}
+                        {% if not nivel.ativo %}
+                        <span class="badge bg-secondary-subtle text-secondary border ms-2" style="font-size:.65rem;">INATIVO</span>
+                        {% endif %}
                       </td>
                       <td class="text-end pe-2">
-                        <form action="{{ url_for('registros.excluir_nivel', id=nivel.id) }}" method="POST"
-                          onsubmit="return confirm('Deseja realmente excluir este nível?')">
-                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                          <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1"
-                            title="Excluir Nível">
-                            <i class="bi bi-trash"></i>
+                        <div class="btn-group shadow-sm">
+                          <button type="button" class="btn btn-sm btn-white border text-primary"
+                            title="Editar Nível" data-bs-toggle="modal"
+                            data-bs-target="#modalEditNivel{{ nivel.id }}">
+                            <i class="bi bi-pencil-square"></i>
                           </button>
-                        </form>
+
+                          <form action="{{ url_for('registros.inativar_nivel', id=nivel.id) }}" method="POST"
+                            class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                              class="btn btn-sm btn-white border {{ 'text-success' if not nivel.ativo else 'text-warning' }}"
+                              title="{{ 'Ativar' if not nivel.ativo else 'Inativar' }}">
+                              <i class="bi {{ 'bi-toggle-off' if not nivel.ativo else 'bi-toggle-on' }}"></i>
+                            </button>
+                          </form>
+                        </div>
                       </td>
                     </tr>
+
+                    {# Modal Editar Nível #}
+                    <div class="modal fade" id="modalEditNivel{{ nivel.id }}" tabindex="-1" aria-hidden="true">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content border-0 shadow-lg">
+                          <div class="modal-header bg-light">
+                            <h5 class="modal-title h6 fw-bold text-dark">
+                              <i class="bi bi-pencil-square me-2"></i>Editar Nível
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                              aria-label="Close"></button>
+                          </div>
+                          <form action="{{ url_for('registros.editar_nivel', id=nivel.id) }}" method="POST">
+                            <div class="modal-body p-4">
+                              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                              <div class="mb-3">
+                                <label class="form-label small fw-bold text-muted text-uppercase">
+                                  Nome do Nível
+                                </label>
+                                <input type="text" name="nome_nivel" class="form-control"
+                                  value="{{ nivel.nome }}" required>
+                              </div>
+
+                            </div>
+                            <div class="modal-footer bg-light border-0">
+                              <button type="button" class="btn btn-sm btn-secondary fw-bold"
+                                data-bs-dismiss="modal">Cancelar</button>
+                              <button type="submit"
+                                class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar Alterações</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
                     {% else %}
                     <tr>
-                      <td colspan="2" class="text-center text-muted py-4">
-                        <i class="bi bi-info-circle d-block mb-2 opacity-50"></i>
-                        <small>Nenhum nível cadastrado.</small>
+                      <td colspan="2" class="text-center text-muted py-5">
+                        <i class="bi bi-info-circle d-block mb-2 opacity-25 fs-3"></i>
+                        <small>Nenhum nível cadastrado ainda.</small>
                       </td>
                     </tr>
                     {% endfor %}
@@ -276,19 +497,20 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
+
+      </div>{# /tab-content #}
+    </div>{# /col-lg-9 #}
+  </div>{# /row #}
 </div>
 
-{# ===================================================================
-MODAL — Cursos
-=================================================================== #}
+{# ═══════════════════════════════════════════════════════════════
+   MODAL — Cursos
+   ═══════════════════════════════════════════════════════════════ #}
 <div class="modal fade" id="modalCursos" tabindex="-1" aria-labelledby="modalCursosLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content border-0 shadow-lg">
 
-      <div class="modal-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff">
+      <div class="modal-header modal-header-dark">
         <h5 class="modal-title" id="modalCursosLabel">
           <i class="bi bi-mortarboard me-2"></i>Cursos da Unidade
         </h5>
@@ -297,7 +519,6 @@ MODAL — Cursos
 
       <div class="modal-body">
 
-        {# Formulário de novo curso #}
         <div class="card border-0 bg-light rounded-3 p-3 mb-4">
           <h6 class="fw-bold text-muted text-uppercase small mb-3">
             <i class="bi bi-plus-circle me-1"></i>Novo Curso
@@ -324,7 +545,6 @@ MODAL — Cursos
           <div id="cursoFormMsg" class="mt-2 small"></div>
         </div>
 
-        {# Lista de cursos #}
         <table class="table table-hover table-sm align-middle" id="tabelaCursos">
           <thead class="table-light text-muted small text-uppercase">
             <tr>
@@ -365,7 +585,6 @@ MODAL — Cursos
           </tbody>
         </table>
 
-        {# Painel de edição inline #}
         <div id="painelEditCurso" class="card border-warning border-0 bg-warning-subtle rounded-3 p-3 d-none mt-2">
           <h6 class="fw-bold text-warning-emphasis small text-uppercase mb-2">
             <i class="bi bi-pencil-square me-1"></i>Editando curso
@@ -404,14 +623,14 @@ MODAL — Cursos
   </div>
 </div>
 
-{# ===================================================================
-MODAL — Calendário de Dias Bloqueados
-=================================================================== #}
+{# ═══════════════════════════════════════════════════════════════
+   MODAL — Calendário de Dias Bloqueados
+   ═══════════════════════════════════════════════════════════════ #}
 <div class="modal fade" id="modalCalendario" tabindex="-1" aria-labelledby="modalCalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content border-0 shadow-lg">
 
-      <div class="modal-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff">
+      <div class="modal-header modal-header-dark">
         <h5 class="modal-title" id="modalCalLabel">
           <i class="bi bi-calendar-x me-2"></i>Dias Bloqueados (Sem Aula)
         </h5>
@@ -441,7 +660,6 @@ MODAL — Calendário de Dias Bloqueados
           </div>
         </div>
 
-        {# ── Legenda (CORRIGIDA) ── #}
         <div class="d-flex gap-3 flex-wrap px-3 py-2 border-bottom small">
           {% for cod, label, cor in [
           ('FERIADO', 'Feriado', '#dc3545'),
@@ -450,7 +668,7 @@ MODAL — Calendário de Dias Bloqueados
           ('ATIVIDADE_INTERNA', 'Atividade Interna', '#fd7e14'),
           ('MANUTENCAO', 'Manutenção', '#6c757d'),
           ] %}
-          <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}" style="--tipo-cor:{{ cor }}">
+          <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}" data-cor="{{ cor }}">
             <span class="dot me-1" style="background:{{ cor }}"></span>{{ label }}
           </button>
           {% endfor %}
@@ -480,8 +698,8 @@ MODAL — Calendário de Dias Bloqueados
               <option value="ATIVIDADE_INTERNA">Atividade Interna</option>
               <option value="MANUTENCAO">Manutenção</option>
             </select>
-            <input type="text" id="diaDescInput" class="form-control form-control-sm" placeholder="Descrição (opcional)"
-              style="max-width:280px">
+            <input type="text" id="diaDescInput" class="form-control form-control-sm"
+              placeholder="Descrição (opcional)" style="max-width:280px">
             <button class="btn btn-success btn-sm" id="btnConfirmarDia">
               <i class="bi bi-check-lg me-1"></i>Confirmar
             </button>
@@ -501,269 +719,5 @@ MODAL — Calendário de Dias Bloqueados
   </div>
 </div>
 
-<style>
-  .tipo-btn {
-    font-size: .75rem;
-  }
-
-  .tipo-btn.ativo {
-    outline: 3px solid var(--tipo-cor);
-    outline-offset: 2px;
-  }
-
-  .tipo-btn .dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    vertical-align: middle;
-  }
-
-  .cal-month {
-    break-inside: avoid;
-  }
-
-  .cal-month-title {
-    background: #1a1a2e;
-    color: #fff;
-    font-size: .75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-    padding: .3rem .5rem;
-    border-radius: 6px 6px 0 0;
-  }
-
-  .cal-week-header {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    font-size: .6rem;
-    color: #6c757d;
-    font-weight: 700;
-    text-align: center;
-    text-transform: uppercase;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-  }
-
-  .cal-week-header span {
-    padding: 3px 0;
-  }
-
-  .cal-days {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    border-left: 1px solid #dee2e6;
-    border-bottom: 1px solid #dee2e6;
-  }
-
-  .cal-day {
-    border-right: 1px solid #dee2e6;
-    border-top: 1px solid #dee2e6;
-    min-height: 44px;
-    padding: 3px;
-    cursor: pointer;
-    position: relative;
-    transition: background .12s;
-    user-select: none;
-  }
-
-  .cal-day:hover {
-    background: #f0f4ff;
-  }
-
-  .cal-day.empty {
-    cursor: default;
-    background: #fafafa;
-  }
-
-  .cal-day.weekend .cal-day-num {
-    color: #adb5bd;
-  }
-
-  .cal-day.hoje {
-    outline: 2px solid #0d6efd;
-    outline-offset: -2px;
-  }
-
-  .cal-day.selecionado {
-    outline: 2px solid var(--tipo-cor, #198754);
-    outline-offset: -2px;
-  }
-
-  .cal-day-num {
-    font-size: .68rem;
-    color: #495057;
-    font-weight: 500;
-  }
-
-  .cal-day-badge {
-    display: inline-block;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    font-size: .6rem;
-    font-weight: 700;
-    color: #fff;
-    text-align: center;
-    line-height: 22px;
-    margin-top: 2px;
-  }
-</style>
-
-<script src="{{ url_for('static', filename='js/calendario_bloqueios.js') }}"></script>
-
-<script>
-(function () {
-  'use strict';
-
-  const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-  const tbody       = document.getElementById('cursosTbody');
-  const nomeInput   = document.getElementById('cursoNomeInput');
-  const descInput   = document.getElementById('cursoDescInput');
-  const cargaInput  = document.getElementById('cursoCargaInput');
-  const btnNovo     = document.getElementById('btnNovoCurso');
-  const formMsg     = document.getElementById('cursoFormMsg');
-  const painelEdit  = document.getElementById('painelEditCurso');
-  const editId      = document.getElementById('editCursoId');
-  const editNome    = document.getElementById('editCursoNome');
-  const editDesc    = document.getElementById('editCursoDesc');
-  const editCarga   = document.getElementById('editCursoCarga');
-  const btnSalvarEd = document.getElementById('btnSalvarEditCurso');
-  const btnCancelar = document.getElementById('btnCancelarEditCurso');
-
-  function showMsg(msg, tipo = 'danger') {
-    formMsg.innerHTML = `<span class="text-${tipo}">${msg}</span>`;
-    setTimeout(() => formMsg.innerHTML = '', 3000);
-  }
-
-  function buildRow(c) {
-    const tr = document.createElement('tr');
-    tr.dataset.id = c.id;
-    tr.innerHTML = `
-      <td class="ps-3 fw-semibold">${c.nome}</td>
-      <td class="text-muted small">${c.descricao || '—'}</td>
-      <td class="text-center small">${c.carga_horaria ? c.carga_horaria + 'h' : '—'}</td>
-      <td class="text-center">
-        <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
-          data-id="${c.id}" data-nome="${c.nome}" data-desc="${c.descricao || ''}"
-          data-carga="${c.carga_horaria || ''}" title="Editar">
-          <i class="bi bi-pencil"></i>
-        </button>
-        <button class="btn btn-sm btn-outline-danger border-0 btn-excluir-curso"
-          data-id="${c.id}" data-nome="${c.nome}" title="Excluir">
-          <i class="bi bi-trash"></i>
-        </button>
-      </td>`;
-    return tr;
-  }
-
-  function removeVazio() {
-    const vazio = document.getElementById('cursoVazio');
-    if (vazio) vazio.remove();
-  }
-
-  // Atualiza todos os <select name="curso_id"> da página com o novo curso
-  function sincronizarSelects(c, remover = false) {
-    document.querySelectorAll('select[name="curso_id"]').forEach(sel => {
-      if (remover) {
-        const opt = sel.querySelector(`option[value="${c.id}"]`);
-        if (opt) opt.remove();
-        return;
-      }
-      let opt = sel.querySelector(`option[value="${c.id}"]`);
-      if (opt) {
-        opt.textContent = c.nome; // atualiza nome se já existe
-      } else {
-        opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.nome;
-        sel.appendChild(opt);
-      }
-    });
-  }
-
-  // ── Adicionar ──
-  btnNovo.addEventListener('click', async () => {
-    const nome = nomeInput.value.trim();
-    if (!nome) { showMsg('Informe o nome do curso.'); return; }
-
-    const res = await fetch('/cursos/novo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      body: JSON.stringify({ nome, descricao: descInput.value.trim(), carga_horaria: cargaInput.value || null })
-    });
-    const data = await res.json();
-    if (data.success) {
-      removeVazio();
-      tbody.appendChild(buildRow(data));
-      sincronizarSelects(data);          // ← atualiza selects da página
-      nomeInput.value = '';
-      descInput.value = '';
-      cargaInput.value = '';
-      showMsg('Curso adicionado!', 'success');
-    } else {
-      showMsg(data.message || 'Erro ao adicionar.');
-    }
-  });
-
-  // ── Editar ──
-  tbody.addEventListener('click', e => {
-    const btnEd = e.target.closest('.btn-editar-curso');
-    if (btnEd) {
-      editId.value    = btnEd.dataset.id;
-      editNome.value  = btnEd.dataset.nome;
-      editDesc.value  = btnEd.dataset.desc;
-      editCarga.value = btnEd.dataset.carga;
-      painelEdit.classList.remove('d-none');
-      editNome.focus();
-    }
-
-    const btnEx = e.target.closest('.btn-excluir-curso');
-    if (btnEx) {
-      if (!confirm(`Excluir o curso "${btnEx.dataset.nome}"?`)) return;
-      fetch(`/cursos/${btnEx.dataset.id}/excluir`, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken() }
-      }).then(r => r.json()).then(data => {
-        if (data.success) {
-          tbody.querySelector(`tr[data-id="${btnEx.dataset.id}"]`)?.remove();
-          sincronizarSelects({ id: btnEx.dataset.id }, true); // ← remove dos selects
-          if (!tbody.querySelector('tr[data-id]')) {
-            tbody.innerHTML = `<tr id="cursoVazio">
-              <td colspan="4" class="text-center text-muted py-4">
-                <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
-                Nenhum curso cadastrado para esta unidade.
-              </td></tr>`;
-          }
-        }
-      });
-    }
-  });
-
-  btnSalvarEd.addEventListener('click', async () => {
-    const nome = editNome.value.trim();
-    if (!nome) { showMsg('Nome obrigatório.'); return; }
-
-    const res = await fetch(`/cursos/${editId.value}/editar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      body: JSON.stringify({ nome, descricao: editDesc.value.trim(), carga_horaria: editCarga.value || null })
-    });
-    const data = await res.json();
-    if (data.success) {
-      const tr = tbody.querySelector(`tr[data-id="${data.id}"]`);
-      if (tr) tr.replaceWith(buildRow(data));
-      sincronizarSelects(data);          // ← atualiza nome nos selects
-      painelEdit.classList.add('d-none');
-      showMsg('Curso atualizado!', 'success');
-    } else {
-      showMsg(data.message || 'Erro ao salvar.');
-    }
-  });
-
-  btnCancelar.addEventListener('click', () => painelEdit.classList.add('d-none'));
-})();
-</script>
+<script src="{{ url_for('static', filename='js/planejamento/planejamento.js') }}"></script>
 {% endblock %}

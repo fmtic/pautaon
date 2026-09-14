@@ -4,7 +4,7 @@ from app.models import (Registro, Turma, Aluno, Frequencia, RegistroAula,
                     TemaAula, PerguntaConselho, User, ConfiguracaoSistema, PeriodoLetivo,
                     Inscricao, Curso)
 from app.database import db
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 from app.utils.logica import (
@@ -61,7 +61,7 @@ def editar(id):
             registro.turno = request.form['turno']
             db.session.commit()
             flash("Atualização do Registro Efetivada", "success")
-            return redirect(url_for('main.relatorios'))
+            return redirect(url_for('registros.form'))
         except Exception:
             db.session.rollback()
             flash("Conflito interno ao gravar nova string JSON.", "danger")
@@ -82,7 +82,7 @@ def excluir(id):
         db.session.rollback()
         flash("O banco recusou a deleção do bloco de registro.", "warning")
         
-    return redirect(url_for('main.relatorios'))
+    return redirect(url_for('registros.form'))
 
 
 # ---------------------------------------------------------------------------
@@ -457,9 +457,17 @@ def planejamento():
         if curso_id and titulo_tema:
             try:
                 curso = Curso.query.get(int(curso_id))
+                
+                # Calcula a próxima ordem disponível para este curso
+                ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
+                    curso_id=int(curso_id)
+                ).scalar()
+                nova_ordem = (ultima_ordem or 0) + 1
+                
                 db.session.add(TemaAula(
                     curso_id=int(curso_id),
                     titulo=titulo_tema,
+                    ordem=nova_ordem,
                     unidade_id=get_unidade_id()
                 ))
                 db.session.commit()
@@ -495,7 +503,7 @@ def planejamento():
     lista_temas = q_temas.order_by(TemaAula.curso_id).all()
 
     from app.models import Nivel
-    niveis = Nivel.query.filter_by(ativo=True).all()
+    niveis = Nivel.query.order_by(Nivel.nome).all()
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
 
@@ -541,13 +549,33 @@ def editar_tema(id):
     unidade_id = get_unidade_id()
     if unidade_id and tema.unidade_id and tema.unidade_id != unidade_id:
         abort(403)
+    
     novo_titulo = request.form.get('titulo', '').strip()
+    nova_ordem = request.form.get('ordem')
+    
     if novo_titulo:
         try:
             tema.titulo = novo_titulo
+            if nova_ordem:
+                tema.ordem = int(nova_ordem)
+            
+            db.session.flush()
+            
+            # Reorganiza a ordem de todos os temas do curso de forma crescente (1, 2, 3...)
+            # Em caso de empate na ordem (ex: o usuário colocou o número de outro existente), 
+            # o tema recém-editado ganha prioridade (TemaAula.id != tema.id)
+            temas_curso = TemaAula.query.filter_by(curso_id=tema.curso_id).order_by(
+                TemaAula.ordem,
+                TemaAula.id != tema.id,
+                TemaAula.id
+            ).all()
+            
+            for i, t in enumerate(temas_curso, start=1):
+                t.ordem = i
+                
             db.session.commit()
             flash("Tema atualizado com sucesso!", 'success')
-        except Exception:
+        except Exception as e:
             db.session.rollback()
             flash("Erro ao atualizar tema.", 'danger')
     else:
@@ -575,24 +603,56 @@ def inativar_tema(id):
     return redirect(url_for('registros.planejamento'))
 
 
+# TODO: Implementar rota mover_tema após resolver problemas de login
+# @bp.route('/temas/<int:id>/mover/<string:direcao>', methods=['POST'])
+# @login_required
+# def mover_tema(id, direcao):
+#     """Move um tema para cima ou para baixo na ordem."""
+#     pass
+
+
 # ---------------------------------------------------------------------------
-# NÍVEIS — exclusão
+# ---------------------------------------------------------------------------
+# NÍVEIS — edição e inativação
 # ---------------------------------------------------------------------------
 
-@bp.route('/planejamento/nivel/excluir/<int:id>', methods=['POST'])
+@bp.route('/planejamento/nivel/editar/<int:id>', methods=['POST'])
 @login_required
-def excluir_nivel(id):
+def editar_nivel(id):
+    if current_user.role not in ['admin', 'pedagogico']:
+        abort(403)
+    from app.models import Nivel
+    nivel = db.get_or_404(Nivel, id)
+    
+    novo_nome = request.form.get('nome_nivel', '').strip()
+    if novo_nome:
+        try:
+            nivel.nome = novo_nome
+            db.session.commit()
+            flash("Nível atualizado com sucesso!", 'success')
+        except Exception:
+            db.session.rollback()
+            flash("Erro ao atualizar nível.", 'danger')
+    else:
+        flash("O nome do nível não pode ser vazio.", 'warning')
+    return redirect(url_for('registros.planejamento'))
+
+
+@bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
+@login_required
+def inativar_nivel(id):
     if current_user.role not in ['admin', 'pedagogico']:
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
     try:
-        db.session.delete(nivel)
+        nivel.ativo = not nivel.ativo
         db.session.commit()
-        flash(f"Nível '{nivel.nome}' excluído!", 'success')
+        status = 'ativado' if nivel.ativo else 'inativado'
+        flash(f"Nível '{nivel.nome}' {status}!", 'success')
     except Exception:
         db.session.rollback()
-        flash("Não foi possível excluir: o nível pode estar em uso.", 'warning')
+        flash("Erro ao alterar status do nível.", 'warning')
     return redirect(url_for('registros.planejamento'))
 
 
@@ -632,34 +692,6 @@ def imprimir_temas():
                            filtro_curso=filtro_curso,
                            now=datetime.now())
 
-
-
-@bp.route('/planejamento/configurar-conselho', methods=['POST'])
-@login_required
-def salvar_configuracao_conselho():
-    if current_user.role not in ['admin', 'pedagogico']:
-        abort(403)
-    
-    inicio = request.form.get('inicio_conselho')
-    fim = request.form.get('fim_conselho')
-
-    try:
-        for chave, valor in [('inicio_conselho', inicio), ('fim_conselho', fim)]:
-            conf = ConfiguracaoSistema.query.filter_by(chave=chave).first()
-            if not conf:
-                conf = ConfiguracaoSistema(chave=chave)
-                db.session.add(conf)
-            conf.valor = valor
-        
-        db.session.commit()
-        flash('Ciclos Letivos (Start-End Points) alterados no Server-Side.', 'success')
-    except Exception as e:
-        from app.utils.errors import flash_and_log
-
-        db.session.rollback()
-        flash_and_log(e, location='registros.salvar_configuracao_conselho', hint='db')
-
-    return redirect(url_for('registros.planejamento'))
 
 
 # ---------------------------------------------------------------------------

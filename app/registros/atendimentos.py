@@ -12,6 +12,7 @@ from pathlib import Path
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import and_, select
+from sqlalchemy.orm import contains_eager
 from werkzeug.utils import secure_filename
 
 from app.database import db
@@ -135,13 +136,11 @@ def listar_atendimentos():
     )
 
     query = (
-        db.session.query(
-            Aluno,
-            Atendimento.data_atendimento,
-            Atendimento.atendido_por_nome,
-        )
-        .join(Atendimento, Atendimento.id == ultimo_atendimento_id)
-        .filter(Aluno.ativo == True)
+        db.session.query(Atendimento)
+        .join(Aluno, Aluno.id == Atendimento.aluno_id)
+        .options(contains_eager(Atendimento.aluno))
+        .filter(Atendimento.id == ultimo_atendimento_id)
+        .filter(Aluno.ativo.is_(True))
     )
 
     if unidade_id:

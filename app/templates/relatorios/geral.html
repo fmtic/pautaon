@@ -10,14 +10,14 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="mb-0"><i class="fas fa-chart-line text-primary"></i> Central de Relatórios</h2>
         <div class="d-print-none">
-            <a href="{{ url_for('main.relatorio_alunos') }}" class="btn btn-primary me-2">
-                <i class="fas fa-list"></i> Lista de Alunos
+            <a href="{{ url_for('relatorios.relatorio_alunos') }}" class="btn btn-primary me-2">
+                <i class="fas fa-list"></i> Exportar Alunos
             </a>
             <button onclick="window.print()" class="btn btn-outline-dark me-2">
                 <i class="fas fa-print"></i> Imprimir
             </button>
-            <a href="{{ url_for('main.exportar_relatorio', turma=turma_selecionada) }}" class="btn btn-success">
-                <i class="fas fa-file-excel"></i> Exportar Planilha
+            <a href="{{ url_for('relatorios.exportar_relatorio', turma=turma_selecionada) }}" class="btn btn-success">
+                <i class="fas fa-file-excel"></i> Exportar Painel
             </a>
         </div>
     </div>

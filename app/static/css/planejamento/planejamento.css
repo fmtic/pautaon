@@ -1,0 +1,312 @@
+/* ═══════════════════════════════════════════════════════════════
+   PLANEJAMENTO — Estilos
+   Localização: static/css/planejamento/planejamento.css
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Cores pastéis para cursos ─── */
+.curso-badge-0 { background-color: #e3f2fd; color: #0d6efd; border-color: #bbdefb; } /* Azul claro */
+.curso-badge-1 { background-color: #e8f5e9; color: #198754; border-color: #c8e6c9; } /* Verde claro */
+.curso-badge-2 { background-color: #fff3e0; color: #fd7e14; border-color: #ffe0b2; } /* Laranja claro */
+.curso-badge-3 { background-color: #f3e5f5; color: #6f42c1; border-color: #e1bee7; } /* Roxo claro */
+.curso-badge-4 { background-color: #fce4ec; color: #d63384; border-color: #f8bbd0; } /* Rosa claro */
+.curso-badge-5 { background-color: #e0f2f1; color: #0ca678; border-color: #b2dfdb; } /* Teal claro */
+.curso-badge-6 { background-color: #fff8e1; color: #ffc107; border-color: #ffecb3; } /* Amarelo claro */
+.curso-badge-7 { background-color: #f5f5f5; color: #6c757d; border-color: #e9ecef; } /* Cinza claro */
+.curso-badge-8 { background-color: #e3f2fd; color: #0a58ca; border-color: #a3d0fc; } /* Azul médio */
+.curso-badge-9 { background-color: #d1e7dd; color: #0f5132; border-color: #a8d4b5; } /* Verde médio */
+
+/* ─── Cards KPI ─── */
+.kpi-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: .75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+}
+
+.kpi-label {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  font-weight: 700;
+  color: #6c757d;
+}
+
+/* ─── Labels de seção da sidebar ─── */
+.section-label {
+  display: block;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #6c757d;
+}
+
+.turmas-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.turma-nome {
+  max-width: 110px;
+}
+
+.status-pill {
+  font-size: .65rem;
+  padding: .35em .7em;
+  font-weight: 600;
+}
+
+/* ─── Modal header escuro (Cursos / Calendário) ─── */
+.modal-header-dark {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  color: #fff;
+}
+
+/* ─── Abas (nav-pills customizadas) ─── */
+#planejamentoTabs .nav-link {
+  color: #495057;
+  border: 1px solid #dee2e6;
+  background: #fff;
+  padding: .5rem 1rem;
+  border-radius: 999px;
+}
+
+#planejamentoTabs .nav-link:hover {
+  background: #f8f9fa;
+}
+
+#planejamentoTabs .nav-link.active {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #fff;
+}
+
+#planejamentoTabs .nav-link.active .badge {
+  background: rgba(255, 255, 255, .25) !important;
+  color: #fff !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NUMERAÇÃO DE TEMAS (dentro da coluna "Tema / Assunto")
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Container da linha título + número */
+.tema-linha {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+}
+
+/* Número "01", "02"… à frente do título */
+.tema-numero {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #0d6efd;
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .5px;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(13, 110, 253, .3);
+  flex-shrink: 0;
+  transition: background .15s, transform .15s;
+}
+
+/* Tema inativo → número neutro */
+tr.opacity-50 .tema-numero {
+  background: #adb5bd;
+  box-shadow: none;
+}
+
+/* Título ao lado do número */
+.tema-titulo {
+  color: #212529;
+}
+
+/* Efeito "pop" quando a ordem muda via AJAX */
+.tema-numero.updated {
+  animation: numeroPop .5s ease-out;
+}
+
+@keyframes numeroPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.25); background: #198754; }
+  100% { transform: scale(1); }
+}
+
+/* Coluna de tema com respiro */
+.tabela-temas td:nth-child(2) {
+  line-height: 1.4;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SETAS DE MOVER ↑↓
+   ═══════════════════════════════════════════════════════════════ */
+.btn-mover {
+  padding: 2px 6px;
+}
+
+.btn-mover.is-disabled,
+.btn-mover:disabled {
+  opacity: .35;
+  pointer-events: none;
+}
+
+.btn-mover.carregando i {
+  animation: girar .7s linear infinite;
+}
+
+@keyframes girar {
+  to { transform: rotate(360deg); }
+}
+
+/* Flash visual na linha após mover */
+tr.flash-move {
+  animation: flashMove 1s ease-out;
+}
+
+@keyframes flashMove {
+  0%   { background: #fff3cd; }
+  100% { background: transparent; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CALENDÁRIO DE BLOQUEIOS
+   ═══════════════════════════════════════════════════════════════ */
+.tipo-btn {
+  font-size: .75rem;
+}
+
+.tipo-btn.ativo {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
+
+.tipo-btn .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.cal-month {
+  break-inside: avoid;
+}
+
+.cal-month-title {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: .3rem .5rem;
+  border-radius: 6px 6px 0 0;
+}
+
+.cal-week-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  font-size: .6rem;
+  color: #6c757d;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+}
+
+.cal-week-header span {
+  padding: 3px 0;
+}
+
+.cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-left: 1px solid #dee2e6;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.cal-day {
+  border-right: 1px solid #dee2e6;
+  border-top: 1px solid #dee2e6;
+  min-height: 44px;
+  padding: 3px;
+  cursor: pointer;
+  position: relative;
+  transition: background .12s;
+  user-select: none;
+}
+
+.cal-day:hover {
+  background: #f0f4ff;
+}
+
+.cal-day.empty {
+  cursor: default;
+  background: #fafafa;
+}
+
+.cal-day.weekend .cal-day-num {
+  color: #adb5bd;
+}
+
+.cal-day.hoje {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
+}
+
+.cal-day.selecionado {
+  outline: 2px solid var(--tipo-cor, #198754);
+  outline-offset: -2px;
+}
+
+.cal-day-num {
+  font-size: .68rem;
+  color: #495057;
+  font-weight: 500;
+}
+
+.cal-day-badge {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: .6rem;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  line-height: 22px;
+  margin-top: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPRESSÃO
+   ═══════════════════════════════════════════════════════════════ */
+@media print {
+  .d-print-none,
+  .nav-pills,
+  .card-header button,
+  .input-group,
+  .btn-mover {
+    display: none !important;
+  }
+
+  .tema-numero {
+    background: transparent;
+    color: #000;
+    box-shadow: none;
+    font-weight: 700;
+    border: 1px solid #000;
+  }
+}
