@@ -1,0 +1,175 @@
+/* ── Variáveis de cor por tipo (espelhadas do CSS interativo) ── */
+:root {
+  --cor-FERIADO:              #dc3545;
+  --cor-ATIVIDADE_PEDAGOGICA: #0d6efd;
+  --cor-REUNIAO_PAIS:         #6f42c1;
+  --cor-ATIVIDADE_INTERNA:    #fd7e14;
+  --cor-MANUTENCAO:           #6c757d;
+}
+
+/* ── Grade de meses (tela e impressão) ── */
+.cal-print-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: .85rem;
+}
+
+/* ── Card de mês ── */
+.cal-month {
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  overflow: hidden;
+  break-inside: avoid;
+}
+
+.cal-month-title {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: .3rem .6rem;
+}
+
+/* ── Cabeçalho dos dias da semana ── */
+.cal-week-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  font-size: .58rem;
+  color: #6c757d;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.cal-week-header span { padding: 2px 0; }
+
+/* ── Célula de dia ── */
+.cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.cal-day {
+  border-right: 1px solid #eee;
+  border-bottom: 1px solid #eee;
+  min-height: 36px;
+  padding: 2px 3px;
+  position: relative;
+}
+
+.cal-day.empty { background: #fafafa; }
+
+.cal-day.weekend .cal-day-num { color: #adb5bd; }
+
+.cal-day-num {
+  font-size: .62rem;
+  color: #495057;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* ── Badge colorido do tipo ── */
+.cal-day-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: .55rem;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 2px;
+}
+
+/* ── Legenda ── */
+.cal-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.2rem;
+  font-size: .78rem;
+  color: #495057;
+}
+
+.leg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+.leg-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Cabeçalho de impressão (oculto na tela) ── */
+.print-header { display: none; }
+
+/* ── Tabela de resumo ── */
+.cal-tabela table { font-size: .82rem; }
+
+/* ════════════════════════════════════════════
+   REGRAS DE IMPRESSÃO
+   ════════════════════════════════════════════ */
+@media print {
+  /* Oculta navbar, botões e elementos de tela */
+  nav.navbar,
+  .no-print,
+  .alert { display: none !important; }
+
+  /* Mostra cabeçalho de impressão */
+  .print-header {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #1a1a2e;
+    padding-bottom: .5rem;
+  }
+
+  .print-header-title {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+
+  .print-header-sub {
+    font-size: 11pt;
+    color: #333;
+  }
+
+  .print-header-range {
+    font-size: 9pt;
+    color: #666;
+    margin-top: .25rem;
+  }
+
+  /* Grade de meses: 3 por linha na impressão */
+  .cal-print-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5rem;
+  }
+
+  .cal-month { break-inside: avoid; }
+
+  /* Legenda compacta */
+  .cal-legenda { font-size: .7rem; gap: .3rem .8rem; }
+
+  /* Tabela de dias */
+  .cal-tabela { margin-top: 1rem !important; }
+  .cal-tabela table { font-size: .75rem; }
+
+  /* Página */
+  @page {
+    size: A4 landscape;
+    margin: 1cm 1.2cm;
+  }
+
+  body { font-size: 10pt; }
+}

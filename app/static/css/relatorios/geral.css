@@ -1,0 +1,46 @@
+/* ── Relatório Geral — Central de Relatórios ── */
+
+/* Cartões de KPI */
+.card.bg-primary,
+.card.bg-dark {
+  border-radius: 10px;
+}
+
+/* Barra de progresso do conselho */
+.progress {
+  border-radius: 4px;
+}
+
+/* Cabeçalho de tabelas internas */
+.report-table thead th {
+  background: #1a1a2e;
+  color: #fff;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  padding: .5rem .75rem;
+  white-space: nowrap;
+}
+
+.report-table tbody tr:hover {
+  background: #f0f4ff;
+}
+
+/* Filtro de turma */
+.filter-card {
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+/* Seção de distribuição por sexo */
+.gender-icon {
+  font-size: 2rem;
+}
+
+/* Impressão */
+@media print {
+  .d-print-none { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+  @page { size: A4 portrait; margin: 1.5cm; }
+  body { font-size: 10pt; }
+}

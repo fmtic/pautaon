@@ -122,8 +122,24 @@ def painel_professor():
 
     todas_turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
 
+    # Conta alunos ativos únicos em todas as turmas listadas
+    ids_turmas = [t.id for t in todas_turmas]
+    total_alunos = 0
+    if ids_turmas:
+        total_alunos = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id.in_(ids_turmas),
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
+            .distinct(Aluno.id)
+            .count()
+        )
+
     return render_template('dashboard/professor.html',
                            turmas=todas_turmas,
+                           total_alunos=total_alunos,
                            lista_programas=lista_programas,
                            programa_ativo=programa_selecionado,
                            is_readonly=current_user.role == 'secretaria')

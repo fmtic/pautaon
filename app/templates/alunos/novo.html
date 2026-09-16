@@ -276,9 +276,73 @@
             </div>
           </div>
 
-          <!-- STEP 4: DOCUMENTAÇÃO (UPLOADS) -->
+          <!-- STEP 4: SITUAÇÃO ESCOLAR -->
           <div class="form-step" id="step-4">
-            <h4 class="mb-2 text-secondary border-bottom pb-2">Etapa IV: Documentação Digital</h4>
+            <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa IV: Situação Escolar</h4>
+            <div class="row g-3">
+              <div class="col-md-6"><label class="form-label fw-bold small">Escolaridade</label><select
+                  name="escolaridade" id="escolaridade" class="form-select" onchange="toggleSituacaoEscolar()">
+                  <option value="">Selecione...</option>
+                  <option>Ensino fundamental</option>
+                  <option>Ensino médio</option>
+                  <option>Ensino médio técnico</option>
+                  <option>Ensino superior</option>
+                  <option>EJA</option>
+                  <option>Outros</option>
+                </select></div>
+              <div class="col-md-6"><label class="form-label fw-bold small">Status</label><select name="status_escolar"
+                  id="status_escolar" class="form-select" onchange="toggleSituacaoEscolar()">
+                  <option value="">Selecione...</option>
+                  <option>Cursando</option>
+                  <option>Concluinte</option>
+                  <option>Trancado</option>
+                  <option>Outros</option>
+                </select></div>
+              <div class="col-md-6 d-none" id="status-outro"><label class="form-label fw-bold small">Descreva o
+                  status</label><input name="status_escolar_outro" class="form-control"></div>
+              <div class="col-md-3 d-none" id="periodo-superior"><label class="form-label fw-bold small">Período (Ensino
+                  Superior)</label><select name="ensino_superior_periodo" class="form-select">
+                  <option value="">Selecione...</option>{% for periodo in range(1, 11) %}<option value="{{ periodo }}">
+                    {{ periodo }}</option>{% endfor %}
+                </select></div>
+              <div class="col-md-6 d-none" id="escolaridade-outro"><label class="form-label fw-bold small">Outra
+                  escolaridade</label><input name="escolaridade_outro" class="form-control"></div>
+              <div class="col-md-8 position-relative"><label class="form-label fw-bold small">Escola /
+                  Universidade</label><input name="nome_instituicao" id="nome_instituicao" class="form-control"
+                  autocomplete="off" placeholder="Digite ao menos 2 letras">
+                <div id="sugestoes-instituicao" class="list-group position-absolute w-100 shadow d-none"
+                  style="z-index:1050"></div>
+              </div>
+              <div class="col-md-4"><label class="form-label fw-bold small">Tipo de instituição</label><select
+                  name="tipo_instituicao" id="tipo_instituicao" class="form-select" onchange="toggleSituacaoEscolar()">
+                  <option value="">Selecione...</option>
+                  <option>Pública</option>
+                  <option>Privada</option>
+                  <option>Outro</option>
+                </select></div>
+              <div class="col-md-4 d-none" id="bolsista-div">
+                <div class="form-check mt-4 pt-2"><input class="form-check-input" type="checkbox" name="bolsista"
+                    id="bolsista"><label class="form-check-label" for="bolsista">É bolsista?</label></div>
+              </div>
+              <div class="col-md-6 d-none" id="instituicao-outro"><label class="form-label fw-bold small">Outro tipo de
+                  instituição</label><input name="tipo_instituicao_outro" class="form-control"></div>
+              <div class="col-md-4"><label class="form-label fw-bold small">Turno</label><select name="turno_escolar"
+                  id="turno_escolar" class="form-select" onchange="toggleSituacaoEscolar()">
+                  <option value="">Selecione...</option>
+                  <option>Manhã</option>
+                  <option>Tarde</option>
+                  <option>Noite</option>
+                  <option>EAD</option>
+                  <option>Outros</option>
+                </select></div>
+              <div class="col-md-6 d-none" id="turno-outro"><label class="form-label fw-bold small">Outro
+                  turno</label><input name="turno_escolar_outro" class="form-control"></div>
+            </div>
+          </div>
+
+          <!-- STEP 5: DOCUMENTAÇÃO (UPLOADS) -->
+          <div class="form-step" id="step-5">
+            <h4 class="mb-2 text-secondary border-bottom pb-2">Etapa V: Documentação Digital</h4>
             <p class="text-muted small mb-4"><i class="bi bi-info-circle me-1"></i> Somente arquivos PDF de
               no máximo 2MB.</p>
 
@@ -304,9 +368,9 @@
             </div>
           </div>
 
-          <!-- STEP 5: SAÚDE E SOCIOECONÔMICO -->
-          <div class="form-step" id="step-5">
-            <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa V: Perfil e Saúde</h4>
+          <!-- STEP 6: SAÚDE E SOCIOECONÔMICO -->
+          <div class="form-step" id="step-6">
+            <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa VI: Perfil e Saúde</h4>
             <div class="row g-3">
               <div class="col-md-4">
                 <label class="form-label small fw-bold">Renda Familiar Mensal</label>
@@ -460,26 +524,10 @@
               </div>
             </div>
           </div>
-          <!-- STEP 6: SITUAÇÃO ESCOLAR -->
-          <div class="form-step" id="step-6">
-            <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa VI: Situação Escolar</h4>
-            <div class="row g-3">
-              <div class="col-md-6"><label class="form-label fw-bold small">Escolaridade</label><select name="escolaridade" id="escolaridade" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Ensino fundamental</option><option>Ensino médio</option><option>Ensino médio técnico</option><option>Ensino superior</option><option>EJA</option><option>Outros</option></select></div>
-              <div class="col-md-6"><label class="form-label fw-bold small">Status</label><select name="status_escolar" id="status_escolar" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Cursando</option><option>Concluinte</option><option>Trancado</option><option>Outros</option></select></div>
-              <div class="col-md-6 d-none" id="status-outro"><label class="form-label fw-bold small">Descreva o status</label><input name="status_escolar_outro" class="form-control"></div>
-              <div class="col-md-3 d-none" id="periodo-superior"><label class="form-label fw-bold small">Período (Ensino Superior)</label><select name="ensino_superior_periodo" class="form-select"><option value="">Selecione...</option>{% for periodo in range(1, 11) %}<option value="{{ periodo }}">{{ periodo }}</option>{% endfor %}</select></div>
-              <div class="col-md-6 d-none" id="escolaridade-outro"><label class="form-label fw-bold small">Outra escolaridade</label><input name="escolaridade_outro" class="form-control"></div>
-              <div class="col-md-8 position-relative"><label class="form-label fw-bold small">Escola / Universidade</label><input name="nome_instituicao" id="nome_instituicao" class="form-control" autocomplete="off" placeholder="Digite ao menos 2 letras"><div id="sugestoes-instituicao" class="list-group position-absolute w-100 shadow d-none" style="z-index:1050"></div></div>
-              <div class="col-md-4"><label class="form-label fw-bold small">Tipo de instituição</label><select name="tipo_instituicao" id="tipo_instituicao" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Pública</option><option>Privada</option><option>Outro</option></select></div>
-              <div class="col-md-4 d-none" id="bolsista-div"><div class="form-check mt-4 pt-2"><input class="form-check-input" type="checkbox" name="bolsista" id="bolsista"><label class="form-check-label" for="bolsista">É bolsista?</label></div></div>
-              <div class="col-md-6 d-none" id="instituicao-outro"><label class="form-label fw-bold small">Outro tipo de instituição</label><input name="tipo_instituicao_outro" class="form-control"></div>
-              <div class="col-md-4"><label class="form-label fw-bold small">Turno</label><select name="turno_escolar" id="turno_escolar" class="form-select" onchange="toggleSituacaoEscolar()"><option value="">Selecione...</option><option>Manhã</option><option>Tarde</option><option>Noite</option><option>EAD</option><option>Outros</option></select></div>
-              <div class="col-md-6 d-none" id="turno-outro"><label class="form-label fw-bold small">Outro turno</label><input name="turno_escolar_outro" class="form-control"></div>
-            </div>
-          </div>
         </div>
 
-        <!-- Footer / Navigation -->        <div class="d-flex justify-content-between align-items-center">
+        <!-- Footer / Navigation -->
+        <div class="d-flex justify-content-between align-items-center">
           <button type="button" class="btn btn-secondary fw-bold px-4 d-none" id="prevBtn"
             onclick="window.nextStep(-1)">
             ANTERIOR

@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function () {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // ✅ Navegação livre (sem validação)
+    // Navegação livre (sem validação)
     window.nextStep = function (n) {
         document.getElementById(`step-${currentStep}`).classList.remove("active");
         currentStep += n;
