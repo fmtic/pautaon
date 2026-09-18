@@ -1,5 +1,11 @@
 {
     "kiroAgent.configureMCP": "Disabled",
     "files.autoSave": "afterDelay",
-    "editor.autoIndentOnPaste": true
-}
+    "editor.autoIndentOnPaste": true,
+    "python.analysis.exclude": [
+      "**/node_modules",
+      "**/.*",
+      "**/.venv",
+      "**/venv"
+    ]
+  }
