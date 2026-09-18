@@ -1,4 +1,10 @@
-"""Relatório geral (visão consolidada) e sua exportação em Excel."""
+"""Relatório geral (visão consolidada) e sua exportação em Excel.
+
+ONDA 3B
+    A contagem de gênero agora usa `get_perfil_diversidade()`, que prefere
+    `PerfilDiversidade.genero` (tabela nova) e cai no JSON legado quando
+    o aluno ainda não foi migrado.
+"""
 
 from datetime import date
 from io import BytesIO
@@ -8,6 +14,8 @@ from flask import abort, flash, redirect, render_template, send_file, url_for
 from flask_login import current_user, login_required
 
 from app.models import Aluno, Turma, User
+from app.models.enums import UserRole
+from app.services.aluno_perfil import get_perfil_diversidade
 from app.utils.logica import (
     calcular_estatisticas_idade,
     calcular_frequencias_relatorio,
@@ -17,6 +25,32 @@ from app.utils.logica import (
 
 from . import bp_relatorios
 from .shared import ROLES_RELATORIOS
+
+
+# Conjuntos de valores considerados para cada gênero no relatório.
+# Mantidos em minúsculo porque a comparação é feita após `.lower()`.
+_GENERO_MASC = {"masculino", "homem", "masc", "m"}
+_GENERO_FEM = {"feminino", "mulher", "fem", "f"}
+
+
+def _contar_por_genero(alunos):
+    """
+    Conta alunos por gênero.
+
+    Usa `get_perfil_diversidade()` (tabela nova + fallback JSON) para
+    obter o valor. Retorna (masculino, feminino, outro).
+    """
+    masc = fem = outro = 0
+    for aluno in alunos:
+        perfil = get_perfil_diversidade(aluno)
+        genero = (perfil.get("genero") or "").strip().lower()
+        if genero in _GENERO_MASC:
+            masc += 1
+        elif genero in _GENERO_FEM:
+            fem += 1
+        elif genero:
+            outro += 1
+    return masc, fem, outro
 
 
 @bp_relatorios.route("/")
@@ -39,22 +73,21 @@ def relatorio_geral():
         metricas = calcular_metricas_conselho(unidade_id=unidade_id)
 
         total_alunos_query = Aluno.query.filter_by(ativo=True)
-        total_professores_query = User.query.filter_by(role="professor")
+        total_professores_query = User.query.filter_by(
+            role=UserRole.PROFESSOR.value
+        )
         if unidade_id:
-            total_alunos_query = total_alunos_query.filter_by(unidade_id=unidade_id)
-            total_professores_query = total_professores_query.filter_by(unidade_id=unidade_id)
+            total_alunos_query = total_alunos_query.filter_by(
+                unidade_id=unidade_id
+            )
+            total_professores_query = total_professores_query.filter_by(
+                unidade_id=unidade_id
+            )
 
-        total_masculino = total_feminino = total_outro = 0
-        MASC = {"masculino", "homem", "masc", "m"}
-        FEM = {"feminino", "mulher", "fem", "f"}
-        for aluno in total_alunos_query.all():
-            genero = (aluno.diversidade_json.get("genero") or "").strip().lower()
-            if genero in MASC:
-                total_masculino += 1
-            elif genero in FEM:
-                total_feminino += 1
-            elif genero:
-                total_outro += 1
+        # Contagem por gênero via helper (Onda 3B).
+        total_masculino, total_feminino, total_outro = _contar_por_genero(
+            total_alunos_query.all()
+        )
 
         return render_template(
             "relatorios/geral.html",
@@ -76,6 +109,7 @@ def relatorio_geral():
         )
     except Exception as e:
         from app.utils.errors import flash_and_log
+
         flash_and_log(e, location='relatorios.relatorio_geral')
         return redirect(url_for("main.dashboard"))
 
@@ -105,26 +139,49 @@ def exportar_relatorio():
             columns=["Turma", "Média de Idade"],
         )
 
-        df_freq_prog = pd.DataFrame(list(f_prog.items()), columns=["Programa", "% Presença"])
-        df_freq_prof = pd.DataFrame(list(f_prof.items()), columns=["Professor", "% Presença"])
-        df_freq_turma = pd.DataFrame(list(f_turma.items()), columns=["Turma", "% Presença"])
+        df_freq_prog = pd.DataFrame(
+            list(f_prog.items()), columns=["Programa", "% Presença"]
+        )
+        df_freq_prof = pd.DataFrame(
+            list(f_prof.items()), columns=["Professor", "% Presença"]
+        )
+        df_freq_turma = pd.DataFrame(
+            list(f_turma.items()), columns=["Turma", "% Presença"]
+        )
 
         output = BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            df_idade_prog.to_excel(writer, sheet_name="Idade por Programa", index=False)
-            df_idade_turma.to_excel(writer, sheet_name="Idade por Turma", index=False)
-            df_freq_prog.to_excel(writer, sheet_name="Freq por Programa", index=False)
-            df_freq_prof.to_excel(writer, sheet_name="Freq por Professor", index=False)
-            df_freq_turma.to_excel(writer, sheet_name="Freq por Turma", index=False)
+            df_idade_prog.to_excel(
+                writer, sheet_name="Idade por Programa", index=False
+            )
+            df_idade_turma.to_excel(
+                writer, sheet_name="Idade por Turma", index=False
+            )
+            df_freq_prog.to_excel(
+                writer, sheet_name="Freq por Programa", index=False
+            )
+            df_freq_prof.to_excel(
+                writer, sheet_name="Freq por Professor", index=False
+            )
+            df_freq_turma.to_excel(
+                writer, sheet_name="Freq por Turma", index=False
+            )
 
         output.seek(0)
 
         return send_file(
             output,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
             as_attachment=True,
             download_name=f"Relatorio_PautaON_{date.today()}.xlsx",
         )
     except Exception:
-        flash("Falha ao exportar o relatório Excel devido a um erro algorítmico interno.", "danger")
+        flash(
+            "Falha ao exportar o relatório Excel devido a um erro "
+            "algorítmico interno.",
+            "danger",
+        )
         return redirect(url_for("relatorios.relatorio_geral"))

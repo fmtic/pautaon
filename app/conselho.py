@@ -1,3 +1,22 @@
+"""
+================================================================================
+CONSELHO.PY - Conselho de classe
+================================================================================
+
+Cobre:
+    - Painel geral de conselhos
+    - Gerenciamento de perguntas
+    - Lançamento e fechamento
+    - Avaliação geral da turma
+    - Períodos de conselho
+
+NOTA ONDA 2B
+    Comparações de `current_user.role` usam `UserRole` e comparações de etapa
+    usam `EtapaConselho`. Valores vindos de formulário/querystring permanecem
+    strings (SQLAlchemy aceita ambos no Enum column).
+================================================================================
+"""
+
 import json
 import logging
 
@@ -6,6 +25,7 @@ from flask_login import login_required, current_user
 from app.models import (PerguntaConselho, Turma, Aluno, Frequencia,
                     OpcaoProximaTurma, ConselhoClasse, ConselhoResposta, Inscricao,
                     PeriodoConselho, PeriodoLetivo)
+from app.models.enums import EtapaConselho, UserRole
 from app.database import db
 from app.extensions import csrf
 from sqlalchemy import select, case
@@ -38,9 +58,9 @@ def _build_turma_avaliacao_payload(form_data, perguntas) -> str:
 def _get_turma_avaliacao_respostas(turma: Turma, etapa: str) -> dict:
     """Recupera respostas previamente gravadas para a avaliação da turma de uma etapa."""
     campos = {
-        "INICIAL": "avaliacao_inicial",
-        "PERCURSO": "avaliacao_percurso",
-        "FINAL": "avaliacao_final",
+        EtapaConselho.INICIAL: "avaliacao_inicial",
+        EtapaConselho.PERCURSO: "avaliacao_percurso",
+        EtapaConselho.FINAL: "avaliacao_final",
     }
     valor = getattr(turma, campos.get(etapa, "avaliacao_inicial"), "") or ""
     if not valor:
@@ -64,7 +84,7 @@ def _normalize_conselho_request(form_data) -> dict:
     """
     normalized = {
         "turma_id": None,
-        "etapa": form_data.get("etapa", "INICIAL"),
+        "etapa": form_data.get("etapa", EtapaConselho.INICIAL.value),
         "data_inicio": form_data.get("data_inicio", ""),
         "data_fim": form_data.get("data_fim", ""),
         "respostas": {},
@@ -92,6 +112,7 @@ def _normalize_conselho_request(form_data) -> dict:
 
     return normalized
 
+
 # ---------------------------------------------------------------------------
 # PAINEL GERAL
 # ---------------------------------------------------------------------------
@@ -103,7 +124,7 @@ def index_conselho():
     stmt_prog = select(Turma.programa).distinct().where(Turma.ativo == True)
     if unidade_id:
         stmt_prog = stmt_prog.where(Turma.unidade_id == unidade_id)
-        
+
     lista_programas = [p for p in db.session.execute(stmt_prog).scalars().all() if p]
 
     programa_ativo = request.args.get('programa', 'Todos')
@@ -112,12 +133,12 @@ def index_conselho():
     stmt = select(Turma).where(Turma.ativo == True)
     if unidade_id:
         stmt = stmt.where(Turma.unidade_id == unidade_id)
-        
+
     if programa_ativo != 'Todos':
         stmt = stmt.where(Turma.programa == programa_ativo)
     if turno_ativo != 'Todos':
         stmt = stmt.where(Turma.turno == turno_ativo)
-    if current_user.role not in ['admin', 'pedagogico', 'gerencia']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.GERENCIA):
         stmt = stmt.where(Turma.professor_id == current_user.id)
 
     turmas = db.session.execute(stmt).scalars().all()
@@ -136,27 +157,29 @@ def index_conselho():
 @bp.route('/conselho/perguntas')
 @login_required
 def gerenciar_perguntas():
-    if current_user.role not in ['pedagogico', 'admin', 'gerencia']:
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):
         abort(403)
 
-    ordem_manual = ['INICIAL', 'PERCURSO', 'FINAL']
+    ordem_manual = [EtapaConselho.INICIAL, EtapaConselho.PERCURSO, EtapaConselho.FINAL]
 
     ordem_etapas = case(
-        {'INICIAL': 1, 'PERCURSO': 2, 'FINAL': 3},
+        {EtapaConselho.INICIAL: 1, EtapaConselho.PERCURSO: 2, EtapaConselho.FINAL: 3},
         value=PerguntaConselho.etapa
     )
-    
+
     unidade_id = get_unidade_id()
     query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas)
     # PerguntaConselho é global — perguntas são compartilhadas entre unidades
     perguntas_raw = query.all()
 
-    # Agrupa preservando a ordem manual
+    # Agrupa preservando a ordem manual. As chaves são strings ('INICIAL', ...)
+    # para compatibilidade com templates que fazem `perguntas_agrupadas.items()`.
     perguntas_agrupadas = OrderedDict()
     for etapa in ordem_manual:
+        etapa_str = etapa.value if isinstance(etapa, EtapaConselho) else etapa
         lista = [p for p in perguntas_raw if p.etapa == etapa]
         if lista:
-            perguntas_agrupadas[etapa] = lista
+            perguntas_agrupadas[etapa_str] = lista
 
     return render_template('conselho/perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
 
@@ -164,7 +187,7 @@ def gerenciar_perguntas():
 @bp.route('/conselho/pergunta/salvar', methods=['POST'])
 @login_required
 def salvar_pergunta():
-    if current_user.role not in ['pedagogico', 'admin', 'gerencia']:
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):
         abort(403)
 
     pergunta_id = request.form.get('id')
@@ -195,7 +218,7 @@ def salvar_pergunta():
 @bp.route('/conselho/pergunta/excluir/<int:id>')
 @login_required
 def excluir_pergunta(id):
-    if current_user.role not in ['pedagogico', 'admin', 'gerencia']:
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):
         abort(403)
 
     pergunta = db.get_or_404(PerguntaConselho, id)
@@ -213,7 +236,7 @@ def excluir_pergunta(id):
 @login_required
 def lancamento_conselho():
     turma_id = request.args.get('turma')
-    etapa    = request.args.get('etapa', 'INICIAL')
+    etapa    = request.args.get('etapa', EtapaConselho.INICIAL.value)
     programa_filtro = request.args.get('programa', 'Todos')
     turno_filtro    = request.args.get('turno', 'Todos')
 
@@ -225,11 +248,11 @@ def lancamento_conselho():
 
     opcoes_proximas = OpcaoProximaTurma.query.filter_by(ativo=True).all()
 
-    if current_user.role in ['admin', 'pedagogico', 'gerencia']:
+    if current_user.role in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.GERENCIA):
         stmt = select(Turma).where(Turma.ativo == True)
         if unidade_id:
             stmt = stmt.where(Turma.unidade_id == unidade_id)
-            
+
         if programa_filtro != 'Todos':
             stmt = stmt.where(Turma.programa == programa_filtro)
         if turno_filtro != 'Todos':
@@ -246,7 +269,7 @@ def lancamento_conselho():
                                turmas=turmas_para_select,
                                lista_programas=lista_programas,
                                programa_ativo=programa_filtro,
-                               turno_ativo=turno_filtro, # Adicione este
+                               turno_ativo=turno_filtro,
                                etapa=etapa,
                                turma=None)
 
@@ -260,8 +283,8 @@ def lancamento_conselho():
     ).order_by(Aluno.nome).all()
     if not alunos:
         flash(f'Não é possível abrir o conselho: A turma {turma_obj.nome} não possui alunos ativos.', 'warning')
-        return redirect(url_for('conselho.lancamento_conselho', 
-                            programa=programa_filtro, 
+        return redirect(url_for('conselho.lancamento_conselho',
+                            programa=programa_filtro,
                             turno=turno_filtro,
                             etapa=etapa))
 
@@ -403,7 +426,7 @@ def salvar_conselho():
 @login_required
 def fechamento_turma(turma_id):
     turma = Turma.query.get_or_404(turma_id)
-    
+
     alunos = [
         aluno for aluno in turma.alunos
         if aluno.ativo and any(
@@ -467,14 +490,14 @@ def salvar_fechamento_data(turma_id):
             conselho = ConselhoClasse.query.filter_by(
                 turma_id=turma_id,
                 aluno_id=item['aluno_id'],
-                etapa='FINAL'
+                etapa=EtapaConselho.FINAL
             ).first()
 
             if not conselho:
                 conselho = ConselhoClasse(
                     turma_id=turma_id,
                     aluno_id=item['aluno_id'],
-                    etapa='FINAL',
+                    etapa=EtapaConselho.FINAL.value,
                     data_inicio=date.today(),
                     instrutor_id=current_user.id,
                     unidade_id=get_unidade_id()
@@ -504,10 +527,10 @@ def salvar_fechamento_data(turma_id):
 def avaliar_turma(turma_id):
     turma = db.get_or_404(Turma, turma_id)
 
-    if current_user.role == 'professor' and turma.professor_id != current_user.id:
+    if current_user.role == UserRole.PROFESSOR and turma.professor_id != current_user.id:
         abort(403)
 
-    etapa_selecionada = request.args.get('etapa', 'INICIAL')
+    etapa_selecionada = request.args.get('etapa', EtapaConselho.INICIAL.value)
     perguntas = PerguntaConselho.query.filter_by(
         tipo='TURMA', etapa=etapa_selecionada, ativo=True
     ).all()
@@ -519,9 +542,9 @@ def avaliar_turma(turma_id):
         try:
             payload = _build_turma_avaliacao_payload(request.form, perguntas)
             campos = {
-                "INICIAL": "avaliacao_inicial",
-                "PERCURSO": "avaliacao_percurso",
-                "FINAL": "avaliacao_final",
+                EtapaConselho.INICIAL: "avaliacao_inicial",
+                EtapaConselho.PERCURSO: "avaliacao_percurso",
+                EtapaConselho.FINAL: "avaliacao_final",
             }
             setattr(turma, campos[etapa_selecionada], payload)
             db.session.add(turma)
@@ -539,6 +562,7 @@ def avaliar_turma(turma_id):
                            perguntas=perguntas,
                            respostas=respostas)
 
+
 # ---------------------------------------------------------------------------
 # INFORMAÇÕES DE CONSELHO (PERÍODOS)
 # ---------------------------------------------------------------------------
@@ -548,19 +572,18 @@ def avaliar_turma(turma_id):
 def informacoes():
     unidade_id = get_unidade_id()
     if request.method == 'POST':
-        # Handled via API/AJAX below or standard form POST, but we'll use a separate API endpoint for simplicity,
-        # or we handle form post here. We'll handle it here.
         pass
 
     periodos_ativos = PeriodoLetivo.query.filter_by(ativo=True, unidade_id=unidade_id).order_by(PeriodoLetivo.id.desc()).all()
     conselhos = PeriodoConselho.query.filter_by(unidade_id=unidade_id).join(PeriodoLetivo).filter(PeriodoLetivo.ativo == True).order_by(PeriodoLetivo.id.desc(), PeriodoConselho.data_inicio).all()
-    
+
     turmas_pendentes = Turma.query.filter_by(ativo=True, conselho_concluido=False, unidade_id=unidade_id).count()
 
     return render_template('conselho/informacoes.html',
                            conselhos=conselhos,
                            periodos_ativos=periodos_ativos,
                            turmas_pendentes=turmas_pendentes)
+
 
 @bp.route('/api/conselho-periodo', methods=['POST'])
 @csrf.exempt
@@ -604,7 +627,7 @@ def salvar_periodo_conselho():
     try:
         dt_ini = datetime.strptime(data_inicio, '%Y-%m-%d').date()
         dt_fim = datetime.strptime(data_fim, '%Y-%m-%d').date()
-        
+
         if dt_ini < periodo_letivo.data_inicio or dt_fim > periodo_letivo.data_fim:
             return jsonify({"success": False, "msg": f"As datas do conselho devem estar dentro do período letivo ({periodo_letivo.data_inicio.strftime('%d/%m/%Y')} a {periodo_letivo.data_fim.strftime('%d/%m/%Y')})."}), 400
     except Exception:
@@ -642,6 +665,7 @@ def salvar_periodo_conselho():
         return jsonify({"success": False, "msg": "Erro interno ao salvar. Tente novamente."}), 500
     return jsonify({"success": True})
 
+
 @bp.route('/api/conselho-periodo/<int:conselho_id>', methods=['DELETE'])
 @csrf.exempt
 @login_required
@@ -650,7 +674,7 @@ def deletar_periodo_conselho(conselho_id):
     conselho = PeriodoConselho.query.filter_by(id=conselho_id, unidade_id=unidade_id).first()
     if not conselho:
         return jsonify({"success": False, "msg": "Conselho não encontrado."}), 404
-        
+
     try:
         db.session.delete(conselho)
         db.session.commit()
@@ -659,4 +683,3 @@ def deletar_periodo_conselho(conselho_id):
         logger.exception("Erro ao deletar período de conselho.")
         return jsonify({"success": False, "msg": "Erro interno ao excluir. Tente novamente."}), 500
     return jsonify({"success": True})
-

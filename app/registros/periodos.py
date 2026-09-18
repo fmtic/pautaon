@@ -7,6 +7,7 @@ from flask_login import current_user, login_required
 from app.database import db
 from app.models import Aluno, DiaBloqueado, DiaBloqueadoTurma, Inscricao, PeriodoLetivo, Turma, Unidade
 from app.services.auth_service import register_security_log
+from app.utils.datetime_parse import parse_date
 from app.utils.logica import get_unidade_id
 from . import bp
 
@@ -88,9 +89,8 @@ def calendario_salvar():
             if not data_str or not tipo:
                 continue
 
-            try:
-                data_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
-            except ValueError:
+            data_obj = parse_date(data_str)
+            if data_obj is None:
                 continue
 
             db.session.add(
@@ -109,9 +109,11 @@ def calendario_salvar():
         for data_str, turma_list in excecoes_payload.items():
             if not data_str or not isinstance(turma_list, list):
                 continue
-            try:
-                datetime.strptime(data_str, "%Y-%m-%d")
-            except ValueError:
+
+            # Onda 2A: DiaBloqueadoTurma.data agora é DATE. O strptime anterior
+            # era descartado e a string ia direto pra coluna — Postgres recusava.
+            data_obj = parse_date(data_str)
+            if data_obj is None:
                 continue
 
             for turma_id in turma_list:
@@ -127,7 +129,7 @@ def calendario_salvar():
                 db.session.add(
                     DiaBloqueadoTurma(
                         turma_id=turma_obj.id,
-                        data=data_str,
+                        data=data_obj,           # <- date, não string
                         unidade_id=periodo.unidade_id,
                         criado_por_id=current_user.id,
                     )
@@ -243,8 +245,12 @@ def periodo_letivo_novo():
     if request.method == "POST":
         try:
             nome = request.form.get("nome")
-            data_inicio = datetime.strptime(request.form.get("data_inicio"), "%Y-%m-%d").date()
-            data_fim = datetime.strptime(request.form.get("data_fim"), "%Y-%m-%d").date()
+            data_inicio = parse_date(request.form.get("data_inicio"))
+            data_fim = parse_date(request.form.get("data_fim"))
+            if not data_inicio or not data_fim:
+                flash("Datas de início e fim são obrigatórias.", "warning")
+                return redirect(url_for("registros.periodo_letivo_novo"))
+
             centro_custo = ", ".join(request.form.getlist("centro_custo"))
             estimativa = int(request.form.get("estimativa_alunos", 0))
 
@@ -288,8 +294,14 @@ def periodo_letivo_editar(id):
     if request.method == "POST":
         try:
             periodo.nome = request.form.get("nome")
-            periodo.data_inicio = datetime.strptime(request.form.get("data_inicio"), "%Y-%m-%d").date()
-            periodo.data_fim = datetime.strptime(request.form.get("data_fim"), "%Y-%m-%d").date()
+            data_inicio = parse_date(request.form.get("data_inicio"))
+            data_fim = parse_date(request.form.get("data_fim"))
+            if not data_inicio or not data_fim:
+                flash("Datas de início e fim são obrigatórias.", "warning")
+                return redirect(url_for("registros.periodo_letivo_editar", id=id))
+
+            periodo.data_inicio = data_inicio
+            periodo.data_fim = data_fim
             periodo.centro_custo = ", ".join(request.form.getlist("centro_custo"))
             periodo.estimativa_alunos = int(request.form.get("estimativa_alunos", 0))
             db.session.commit()
@@ -358,9 +370,13 @@ def periodo_letivo_calendario(id):
         .filter(Turma.periodo_letivo_id == id)
         .all()
     )
+
+    # Onda 2A: item.data é `date`. Dict JSON precisa de chave string.
+    # Antes era `item.data` direto — quebrava no jsonify/render.
     excecoes_json = {}
     for item in excecoes:
-        excecoes_json.setdefault(item.data, []).append(item.turma_id)
+        chave = item.data.strftime("%Y-%m-%d")
+        excecoes_json.setdefault(chave, []).append(item.turma_id)
 
     return render_template(
         "periodos/calendario.html",

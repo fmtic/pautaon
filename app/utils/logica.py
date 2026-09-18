@@ -1,27 +1,124 @@
-from datetime import datetime, date, timedelta, timezone
+"""
+================================================================================
+LOGICA.PY - Helpers de negócio (frequência, turmas, relatórios)
+================================================================================
+
+NOTA SOBRE TIPOS (Onda 2A):
+    `Turma.data_inicio`, `Turma.data_fim`, `Turma.hora_inicio`, `Turma.hora_fim`,
+    `Frequencia.data`, `RegistroAula.data`, `TemaAula.data` e
+    `DiaBloqueadoTurma.data` agora são `date`/`time` nativos.
+
+NOTA SOBRE ENUMS (Onda 2B):
+    Comparações com conceitos de frequência e perfis usam `ConceitoFrequencia`
+    e `UserRole` de `app.models.enums`. Os conjuntos derivados
+    (`CONCEITOS_PRESENCA`, `CONCEITOS_CONTABEIS`) também são importados de lá
+    — a fonte única é `enums.py`.
+
+DÍVIDA TÉCNICA CONHECIDA:
+    `gerar_datas` ainda retorna `List[str]` ('YYYY-MM-DD') por compatibilidade
+    com templates legados. Idealmente retornaria `List[date]`.
+================================================================================
+"""
+
+from datetime import datetime, date, time, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
 from flask import current_app, session
 from flask_login import current_user
-from app.database import db
-from app.models import User, Turma, Aluno, Frequencia, TemaAula, RegistroAula, ConfiguracaoSistema, Inscricao, DiaBloqueadoTurma
-from typing import List, Dict, Tuple, Any, Optional
 
+from app.database import db
+from app.models import (
+    Aluno,
+    ConfiguracaoSistema,
+    DiaBloqueado,
+    DiaBloqueadoTurma,
+    Frequencia,
+    Inscricao,
+    RegistroAula,
+    TemaAula,
+    Turma,
+    User,
+)
+from app.models.enums import (
+    ConceitoFrequencia,
+    CONCEITOS_PRESENCA,
+    CONCEITOS_CONTABEIS,
+    UserRole,
+)
+from app.utils.datetime_parse import parse_date
 from app.utils.timezone import get_local_now
 
+
 NAME_LOWER_EXCEPTIONS = {
-    'da', 'de', 'do', 'dos', 'das', 'e', 'van', 'von', 'del', 'da', 'di', 'du', 'la', 'le', 'y', 'al'
+    'da', 'de', 'do', 'dos', 'das', 'e', 'van', 'von', 'del',
+    'da', 'di', 'du', 'la', 'le', 'y', 'al',
 }
 
 
-def calcular_estatisticas_frequencia(conceitos) -> Dict[str, Any]:
-    """Calcula frequência por conceito sem contar justificativas como aula válida."""
-    counts = {conceito: 0 for conceito in ('A', 'B', 'C', 'D', 'F', 'J')}
-    for conceito in conceitos:
-        if conceito in counts:
-            counts[conceito] += 1
+# =============================================================================
+# HELPERS DE DATA (interno)
+# =============================================================================
 
-    presencas = counts['A'] + counts['B'] + counts['C'] + counts['D']
-    faltas = counts['F']
-    justificadas = counts['J']
+def _normalizar_data(valor) -> Optional[date]:
+    """
+    Aceita `date`, `datetime` ou string 'YYYY-MM-DD' e devolve `date`.
+
+    Usado em pontos onde o valor pode chegar como string de formulário/URL
+    ou como `date` já vindo de uma coluna do banco.
+    """
+    return parse_date(valor)
+
+
+def _blocked_dates_str(turma: Turma) -> set[str]:
+    """
+    Datas bloqueadas do período letivo da turma, EXCLUINDO as exceções por
+    turma. Retorna strings 'YYYY-MM-DD'.
+
+    IMPORTANTE: o resultado é subtraído como string para bater com o que
+    `gerar_datas` espera em `blocked_dates`.
+    """
+    if not turma or not turma.periodo_letivo_id:
+        return set()
+
+    dias = DiaBloqueado.query.filter_by(
+        periodo_letivo_id=turma.periodo_letivo_id
+    ).all()
+    excecoes = DiaBloqueadoTurma.query.filter_by(turma_id=turma.id).all()
+
+    bloqueadas = {d.data.strftime('%Y-%m-%d') for d in dias}
+    excecoes_str = {e.data.strftime('%Y-%m-%d') for e in excecoes}
+    return bloqueadas - excecoes_str
+
+
+# =============================================================================
+# FREQUÊNCIA - estatísticas
+# =============================================================================
+
+def calcular_estatisticas_frequencia(conceitos) -> Dict[str, Any]:
+    """
+    Calcula frequência por conceito.
+
+    Regra:
+        - Presença: A, B, C, D
+        - Falta: F
+        - Justificada: J (não entra no denominador)
+        - Frequência = presenças / (presenças + faltas)
+    """
+    # Inicializa contadores a partir do enum — garante que não esquecemos
+    # nenhum conceito se o enum evoluir.
+    counts = {c.value: 0 for c in ConceitoFrequencia}
+    for conceito in conceitos:
+        # Aceita tanto `ConceitoFrequencia.X` quanto `'X'` (str) porque os
+        # enums herdam de `str`. `.value` normaliza para a string pura.
+        valor = conceito.value if isinstance(conceito, ConceitoFrequencia) else conceito
+        if valor in counts:
+            counts[valor] += 1
+
+    # `CONCEITOS_PRESENCA` é frozenset de membros do enum (não strings).
+    # Por isso extraímos `.value` para acessar os contadores.
+    presencas = sum(counts[c.value] for c in CONCEITOS_PRESENCA)
+    faltas = counts[ConceitoFrequencia.F.value]
+    justificadas = counts[ConceitoFrequencia.J.value]
     total_validas = presencas + faltas
 
     def percentual(valor: int, total: int = total_validas) -> float:
@@ -40,8 +137,13 @@ def calcular_estatisticas_frequencia(conceitos) -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# HELPERS DE APRESENTAÇÃO
+# =============================================================================
+
 def formatar_nome_proprio(nome: str | None) -> str | None:
-    """Normaliza um nome próprio para apresentação padrão.
+    """
+    Normaliza um nome próprio para apresentação padrão.
 
     Mantém preposições e conectores em minúsculas, mas capitaliza os nomes.
     Exemplo: "adriely da conceição nunes" -> "Adriely da Conceição Nunes".
@@ -64,14 +166,16 @@ def formatar_nome_proprio(nome: str | None) -> str | None:
 
     return ' '.join(formatted_parts)
 
+
 def get_unidade_id() -> Optional[int]:
-    """Retorna o ID da unidade efetiva para o usuário logado.
+    """
+    Retorna o ID da unidade efetiva para o usuário logado.
 
     Perfis operacionais vinculados a uma unidade não podem cair em visão global
     por sessão vazia ou stale. Admin e gerência continuam usando o contexto
     selecionado na sessão.
     """
-    global_roles = {"admin", "gerencia"}
+    global_roles = (UserRole.ADMIN, UserRole.GERENCIA)
     if current_user.is_authenticated and current_user.role not in global_roles:
         if current_user.unidade_id:
             session["unidade_id"] = current_user.unidade_id
@@ -86,19 +190,36 @@ def get_unidade_id() -> Optional[int]:
             session.pop("unidade_id", None)
     return None
 
-def gerar_datas(turma: Turma, incluir_futuro: bool = False,
-                blocked_dates: set = None) -> List[str]:
-    """
-    Gera array cronológico de datas aula-a-aula, calculando de acordo com dias da semana cadastrados.
-    Exclui automaticamente qualquer data presente em `blocked_dates` (set de strings YYYY-MM-DD).
 
-    :param turma: Instância do modelo Turma contendo as strings de data_inicio e dias_semana.
-    :param incluir_futuro: Caso se imprima relatórios legados físicos de pauta, inclua a projeção de encerramento futuro.
-    :param blocked_dates: Conjunto opcional de datas bloqueadas (DiaBloqueado) a serem excluídas.
-    :return: Lista de strings no formato %Y-%m-%d
+# =============================================================================
+# GERAÇÃO DE DATAS DE AULA
+# =============================================================================
+
+def gerar_datas(
+    turma: Turma,
+    incluir_futuro: bool = False,
+    blocked_dates: set = None,
+) -> List[str]:
+    """
+    Gera lista cronológica de datas de aula conforme os dias da semana da turma.
+
+    IMPORTANTE (Onda 2A):
+        `turma.data_inicio` e `turma.data_fim` agora são `date`. O parâmetro
+        `blocked_dates` continua sendo um conjunto de STRINGS 'YYYY-MM-DD'
+        (compatibilidade com templates legados).
+
+    DÍVIDA TÉCNICA:
+        Esta função retorna `List[str]`. Idealmente retornaria `List[date]`.
+
+    :param turma: Instância de Turma.
+    :param incluir_futuro: Se True, projeta até `data_fim`. Se False, corta em hoje.
+    :param blocked_dates: Datas bloqueadas (strings 'YYYY-MM-DD').
+    :return: Lista de strings 'YYYY-MM-DD', do mais antigo ao mais recente
+             (ou invertida, se `incluir_futuro=False`).
     """
     blocked_dates = blocked_dates or set()
     datas: List[str] = []
+
     if not turma or not turma.data_inicio or not turma.data_fim:
         return datas
 
@@ -106,21 +227,17 @@ def gerar_datas(turma: Turma, incluir_futuro: bool = False,
         'Segunda': 0, 'Terça': 1, 'Quarta': 2, 'Quinta': 3,
         'Sexta': 4, 'Sábado': 5, 'Domingo': 6,
         'Segunda-feira': 0, 'Terça-feira': 1, 'Quarta-feira': 2,
-        'Quinta-feira': 3, 'Sexta-feira': 4, 'Sábado-feira': 5
+        'Quinta-feira': 3, 'Sexta-feira': 4, 'Sábado-feira': 5,
     }
 
-    try:
-        inicio = datetime.strptime(turma.data_inicio, "%Y-%m-%d")
-        fim    = datetime.strptime(turma.data_fim,    "%Y-%m-%d")
+    inicio = datetime.combine(turma.data_inicio, time.min)
+    fim = datetime.combine(turma.data_fim, time.min)
 
-        if incluir_futuro:
-            data_limite = fim
-        else:
-            hoje = datetime.now()
-            data_limite = min(fim, hoje)
-
-    except ValueError:
-        return datas
+    if incluir_futuro:
+        data_limite = fim
+    else:
+        hoje = datetime.now()
+        data_limite = min(fim, hoje)
 
     dias_permitidos = [
         mapa_dias[d.strip()]
@@ -138,75 +255,82 @@ def gerar_datas(turma: Turma, incluir_futuro: bool = False,
 
     if incluir_futuro:
         return datas
-    return datas[::-1]  # Retorna do mais atual pro mais antigo
+    return datas[::-1]  # Mais atual -> mais antigo
 
+
+# =============================================================================
+# CONTEXTO DE TURMA PARA TEMPLATES
+# =============================================================================
 
 def calcular_idades(alunos: List[Aluno]) -> None:
-    """Acopla a propriedade computada `.idade_calculada` a cada instância da lista de alunos iterada."""
+    """
+    Acopla a propriedade computada `.idade_calculada` a cada aluno.
+
+    Tolerante a `data_nascimento` como `date` ou string (legado).
+    """
     hoje = date.today()
     for aluno in alunos:
-        if aluno.data_nascimento:
-            nasc = (
-                aluno.data_nascimento
-                if isinstance(aluno.data_nascimento, date)
-                else datetime.strptime(str(aluno.data_nascimento), "%Y-%m-%d").date()
-            )
-            # Acopla a idade no objeto efêmero durante ciclo de requisição
-            aluno.idade_calculada = (
-                hoje.year - nasc.year
-                - ((hoje.month, hoje.day) < (nasc.month, nasc.day))
-            )
-        else:
+        if not aluno.data_nascimento:
             aluno.idade_calculada = "?"
+            continue
+
+        nasc = aluno.data_nascimento
+        if not isinstance(nasc, date):
+            try:
+                nasc = datetime.strptime(str(nasc), "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                aluno.idade_calculada = "?"
+                continue
+
+        aluno.idade_calculada = (
+            hoje.year - nasc.year
+            - ((hoje.month, hoje.day) < (nasc.month, nasc.day))
+        )
 
 
 def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict[str, Any]:
-    """Retorna um DICIONÁRIO de contexto com base numa turma_id para o Jinja2.
-    Injeta automaticamente os dias bloqueados do período letivo da turma.
     """
-    from app.models import DiaBloqueado
+    Retorna um dicionário de contexto para renderização da pauta de uma turma.
 
+    Injeta automaticamente os dias bloqueados do período letivo, já
+    descontando as exceções (`DiaBloqueadoTurma`).
+    """
     turma = Turma.query.get_or_404(turma_id)
 
-    # Carrega dias bloqueados do período letivo da turma
-    blocked_dates: set = set()
-    if turma.periodo_letivo_id:
-        dias = DiaBloqueado.query.filter_by(
-            periodo_letivo_id=turma.periodo_letivo_id
-        ).all()
-        blocked_dates = {d.data.strftime("%Y-%m-%d") for d in dias}
+    blocked_dates = _blocked_dates_str(turma)
 
-        excecoes = DiaBloqueadoTurma.query.filter_by(turma_id=turma_id).all()
-        exception_dates = {e.data for e in excecoes}
-        blocked_dates = blocked_dates - exception_dates
-
-    alunos = Aluno.query.join(Inscricao).filter(
-        Inscricao.turma_id == turma_id,
-        Inscricao.ativo == True,
-        Aluno.ativo == True
-    ).order_by(Aluno.nome).all()
+    alunos = (
+        Aluno.query.join(Inscricao)
+        .filter(
+            Inscricao.turma_id == turma_id,
+            Inscricao.ativo == True,
+            Aluno.ativo == True,
+        )
+        .order_by(Aluno.nome)
+        .all()
+    )
     calcular_idades(alunos)
 
-    datas = gerar_datas(turma, incluir_futuro=pauta_impressa, blocked_dates=blocked_dates)
+    datas = gerar_datas(
+        turma, incluir_futuro=pauta_impressa, blocked_dates=blocked_dates
+    )
 
     meses_disponiveis = []
     vistos = set()
     nomes_meses = {
         '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
         '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
-        '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+        '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro',
     }
-
     for d in datas:
-        mes_num = d[5:7] 
+        mes_num = d[5:7]
         if mes_num not in vistos:
             meses_disponiveis.append({
-                'numero': mes_num, 
-                'nome': nomes_meses.get(mes_num, 'Mês Desconhecido')
+                'numero': mes_num,
+                'nome': nomes_meses.get(mes_num, 'Mês Desconhecido'),
             })
             vistos.add(mes_num)
 
-    # Busca temas pelo curso da turma (novo fluxo) ou pelo turma_id legado
     if turma.curso_id:
         temas = TemaAula.query.filter_by(curso_id=turma.curso_id, ativo=True).all()
     else:
@@ -217,48 +341,76 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
         alunos=alunos,
         datas=datas,
         temas=temas,
-        meses=meses_disponiveis
+        meses=meses_disponiveis,
     )
 
 
-def carregar_frequencias(turma_id: int, data: str) -> Tuple[Dict[int, str], Optional[int], str]:
-    """Retorna os conceitos daquela turma e se há um tema ou nota do educador acoplada ao registro de aula"""
+# =============================================================================
+# FREQUÊNCIA - leitura e escrita
+# =============================================================================
+
+def carregar_frequencias(
+    turma_id: int,
+    data: str | date,
+) -> Tuple[Dict[int, str], Optional[int], str]:
+    """
+    Carrega os conceitos lançados para uma turma em uma data.
+
+    Onda 2A: `Frequencia.data` e `RegistroAula.data` agora são `date`.
+    A função aceita string ou date e normaliza via `parse_date`.
+
+    :return: (dict{aluno_id: conceito}, tema_selecionado_id | None, observacoes)
+    """
     frequencias: Dict[int, str] = {}
     tema_selecionado: Optional[int] = None
     obs_salva: str = ""
 
-    if turma_id and data:
-        registros = Frequencia.query.filter_by(
-            turma_id=turma_id, data=data
-        ).all()
-        frequencias = {f.aluno_id: f.conceito for f in registros}
+    data_alvo = parse_date(data)
+    if not turma_id or not data_alvo:
+        return frequencias, tema_selecionado, obs_salva
 
-        diario = RegistroAula.query.filter_by(turma_id=turma_id, data=data).first()
-        if diario:
-            tema_selecionado = diario.tema_id
-            obs_salva = diario.observacoes or ""
+    registros = Frequencia.query.filter_by(
+        turma_id=turma_id, data=data_alvo
+    ).all()
+    frequencias = {f.aluno_id: f.conceito for f in registros}
+
+    diario = RegistroAula.query.filter_by(
+        turma_id=turma_id, data=data_alvo
+    ).first()
+    if diario:
+        tema_selecionado = diario.tema_id
+        obs_salva = diario.observacoes or ""
 
     return frequencias, tema_selecionado, obs_salva
 
 
 def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
-    """O serviço consolida todos os inserts de diário num Atomic Commit."""
+    """
+    Consolida os lançamentos de frequência e o diário da aula em um único commit.
+
+    Onda 2A: `data` do formulário chega como string; convertida via `parse_date`
+    antes de qualquer consulta/gravação.
+
+    :return: (turma_id, data_str) em caso de sucesso; (0, None) em caso de erro.
+    """
     try:
-        # Aceita 'turma' (select) ou 'turma' (hidden)
         turma_raw = form.get('turma', '0').strip()
         turma_id = int(turma_raw) if turma_raw and turma_raw.isdigit() else 0
 
-        # Aceita 'data' (select) ou 'data_hidden' (fallback hidden)
-        data = (form.get('data', '') or form.get('data_hidden', '')).strip()
+        data_raw = (form.get('data', '') or form.get('data_hidden', '')).strip()
+        data_alvo = parse_date(data_raw)
 
         tema_id_raw = form.get('tema_id', '').strip()
         tema_id = int(tema_id_raw) if tema_id_raw and tema_id_raw.isdigit() else None
         texto_observacoes = form.get('observacoes', '').strip() or None
 
-        if not data or turma_id == 0:
+        if not data_alvo or turma_id == 0:
             return turma_id, None
 
-        registro = RegistroAula.query.filter_by(turma_id=turma_id, data=data).first()
+        # --- Registro de aula (diário do educador) ---
+        registro = RegistroAula.query.filter_by(
+            turma_id=turma_id, data=data_alvo
+        ).first()
         if registro:
             registro.observacoes = texto_observacoes
             registro.tema_id = tema_id
@@ -266,17 +418,22 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         else:
             db.session.add(RegistroAula(
                 turma_id=turma_id,
-                data=data,
+                data=data_alvo,
                 tema_id=tema_id,
                 observacoes=texto_observacoes,
                 instrutor_id=current_user.id,
             ))
 
-        alunos_post = Aluno.query.join(Inscricao).filter(
-            Inscricao.turma_id == turma_id,
-            Inscricao.ativo == True,
-            Aluno.ativo == True
-        ).all()
+        # --- Frequência por aluno ---
+        alunos_post = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id == turma_id,
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
+            .all()
+        )
 
         for aluno in alunos_post:
             conceito = form.get(f'aluno_{aluno.id}', '').strip()
@@ -284,7 +441,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 continue
 
             freq = Frequencia.query.filter_by(
-                aluno_id=aluno.id, turma_id=turma_id, data=data
+                aluno_id=aluno.id, turma_id=turma_id, data=data_alvo
             ).first()
 
             if freq:
@@ -293,22 +450,28 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 db.session.add(Frequencia(
                     aluno_id=aluno.id,
                     turma_id=turma_id,
-                    data=data,
+                    data=data_alvo,
                     conceito=conceito,
                 ))
 
         db.session.commit()
-        return turma_id, data
+        return turma_id, data_alvo.strftime('%Y-%m-%d')
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception(
+            "Erro ao salvar frequência (turma_id=%s)",
+            form.get('turma'),
+        )
         return 0, None
 
 
+# =============================================================================
+# RELATÓRIOS
+# =============================================================================
+
 def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, Any]:
-    hoje = date.today()
+    """Média de idade geral, por programa e por turma."""
     alunos_query = Aluno.query.filter(Aluno.ativo == True)
     if unidade_id:
         alunos_query = alunos_query.filter_by(unidade_id=unidade_id)
@@ -316,7 +479,7 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
     if not alunos:
         return {'media_geral': 0, 'media_programa': {}, 'media_turma': {}}
 
-    idades_geral = [aluno.idade for aluno in alunos]
+    idades_geral = [a.idade for a in alunos]
     media_geral = sum(idades_geral) / len(idades_geral) if idades_geral else 0
 
     media_por_programa = {}
@@ -327,7 +490,7 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
         q = Aluno.query.join(Aluno.turmas).filter(
             Turma.programa == prog,
             Aluno.ativo == True,
-            Turma.ativo == True
+            Turma.ativo == True,
         )
         if unidade_id:
             q = q.filter(Aluno.unidade_id == unidade_id, Turma.unidade_id == unidade_id)
@@ -341,17 +504,26 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
     if unidade_id:
         turma_query = turma_query.filter_by(unidade_id=unidade_id)
     for t in turma_query.all():
-        idades = [a.idade for a in t.alunos if a.ativo and (not unidade_id or a.unidade_id == unidade_id)]
+        idades = [
+            a.idade for a in t.alunos
+            if a.ativo and (not unidade_id or a.unidade_id == unidade_id)
+        ]
         if idades:
             media_por_turma[t.nome] = sum(idades) / len(idades)
 
     return {
         'media_geral': round(media_geral, 1),
         'media_programa': media_por_programa,
-        'media_turma': media_por_turma
+        'media_turma': media_por_turma,
     }
 
-def calcular_frequencias_relatorio(todas_as_turmas: List[Turma], unidade_id: Optional[int] = None) -> Tuple[float, Dict[str, float], Dict[str, float], Dict[str, float]]:
+
+def calcular_frequencias_relatorio(
+    todas_as_turmas: List[Turma],
+    unidade_id: Optional[int] = None,
+) -> Tuple[float, Dict[str, float], Dict[str, float], Dict[str, float]]:
+    """Retorna (geral, por_programa, por_turma, por_professor), em %."""
+
     def calc_pc(query) -> float:
         estatisticas = calcular_estatisticas_frequencia(
             registro.conceito for registro in query.all()
@@ -383,7 +555,8 @@ def calcular_frequencias_relatorio(todas_as_turmas: List[Turma], unidade_id: Opt
         f_turma[t.nome] = calc_pc(q)
 
     f_prof: Dict[str, float] = {}
-    prof_query = User.query.filter_by(role='professor')
+    # Onda 2B (limpeza): usa o enum em vez da string 'professor'.
+    prof_query = User.query.filter_by(role=UserRole.PROFESSOR.value)
     if unidade_id:
         prof_query = prof_query.filter_by(unidade_id=unidade_id)
     for prof in prof_query.all():
@@ -399,44 +572,61 @@ def calcular_frequencias_relatorio(todas_as_turmas: List[Turma], unidade_id: Opt
 
 
 def calcular_metricas_conselho(unidade_id: Optional[int] = None) -> Dict[str, float]:
-    if unidade_id:
-        conf_inicio = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho', unidade_id=unidade_id).first()
-        if not conf_inicio:
-            conf_inicio = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho', unidade_id=None).first()
-        conf_fim = ConfiguracaoSistema.query.filter_by(chave='fim_conselho', unidade_id=unidade_id).first()
-        if not conf_fim:
-            conf_fim = ConfiguracaoSistema.query.filter_by(chave='fim_conselho', unidade_id=None).first()
-    else:
-        conf_inicio = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho', unidade_id=None).first()
-        conf_fim = ConfiguracaoSistema.query.filter_by(chave='fim_conselho', unidade_id=None).first()
-    
+    """
+    Progresso do conselho (aulas planejadas vs. registradas e reuniões concluídas).
+
+    As datas de corte vêm de ConfiguracaoSistema (chaves 'inicio_conselho' e
+    'fim_conselho', no formato 'YYYY-MM-DD'). São convertidas para `date` antes
+    de comparar com `TemaAula.data` / `RegistroAula.data`, que são `date`.
+    """
+    def _conf(chave: str):
+        if unidade_id:
+            c = ConfiguracaoSistema.query.filter_by(
+                chave=chave, unidade_id=unidade_id
+            ).first()
+            if c:
+                return c
+        return ConfiguracaoSistema.query.filter_by(
+            chave=chave, unidade_id=None
+        ).first()
+
+    conf_inicio = _conf('inicio_conselho')
+    conf_fim = _conf('fim_conselho')
+
     prog_aulas = 0.0
     if conf_inicio and conf_fim:
         try:
             inicio = datetime.strptime(conf_inicio.valor, "%Y-%m-%d").date()
             fim = datetime.strptime(conf_fim.valor, "%Y-%m-%d").date()
             tema_query = TemaAula.query.filter(TemaAula.data.between(inicio, fim))
-            registro_query = RegistroAula.query.filter(RegistroAula.data.between(inicio, fim))
+            registro_query = RegistroAula.query.filter(
+                RegistroAula.data.between(inicio, fim)
+            )
             if unidade_id:
                 tema_query = tema_query.filter_by(unidade_id=unidade_id)
                 registro_query = registro_query.filter_by(unidade_id=unidade_id)
             total = tema_query.count()
             real = registro_query.count()
             prog_aulas = round((real / total * 100), 1) if total > 0 else 0.0
-        except: pass
+        except (ValueError, TypeError):
+            current_app.logger.exception(
+                "Erro ao calcular progresso de aulas do conselho"
+            )
 
-    total_t = Turma.query.filter_by(ativo=True)
-    concluidas = Turma.query.filter_by(ativo=True, conselho_concluido=True)
+    total_t_q = Turma.query.filter_by(ativo=True)
+    concluidas_q = Turma.query.filter_by(ativo=True, conselho_concluido=True)
     if unidade_id:
-        total_t = total_t.filter_by(unidade_id=unidade_id)
-        concluidas = concluidas.filter_by(unidade_id=unidade_id)
-    total_t = total_t.count()
-    concluidas = concluidas.count()
-    prog_reunioes = float(round((concluidas / total_t * 100), 1) if total_t > 0 else 0.0)
+        total_t_q = total_t_q.filter_by(unidade_id=unidade_id)
+        concluidas_q = concluidas_q.filter_by(unidade_id=unidade_id)
+    total_t = total_t_q.count()
+    concluidas = concluidas_q.count()
+    prog_reunioes = float(
+        round((concluidas / total_t * 100), 1) if total_t > 0 else 0.0
+    )
 
     return {
         'progresso_aulas': prog_aulas,
         'progresso_reunioes': prog_reunioes,
         'turmas_concluidas': concluidas,
-        'total_turmas': total_t
+        'total_turmas': total_t,
     }

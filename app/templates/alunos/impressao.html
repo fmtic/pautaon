@@ -17,10 +17,12 @@
   </div>
 
   <div class="print-container">
-    {% set ident = aluno.identificacao_json if aluno.identificacao_json else {} %}
-    {% set div = aluno.diversidade_json if aluno.diversidade_json else {} %}
-    {% set socio = aluno.socioeconomico_json if aluno.socioeconomico_json else {} %}
-    {% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
+    {# Onda 3B: `perfil` é injetado pela rota via get_perfil_completo(). #}
+    {% set ident = perfil.identificacao %}
+    {% set div = perfil.diversidade %}
+    {% set socio = perfil.socioeconomico %}
+    {% set resp = perfil.responsavel %}
+    {% set edu = aluno.documentos_dict() %}
 
     <!-- Cabeçalho -->
     <div class="row align-items-center border-bottom pb-3">
@@ -58,7 +60,8 @@
         {% endif %}
         <div class="data-row">
           <div class="data-label">Nascimento:</div>
-          <div class="data-value">{{ aluno.data_nascimento.strftime('%d/%m/%Y') if aluno.data_nascimento else '-' }}</div>
+          <div class="data-value">{{ aluno.data_nascimento.strftime('%d/%m/%Y') if aluno.data_nascimento else '-' }}
+          </div>
         </div>
         <div class="data-row">
           <div class="data-label">Gênero / Etnia:</div>
@@ -66,7 +69,8 @@
         </div>
         <div class="data-row">
           <div class="data-label">CPF / RG:</div>
-          <div class="data-value">{{ aluno.cpf if aluno.cpf else '-' }} / {{ aluno.rg if aluno.rg else '-' }} ({{ ident.get('orgao_rg', '-') }})</div>
+          <div class="data-value">{{ aluno.cpf if aluno.cpf else '-' }} / {{ aluno.rg if aluno.rg else '-' }} ({{
+            ident.get('orgao_rg', '-') }})</div>
         </div>
         <div class="data-row">
           <div class="data-label">CPF da Mãe / Pai:</div>
@@ -74,17 +78,19 @@
         </div>
         <div class="data-row">
           <div class="data-label">Naturalidade:</div>
-          <div class="data-value">{{ ident.get('natural_cidade', '-') }} - {{ ident.get('natural_uf', '-') }} ({{ ident.get('nacionalidade', '-') }})</div>
+          <div class="data-value">{{ ident.get('natural_cidade', '-') }} - {{ ident.get('natural_uf', '-') }} ({{
+            ident.get('nacionalidade', '-') }})</div>
         </div>
       </div>
     </div>
 
     <!-- Contato e Endereço -->
     <div class="section-title">II - Localização e Contato</div>
-    {% set end = ident.get('endereco', {}) %}
+    {% set end = perfil.endereco %}
     <div class="data-row">
       <div class="data-label">Endereço:</div>
-      <div class="data-value">{{ end.get('rua', '-') }}, nº {{ end.get('numero', '-') }} {{ end.get('complemento', '') }}</div>
+      <div class="data-value">{{ end.get('rua', '-') }}, nº {{ end.get('numero', '-') }} {{ end.get('complemento', '')
+        }}</div>
     </div>
     <div class="data-row">
       <div class="data-label">Bairro / CEP:</div>
@@ -96,11 +102,13 @@
     </div>
     <div class="data-row">
       <div class="data-label">Zona / Internet:</div>
-      <div class="data-value">{{ end.get('zona', '-') }} | {{ 'Possui acesso' if end.get('possui_acesso_internet', true) else 'Não possui acesso' }}</div>
+      <div class="data-value">{{ end.get('zona', '-') }} | {{ 'Possui acesso' if end.get('possui_acesso_internet', true)
+        else 'Não possui acesso' }}</div>
     </div>
     <div class="data-row">
       <div class="data-label">WhatsApp / Email:</div>
-      <div class="data-value">{{ aluno.whatsapp if aluno.whatsapp else '-' }} | {{ aluno.email if aluno.email else '-' }}</div>
+      <div class="data-value">{{ aluno.whatsapp if aluno.whatsapp else '-' }} | {{ aluno.email if aluno.email else '-'
+        }}</div>
     </div>
 
     <!-- Filiação -->
@@ -115,30 +123,35 @@
     </div>
     <div class="data-row">
       <div class="data-label">Responsável Legal:</div>
-      <div class="data-value">{{ ident.get('responsavel_nome', '-') }} ({{ ident.get('responsavel_tipo', '-') }}) - Tel: {{ ident.get('telefone_resp', '-') }}</div>
+      <div class="data-value">{{ resp.nome or '-' }} ({{ resp.tipo or '-' }}) - Tel: {{ resp.telefone or '-' }}</div>
     </div>
     <div class="data-row">
       <div class="data-label">CPF do Responsável:</div>
-      <div class="data-value">{{ ident.get('responsavel_cpf', '-') }}</div>
+      <div class="data-value">{{ resp.cpf or '-' }}</div>
     </div>
     <div class="data-row">
       <div class="data-label">Acompanhamento:</div>
-      <div class="data-value">{{ 'Sim' if ident.get('vai_acompanhado_aulas') else 'Não' }}{% if ident.get('acompanhante_aulas') %} - {{ ident.get('acompanhante_aulas') }}{% endif %}</div>
+      <div class="data-value">{{ 'Sim' if ident.get('vai_acompanhado_aulas') else 'Não' }}{% if
+        ident.get('acompanhante_aulas') %} - {{ ident.get('acompanhante_aulas') }}{% endif %}</div>
     </div>
 
     <!-- Perfil e Saúde -->
     <div class="section-title">IV - Perfil Socioeconômico e Saúde</div>
     <div class="data-row">
       <div class="data-label">Renda Familiar:</div>
-      <div class="data-value">{{ socio.get('renda_familiar', '-') }} | Maior renda: {{ socio.get('residente_maior_renda', '-') }}</div>
+      <div class="data-value">{{ socio.get('renda_familiar', '-') }} | Maior renda: {{
+        socio.get('residente_maior_renda', '-') }}</div>
     </div>
     <div class="data-row">
       <div class="data-label">Residência / Ocupação:</div>
-      <div class="data-value">{{ socio.get('pessoas_residencia', '-') }} pessoa(s) | {{ socio.get('ocupacao', '-') }}</div>
+      <div class="data-value">{{ socio.get('pessoas_residencia', '-') }} pessoa(s) | {{ socio.get('ocupacao', '-') }}
+      </div>
     </div>
     <div class="data-row">
       <div class="data-label">Programa Social:</div>
-      <div class="data-value">{{ socio.get('beneficio_social_status', '-') }}{% if socio.get('beneficio_social_nome') %} - {{ socio.get('beneficio_social_nome') }}{% endif %} | Transporte: {{ socio.get('meio_transporte', '-') }}</div>
+      <div class="data-value">{{ socio.get('beneficio_social_status', '-') }}{% if socio.get('beneficio_social_nome') %}
+        - {{ socio.get('beneficio_social_nome') }}{% endif %} | Transporte: {{ socio.get('meio_transporte', '-') }}
+      </div>
     </div>
     <div class="data-row">
       <div class="data-label">Vulnerabilidade:</div>
@@ -146,7 +159,9 @@
     </div>
     <div class="data-row">
       <div class="data-label">Condição de Saúde:</div>
-      <div class="data-value">Laudo Médico: {{ 'Sim' if div.get('saude_laudo') else 'Não' }} | Medicação: {{ div.get('saude_medicacao', 'Não') }} {% if div.get('saude_medicamento_nome') %}({{ div.get('saude_medicamento_nome') }}){% endif %}</div>
+      <div class="data-value">Laudo Médico: {{ 'Sim' if div.get('saude_laudo') else 'Não' }} | Medicação: {{
+        div.get('saude_medicacao', 'Não') }} {% if div.get('saude_medicamento_nome') %}({{
+        div.get('saude_medicamento_nome') }}){% endif %}</div>
     </div>
     {% if div.get('saude_observacoes') %}
     <div class="data-row">
@@ -164,29 +179,35 @@
     <!-- Documentação -->
     {% set docs = edu.get('doc_entregue', {}) %}
     {% set documentos = [
-      ('doc_aluno', 'RG / CPF do Aluno'),
-      ('doc_residencia', 'Comprovante de Residência'),
-      ('doc_declaracao', 'Declaração Escolar'),
-      ('doc_atestado', 'Atestado Médico'),
-      ('doc_termo', 'Termo de Imagem / Som'),
-      ('doc_responsavel', 'RG / CPF do Responsável'),
-      ('doc_laudo', 'Laudo Médico')
+    ('doc_aluno', 'RG / CPF do Aluno'),
+    ('doc_residencia', 'Comprovante de Residência'),
+    ('doc_declaracao', 'Declaração Escolar'),
+    ('doc_atestado', 'Atestado Médico'),
+    ('doc_termo', 'Termo de Imagem / Som'),
+    ('doc_responsavel', 'RG / CPF do Responsável'),
+    ('doc_laudo', 'Laudo Médico')
     ] %}
     <div class="section-title">V - Documentação Entregue</div>
     <div class="data-row">
       <div class="data-label">Documentos:</div>
       <div class="data-value">
         {% for doc_id, label in documentos %}
-          <span class="badge {{ 'bg-success-subtle text-success' if docs.get(doc_id) else 'bg-light text-muted' }} border me-1 mb-1">{{ label }}: {{ 'Sim' if docs.get(doc_id) else 'Não' }}</span>
+        <span
+          class="badge {{ 'bg-success-subtle text-success' if docs.get(doc_id) else 'bg-light text-muted' }} border me-1 mb-1">{{
+          label }}: {{ 'Sim' if docs.get(doc_id) else 'Não' }}</span>
         {% endfor %}
       </div>
     </div>
 
     <!-- Autorização -->
     <div class="mt-4 p-3 border rounded">
-      <h6 class="fw-bold text-uppercase border-bottom pb-1" style="font-size: 0.8rem">VI - Termo de Autorização de Imagem</h6>
-      <p style="font-size: 0.75rem; text-align: justify" class="mb-2">Autorizo o uso da imagem e som da voz do aluno acima identificado, para fins de divulgação de atividades pedagógicas, eventos e promoções da instituição, em redes sociais, site oficial e materiais impressos, sem fins lucrativos.</p>
-      <div class="fw-bold">STATUS DA AUTORIZAÇÃO: <span class="text-primary text-uppercase">{{ 'AUTORIZADO' if div.get('autor_imagem') or div.get('autorizacao_imagem') else 'NÃO AUTORIZADO' }}</span></div>
+      <h6 class="fw-bold text-uppercase border-bottom pb-1" style="font-size: 0.8rem">VI - Termo de Autorização de
+        Imagem</h6>
+      <p style="font-size: 0.75rem; text-align: justify" class="mb-2">Autorizo o uso da imagem e som da voz do aluno
+        acima identificado, para fins de divulgação de atividades pedagógicas, eventos e promoções da instituição, em
+        redes sociais, site oficial e materiais impressos, sem fins lucrativos.</p>
+      <div class="fw-bold">STATUS DA AUTORIZAÇÃO: <span class="text-primary text-uppercase">{{ 'AUTORIZADO' if
+          div.get('autor_imagem') or div.get('autorizacao_imagem') else 'NÃO AUTORIZADO' }}</span></div>
     </div>
 
     <!-- Assinaturas -->
@@ -195,9 +216,11 @@
       <div class="signature-box">Coordenação / Secretaria</div>
     </div>
 
-    <div class="text-center mt-5 text-muted small">Documento gerado eletronicamente pelo sistema pautaON em {{ data_matricula.strftime('%d/%m/%Y %H:%M:%S') }}</div>
+    <div class="text-center mt-5 text-muted small">Documento gerado eletronicamente pelo sistema pautaON em {{
+      data_matricula.strftime('%d/%m/%Y %H:%M:%S') }}</div>
   </div>
 
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 </body>
+
 </html>

@@ -178,103 +178,13 @@ document.addEventListener('DOMContentLoaded', function () {
         ufSelect.addEventListener('change', e => carregarCidades(e.target.value));
     }
 
-    // ==================== STEPPER - Navegação Livre ====================
-    let currentStep = 1;
-    const totalSteps = 5;
-
-    window.updateStepper = function () {
-        for (let i = 1; i <= totalSteps; i++) {
-            const indicator = document.getElementById(`step-indicator-${i}`);
-            if (!indicator) continue;
-
-            if (i < currentStep) {
-                indicator.classList.remove("active");
-                indicator.classList.add("completed");
-                indicator.innerHTML = '<i class="bi bi-check"></i>';
-            } else if (i === currentStep) {
-                indicator.classList.remove("completed");
-                indicator.classList.add("active");
-                indicator.innerHTML = i;
-            } else {
-                indicator.classList.remove("active", "completed");
-                indicator.innerHTML = i;
-            }
-        }
-
-        document.getElementById("prevBtn").classList.toggle("d-none", currentStep === 1);
-
-        const nextBtn = document.getElementById("nextBtn");
-        const submitBtn = document.getElementById("submitBtn");
-
-        if (currentStep === totalSteps) {
-            nextBtn.classList.add("d-none");
-            submitBtn.classList.remove("d-none");
-        } else {
-            nextBtn.classList.remove("d-none");
-            submitBtn.classList.add("d-none");
-        }
-    };
-
-    window.goToStep = function (n) {
-        if (n === currentStep) return;
-        document.getElementById(`step-${currentStep}`).classList.remove("active");
-        currentStep = n;
-        document.getElementById(`step-${currentStep}`).classList.add("active");
-        window.updateStepper();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    // Navegação livre (sem validação)
-    window.nextStep = function (n) {
-        document.getElementById(`step-${currentStep}`).classList.remove("active");
-        currentStep += n;
-
-        if (currentStep > totalSteps) currentStep = totalSteps;
-        if (currentStep < 1) currentStep = 1;
-
-        document.getElementById(`step-${currentStep}`).classList.add("active");
-        window.updateStepper();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-
-    // ==================== OUTRAS FUNÇÕES ====================
-    window.previewImage = function (input) {
-        const preview = document.getElementById("img-preview");
-        const icon = document.getElementById("placeholder-icon");
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = e => {
-                preview.src = e.target.result;
-                preview.classList.remove("d-none");
-                icon.classList.add("d-none");
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    };
-
-    window.toggleLaudoUpload = function (checkbox) {
-        const container = document.getElementById("laudo_upload_container");
-        if (container) container.classList.toggle("d-none", !checkbox.checked);
-    };
-
-    window.updateFileName = function (id, input) {
-        const label = document.getElementById(`name_${id}`);
-        if (!label || !input.files[0]) return;
-
-        const file = input.files[0];
-        if (file.size > 2 * 1024 * 1024) {
-            alert("Arquivo muito grande! Máximo permitido: 2MB.");
-            input.value = "";
-            label.innerText = "Clique para selecionar";
-            return;
-        }
-
-        label.innerText = file.name.length > 28 ? file.name.substring(0, 25) + "..." : file.name;
-        label.classList.add("text-primary", "fw-bold");
-    };
-
-    // Inicializa o stepper
-    window.updateStepper();
+    // Stepper, previewImage, toggleLaudoUpload e updateFileName são controlados
+    // exclusivamente por novo.js / editar.js (carregados depois deste arquivo),
+    // que calculam o último step dinamicamente a partir dos .form-step
+    // presentes em cada página. A implementação duplicada que existia aqui
+    // (com total fixo de 5 steps) foi removida porque sobrescrevia essas
+    // funções e fazia o botão "Salvar Alterações" aparecer um step antes do
+    // último (step V em vez do VI).
 });
 
 // ==================== WEBCAM ====================
@@ -395,108 +305,8 @@ window.buscarEndereco = function (cep) {
         });
 };
 
-let currentStep = 1;
-const totalSteps = 5;
-
-function updateStepper() {
-    for (let i = 1; i <= totalSteps; i++) {
-        const indicator = document.getElementById(`step-indicator-${i}`);
-        if (i < currentStep) {
-            indicator.classList.remove("active");
-            indicator.classList.add("completed");
-            indicator.innerHTML = '<i class="bi bi-check"></i>';
-        } else if (i === currentStep) {
-            indicator.classList.remove("completed");
-            indicator.classList.add("active");
-            indicator.innerHTML = i;
-        } else {
-            indicator.classList.remove("active", "completed");
-            indicator.innerHTML = i;
-        }
-    }
-
-    // Mostrar/Ocultar botões
-    document
-        .getElementById("prevBtn")
-        .classList.toggle("d-none", currentStep === 1);
-
-    if (currentStep === totalSteps) {
-        document.getElementById("nextBtn").classList.add("d-none");
-        document.getElementById("submitBtn").classList.remove("d-none");
-    } else {
-        document.getElementById("nextBtn").classList.remove("d-none");
-        document.getElementById("submitBtn").classList.add("d-none");
-    }
-}
-
-function goToStep(n) {
-    if (n === currentStep) return;
-    document.getElementById(`step-${currentStep}`).classList.remove("active");
-    currentStep = n;
-    document.getElementById(`step-${currentStep}`).classList.add("active");
-    updateStepper();
-    window.scrollTo(0, 0);
-}
-
-function nextStep(n) {
-    // Validação removida a pedido do usuário
-    // if (n === 1 && !validateStep()) return;
-
-    document.getElementById(`step-${currentStep}`).classList.remove("active");
-    currentStep += n;
-    document.getElementById(`step-${currentStep}`).classList.add("active");
-    updateStepper();
-    window.scrollTo(0, 0);
-}
-
-function validateStep() {
-    const activeStep = document.getElementById(`step-${currentStep}`);
-    const inputs = activeStep.querySelectorAll(
-        "input[required], select[required]",
-    );
-    let valid = true;
-    inputs.forEach((input) => {
-        if (!input.value) {
-            input.classList.add("is-invalid");
-            valid = false;
-        } else {
-            input.classList.remove("is-invalid");
-        }
-    });
-    return valid;
-}
-
-function previewImage(input) {
-    const preview = document.getElementById("img-preview");
-    const icon = document.getElementById("placeholder-icon");
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            preview.src = e.target.result;
-            preview.classList.remove("d-none");
-            icon.classList.add("d-none");
-        };
-        reader.readAsDataURL(input.files[0]);
-    }
-}
-
-function toggleLaudoUpload(checkbox) {
-    const container = document.getElementById("laudo_upload_container");
-    container.classList.toggle("d-none", !checkbox.checked);
-}
-
-function updateFileName(id, input) {
-    const label = document.getElementById(`name_${id}`);
-    if (input.files[0]) {
-        const file = input.files[0];
-        if (file.size > 2 * 1024 * 1024) {
-            alert("Arquivo muito grande! Máximo 2MB.");
-            input.value = "";
-            label.innerText = "Clique para selecionar";
-            return;
-        }
-        label.innerText = file.name;
-        label.classList.remove("text-muted");
-        label.classList.add("text-primary", "fw-bold");
-    }
-}
+// Observação: o stepper (updateStepper/goToStep/nextStep), previewImage,
+// toggleLaudoUpload e updateFileName foram removidos deste arquivo — eles
+// duplicavam (com total fixo de 5 steps) a lógica correta que já existe em
+// novo.js / editar.js, e por sobrescreverem window.* faziam o botão
+// "Salvar Alterações" aparecer no step V em vez do VI.

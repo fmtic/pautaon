@@ -4,12 +4,14 @@
 {% endblock %}
 
 {% block content %}
-{% set ident = aluno.identificacao_json if aluno.identificacao_json else {} %}
-{% set end = ident.get('endereco', {}) %}
-{% set socio = aluno.socioeconomico_json if aluno.socioeconomico_json else {} %}
-{% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
+{# Onda 3B: `perfil` é injetado pela rota via get_perfil_completo(). #}
+{% set ident = perfil.identificacao %}
+{% set end = perfil.endereco %}
+{% set socio = perfil.socioeconomico %}
+{% set div = perfil.diversidade %}
+{% set resp = perfil.responsavel %}
+{% set edu = aluno.documentos_dict() %}
 {% set docs = edu.get('doc_entregue', {}) %}
-{% set div = aluno.diversidade_json if aluno.diversidade_json else {} %}
 {% set sit = aluno.situacao_escolar %}
 
 <div class="container py-4">
@@ -203,7 +205,7 @@
                                 <p class="fw-bold small text-primary text-uppercase mb-2">Responsável Legal</p>
                                 <div class="mb-3">
                                     <label class="form-label small">Quem é o Responsável?</label>
-                                    {% set rt = ident.get('responsavel_tipo', '') %}
+                                    {% set rt = resp.tipo %}
                                     <select name="responsavel_tipo" id="responsavel_tipo" class="form-select">
                                         <option value="">Selecione...</option>
                                         <option value="Mãe" {{ 'selected' if rt=='Mãe' }}>Mãe</option>
@@ -216,13 +218,12 @@
                                 <div class="mb-3">
                                     <label class="form-label small">Nome Completo do Responsável</label>
                                     <input type="text" name="responsavel_nome" id="responsavel_nome"
-                                        class="form-control" value="{{ ident.get('responsavel_nome', '') }}">
+                                        class="form-control" value="{{ resp.nome }}">
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small">CPF do Responsável</label>
                                     <input type="text" name="responsavel_cpf" id="responsavel_cpf"
-                                        class="form-control mask-cpf validate-cpf"
-                                        value="{{ ident.get('responsavel_cpf', '') }}">
+                                        class="form-control mask-cpf validate-cpf" value="{{ resp.cpf }}">
                                     <div class="invalid-feedback">CPF inválido</div>
                                 </div>
                                 {% set vai_acompanhado = ident.get('vai_acompanhado_aulas', false) %}
@@ -306,7 +307,7 @@
                                     <div class="col-md-4">
                                         <label class="form-label fw-bold small">Tel./WhatsApp Responsável</label>
                                         <input type="text" name="telefone_resp" class="form-control mask-phone"
-                                            value="{{ ident.get('telefone_resp', '') }}">
+                                            value="{{ resp.telefone }}">
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label fw-bold small">E-mail Principal</label>
@@ -697,13 +698,14 @@
 
 <script>
     // Configuração injetada pelo servidor
+    // Onda 3B: usa `perfil` (tabelas novas com fallback) em vez dos JSONs legados.
     window.alunoEditConfig = {
         alunoId: {{ aluno.id }},
-    fotoPath: { { aluno.foto_path | tojson } },
-    identificacao: { { aluno.identificacao_json | tojson } },
-    socioeconomico: { { aluno.socioeconomico_json | tojson } },
-    escolaridade: { { aluno.escolaridade_json | tojson } },
-    diversidade: { { aluno.diversidade_json | tojson } }
+        fotoPath: {{ aluno.foto_path | tojson }},
+        identificacao: {{ ident | tojson }},
+        socioeconomico: {{ socio | tojson }},
+        escolaridade: {{ edu | tojson }},
+        diversidade: {{ div | tojson }}
     };
 </script>
 <script src="{{ url_for('static', filename='js/alunos/editar.js') }}"></script>

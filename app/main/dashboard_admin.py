@@ -5,6 +5,7 @@ from sqlalchemy import func
 
 from app.database import db
 from app.models import Aluno, Turma, User
+from app.models.enums import UserRole
 from app.utils.logica import get_unidade_id
 
 
@@ -13,9 +14,15 @@ def render_dashboard_gerencial():
     try:
         unidade_id = get_unidade_id()
         if unidade_id:
-            total_turmas = Turma.query.filter_by(ativo=True, unidade_id=unidade_id).count()
-            total_alunos = Aluno.query.filter_by(ativo=True, unidade_id=unidade_id).count()
-            total_professores = User.query.filter_by(role="professor", unidade_id=unidade_id).count()
+            total_turmas = Turma.query.filter_by(
+                ativo=True, unidade_id=unidade_id
+            ).count()
+            total_alunos = Aluno.query.filter_by(
+                ativo=True, unidade_id=unidade_id
+            ).count()
+            total_professores = User.query.filter_by(
+                role=UserRole.PROFESSOR.value, unidade_id=unidade_id
+            ).count()
         else:
             total_turmas = Turma.query.filter_by(ativo=True).count()
             total_alunos = Aluno.query.filter_by(ativo=True).count()
@@ -33,8 +40,13 @@ def render_dashboard_gerencial():
             total_professores=total_professores,
         )
     except Exception:
-        current_app.logger.exception("Falha ao computar dados para o dashboard gerencial.")
-        flash("Erro ao computar dados para o dashboard gerencial. Contate o suporte.", "danger")
+        current_app.logger.exception(
+            "Falha ao computar dados para o dashboard gerencial."
+        )
+        flash(
+            "Erro ao computar dados para o dashboard gerencial. Contate o suporte.",
+            "danger",
+        )
         return render_template(
             "dashboard/index.html",
             total_turmas=0,

@@ -1,3 +1,11 @@
+"""
+Serviço Social: agendamentos no Google Calendar + formulários dinâmicos
++ dossiê do aluno para preenchimento automático.
+
+ONDA 3B
+    `dados_aluno()` lê das tabelas novas via `get_perfil_completo`.
+"""
+
 from datetime import datetime
 
 from flask import (
@@ -8,16 +16,22 @@ from flask import (
     url_for,
     render_template,
     Blueprint,
+    abort,
 )
 from flask_login import current_user, login_required
 
 from app.database import db
 from app.models import AgendaServicoSocial, RespostaFormulario, Aluno
+from app.services.aluno_perfil import get_perfil_completo
 from app.services.calendar_service import get_calendar_service
 from app.utils.timezone import get_local_now
 
 bp = Blueprint("servico_social", __name__, url_prefix="/servico-social")
 
+
+# =============================================================================
+# AGENDAMENTOS
+# =============================================================================
 
 @bp.route("/agendar-entrevista", methods=["POST"])
 @login_required
@@ -71,11 +85,7 @@ def agendar_entrevista():
 
         created_event = (
             service.events()
-            .insert(
-                calendarId=calendar_id,
-                body=event,
-                sendUpdates="all",
-            )
+            .insert(calendarId=calendar_id, body=event, sendUpdates="all")
             .execute()
         )
 
@@ -129,7 +139,10 @@ def excluir_agendamento(id):
     return redirect(url_for("main.dashboard"))
 
 
-# Dicionário com os tipos de formulário e seus respectivos templates
+# =============================================================================
+# FORMULÁRIOS DINÂMICOS
+# =============================================================================
+
 FORMULARIOS = {
     "notificacao": {
         "template": "servico_social/forms/notificacao_violencia.html",
@@ -168,7 +181,6 @@ def listar_entrevistas():
         .order_by(RespostaFormulario.created_at.desc())
         .all()
     )
-    # Se quiser mostrar todos os formulários (independente de quem preencheu), remova o filter_by.
     return render_template("servico_social/entrevistas.html", respostas=respostas)
 
 
@@ -182,12 +194,11 @@ def preencher_formulario(tipo):
         flash("Formulário não encontrado.", "warning")
         return redirect(url_for("servico_social.listar_entrevistas"))
 
-    # Buscar lista de alunos ativos para um campo de seleção (opcional)
     alunos = Aluno.query.filter_by(ativo=True).order_by(Aluno.nome).all()
 
     if request.method == "POST":
         dados = dict(request.form)
-        dados.pop("csrf_token", None)  # remove o token do formulário
+        dados.pop("csrf_token", None)
 
         aluno_id = dados.get("aluno_id")
         if aluno_id and aluno_id.isdigit():
@@ -202,16 +213,14 @@ def preencher_formulario(tipo):
             dados=dados,
         )
         db.session.add(resposta)
-        db.session.flush()  # para obter o id antes do commit
+        db.session.flush()
         numero_ocorrencia = f"{datetime.now().year}/{resposta.id:05d}"
-        # Armazena no campo 'dados' ou em um campo específico
         dados["numero_ocorrencia"] = numero_ocorrencia
-        resposta.dados = dados  # atualiza o JSON com o número gerado
+        resposta.dados = dados
         db.session.commit()
         flash("Formulário salvo com sucesso!", "success")
         return redirect(url_for("servico_social.listar_entrevistas"))
 
-    # GET: exibe o formulário vazio
     dados_vazio = {}
     return render_template(
         FORMULARIOS[tipo]["template"],
@@ -220,43 +229,82 @@ def preencher_formulario(tipo):
         tipo=tipo,
         now=get_local_now(),
         dados_preenchidos=dados_vazio,
-        modo_impressao=False
+        modo_impressao=False,
     )
+
+
+# =============================================================================
+# DOSSIÊ DO ALUNO (preenchimento automático de formulários)
+# =============================================================================
+
+def _montar_endereco_completo(perfil_endereco: dict) -> str:
+    """Junta rua, número, bairro, cidade, uf em uma única string legível."""
+    partes = [
+        perfil_endereco.get("rua"),
+        perfil_endereco.get("numero"),
+        perfil_endereco.get("bairro"),
+        perfil_endereco.get("cidade"),
+        perfil_endereco.get("uf"),
+    ]
+    partes = [p for p in partes if p]
+    return ", ".join(partes)
 
 
 @bp.route("/aluno/<int:aluno_id>/dados")
 @login_required
 def dados_aluno(aluno_id):
-    """Retorna os dados do aluno em JSON para preenchimento automático."""
+    """
+    Retorna os dados do aluno em JSON para preenchimento automático.
+
+    ONDA 3B: lê das tabelas estruturadas via `get_perfil_completo`.
+    Campos sem correspondência na estrutura nova (ex.: `serie`,
+    `deficiencia_descricao`) leem do JSON legado como fallback.
+    """
     if current_user.role not in ["servico_social", "admin"]:
         abort(403)
 
     aluno = Aluno.query.get_or_404(aluno_id)
+    perfil = get_perfil_completo(aluno)
 
-    # Extrai dados estruturados dos campos e JSONs
+    ident = perfil["identificacao"]
+    div = perfil["diversidade"]
+    socio = perfil["socioeconomico"]
+    resp = perfil["responsavel"]
+    end = perfil["endereco"]
+
+    # SituacaoEscolar cobre escola/série/turno (a JSON `escolaridade_json`
+    # só tem `doc_entregue` e nunca teve esses dados reais).
+    situacao = aluno.situacao_escolar
+    escola_nome = situacao.nome_instituicao if situacao else ""
+    serie = situacao.escolaridade if situacao else ""
+    turno_escolar = situacao.turno if situacao else ""
+
+    # `deficiencia_descricao` não tem coluna nova — só existe no JSON antigo.
+    # Mantido por compatibilidade enquanto houver dado.
+    deficiencia = (aluno.diversidade_json or {}).get("deficiencia_descricao", "")
+
     dados = {
         "id": aluno.id,
         "nome": aluno.nome,
         "nome_social": aluno.nome_social or "",
         "data_nascimento": (
-            aluno.data_nascimento.strftime("%Y-%m-%d") if aluno.data_nascimento else ""
+            aluno.data_nascimento.strftime("%Y-%m-%d")
+            if aluno.data_nascimento else ""
         ),
         "idade": aluno.idade,
-        "sexo": aluno.diversidade_json.get("genero", ""),
-        "raca_cor": aluno.diversidade_json.get("raca_cor", ""),
-        "mae": aluno.identificacao_json.get("nome_mae", ""),
-        "pai": aluno.identificacao_json.get("nome_pai", ""),
-        "responsavel_nome": aluno.identificacao_json.get("responsavel_nome", ""),
-        "parentesco_responsavel": aluno.identificacao_json.get(
-            "responsavel_parentesco", ""
-        ),
-        "endereco": aluno.identificacao_json.get("endereco_completo", ""),
-        "telefone": aluno.whatsapp or aluno.identificacao_json.get("telefone", ""),
+        "sexo": div.get("genero", ""),
+        "raca_cor": div.get("raca_cor", ""),
+        "mae": ident.get("nome_mae", ""),
+        "pai": ident.get("nome_pai", ""),
+        "responsavel_nome": resp.get("nome", ""),
+        "parentesco_responsavel": resp.get("tipo", ""),
+        "endereco": _montar_endereco_completo(end),
+        "telefone": aluno.whatsapp or resp.get("telefone", ""),
         "turmas": [t.nome for t in aluno.turmas if t.ativo],
-        "escola": aluno.escolaridade_json.get("escola_nome", ""),
-        "serie": aluno.escolaridade_json.get("serie", ""),
-        "turno": aluno.escolaridade_json.get("turno", ""),
-        "deficiencia": aluno.diversidade_json.get("deficiencia_descricao", ""),
+        "escola": escola_nome,
+        "serie": serie,
+        "turno": turno_escolar,
+        "deficiencia": deficiencia,
         "foto_url": (
             url_for("static", filename=aluno.foto_path)
             if aluno.foto_path
@@ -264,8 +312,12 @@ def dados_aluno(aluno_id):
         ),
     }
 
-    return dados  # Flask retorna JSON automaticamente se for um dicionário
+    return dados
 
+
+# =============================================================================
+# IMPRESSÃO
+# =============================================================================
 
 @bp.route("/impressao/<int:resposta_id>")
 @login_required
@@ -273,24 +325,19 @@ def gerar_impressao(resposta_id):
     if current_user.role not in ["servico_social", "admin"]:
         abort(403)
 
-    # 1. Busca a resposta específica no banco de dados
     resposta = RespostaFormulario.query.get_or_404(resposta_id)
 
-    # 2. Identifica qual o template original baseado no tipo salvo
     tipo = resposta.tipo_formulario
     if tipo not in FORMULARIOS:
         flash("Tipo de formulário inválido para impressão.", "danger")
         return redirect(url_for("servico_social.listar_entrevistas"))
 
-    # 3. Renderiza o MESMO template de cadastro, mas passando os dados
-    # BUG 3 CORRIGIDO: template usa 'alunos or []' mas é mais seguro passar a lista vazia
-    # explicitamente para evitar UndefinedError no Jinja2.
     return render_template(
         FORMULARIOS[tipo]["template"],
         titulo=FORMULARIOS[tipo]["titulo"],
         dados_preenchidos=resposta.dados,
         aluno=resposta.aluno,
-        alunos=[],           # select de vínculo fica desabilitado no modo impressão
+        alunos=[],
         modo_impressao=True,
         tipo=tipo,
     )

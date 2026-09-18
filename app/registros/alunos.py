@@ -1,17 +1,63 @@
-from datetime import datetime, timedelta
+"""
+================================================================================
+ALUNOS.PY - Rotas de gestão de alunos
+================================================================================
 
-from flask import abort, flash, redirect, render_template, request, url_for
-from flask import jsonify
+Cobre:
+    - Listagem com filtros (nome, matrícula, CPF, idade)
+    - Cadastro, edição, exclusão, inativação
+    - Histórico escolar
+    - Transferência entre turmas
+    - Desenturmação (remoção de vínculo)
+    - Busca de instituições (autocomplete)
+    - Impressão da ficha
+
+ONDA 2A
+    Datas/horas agora são tipos nativos (`date`/`time`). Parse feito via
+    `parse_date`; formatação via `.strftime()`.
+
+ONDA 2B
+    Comparações de `current_user.role` usam `UserRole`.
+
+ONDA 3B
+    - Cadastro e edição gravam nas tabelas estruturadas (`EnderecoAluno`,
+      `ResponsavelAluno`, `PerfilSocioeconomico`, `PerfilDiversidade`) e nas
+      colunas novas de `Aluno` (nome_mae, orgao_rg, etc.).
+    - Documentos entregues vão para `Aluno.documentos_entregues` (JSONB).
+    - Os JSONs legados (`_identificacao_json`, etc.) NÃO são mais escritos
+      pelo código novo; continuam existindo como fallback de leitura.
+    - `editar_aluno` e `imprimir_aluno` passam `perfil=get_perfil_completo()`
+      para o template.
+================================================================================
+"""
+
+from datetime import date, datetime, timedelta
+
+from flask import (
+    abort, flash, jsonify, redirect, render_template, request, session, url_for,
+)
 from flask_login import current_user, login_required
 from sqlalchemy import select
 
 from app.database import db
-from app.models import Aluno, Frequencia, Inscricao, Turma
-from app.models import SituacaoEscolar
+from app.models import Aluno, Frequencia, Inscricao, SituacaoEscolar, Turma
+from app.models.enums import UserRole
+from app.services.aluno_perfil import (
+    get_perfil_completo,
+    upsert_endereco,
+    upsert_perfil_diversidade,
+    upsert_perfil_socioeconomico,
+    upsert_responsavel,
+)
+from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, salvar_documento, salvar_foto
 
+
+# =============================================================================
+# HELPERS INTERNOS
+# =============================================================================
 
 def _validar_cpf(cpf: str) -> bool:
     """Valida dígitos verificadores do CPF. Retorna True se válido ou vazio."""
@@ -44,72 +90,167 @@ def _sanitizar_cpf(cpf: str) -> str:
 
 
 def _salvar_situacao_escolar(aluno: Aluno) -> None:
-    nome = (request.form.get('nome_instituicao') or '').strip() or None
+    """Faz upsert da SituacaoEscolar do aluno com base no form da requisição."""
+    nome = (request.form.get("nome_instituicao") or "").strip() or None
     campos_situacao = (
-        'escolaridade',
-        'status_escolar',
-        'tipo_instituicao',
-        'turno_escolar',
-        'nome_instituicao',
+        "escolaridade",
+        "status_escolar",
+        "tipo_instituicao",
+        "turno_escolar",
+        "nome_instituicao",
     )
     form_tem_situacao = any(campo in request.form for campo in campos_situacao)
-    tem_conteudo = any((
-        request.form.get('escolaridade'),
-        request.form.get('status_escolar'),
-        request.form.get('tipo_instituicao'),
-        request.form.get('turno_escolar'),
-        nome,
-    ))
+    tem_conteudo = any(
+        (
+            request.form.get("escolaridade"),
+            request.form.get("status_escolar"),
+            request.form.get("tipo_instituicao"),
+            request.form.get("turno_escolar"),
+            nome,
+        )
+    )
     if not tem_conteudo:
         if form_tem_situacao and aluno.situacao_escolar:
             db.session.delete(aluno.situacao_escolar)
         return
     situacao = aluno.situacao_escolar or SituacaoEscolar(aluno=aluno)
     situacao.unidade_id = aluno.unidade_id
-    situacao.escolaridade = request.form.get('escolaridade')
-    periodo = request.form.get('ensino_superior_periodo', type=int)
-    situacao.ensino_superior_periodo = periodo if situacao.escolaridade == 'Ensino superior' and periodo in range(1, 11) else None
-    situacao.escolaridade_outro = (request.form.get('escolaridade_outro') or '').strip() if situacao.escolaridade == 'Outros' else None
-    situacao.status = request.form.get('status_escolar')
+    situacao.escolaridade = request.form.get("escolaridade")
+    periodo = request.form.get("ensino_superior_periodo", type=int)
+    situacao.ensino_superior_periodo = (
+        periodo
+        if situacao.escolaridade == "Ensino superior" and periodo in range(1, 11)
+        else None
+    )
+    situacao.escolaridade_outro = (
+        (request.form.get("escolaridade_outro") or "").strip()
+        if situacao.escolaridade == "Outros"
+        else None
+    )
+    situacao.status = request.form.get("status_escolar")
     situacao.status_outro = (
-        (request.form.get('status_escolar_outro') or '').strip() or None
-        if situacao.status == 'Outros' else None
+        (request.form.get("status_escolar_outro") or "").strip() or None
+        if situacao.status == "Outros"
+        else None
     )
     situacao.nome_instituicao = nome
-    situacao.tipo_instituicao = request.form.get('tipo_instituicao')
-    situacao.bolsista = bool(request.form.get('bolsista')) if situacao.tipo_instituicao == 'Privada' else False
-    situacao.tipo_instituicao_outro = (request.form.get('tipo_instituicao_outro') or '').strip() if situacao.tipo_instituicao == 'Outro' else None
-    situacao.turno = request.form.get('turno_escolar')
-    situacao.turno_outro = (request.form.get('turno_escolar_outro') or '').strip() if situacao.turno == 'Outros' else None
+    situacao.tipo_instituicao = request.form.get("tipo_instituicao")
+    situacao.bolsista = (
+        bool(request.form.get("bolsista"))
+        if situacao.tipo_instituicao == "Privada"
+        else False
+    )
+    situacao.tipo_instituicao_outro = (
+        (request.form.get("tipo_instituicao_outro") or "").strip()
+        if situacao.tipo_instituicao == "Outro"
+        else None
+    )
+    situacao.turno = request.form.get("turno_escolar")
+    situacao.turno_outro = (
+        (request.form.get("turno_escolar_outro") or "").strip()
+        if situacao.turno == "Outros"
+        else None
+    )
     db.session.add(situacao)
 
 
-@bp.route('/alunos/instituicoes')
+# Lista canônica dos documentos com checkbox no formulário.
+DOC_IDS = [
+    "doc_aluno",
+    "doc_residencia",
+    "doc_declaracao",
+    "doc_atestado",
+    "doc_termo",
+    "doc_responsavel",
+    "doc_laudo",
+]
+
+
+def _atualizar_documentos_entregues(aluno: Aluno) -> None:
+    """
+    Faz upsert dos arquivos enviados no form e grava o dict resultante em
+    `aluno.documentos_entregues` (JSONB).
+
+    Formato:
+        {'doc_entregue': {'doc_aluno': True, 'doc_termo': False, ...}}
+    """
+    docs = dict(aluno.documentos_entregues or {})
+    entregues = dict(docs.get("doc_entregue", {}))
+
+    for doc_id in DOC_IDS:
+        documento = request.files.get(doc_id)
+        if (
+            documento
+            and documento.filename
+            and salvar_documento(documento, aluno, doc_id)
+        ):
+            entregues[doc_id] = True
+
+    docs["doc_entregue"] = entregues
+    aluno.documentos_entregues = docs
+
+
+def _aplicar_campos_civis(aluno: Aluno, form) -> None:
+    """
+    Aplica os campos migrados de `identificacao_json` direto em `Aluno`.
+
+    Campos: orgao_rg, nacionalidade, natural_uf, natural_cidade, nome_mae,
+    cpf_mae, nome_pai, cpf_pai, vai_acompanhado_aulas, acompanhante_aulas.
+    """
+    aluno.orgao_rg = (form.get("orgao_rg") or "").strip() or None
+    aluno.nacionalidade = (form.get("nacionalidade") or "").strip() or None
+    aluno.natural_uf = (form.get("natural_uf") or "").strip() or None
+    aluno.natural_cidade = (form.get("natural_cidade") or "").strip() or None
+    aluno.nome_mae = (form.get("nome_mae") or "").strip() or None
+    aluno.cpf_mae = (form.get("cpf_mae") or "").strip() or None
+    aluno.nome_pai = (form.get("nome_pai") or "").strip() or None
+    aluno.cpf_pai = (form.get("cpf_pai") or "").strip() or None
+
+    vai_acompanhado = bool(form.get("vai_acompanhado_aulas"))
+    aluno.vai_acompanhado_aulas = vai_acompanhado
+    aluno.acompanhante_aulas = (
+        (form.get("acompanhante_aulas") or "").strip() or None
+        if vai_acompanhado
+        else None
+    )
+
+
+# =============================================================================
+# AUTOCOMPLETE E AJUSTES RÁPIDOS
+# =============================================================================
+
+@bp.route("/alunos/instituicoes")
 @login_required
 def buscar_instituicoes():
-    termo = (request.args.get('q') or '').strip()
+    termo = (request.args.get("q") or "").strip()
     if len(termo) < 2:
         return jsonify([])
 
     consulta = (
         db.session.query(SituacaoEscolar.nome_instituicao)
         .filter(SituacaoEscolar.nome_instituicao.isnot(None))
-        .filter(SituacaoEscolar.nome_instituicao.ilike(f'%{termo}%'))
+        .filter(SituacaoEscolar.nome_instituicao.ilike(f"%{termo}%"))
         .distinct()
     )
     unidade_id = get_unidade_id()
     if unidade_id:
         consulta = consulta.filter(SituacaoEscolar.unidade_id == unidade_id)
-    return jsonify([
-        nome for (nome,) in consulta.order_by(SituacaoEscolar.nome_instituicao).limit(10)
-    ])
-
+    return jsonify(
+        [
+            nome
+            for (nome,) in consulta.order_by(
+                SituacaoEscolar.nome_instituicao
+            ).limit(10)
+        ]
+    )
 
 
 @bp.route("/aluno/<int:aluno_id>/atualizar-nivel", methods=["POST"])
 @login_required
 def atualizar_nivel_aluno(aluno_id):
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, aluno_id)
@@ -127,17 +268,27 @@ def atualizar_nivel_aluno(aluno_id):
         from app.utils.errors import flash_and_log
 
         db.session.rollback()
-        flash_and_log(exc, location='registros.atualizar_nivel_aluno', hint='db')
+        flash_and_log(exc, location="registros.atualizar_nivel_aluno", hint="db")
 
     if turma_id:
         return redirect(url_for("registros.ver_turma", id=turma_id))
     return redirect(url_for("registros.gerenciar_alunos"))
 
 
+# =============================================================================
+# LISTAGEM
+# =============================================================================
+
 @bp.route("/alunos")
 @login_required
 def gerenciar_alunos():
-    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia", "servico_social"]:
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+        UserRole.SERVICO_SOCIAL,
+    ):
         abort(403)
 
     from app.utils.logica import calcular_idades
@@ -164,7 +315,8 @@ def gerenciar_alunos():
         cpf_limpo = search_cpf.replace(".", "").replace("-", "").strip()
         query = query.filter(
             db.or_(
-                Aluno.cpf.ilike(f"%{search_cpf}%"), Aluno.cpf.ilike(f"%{cpf_limpo}%")
+                Aluno.cpf.ilike(f"%{search_cpf}%"),
+                Aluno.cpf.ilike(f"%{cpf_limpo}%"),
             )
         )
     if search_matr:
@@ -189,7 +341,7 @@ def gerenciar_alunos():
     per_page = 20
     total_filtrado = len(alunos_lista)
     start = (page - 1) * per_page
-    items = alunos_lista[start : start + per_page]
+    items = alunos_lista[start:start + per_page]
 
     class Paginator:
         def __init__(self, items, page, per_page, total):
@@ -214,20 +366,28 @@ def gerenciar_alunos():
         "alunos/gerenciar.html",
         pagination=pagination,
         total_alunos=total_q.count(),
-        total_enturmados=enturm_q.filter(Aluno.turmas.any(Turma.ativo == True)).count(),
+        total_enturmados=enturm_q.filter(
+            Aluno.turmas.any(Turma.ativo == True)
+        ).count(),
         search_nome=search_nome,
         search_matr=search_matr,
         search_cpf=search_cpf,
         search_idade_min=search_idade_min,
         search_idade_max=search_idade_max,
-        is_readonly=current_user.role == "servico_social",
+        is_readonly=current_user.role == UserRole.SERVICO_SOCIAL,
     )
 
+
+# =============================================================================
+# CADASTRO
+# =============================================================================
 
 @bp.route("/aluno/novo", methods=["GET", "POST"])
 @login_required
 def novo_aluno():
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         abort(403)
     if request.method == "GET":
         return render_template("alunos/novo.html")
@@ -236,19 +396,24 @@ def novo_aluno():
 
     nome = request.form.get("nome")
     if not nome:
-        flash("O Campo 'Nome' não deve ser vazio no momento do Cadastro.", "warning")
+        flash(
+            "O Campo 'Nome' não deve ser vazio no momento do Cadastro.",
+            "warning",
+        )
         return redirect(url_for("registros.gerenciar_alunos"))
 
     cpf_raw = request.form.get("cpf", "")
     if not _validar_cpf(cpf_raw):
-        flash("CPF inválido. Informe somente os 11 dígitos numéricos do CPF.", "danger")
+        flash(
+            "CPF inválido. Informe somente os 11 dígitos numéricos do CPF.",
+            "danger",
+        )
         return redirect(url_for("registros.novo_aluno"))
 
     try:
-        nascimento = request.form.get("data_nascimento")
-        data_nascimento = (
-            datetime.strptime(nascimento, "%Y-%m-%d").date() if nascimento else None
-        )
+        # ---------------------------------------------------------------------
+        # 1. Colunas diretas em Aluno
+        # ---------------------------------------------------------------------
         novo = Aluno(
             nome=formatar_nome_proprio(nome),
             nome_social=formatar_nome_proprio(request.form.get("nome_social")),
@@ -259,128 +424,104 @@ def novo_aluno():
             rg=request.form.get("rg") or None,
             whatsapp=request.form.get("whatsapp"),
             email=request.form.get("email"),
-            data_nascimento=data_nascimento,
+            data_nascimento=parse_date(request.form.get("data_nascimento")),
             created_by_id=current_user.id,
             created_by_name=current_user.name,
         )
 
-        novo.identificacao_json = {
-            "nome_social": request.form.get("nome_social"),
-            "orgao_rg": request.form.get("orgao_rg"),
-            "nacionalidade": request.form.get("nacionalidade"),
-            "natural_uf": request.form.get("natural_uf"),
-            "natural_cidade": request.form.get("natural_cidade"),
-            "nome_mae": request.form.get("nome_mae"),
-            "cpf_mae": request.form.get("cpf_mae"),
-            "nome_pai": request.form.get("nome_pai"),
-            "cpf_pai": request.form.get("cpf_pai"),
-            "responsavel_tipo": request.form.get("responsavel_tipo"),
-            "responsavel_nome": request.form.get("responsavel_nome"),
-            "responsavel_cpf": request.form.get("responsavel_cpf"),
-            "vai_acompanhado_aulas": bool(request.form.get("vai_acompanhado_aulas")),
-            "acompanhante_aulas": request.form.get("acompanhante_aulas") if request.form.get("vai_acompanhado_aulas") else None,
-            "telefone_resp": request.form.get("telefone_resp"),
-            "endereco": {
-                "cep": request.form.get("cep"),
-                "rua": request.form.get("rua"),
-                "numero": request.form.get("numero"),
-                "bairro": request.form.get("bairro"),
-                "cidade": request.form.get("cidade"),
-                "uf": request.form.get("uf"),
-                "zona": request.form.get("zona", "Urbana"),
-                "possui_acesso_internet": not bool(
-                    request.form.get("nao_possui_acesso_internet")
-                ),
-            },
-        }
-        novo.socioeconomico_json = {
-            "renda_familiar": request.form.get("renda_familiar"),
-            "residente_maior_renda": request.form.get("residente_maior_renda"),
-            "pessoas_residencia": request.form.get("pessoas_residencia"),
-            "ocupacao": request.form.get("ocupacao"),
-            "beneficio_social_status": request.form.get("beneficio_social_status"),
-            "beneficio_social_nome": request.form.get("beneficio_social_nome"),
-            "meio_transporte": request.form.get("meio_transporte"),
-            "vulnerabilidade_social": bool(request.form.get("vulnerabilidade_social")),
-        }
-        novo.diversidade_json = {
-            "genero": request.form.get("genero"),
-            "raca_cor": request.form.get("raca_cor"),
-            "saude_laudo": bool(request.form.get("saude_laudo")),
-            "saude_medicacao": request.form.get("saude_medicacao"),
-            "saude_medicamento_nome": request.form.get("saude_medicamento_nome"),
-            "saude_observacoes": request.form.get("saude_observacoes"),
-            "informacoes_para_professor": request.form.get("informacoes_para_professor"),
-            "autorizacao_imagem": bool(request.form.get("autorizacao_imagem")),
-        }
+        # Campos civis (Onda 3A) direto na tabela
+        _aplicar_campos_civis(novo, request.form)
+
         ids_turmas = request.form.getlist("turmas_selecionadas")
         if ids_turmas:
             novo.turmas = Turma.query.filter(Turma.id.in_(ids_turmas)).all()
 
         db.session.add(novo)
-        db.session.flush()
+        db.session.flush()  # gera novo.id
+
+        # ---------------------------------------------------------------------
+        # 2. SituacaoEscolar (tabela dedicada, fluxo mantido)
+        # ---------------------------------------------------------------------
         _salvar_situacao_escolar(novo)
 
+        # ---------------------------------------------------------------------
+        # 3. Perfis (Onda 3B): endereço, responsável, socioeconômico, diversidade
+        # ---------------------------------------------------------------------
+        upsert_endereco(novo, request.form)
+        upsert_responsavel(novo, request.form)
+        upsert_perfil_socioeconomico(novo, request.form)
+        upsert_perfil_diversidade(novo, request.form)
+
+        # ---------------------------------------------------------------------
+        # 4. Foto
+        # ---------------------------------------------------------------------
         foto = request.files.get("foto")
         if foto and foto.filename:
             salvar_foto(foto, novo)
 
-        docs = novo.escolaridade_json or {}
-        entregues = docs.get("doc_entregue", {})
-        for doc_id in [
-            "doc_aluno",
-            "doc_residencia",
-            "doc_declaracao",
-            "doc_atestado",
-            "doc_termo",
-            "doc_responsavel",
-            "doc_laudo",
-        ]:
-            documento = request.files.get(doc_id)
-            if (
-                documento
-                and documento.filename
-                and salvar_documento(documento, novo, doc_id)
-            ):
-                entregues[doc_id] = True
-        docs["doc_entregue"] = entregues
-        novo.escolaridade_json = docs
+        # ---------------------------------------------------------------------
+        # 5. Documentos entregues (JSONB `documentos_entregues`)
+        # ---------------------------------------------------------------------
+        _atualizar_documentos_entregues(novo)
 
         db.session.commit()
         flash(
-            f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!", "success"
+            f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!",
+            "success",
         )
     except Exception as exc:
         from app.utils.errors import flash_and_log
 
         db.session.rollback()
-        flash_and_log(exc, location='registros.novo_aluno', hint='db')
+        flash_and_log(exc, location="registros.novo_aluno", hint="db")
 
     return redirect(url_for("registros.gerenciar_alunos"))
 
 
+# =============================================================================
+# EDIÇÃO
+# =============================================================================
+
 @bp.route("/aluno/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_aluno(id):
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
 
+    if request.method == "GET":
+        chave_retorno = f"retorno_edicao_aluno_{aluno.id}"
+        session.pop(chave_retorno, None)
+        retorno = request.args.get("retorno")
+        if retorno and retorno.startswith("/") and not retorno.startswith("//"):
+            session[chave_retorno] = retorno
+
     if request.method == "POST":
         from app.utils.logica import formatar_nome_proprio
 
         try:
+            # -----------------------------------------------------------------
+            # 1. Colunas diretas em Aluno
+            # -----------------------------------------------------------------
             aluno.nome = formatar_nome_proprio(request.form.get("nome"))
-            aluno.nome_social = formatar_nome_proprio(request.form.get("nome_social"))
+            aluno.nome_social = formatar_nome_proprio(
+                request.form.get("nome_social")
+            )
             nivel = request.form.get("nivel")
             if nivel is not None:
                 aluno.nivel = nivel
 
             cpf_raw = request.form.get("cpf", "")
             if not _validar_cpf(cpf_raw):
-                flash("CPF inválido. Informe somente os 11 dígitos numéricos do CPF.", "danger")
+                flash(
+                    "CPF inválido. Informe somente os 11 dígitos numéricos "
+                    "do CPF.",
+                    "danger",
+                )
                 return redirect(url_for("registros.editar_aluno", id=aluno.id))
             aluno.cpf = _sanitizar_cpf(cpf_raw)
 
@@ -390,98 +531,59 @@ def editar_aluno(id):
 
             nascimento = request.form.get("data_nascimento")
             if nascimento:
-                aluno.data_nascimento = datetime.strptime(nascimento, "%Y-%m-%d").date()
+                aluno.data_nascimento = parse_date(nascimento)
 
-            aluno.identificacao_json = {
-                "nome_social": request.form.get("nome_social"),
-                "orgao_rg": request.form.get("orgao_rg"),
-                "nacionalidade": request.form.get("nacionalidade"),
-                "natural_uf": request.form.get("natural_uf"),
-                "natural_cidade": request.form.get("natural_cidade"),
-                "nome_mae": request.form.get("nome_mae"),
-                "cpf_mae": request.form.get("cpf_mae"),
-                "nome_pai": request.form.get("nome_pai"),
-                "cpf_pai": request.form.get("cpf_pai"),
-                "responsavel_tipo": request.form.get("responsavel_tipo"),
-                "responsavel_nome": request.form.get("responsavel_nome"),
-                "responsavel_cpf": request.form.get("responsavel_cpf"),
-                "vai_acompanhado_aulas": bool(request.form.get("vai_acompanhado_aulas")),
-                "acompanhante_aulas": request.form.get("acompanhante_aulas") if request.form.get("vai_acompanhado_aulas") else None,
-                "telefone_resp": request.form.get("telefone_resp"),
-                "endereco": {
-                    "cep": request.form.get("cep"),
-                    "rua": request.form.get("rua"),
-                    "numero": request.form.get("numero"),
-                    "bairro": request.form.get("bairro"),
-                    "cidade": request.form.get("cidade"),
-                    "uf": request.form.get("uf"),
-                    "zona": request.form.get("zona", "Urbana"),
-                    "possui_acesso_internet": not bool(
-                        request.form.get("nao_possui_acesso_internet")
-                    ),
-                },
-            }
-            aluno.socioeconomico_json = {
-                "renda_familiar": request.form.get("renda_familiar"),
-                "residente_maior_renda": request.form.get("residente_maior_renda"),
-                "pessoas_residencia": request.form.get("pessoas_residencia"),
-                "ocupacao": request.form.get("ocupacao"),
-                "beneficio_social_status": request.form.get("beneficio_social_status"),
-                "beneficio_social_nome": request.form.get("beneficio_social_nome"),
-                "meio_transporte": request.form.get("meio_transporte"),
-                "vulnerabilidade_social": bool(request.form.get("vulnerabilidade_social")),
-            }
-            aluno.diversidade_json = {
-                "genero": request.form.get("genero"),
-                "raca_cor": request.form.get("raca_cor"),
-                "saude_laudo": bool(request.form.get("saude_laudo")),
-                "saude_medicacao": request.form.get("saude_medicacao"),
-                "saude_medicamento_nome": request.form.get("saude_medicamento_nome"),
-                "saude_observacoes": request.form.get("saude_observacoes"),
-                "informacoes_para_professor": request.form.get("informacoes_para_professor"),
-                "autorizacao_imagem": bool(request.form.get("autorizacao_imagem")),
-            }
+            # Campos civis (Onda 3A) direto na tabela
+            _aplicar_campos_civis(aluno, request.form)
+
+            # -----------------------------------------------------------------
+            # 2. SituacaoEscolar
+            # -----------------------------------------------------------------
             _salvar_situacao_escolar(aluno)
 
+            # -----------------------------------------------------------------
+            # 3. Perfis (Onda 3B)
+            # -----------------------------------------------------------------
+            upsert_endereco(aluno, request.form)
+            upsert_responsavel(aluno, request.form)
+            upsert_perfil_socioeconomico(aluno, request.form)
+            upsert_perfil_diversidade(aluno, request.form)
+
+            # -----------------------------------------------------------------
+            # 4. Foto
+            # -----------------------------------------------------------------
             foto = request.files.get("foto")
             if foto and foto.filename:
                 salvar_foto(foto, aluno)
 
-            docs = aluno.escolaridade_json or {}
-            entregues = docs.get("doc_entregue", {})
-            for doc_id in [
-                "doc_aluno",
-                "doc_residencia",
-                "doc_declaracao",
-                "doc_atestado",
-                "doc_termo",
-                "doc_responsavel",
-                "doc_laudo",
-            ]:
-                documento = request.files.get(doc_id)
-                if (
-                    documento
-                    and documento.filename
-                    and salvar_documento(documento, aluno, doc_id)
-                ):
-                    entregues[doc_id] = True
-            docs["doc_entregue"] = entregues
-            aluno.escolaridade_json = docs
+            # -----------------------------------------------------------------
+            # 5. Documentos entregues (JSONB)
+            # -----------------------------------------------------------------
+            _atualizar_documentos_entregues(aluno)
 
             db.session.commit()
             flash(
                 f"Aluno {aluno.nome_social or aluno.nome} editado com sucesso!",
                 "success",
             )
-            return redirect(url_for("registros.gerenciar_alunos"))
+            retorno = session.pop(f"retorno_edicao_aluno_{aluno.id}", None)
+            return redirect(retorno or url_for("registros.gerenciar_alunos"))
         except Exception as exc:
             from app.utils.errors import flash_and_log
 
             db.session.rollback()
-            flash_and_log(exc, location='registros.editar_aluno', hint='db')
+            flash_and_log(exc, location="registros.editar_aluno", hint="db")
 
-    return render_template("alunos/editar.html", aluno=aluno)
+    return render_template(
+        "alunos/editar.html",
+        aluno=aluno,
+        perfil=get_perfil_completo(aluno),
+    )
 
+
+# =============================================================================
+# EXCLUSÃO / INATIVAÇÃO / DESENTURMAÇÃO
+# =============================================================================
 
 @bp.route("/aluno/excluir/<int:id>")
 @login_required
@@ -495,14 +597,18 @@ def excluir_aluno(id):
     )
     if tem_presenca:
         flash(
-            "Proteção Sistêmica: Aluno blindado para Exclusão Física, pois possui Diário. Desative-o apenas.",
+            "Proteção Sistêmica: Aluno blindado para Exclusão Física, pois "
+            "possui Diário. Desative-o apenas.",
             "warning",
         )
         return redirect(url_for("registros.gerenciar_alunos"))
     try:
         db.session.delete(aluno)
         db.session.commit()
-        flash("Aluno purgado dos registros institucionais permanentemente.", "success")
+        flash(
+            "Aluno purgado dos registros institucionais permanentemente.",
+            "success",
+        )
     except Exception:
         db.session.rollback()
         flash("O Storage DB recusou a exclusão profunda.", "danger")
@@ -512,23 +618,28 @@ def excluir_aluno(id):
 @bp.route("/aluno/inativar/<int:id>")
 @login_required
 def inativar_aluno(id):
+    """
+    Inativa um aluno (soft delete).
+
+    Onda 2A: o redirecionamento original tentava `aluno.turma_id`, atributo
+    que não existe no modelo. Simplificado para voltar à listagem.
+    """
     try:
         aluno = db.get_or_404(Aluno, id)
         assert_unidade_context(aluno.unidade_id, get_unidade_id())
         aluno.ativo = False
         db.session.commit()
+        flash(f"Aluno {aluno.nome} inativado.", "info")
     except Exception:
         db.session.rollback()
-    try:
-        return redirect(url_for("registros.ver_turma", id=aluno.turma_id))
-    except Exception:
-        return redirect(url_for("registros.gerenciar_alunos"))
+        flash("Erro ao inativar aluno.", "danger")
+    return redirect(url_for("registros.gerenciar_alunos"))
 
 
 @bp.route("/turma/desenturmar/<int:id>")
 @login_required
 def desenturmar_alunos(id):
-    if current_user.role not in ["pedagogico", "admin"]:
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN):
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)
@@ -565,15 +676,25 @@ def desenturmar_alunos(id):
             else:
                 db.session.delete(inscricao)
                 db.session.commit()
-                flash(f"Aluno {aluno.nome} removido da turma {turma.nome}.", "success")
+                flash(
+                    f"Aluno {aluno.nome} removido da turma {turma.nome}.",
+                    "success",
+                )
         except Exception:
             db.session.rollback()
-            flash("Falha ao processar a associação do aluno com a turma.", "danger")
+            flash(
+                "Falha ao processar a associação do aluno com a turma.",
+                "danger",
+            )
         return redirect(url_for("registros.ver_turma", id=turma.id))
 
     flash("Turma não informada para remoção.", "warning")
     return redirect(url_for("registros.gerenciar_alunos"))
 
+
+# =============================================================================
+# HISTÓRICO / IMPRESSÃO / TRANSFERÊNCIA
+# =============================================================================
 
 @bp.route("/aluno/<int:aluno_id>/historico")
 @login_required
@@ -592,7 +713,9 @@ def historico_aluno(aluno_id):
         if not turma:
             continue
 
-        freqs = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id).all()
+        freqs = Frequencia.query.filter_by(
+            aluno_id=aluno_id, turma_id=turma.id
+        ).all()
         estatisticas = calcular_estatisticas_frequencia(
             freq.conceito for freq in freqs
         )
@@ -605,33 +728,56 @@ def historico_aluno(aluno_id):
         c_inicial = get_conselho("INICIAL")
         c_percurso = get_conselho("PERCURSO")
         c_final = get_conselho("FINAL")
+
+        # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
+        horario = (
+            f"{turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--'}"
+            f" às "
+            f"{turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--'}"
+        )
+
         dados.append(
             {
                 "turma": turma.nome,
                 "curso": turma.curso.nome if turma.curso else "—",
                 "programa": turma.programa or "—",
                 "professor": turma.professor.name if turma.professor else "—",
-                "periodo": turma.periodo_letivo.nome if turma.periodo_letivo else "—",
+                "periodo": (
+                    turma.periodo_letivo.nome if turma.periodo_letivo else "—"
+                ),
                 "dias": turma.dias_semana or "—",
-                "horario": f"{turma.hora_inicio or '--:--'} às {turma.hora_fim or '--:--'}",
-                "data_inicio": turma.data_inicio or "—",
-                "data_fim": turma.data_fim or "—",
+                "horario": horario,
+                "data_inicio": (
+                    turma.data_inicio.strftime("%d/%m/%Y")
+                    if turma.data_inicio else "—"
+                ),
+                "data_fim": (
+                    turma.data_fim.strftime("%d/%m/%Y")
+                    if turma.data_fim else "—"
+                ),
                 "nivel": insc.nivel or aluno.nivel or "—",
-                "total_aulas": total,
+                "total_aulas": estatisticas["total"],
                 "presencas": estatisticas["presencas"],
                 "faltas": estatisticas["faltas"],
                 "justificadas": estatisticas["justificadas"],
                 "pct_presenca": estatisticas["presenca_percentual"],
-                "status_inicial": c_inicial.situacao_final if c_inicial else "—",
-                "status_percurso": c_percurso.situacao_final if c_percurso else "—",
-                "situacao_final": c_final.situacao_final if c_final else "—",
+                "status_inicial": (
+                    c_inicial.situacao_final if c_inicial else "—"
+                ),
+                "status_percurso": (
+                    c_percurso.situacao_final if c_percurso else "—"
+                ),
+                "situacao_final": (
+                    c_final.situacao_final if c_final else "—"
+                ),
                 "ativo": insc.ativo,
             }
         )
 
     dados.sort(key=lambda item: (not item["ativo"], item["periodo"]))
     data_cadastro = (
-        aluno.created_at.strftime("%d/%m/%Y") if aluno.created_at else "Não disponível"
+        aluno.created_at.strftime("%d/%m/%Y")
+        if aluno.created_at else "Não disponível"
     )
     return render_template(
         "alunos/historico.html",
@@ -644,14 +790,18 @@ def historico_aluno(aluno_id):
 @bp.route("/aluno/imprimir/<int:id>")
 @login_required
 def imprimir_aluno(id):
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
     return render_template(
         "alunos/impressao.html",
         aluno=aluno,
+        perfil=get_perfil_completo(aluno),
         data_matricula=aluno.created_at or datetime.now(),
     )
 
@@ -659,88 +809,112 @@ def imprimir_aluno(id):
 @bp.route("/aluno/transferir/<int:aluno_id>", methods=["GET", "POST"])
 @login_required
 def transferir_aluno(aluno_id):
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, aluno_id)
-    unidade_id = get_unidade_id()  # pode ser None
+    unidade_id = get_unidade_id()
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
-    # Turma de origem – vem da URL (GET) ou do form (POST)
-    turma_origem_id = request.args.get('turma_origem_id', type=int)
-    if not turma_origem_id and request.method == 'POST':
-        turma_origem_id = request.form.get('turma_origem_id', type=int)
+    turma_origem_id = request.args.get("turma_origem_id", type=int)
+    if not turma_origem_id and request.method == "POST":
+        turma_origem_id = request.form.get("turma_origem_id", type=int)
 
     if not turma_origem_id:
         flash("Turma de origem não informada.", "danger")
-        return redirect(url_for('registros.gerenciar_alunos'))
+        return redirect(url_for("registros.gerenciar_alunos"))
 
-    # Verifica se a inscrição realmente existe e está ativa
     inscricao_origem = Inscricao.query.filter_by(
         aluno_id=aluno.id, turma_id=turma_origem_id, ativo=True
     ).first()
     if not inscricao_origem:
-        flash("Aluno não está ativo na turma de origem informada.", "danger")
-        return redirect(url_for('registros.gerenciar_alunos'))
-
-    # --- MÉTODO GET: exibe formulário ---
-    if request.method == 'GET':
-        # Consulta turmas de destino (ativas, diferente da origem)
-        query = Turma.query.filter(
-            Turma.ativo == True,
-            Turma.id != turma_origem_id
+        flash(
+            "Aluno não está ativo na turma de origem informada.", "danger"
         )
-        # Aplica filtro de unidade SOMENTE se unidade_id não for None
+        return redirect(url_for("registros.gerenciar_alunos"))
+
+    # --- GET: formulário ---
+    if request.method == "GET":
+        query = Turma.query.filter(
+            Turma.ativo == True, Turma.id != turma_origem_id
+        )
         if unidade_id is not None:
             query = query.filter(Turma.unidade_id == unidade_id)
         turmas_destino = query.order_by(Turma.nome).all()
 
         if not turmas_destino:
-            flash("Não há outras turmas ativas disponíveis para transferência.", "warning")
+            flash(
+                "Não há outras turmas ativas disponíveis para transferência.",
+                "warning",
+            )
 
         return render_template(
             "alunos/transferir.html",
             aluno=aluno,
             turma_origem=inscricao_origem.turma,
             turmas_destino=turmas_destino,
-            hoje=datetime.now().date()
+            hoje=datetime.now().date(),
         )
 
-    # --- MÉTODO POST: processa a transferência ---
-    turma_destino_id = request.form.get('turma_destino_id', type=int)
-    data_transferencia_str = request.form.get('data_transferencia')
-    observacoes = request.form.get('observacoes', '').strip()
+    # --- POST: processa a transferência ---
+    turma_destino_id = request.form.get("turma_destino_id", type=int)
+    data_transferencia_str = request.form.get("data_transferencia")
+    observacoes = request.form.get("observacoes", "").strip()
 
     if not turma_destino_id or not data_transferencia_str:
-        flash("Selecione a turma de destino e a data da transferência.", "warning")
-        return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
+        flash(
+            "Selecione a turma de destino e a data da transferência.",
+            "warning",
+        )
+        return redirect(
+            url_for(
+                "registros.transferir_aluno",
+                aluno_id=aluno_id,
+                turma_origem_id=turma_origem_id,
+            )
+        )
 
     try:
-        data_transferencia = datetime.strptime(data_transferencia_str, "%Y-%m-%d").date()
+        data_transferencia = datetime.strptime(
+            data_transferencia_str, "%Y-%m-%d"
+        ).date()
     except ValueError:
         flash("Data inválida.", "danger")
-        return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
+        return redirect(
+            url_for(
+                "registros.transferir_aluno",
+                aluno_id=aluno_id,
+                turma_origem_id=turma_origem_id,
+            )
+        )
 
     turma_destino = db.get_or_404(Turma, turma_destino_id)
 
-    # Valida se a data de transferência é anterior ao início da turma destino
-    if turma_destino.data_inicio:
-        try:
-            inicio = datetime.strptime(turma_destino.data_inicio, "%Y-%m-%d").date()
-            if data_transferencia < inicio:
-                flash(f"A data de transferência não pode ser anterior ao início da turma ({turma_destino.data_inicio}).", "warning")
-                return redirect(url_for("registros.transferir_aluno", aluno_id=aluno_id, turma_origem_id=turma_origem_id))
-        except ValueError:
-            pass  # ignora formato inválido
+    # Onda 2A: turma_destino.data_inicio já é `date`.
+    if turma_destino.data_inicio and data_transferencia < turma_destino.data_inicio:
+        flash(
+            f"A data de transferência não pode ser anterior ao início da "
+            f"turma ({turma_destino.data_inicio.strftime('%d/%m/%Y')}).",
+            "warning",
+        )
+        return redirect(
+            url_for(
+                "registros.transferir_aluno",
+                aluno_id=aluno_id,
+                turma_origem_id=turma_origem_id,
+            )
+        )
 
-    # --- Executa a transferência no banco ---
     try:
-        # 1. Desativa a inscrição atual
         inscricao_origem.ativo = False
-        inscricao_origem.data_desativacao = data_transferencia - timedelta(days=1)
+        inscricao_origem.data_desativacao = datetime.combine(
+            data_transferencia - timedelta(days=1),
+            datetime.min.time(),
+        )
         inscricao_origem.motivo_desativacao = "TRANSFERENCIA"
 
-        # 2. Cria nova inscrição na turma destino
         nova_inscricao = Inscricao(
             aluno_id=aluno.id,
             turma_id=turma_destino_id,
@@ -748,29 +922,34 @@ def transferir_aluno(aluno_id):
             data_inicio=data_transferencia,
             ativo=True,
             data_desativacao=None,
-            motivo_desativacao=None
+            motivo_desativacao=None,
         )
         db.session.add(nova_inscricao)
 
-        # 3. Registra o log de transferência
         from app.models import Transferencia
+
         transferencia = Transferencia(
             aluno_id=aluno.id,
             turma_origem_id=inscricao_origem.turma_id,
             turma_destino_id=turma_destino_id,
-            data_transferencia=data_transferencia,
+            data_transferencia=datetime.combine(
+                data_transferencia, datetime.min.time()
+            ),
             observacoes=observacoes,
-            unidade_id=unidade_id
+            unidade_id=unidade_id,
         )
         db.session.add(transferencia)
 
         db.session.commit()
-        flash(f"Aluno {aluno.nome} transferido para a turma {turma_destino.nome} com sucesso!", "success")
+        flash(
+            f"Aluno {aluno.nome} transferido para a turma "
+            f"{turma_destino.nome} com sucesso!",
+            "success",
+        )
     except Exception as e:
         from app.utils.errors import flash_and_log
 
         db.session.rollback()
-        flash_and_log(e, location='registros.transferir_aluno', hint='db')
+        flash_and_log(e, location="registros.transferir_aluno", hint="db")
 
-    # Redireciona de volta para a página da turma de origem
     return redirect(url_for("registros.ver_turma", id=turma_origem_id))

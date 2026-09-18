@@ -5,494 +5,663 @@
 {% macro paginacao(pos) %}
 {% if pagination.pages > 1 %}
 <nav class="{{ 'mt-0 mb-3' if pos == 'topo' else 'mt-4 pb-4' }}">
-  <ul class="pagination justify-content-center {{ 'pagination-sm mb-0' if pos == 'topo' else '' }}">
-    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-      <a class="page-link border-0 shadow-sm mx-1 rounded" title="Primeira página"
-         href="{{ url_for('registros.gerenciar_alunos', page=1, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
-        <i class="bi bi-chevron-double-left"></i>
-      </a>
-    </li>
-    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
-      <a class="page-link border-0 shadow-sm mx-1 rounded"
-         href="{{ url_for('registros.gerenciar_alunos', page=pagination.prev_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
-        <i class="bi bi-chevron-left"></i> Anterior
-      </a>
-    </li>
-    <li class="page-item active">
-      <span class="page-link border-0 shadow-sm mx-1 rounded">
-        Página {{ pagination.page }} de {{ pagination.pages }}
-      </span>
-    </li>
-    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-      <a class="page-link border-0 shadow-sm mx-1 rounded"
-         href="{{ url_for('registros.gerenciar_alunos', page=pagination.next_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
-        Próximo <i class="bi bi-chevron-right"></i>
-      </a>
-    </li>
-    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
-      <a class="page-link border-0 shadow-sm mx-1 rounded" title="Última página"
-         href="{{ url_for('registros.gerenciar_alunos', page=pagination.pages, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
-        <i class="bi bi-chevron-double-right"></i>
-      </a>
-    </li>
-  </ul>
+    <ul class="pagination justify-content-center {{ 'pagination-sm mb-0' if pos == 'topo' else '' }}">
+        <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+            <a class="page-link border-0 shadow-sm mx-1 rounded" title="Primeira página"
+                href="{{ url_for('registros.gerenciar_alunos', page=1, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
+                <i class="bi bi-chevron-double-left"></i>
+            </a>
+        </li>
+        <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+            <a class="page-link border-0 shadow-sm mx-1 rounded"
+                href="{{ url_for('registros.gerenciar_alunos', page=pagination.prev_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_prev else '#' }}">
+                <i class="bi bi-chevron-left"></i> Anterior
+            </a>
+        </li>
+        <li class="page-item active">
+            <span class="page-link border-0 shadow-sm mx-1 rounded">
+                Página {{ pagination.page }} de {{ pagination.pages }}
+            </span>
+        </li>
+        <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+            <a class="page-link border-0 shadow-sm mx-1 rounded"
+                href="{{ url_for('registros.gerenciar_alunos', page=pagination.next_num, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
+                Próximo <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+            <a class="page-link border-0 shadow-sm mx-1 rounded" title="Última página"
+                href="{{ url_for('registros.gerenciar_alunos', page=pagination.pages, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max) if pagination.has_next else '#' }}">
+                <i class="bi bi-chevron-double-right"></i>
+            </a>
+        </li>
+    </ul>
 </nav>
 {% endif %}
 {% endmacro %}
 
 <div class="d-flex align-items-center justify-content-between mb-2">
-  <h2 class="fw-bold mb-0">
-    <i class="bi bi-people me-2 text-primary"></i>Gerenciar Alunos
-  </h2>
-  {% if not is_readonly %}
-  <a href="/aluno/novo" class="btn btn-primary fw-bold shadow-sm">
-    <i class="bi bi-person-plus me-1"></i> CADASTRAR ALUNO
-  </a>
-  {% endif %}
+    <h2 class="fw-bold mb-0">
+        <i class="bi bi-people me-2 text-primary"></i>Gerenciar Alunos
+    </h2>
+    {% if not is_readonly %}
+    <a href="/aluno/novo" class="btn btn-primary fw-bold shadow-sm">
+        <i class="bi bi-person-plus me-1"></i> CADASTRAR ALUNO
+    </a>
+    {% endif %}
 </div>
 
 {{ paginacao('topo') }}
 
 <div class="card shadow-sm border-0 mb-4">
-  <div class="card-body p-3">
-    <h6 class="fw-bold mb-3 text-primary" style="font-size: 0.9rem;">
-      <i class="bi bi-search me-2"></i>FILTRAR ALUNOS
-    </h6>
-    <form action="{{ url_for('registros.gerenciar_alunos') }}" method="GET" class="row g-2 align-items-end">
-      <div class="col-md-3">
-        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Nome do Aluno</label>
-        <input type="text" name="nome" class="form-control form-control-sm" placeholder="Nome..." value="{{ search_nome }}" />
-      </div>
-      <div class="col-md-2">
-        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Matrícula</label>
-        <input type="text" name="matricula" class="form-control form-control-sm" placeholder="00001.2026" value="{{ search_matr }}" />
-      </div>
-      <div class="col-md-2">
-        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">CPF</label>
-        <input type="text" name="cpf" class="form-control form-control-sm mask-cpf" placeholder="000.000.000-00" value="{{ search_cpf }}" />
-      </div>
-      
-      <div class="col-md-2">
-        <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Faixa Etária (Anos)</label>
-        <div class="input-group input-group-sm">
-          <input type="number" name="idade_min" class="form-control" placeholder="Min" value="{{ search_idade_min }}">
-          <span class="input-group-text px-1" style="font-size: 0.65rem;">a</span>
-          <input type="number" name="idade_max" class="form-control" placeholder="Max" value="{{ search_idade_max }}">
-        </div>
-      </div>
+    <div class="card-body p-3">
+        <h6 class="fw-bold mb-3 text-primary" style="font-size: 0.9rem;">
+            <i class="bi bi-search me-2"></i>FILTRAR ALUNOS
+        </h6>
+        <form action="{{ url_for('registros.gerenciar_alunos') }}" method="GET" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Nome do
+                    Aluno</label>
+                <input type="text" name="nome" class="form-control form-control-sm" placeholder="Nome..."
+                    value="{{ search_nome }}" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold text-muted text-uppercase"
+                    style="font-size: 0.65rem;">Matrícula</label>
+                <input type="text" name="matricula" class="form-control form-control-sm" placeholder="00001.2026"
+                    value="{{ search_matr }}" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">CPF</label>
+                <input type="text" name="cpf" class="form-control form-control-sm mask-cpf" placeholder="000.000.000-00"
+                    value="{{ search_cpf }}" />
+            </div>
 
-      <div class="col-md-3 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm fw-bold flex-grow-1" style="font-size: 0.75rem;">
-          <i class="bi bi-search me-1"></i> PESQUISAR
-        </button>
-        <a href="{{ url_for('registros.gerenciar_alunos') }}" class="btn btn-outline-secondary btn-sm fw-bold px-3" style="font-size: 0.75rem;" title="Limpar Filtros">
-          <i class="bi bi-eraser-fill me-1"></i> LIMPAR
-        </a>
-      </div>
-    </form>
-  </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold text-muted text-uppercase" style="font-size: 0.65rem;">Faixa Etária
+                    (Anos)</label>
+                <div class="input-group input-group-sm">
+                    <input type="number" name="idade_min" class="form-control" placeholder="Min"
+                        value="{{ search_idade_min }}">
+                    <span class="input-group-text px-1" style="font-size: 0.65rem;">a</span>
+                    <input type="number" name="idade_max" class="form-control" placeholder="Max"
+                        value="{{ search_idade_max }}">
+                </div>
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm fw-bold flex-grow-1" style="font-size: 0.75rem;">
+                    <i class="bi bi-search me-1"></i> PESQUISAR
+                </button>
+                <a href="{{ url_for('registros.gerenciar_alunos') }}"
+                    class="btn btn-outline-secondary btn-sm fw-bold px-3" style="font-size: 0.75rem;"
+                    title="Limpar Filtros">
+                    <i class="bi bi-eraser-fill me-1"></i> LIMPAR
+                </a>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="row mb-3 px-2">
-  <div class="col-md-6">
-    <small class="text-muted">Mostrando <strong>{{ pagination.items|length }}</strong> de <strong>{{ pagination.total }}</strong> alunos</small>
-  </div>
-  <div class="col-md-6 text-end">
-    <span class="me-3"><strong class="text-primary">{{ total_alunos }}</strong> <small class="text-muted text-uppercase">Cadastrados</small></span>
-    <span><strong class="text-success">{{ total_enturmados }}</strong> <small class="text-muted text-uppercase">Enturmados</small></span>
-  </div>
+    <div class="col-md-6">
+        <small class="text-muted">Mostrando <strong>{{ pagination.items|length }}</strong> de <strong>{{
+                pagination.total }}</strong> alunos</small>
+    </div>
+    <div class="col-md-6 text-end">
+        <span class="me-3"><strong class="text-primary">{{ total_alunos }}</strong> <small
+                class="text-muted text-uppercase">Cadastrados</small></span>
+        <span><strong class="text-success">{{ total_enturmados }}</strong> <small
+                class="text-muted text-uppercase">Enturmados</small></span>
+    </div>
 </div>
 
 <div class="card shadow-sm border-0">
-  <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
-      <thead class="table-light">
-        <tr class="small text-uppercase text-muted text-center">
-          <th class="ps-3" style="width: 110px;">Matrícula</th>
-          <th class="ps-2" style="width: 70px;">Foto</th>
-          <th style="min-width: 280px;">Nome Completo</th>
-          <th class="text-center" style="width: 100px;">Idade</th>
-          <th class="text-center" style="width: 160px;">Turma</th>
-          <th class="text-center" style="width: 110px;">Docs</th>
-          <th class="text-center pe-3" style="width: 130px;">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for aluno in pagination.items %}
-        <tr>
-          <td class="text-center fw-medium">
-            <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank" class="text-decoration-none text-primary fw-bold">
-              {{ aluno.matricula or '-' }}
-            </a>
-          </td>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr class="small text-uppercase text-muted text-center">
+                    <th class="ps-3" style="width: 110px;">
+                        <button type="button"
+                            class="btn btn-link p-0 border-0 text-reset text-decoration-none fw-semibold sortable-header"
+                            data-sort-key="matricula" title="Ordenar por matrícula">
+                            Matrícula <span class="sort-arrows" aria-hidden="true"><span
+                                    class="sort-arrow sort-up">↑</span><span
+                                    class="sort-arrow sort-down">↓</span></span>
+                        </button>
+                    </th>
+                    <th class="ps-2" style="width: 70px;">Foto</th>
+                    <th style="min-width: 280px;">
+                        <button type="button"
+                            class="btn btn-link p-0 border-0 text-reset text-decoration-none fw-semibold sortable-header"
+                            data-sort-key="nome" title="Ordenar por nome completo">
+                            Nome Completo <span class="sort-arrows" aria-hidden="true"><span
+                                    class="sort-arrow sort-up">↑</span><span
+                                    class="sort-arrow sort-down">↓</span></span>
+                        </button>
+                    </th>
+                    <th class="text-center" style="width: 100px;">
+                        <button type="button"
+                            class="btn btn-link p-0 border-0 text-reset text-decoration-none fw-semibold sortable-header"
+                            data-sort-key="idade" title="Ordenar por idade">
+                            Idade <span class="sort-arrows" aria-hidden="true"><span
+                                    class="sort-arrow sort-up">↑</span><span
+                                    class="sort-arrow sort-down">↓</span></span>
+                        </button>
+                    </th>
+                    <th class="text-center" style="width: 160px;">
+                        <button type="button"
+                            class="btn btn-link p-0 border-0 text-reset text-decoration-none fw-semibold sortable-header"
+                            data-sort-key="turma" title="Ordenar por turma">
+                            Turma <span class="sort-arrows" aria-hidden="true"><span
+                                    class="sort-arrow sort-up">↑</span><span
+                                    class="sort-arrow sort-down">↓</span></span>
+                        </button>
+                    </th>
+                    <th class="text-center" style="width: 110px;">Docs</th>
+                    <th class="text-center pe-3" style="width: 130px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for aluno in pagination.items %}
+                <tr>
+                    <td class="text-center fw-medium">
+                        <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank"
+                            class="text-decoration-none text-primary fw-bold">
+                            {{ aluno.matricula or '-' }}
+                        </a>
+                    </td>
 
-          <td class="text-center">
-            <div class="d-flex justify-content-center">
-              <div class="rounded bg-light overflow-hidden shadow-sm" style="width: 42px; height: 56px; border: 1px solid #ddd">
-                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
-                     class="w-100 h-100 object-fit-cover" />
-              </div>
-            </div>
-          </td>
+                    <td class="text-center">
+                        <div class="d-flex justify-content-center">
+                            <div class="rounded bg-light overflow-hidden shadow-sm"
+                                style="width: 42px; height: 56px; border: 1px solid #ddd">
+                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                    class="w-100 h-100 object-fit-cover" />
+                            </div>
+                        </div>
+                    </td>
 
-          <td>
-            <a href="{{ url_for('registros.imprimir_aluno', id=aluno.id) }}" target="_blank" class="text-decoration-none text-dark d-block">
-              <div class="fw-bold">{{ aluno.nome }}</div>
-              {% if aluno.nome_social and aluno.nome_social != '-' %}
-              <small class="text-muted">Social: {{ aluno.nome_social }}</small>
-              {% endif %}
-            </a>
-          </td>
+                    <td>
+                        <a href="{{ url_for('registros.imprimir_aluno', id=aluno.id) }}" target="_blank"
+                            class="text-decoration-none text-dark d-block">
+                            <div class="fw-bold">{{ aluno.nome }}</div>
+                            {% if aluno.nome_social and aluno.nome_social != '-' %}
+                            <small class="text-muted">Social: {{ aluno.nome_social }}</small>
+                            {% endif %}
+                        </a>
+                    </td>
 
-          <td class="text-center">
-            {% if aluno.idade_calculada != '?' %}
-              {% set idade = aluno.idade_calculada %}
-              {% if idade <= 12 %} {% set color_class='bg-danger-subtle text-danger border-danger-subtle' %}
-              {% elif idade < 18 %} {% set color_class='bg-warning-subtle text-warning-emphasis border-warning-subtle' %}
-              {% else %} {% set color_class='bg-primary-subtle text-primary border-primary-subtle' %} {% endif %}
-              <span class="badge {{ color_class }} border" style="font-size: 0.75rem; padding: 0.4em 0.8em">
-                {{ idade }} anos
-              </span>
-            {% else %}
-              <span class="badge bg-light text-muted border" style="font-size: 0.75rem; padding: 0.4em 0.8em">- anos</span>
-            {% endif %}
-          </td>
+                    <td class="text-center">
+                        {% if aluno.idade_calculada != '?' %}
+                        {% set idade = aluno.idade_calculada %}
+                        {% if idade <= 12 %} {% set color_class='bg-danger-subtle text-danger border-danger-subtle' %}
+                            {% elif idade < 18 %} {% set
+                            color_class='bg-warning-subtle text-warning-emphasis border-warning-subtle' %} {% else %} {%
+                            set color_class='bg-primary-subtle text-primary border-primary-subtle' %} {% endif %} <span
+                            class="badge {{ color_class }} border" style="font-size: 0.75rem; padding: 0.4em 0.8em">
+                            {{ idade }} anos
+                            </span>
+                            {% else %}
+                            <span class="badge bg-light text-muted border"
+                                style="font-size: 0.75rem; padding: 0.4em 0.8em">- anos</span>
+                            {% endif %}
+                    </td>
 
-          <td class="text-center">
-            <div class="d-flex flex-wrap gap-1 justify-content-center">
-              {% for turma in aluno.turmas %}
-                <span class="badge bg-info text-dark" style="font-size: 0.7rem">{{ turma.nome }}</span>
-              {% else %}
-                <span class="badge bg-light text-muted border" style="font-size: 0.7rem">-</span>
-              {% endfor %}
-            </div>
-          </td>
+                    <td class="text-center">
+                        <div class="d-flex flex-wrap gap-1 justify-content-center">
+                            {% for turma in aluno.turmas %}
+                            <span class="badge bg-info text-dark" style="font-size: 0.7rem">{{ turma.nome }}</span>
+                            {% else %}
+                            <span class="badge bg-light text-muted border" style="font-size: 0.7rem">-</span>
+                            {% endfor %}
+                        </div>
+                    </td>
 
-          <td class="text-center">
-            <div class="d-flex gap-2 justify-content-center flex-wrap">
-              {% set edu = aluno.escolaridade_json if aluno.escolaridade_json else {} %}
-              {% set docs = edu.get('doc_entregue', {}) %}
-              {% set mat_folder = aluno.matricula.replace('.', '_') if aluno.matricula else 'sem_matricula' %}
-              
-              {# Mapeamento de documentos conforme seu original #}
-              {% set docs_map = [
-                ('doc_aluno', 'RG / CPF', 'bi-person-badge', 'text-primary'),
-                ('doc_residencia', 'Comprovante de Residência', 'bi-house-door', 'text-info'),
-                ('doc_declaracao', 'Declaração Escolar', 'bi-journal-check', 'text-warning'),
-                ('doc_atestado', 'Atestado de Saúde', 'bi-file-medical', 'text-danger'),
-                ('doc_termo', 'Termo de Imagem', 'bi-image', 'text-purple'),
-                ('doc_responsavel', 'Documento do Responsável', 'bi-people', 'text-success'),
-                ('doc_laudo', 'Laudo Médico', 'bi-file-medical-fill', 'text-danger')
-              ] %}
+                    <td class="text-center">
+                        <div class="d-flex gap-2 justify-content-center flex-wrap">
+                            {% set edu = aluno.documentos_dict() %}
+                            {% set docs = edu.get('doc_entregue', {}) %}
+                            {% set mat_folder = aluno.matricula.replace('.', '_') if aluno.matricula else
+                            'sem_matricula' %}
 
-              {% set ns = namespace(found=false) %}
-              {% for doc_id, label, icon, color in docs_map %}
-                {% if docs.get(doc_id) and docs.get(doc_id) not in [False, 'false', '0', '', None] %}
-                  <a href="{{ url_for('static', filename='uploads/documentos/' + mat_folder + '/' + doc_id + '.pdf') }}"
-                     target="_blank" title="{{ label }}" class="{{ color }}" style="font-size: 0.95rem;">
-                    <i class="bi {{ icon }}"></i>
-                  </a>
-                  {% set ns.found = true %}
-                {% endif %}
-              {% endfor %}
+                            {# Mapeamento de documentos conforme seu original #}
+                            {% set docs_map = [
+                            ('doc_aluno', 'RG / CPF', 'bi-person-badge', 'text-primary'),
+                            ('doc_residencia', 'Comprovante de Residência', 'bi-house-door', 'text-info'),
+                            ('doc_declaracao', 'Declaração Escolar', 'bi-journal-check', 'text-warning'),
+                            ('doc_atestado', 'Atestado de Saúde', 'bi-file-medical', 'text-danger'),
+                            ('doc_termo', 'Termo de Imagem', 'bi-image', 'text-purple'),
+                            ('doc_responsavel', 'Documento do Responsável', 'bi-people', 'text-success'),
+                            ('doc_laudo', 'Laudo Médico', 'bi-file-medical-fill', 'text-danger')
+                            ] %}
 
-              {% if not ns.found %}
-                <span class="badge bg-light text-muted border" style="font-size: 0.7rem;">Nenhum</span>
-              {% endif %}
-            </div>
-          </td>
+                            {% set ns = namespace(found=false) %}
+                            {% for doc_id, label, icon, color in docs_map %}
+                            {% if docs.get(doc_id) and docs.get(doc_id) not in [False, 'false', '0', '', None] %}
+                            <a href="{{ url_for('static', filename='uploads/documentos/' + mat_folder + '/' + doc_id + '.pdf') }}"
+                                target="_blank" title="{{ label }}" class="{{ color }}" style="font-size: 0.95rem;">
+                                <i class="bi {{ icon }}"></i>
+                            </a>
+                            {% set ns.found = true %}
+                            {% endif %}
+                            {% endfor %}
 
-          <td class="text-center pe-3">
-            {% if not is_readonly %}
-            <div class="btn-group btn-group-sm gap-1">
-              <a href="/aluno/editar/{{ aluno.id }}" class="btn btn-sm btn-outline-primary py-1 px-2" title="Editar">
-                <i class="bi bi-pencil" style="font-size: 0.85rem;"></i>
-              </a>
-              <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id) }}" class="btn btn-sm btn-outline-warning py-1 px-2" title="Transferir">
-                <i class="bi bi-arrow-left-right" style="font-size: 0.85rem;"></i>
-              </a>
-              {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else none %}
-              <button type="button"
-                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
-                      data-aluno-id="{{ aluno.id }}"
-                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
-                      data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
-                      data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
-                      data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
-                      data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
-                      data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
-                      title="Registro Pedagógico">
-                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
-              </button>
-              <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2" onclick="return confirm('Excluir aluno?');" title="Excluir">
-                <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
-              </a>
-            </div>
-            {% else %}
-            {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else none %}
-            <div class="btn-group btn-group-sm gap-1">
-              <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}"
-                 target="_blank" class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
-                <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
-              </a>
-              <button type="button"
-                      class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
-                      data-aluno-id="{{ aluno.id }}"
-                      data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                      data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                      data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
-                      data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
-                      data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
-                      data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
-                      data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
-                      data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
-                      title="Registro Pedagógico">
-                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
-              </button>
-            </div>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+                            {% if not ns.found %}
+                            <span class="badge bg-light text-muted border" style="font-size: 0.7rem;">Nenhum</span>
+                            {% endif %}
+                        </div>
+                    </td>
 
-  {{ paginacao('rodape') }}
+                    <td class="text-center pe-3">
+                        {% if not is_readonly %}
+                        <div class="btn-group btn-group-sm gap-1">
+                            <a href="{{ url_for('registros.editar_aluno', id=aluno.id, retorno=url_for('registros.gerenciar_alunos', page=pagination.page, nome=search_nome, matricula=search_matr, cpf=search_cpf, idade_min=search_idade_min, idade_max=search_idade_max)) }}"
+                                class="btn btn-sm btn-outline-primary py-1 px-2" title="Editar">
+                                <i class="bi bi-pencil" style="font-size: 0.85rem;"></i>
+                            </a>
+                            <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id) }}"
+                                class="btn btn-sm btn-outline-warning py-1 px-2" title="Transferir">
+                                <i class="bi bi-arrow-left-right" style="font-size: 0.85rem;"></i>
+                            </a>
+                            {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else
+                            none %}
+                            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
+                                data-aluno-id="{{ aluno.id }}" data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                                data-aluno-matricula="{{ aluno.matricula or '-' }}"
+                                data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
+                                data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
+                                data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
+                                data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
+                                data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
+                                title="Registro Pedagógico">
+                                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
+                            </button>
+                            <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2"
+                                onclick="return confirm('Excluir aluno?');" title="Excluir">
+                                <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+                            </a>
+                        </div>
+                        {% else %}
+                        {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else none
+                        %}
+                        <div class="btn-group btn-group-sm gap-1">
+                            <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank"
+                                class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
+                                <i class="bi bi-clock-history" style="font-size: 0.85rem;"></i>
+                            </a>
+                            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
+                                data-aluno-id="{{ aluno.id }}" data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                                data-aluno-matricula="{{ aluno.matricula or '-' }}"
+                                data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
+                                data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
+                                data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
+                                data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
+                                data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
+                                title="Registro Pedagógico">
+                                <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
+                            </button>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {{ paginacao('rodape') }}
 </div>
 
 {# ── MODAL DE REGISTRO PEDAGÓGICO ── #}
 <div class="modal fade" id="modalAtendimento" tabindex="-1" aria-labelledby="modalAtendimentoLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h6 class="modal-title fw-bold" id="modalAtendimentoLabel">
-          <i class="bi bi-clipboard2-plus me-2 text-success"></i>Registrar Atendimento
-        </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold" id="modalAtendimentoLabel">
+                    <i class="bi bi-clipboard2-plus me-2 text-success"></i>Registrar Atendimento
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
 
-      <div class="modal-body px-4" id="formAtendimento">
-        <input type="hidden" id="mf-aluno-id">
-        <input type="hidden" id="mf-atendimento-id">
-        <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
-          <img id="mf-foto" src="" alt="Foto"
-               style="width:42px;height:56px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
-          <div>
-            <div class="fw-bold small" id="mf-nome"></div>
-            <div class="text-muted" style="font-size:.75rem;" id="mf-matricula"></div>
-          </div>
+            <div class="modal-body px-4" id="formAtendimento">
+                <input type="hidden" id="mf-aluno-id">
+                <input type="hidden" id="mf-atendimento-id">
+                <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
+                    <img id="mf-foto" src="" alt="Foto"
+                        style="width:42px;height:56px;object-fit:cover;border-radius:4px;border:1px solid #ddd">
+                    <div>
+                        <div class="fw-bold small" id="mf-nome"></div>
+                        <div class="text-muted" style="font-size:.75rem;" id="mf-matricula"></div>
+                    </div>
+                </div>
+
+                <div id="mf-turma-wrap" class="border rounded p-3 mb-3 bg-light-subtle" style="display: none;">
+                    <div class="fw-bold text-uppercase text-muted mb-2"
+                        style="font-size: .7rem; letter-spacing: .08em;">
+                        Turma atual
+                    </div>
+                    <div class="row g-2 small">
+                        <div class="col-md-6"><span class="text-muted">Turma:</span> <strong
+                                id="mf-turma-nome">-</strong></div>
+                        <div class="col-md-6"><span class="text-muted">Curso:</span> <strong
+                                id="mf-turma-curso">-</strong></div>
+                        <div class="col-md-6"><span class="text-muted">Horário:</span> <strong
+                                id="mf-turma-horario">-</strong></div>
+                        <div class="col-md-6"><span class="text-muted">Dias:</span> <strong
+                                id="mf-turma-dias">-</strong></div>
+                        <div class="col-md-12"><span class="text-muted">Instrutor:</span> <strong
+                                id="mf-turma-instrutor">-</strong></div>
+                    </div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label" for="mf-data">Data do Atendimento</label>
+                        <input type="date" id="mf-data" class="form-control form-control-sm" required>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label" for="mf-origem">Origem do Atendimento</label>
+                        <select id="mf-origem" class="form-select form-select-sm" required>
+                            <option value="">Selecione...</option>
+                            <option value="Educando">Educando</option>
+                            <option value="Família">Família</option>
+                            <option value="Equipe">Equipe</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label" for="mf-responsavel">Responsável presente</label>
+                        <select id="mf-responsavel" class="form-select form-select-sm">
+                            <option value="">Não se aplica</option>
+                            <option value="__novo__">Outro responsável</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-6 d-none" id="mf-novo-responsavel-wrap">
+                        <label class="form-label" for="mf-novo-responsavel">Nome do novo responsável</label>
+                        <input type="text" id="mf-novo-responsavel" class="form-control form-control-sm">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label" for="mf-motivo">Motivo</label>
+                        <textarea id="mf-motivo" class="form-control form-control-sm" rows="2" required></textarea>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label" for="mf-apontamentos">Apontamentos</label>
+                        <textarea id="mf-apontamentos" class="form-control form-control-sm" rows="3"></textarea>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label" for="mf-acordos-educando">Acordos com o educando</label>
+                        <textarea id="mf-acordos-educando" class="form-control form-control-sm" rows="3"></textarea>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label" for="mf-acordos-familia">Acordos com a família</label>
+                        <textarea id="mf-acordos-familia" class="form-control form-control-sm" rows="3"></textarea>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label" for="mf-observacoes">Observações</label>
+                        <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"></textarea>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label" for="mf-anexo">Anexo <small class="text-muted fw-normal">(PDF, DOCX e
+                                similares, máximo 2 MB)</small></label>
+                        <input type="file" id="mf-anexo" class="form-control form-control-sm"
+                            accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.png,.jpg,.jpeg">
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success btn-sm fw-bold" id="btnSalvarAtendimento">
+                    <i class="bi bi-check-circle me-1"></i>Salvar Atendimento
+                </button>
+            </div>
         </div>
-
-        <div id="mf-turma-wrap" class="border rounded p-3 mb-3 bg-light-subtle" style="display: none;">
-          <div class="fw-bold text-uppercase text-muted mb-2" style="font-size: .7rem; letter-spacing: .08em;">
-            Turma atual
-          </div>
-          <div class="row g-2 small">
-            <div class="col-md-6"><span class="text-muted">Turma:</span> <strong id="mf-turma-nome">-</strong></div>
-            <div class="col-md-6"><span class="text-muted">Curso:</span> <strong id="mf-turma-curso">-</strong></div>
-            <div class="col-md-6"><span class="text-muted">Horário:</span> <strong id="mf-turma-horario">-</strong></div>
-            <div class="col-md-6"><span class="text-muted">Dias:</span> <strong id="mf-turma-dias">-</strong></div>
-            <div class="col-md-12"><span class="text-muted">Instrutor:</span> <strong id="mf-turma-instrutor">-</strong></div>
-          </div>
-        </div>
-
-        <div class="row g-3">
-          <div class="col-md-4">
-            <label class="form-label" for="mf-data">Data do Atendimento</label>
-            <input type="date" id="mf-data" class="form-control form-control-sm" required>
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label" for="mf-origem">Origem do Atendimento</label>
-            <select id="mf-origem" class="form-select form-select-sm" required>
-              <option value="">Selecione...</option>
-              <option value="Educando">Educando</option>
-              <option value="Família">Família</option>
-              <option value="Equipe">Equipe</option>
-            </select>
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label" for="mf-responsavel">Responsável presente</label>
-            <select id="mf-responsavel" class="form-select form-select-sm">
-              <option value="">Não se aplica</option>
-              <option value="__novo__">Outro responsável</option>
-            </select>
-          </div>
-
-          <div class="col-md-6 d-none" id="mf-novo-responsavel-wrap">
-            <label class="form-label" for="mf-novo-responsavel">Nome do novo responsável</label>
-            <input type="text" id="mf-novo-responsavel" class="form-control form-control-sm">
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label" for="mf-motivo">Motivo</label>
-            <textarea id="mf-motivo" class="form-control form-control-sm" rows="2" required></textarea>
-          </div>
-
-          <div class="col-md-12">
-            <label class="form-label" for="mf-apontamentos">Apontamentos</label>
-            <textarea id="mf-apontamentos" class="form-control form-control-sm" rows="3"></textarea>
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label" for="mf-acordos-educando">Acordos com o educando</label>
-            <textarea id="mf-acordos-educando" class="form-control form-control-sm" rows="3"></textarea>
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label" for="mf-acordos-familia">Acordos com a família</label>
-            <textarea id="mf-acordos-familia" class="form-control form-control-sm" rows="3"></textarea>
-          </div>
-
-          <div class="col-md-12">
-            <label class="form-label" for="mf-observacoes">Observações</label>
-            <textarea id="mf-observacoes" class="form-control form-control-sm" rows="2"></textarea>
-          </div>
-
-          <div class="col-md-12">
-            <label class="form-label" for="mf-anexo">Anexo <small class="text-muted fw-normal">(PDF, DOCX e similares, máximo 2 MB)</small></label>
-            <input type="file" id="mf-anexo" class="form-control form-control-sm"
-                   accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.png,.jpg,.jpeg">
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer py-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-success btn-sm fw-bold" id="btnSalvarAtendimento">
-          <i class="bi bi-check-circle me-1"></i>Salvar Atendimento
-        </button>
-      </div>
     </div>
-  </div>
 </div>
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/calcularIdade.js') }}"></script>
 <script src="{{ url_for('static', filename='js/aluno_form.js') }}"></script>
 <script>
-(function () {
-  'use strict';
+    (function () {
+        'use strict';
 
-  const modalAtendimento = new bootstrap.Modal(document.getElementById('modalAtendimento'));
+        const modalAtendimento = new bootstrap.Modal(document.getElementById('modalAtendimento'));
 
-  function csrfToken() {
-    return document.querySelector('meta[name="csrf-token"]')?.content || '';
-  }
+        function csrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        }
 
-  function abrirNovoAtendimento(btn) {
-    const id = btn.dataset.alunoId;
-    const nome = btn.dataset.alunoNome;
-    const matricula = btn.dataset.alunoMatricula;
-    const foto = btn.dataset.alunoFoto;
-    const turmaNome = btn.dataset.turmaNome || '-';
-    const turmaCurso = btn.dataset.turmaCurso || '-';
-    const turmaHorario = btn.dataset.turmaHorario || '-';
-    const turmaDias = btn.dataset.turmaDias || '-';
-    const turmaInstrutor = btn.dataset.turmaInstrutor || '-';
-    const turmaWrap = document.getElementById('mf-turma-wrap');
-    const possuiTurma = !['-', ''].includes(turmaNome) || !['-', ''].includes(turmaCurso) || !['-', ''].includes(turmaHorario) || !['-', ''].includes(turmaDias) || !['-', ''].includes(turmaInstrutor);
+        function abrirNovoAtendimento(btn) {
+            const id = btn.dataset.alunoId;
+            const nome = btn.dataset.alunoNome;
+            const matricula = btn.dataset.alunoMatricula;
+            const foto = btn.dataset.alunoFoto;
+            const turmaNome = btn.dataset.turmaNome || '-';
+            const turmaCurso = btn.dataset.turmaCurso || '-';
+            const turmaHorario = btn.dataset.turmaHorario || '-';
+            const turmaDias = btn.dataset.turmaDias || '-';
+            const turmaInstrutor = btn.dataset.turmaInstrutor || '-';
+            const turmaWrap = document.getElementById('mf-turma-wrap');
+            const possuiTurma = !['-', ''].includes(turmaNome) || !['-', ''].includes(turmaCurso) || !['-', ''].includes(turmaHorario) || !['-', ''].includes(turmaDias) || !['-', ''].includes(turmaInstrutor);
 
-    document.getElementById('mf-aluno-id').value = id;
-    document.getElementById('mf-atendimento-id').value = '';
-    document.getElementById('mf-foto').src = foto;
-    document.getElementById('mf-nome').textContent = nome;
-    document.getElementById('mf-matricula').textContent = matricula;
-    document.getElementById('mf-turma-nome').textContent = turmaNome;
-    document.getElementById('mf-turma-curso').textContent = turmaCurso;
-    document.getElementById('mf-turma-horario').textContent = turmaHorario;
-    document.getElementById('mf-turma-dias').textContent = turmaDias;
-    document.getElementById('mf-turma-instrutor').textContent = turmaInstrutor;
-    turmaWrap.style.display = possuiTurma ? 'block' : 'none';
-    document.getElementById('mf-data').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('mf-origem').value = '';
-    document.getElementById('mf-responsavel').innerHTML = '<option value="">Não se aplica</option><option value="__novo__">Outro responsável</option>';
-    document.getElementById('mf-responsavel').value = '';
-    document.getElementById('mf-novo-responsavel').value = '';
-    document.getElementById('mf-novo-responsavel-wrap').classList.add('d-none');
-    document.getElementById('mf-motivo').value = '';
-    document.getElementById('mf-apontamentos').value = '';
-    document.getElementById('mf-acordos-educando').value = '';
-    document.getElementById('mf-acordos-familia').value = '';
-    document.getElementById('mf-observacoes').value = '';
-    document.getElementById('mf-anexo').value = '';
+            document.getElementById('mf-aluno-id').value = id;
+            document.getElementById('mf-atendimento-id').value = '';
+            document.getElementById('mf-foto').src = foto;
+            document.getElementById('mf-nome').textContent = nome;
+            document.getElementById('mf-matricula').textContent = matricula;
+            document.getElementById('mf-turma-nome').textContent = turmaNome;
+            document.getElementById('mf-turma-curso').textContent = turmaCurso;
+            document.getElementById('mf-turma-horario').textContent = turmaHorario;
+            document.getElementById('mf-turma-dias').textContent = turmaDias;
+            document.getElementById('mf-turma-instrutor').textContent = turmaInstrutor;
+            turmaWrap.style.display = possuiTurma ? 'block' : 'none';
+            document.getElementById('mf-data').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('mf-origem').value = '';
+            document.getElementById('mf-responsavel').innerHTML = '<option value="">Não se aplica</option><option value="__novo__">Outro responsável</option>';
+            document.getElementById('mf-responsavel').value = '';
+            document.getElementById('mf-novo-responsavel').value = '';
+            document.getElementById('mf-novo-responsavel-wrap').classList.add('d-none');
+            document.getElementById('mf-motivo').value = '';
+            document.getElementById('mf-apontamentos').value = '';
+            document.getElementById('mf-acordos-educando').value = '';
+            document.getElementById('mf-acordos-familia').value = '';
+            document.getElementById('mf-observacoes').value = '';
+            document.getElementById('mf-anexo').value = '';
 
-    modalAtendimento.show();
-  }
+            modalAtendimento.show();
+        }
 
-  document.getElementById('mf-responsavel').addEventListener('change', event => {
-    const wrap = document.getElementById('mf-novo-responsavel-wrap');
-    wrap.classList.toggle('d-none', event.target.value !== '__novo__');
-  });
+        document.getElementById('mf-responsavel').addEventListener('change', event => {
+            const wrap = document.getElementById('mf-novo-responsavel-wrap');
+            wrap.classList.toggle('d-none', event.target.value !== '__novo__');
+        });
 
-  document.querySelectorAll('.btn-novo-atendimento').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      abrirNovoAtendimento(btn);
-    });
-  });
+        document.querySelectorAll('.btn-novo-atendimento').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                abrirNovoAtendimento(btn);
+            });
+        });
 
-  document.getElementById('btnSalvarAtendimento').addEventListener('click', async () => {
-    const alunoId = parseInt(document.getElementById('mf-aluno-id').value, 10);
-    if (!alunoId) {
-      alert('Selecione um aluno antes de salvar o atendimento.');
-      return;
-    }
+        document.getElementById('btnSalvarAtendimento').addEventListener('click', async () => {
+            const alunoId = parseInt(document.getElementById('mf-aluno-id').value, 10);
+            if (!alunoId) {
+                alert('Selecione um aluno antes de salvar o atendimento.');
+                return;
+            }
 
-    const responsavelSelecionado = document.getElementById('mf-responsavel').value;
-    const responsavelNovo = document.getElementById('mf-novo-responsavel').value.trim();
-    const motivo = document.getElementById('mf-motivo').value.trim();
-    const payload = {
-      data_atendimento: document.getElementById('mf-data').value,
-      resumo: motivo.slice(0, 255),
-      dados: {
-        origem: document.getElementById('mf-origem').value,
-        responsavel_nome: responsavelSelecionado === '__novo__' ? responsavelNovo : responsavelSelecionado,
-        motivo,
-        apontamentos: document.getElementById('mf-apontamentos').value,
-        acordos_educando: document.getElementById('mf-acordos-educando').value,
-        acordos_familia: document.getElementById('mf-acordos-familia').value,
-        observacoes: document.getElementById('mf-observacoes').value,
-      }
-    };
+            const responsavelSelecionado = document.getElementById('mf-responsavel').value;
+            const responsavelNovo = document.getElementById('mf-novo-responsavel').value.trim();
+            const motivo = document.getElementById('mf-motivo').value.trim();
+            const payload = {
+                data_atendimento: document.getElementById('mf-data').value,
+                resumo: motivo.slice(0, 255),
+                dados: {
+                    origem: document.getElementById('mf-origem').value,
+                    responsavel_nome: responsavelSelecionado === '__novo__' ? responsavelNovo : responsavelSelecionado,
+                    motivo,
+                    apontamentos: document.getElementById('mf-apontamentos').value,
+                    acordos_educando: document.getElementById('mf-acordos-educando').value,
+                    acordos_familia: document.getElementById('mf-acordos-familia').value,
+                    observacoes: document.getElementById('mf-observacoes').value,
+                }
+            };
 
-    if (!payload.data_atendimento || !payload.dados.origem || !motivo) {
-      alert('Informe a data, a origem e o motivo do atendimento.');
-      return;
-    }
-    if (responsavelSelecionado === '__novo__' && !responsavelNovo) {
-      alert('Informe o nome do novo responsável.');
-      return;
-    }
+            if (!payload.data_atendimento || !payload.dados.origem || !motivo) {
+                alert('Informe a data, a origem e o motivo do atendimento.');
+                return;
+            }
+            if (responsavelSelecionado === '__novo__' && !responsavelNovo) {
+                alert('Informe o nome do novo responsável.');
+                return;
+            }
 
-    try {
-      const formData = new FormData();
-      formData.append('payload', JSON.stringify(payload));
-      const anexo = document.getElementById('mf-anexo').files[0];
-      if (anexo) formData.append('anexo', anexo);
+            try {
+                const formData = new FormData();
+                formData.append('payload', JSON.stringify(payload));
+                const anexo = document.getElementById('mf-anexo').files[0];
+                if (anexo) formData.append('anexo', anexo);
 
-      const resp = await fetch(`/alunos/${alunoId}/atendimentos/novo`, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken() },
-        body: formData,
-      });
-      const json = await resp.json();
+                const resp = await fetch(`/alunos/${alunoId}/atendimentos/novo`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken() },
+                    body: formData,
+                });
+                const json = await resp.json();
 
-      if (json.ok) {
-        modalAtendimento.hide();
-        window.location.reload();
-      } else {
-        alert(json.erro || 'Erro ao salvar atendimento.');
-      }
-    } catch {
-      alert('Falha na requisição.');
-    }
-  });
-})();
+                if (json.ok) {
+                    modalAtendimento.hide();
+                    window.location.reload();
+                } else {
+                    alert(json.erro || 'Erro ao salvar atendimento.');
+                }
+            } catch {
+                alert('Falha na requisição.');
+            }
+        });
+
+        /* Ordenação das colunas da tabela de alunos */
+        const styleOrdenacao = document.createElement('style');
+        styleOrdenacao.textContent = `
+            .sortable-header {
+                white-space: nowrap;
+                cursor: pointer;
+            }
+            .sort-arrows {
+                display: inline-flex;
+                flex-direction: column;
+                vertical-align: middle;
+                margin-left: 3px;
+                line-height: 0.65;
+                font-size: 0.65rem;
+                opacity: 0.45;
+            }
+            .sort-arrow {
+                height: 0.65em;
+            }
+            .sortable-header.sorted-asc .sort-down,
+            .sortable-header.sorted-desc .sort-up {
+                opacity: 0.25;
+            }
+            .sortable-header.sorted-asc .sort-up,
+            .sortable-header.sorted-desc .sort-down {
+                opacity: 1;
+            }
+        `;
+        document.head.appendChild(styleOrdenacao);
+
+        const tabelaAlunos = document.querySelector('table.table.table-hover.table-sm.align-middle.mb-0');
+        const tbodyAlunos = tabelaAlunos?.querySelector('tbody');
+
+        if (tabelaAlunos && tbodyAlunos) {
+            const estadoOrdenacao = { chave: null, direcao: null };
+
+            const normalizarTexto = valor =>
+                (valor || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
+
+            const valorColuna = (tr, chave) => {
+                const celulas = tr.children;
+
+                if (chave === 'matricula') {
+                    return normalizarTexto(celulas[0]?.textContent);
+                }
+
+                if (chave === 'nome') {
+                    return normalizarTexto(
+                        celulas[2]?.querySelector('div')?.textContent || celulas[2]?.textContent
+                    );
+                }
+
+                if (chave === 'idade') {
+                    const texto = normalizarTexto(celulas[3]?.textContent);
+                    const numero = parseInt(texto.replace(/\D/g, ''), 10);
+                    return Number.isNaN(numero) ? Number.POSITIVE_INFINITY : numero;
+                }
+
+                if (chave === 'turma') {
+                    return normalizarTexto(celulas[4]?.textContent);
+                }
+
+                return '';
+            };
+
+            const ordenarAlunos = (chave, direcao) => {
+                const linhas = Array.from(tbodyAlunos.querySelectorAll(':scope > tr'));
+
+                linhas.sort((a, b) => {
+                    const valorA = valorColuna(a, chave);
+                    const valorB = valorColuna(b, chave);
+
+                    let comparacao;
+                    if (typeof valorA === 'number' && typeof valorB === 'number') {
+                        comparacao = valorA - valorB;
+                    } else {
+                        comparacao = valorA.localeCompare(valorB, 'pt-BR', {
+                            numeric: true,
+                            sensitivity: 'base'
+                        });
+                    }
+
+                    return direcao === 'desc' ? -comparacao : comparacao;
+                });
+
+                linhas.forEach(linha => tbodyAlunos.appendChild(linha));
+            };
+
+            document.querySelectorAll('.sortable-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const chave = header.dataset.sortKey;
+                    const direcao =
+                        estadoOrdenacao.chave === chave && estadoOrdenacao.direcao === 'asc'
+                            ? 'desc'
+                            : 'asc';
+
+                    estadoOrdenacao.chave = chave;
+                    estadoOrdenacao.direcao = direcao;
+
+                    document.querySelectorAll('.sortable-header').forEach(outro => {
+                        outro.classList.remove('sorted-asc', 'sorted-desc');
+                    });
+
+                    header.classList.add(direcao === 'asc' ? 'sorted-asc' : 'sorted-desc');
+                    ordenarAlunos(chave, direcao);
+                });
+            });
+        }
+
+    })();
 </script>
 {% endblock %}
 {% endblock %}

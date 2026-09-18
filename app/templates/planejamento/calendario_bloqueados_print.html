@@ -16,7 +16,7 @@
     tipo: "{{ d.tipo }}",
       cor: "{{ {'FERIADO':'#dc3545','ATIVIDADE_PEDAGOGICA':'#0d6efd','REUNIAO_PAIS':'#6f42c1','ATIVIDADE_INTERNA':'#fd7e14','MANUTENCAO':'#6c757d'}.get(d.tipo,'#adb5bd') }}",
         icone: "{{ {'FERIADO':'F','ATIVIDADE_PEDAGOGICA':'A','REUNIAO_PAIS':'R','ATIVIDADE_INTERNA':'I','MANUTENCAO':'M'}.get(d.tipo,'?') }}",
-          desc: { { d.descricao | tojson if d.descricao else '""' } }
+          desc: {{ d.descricao | tojson if d.descricao else '""' }}
   } {% if not loop.last %}, {% endif %}
   {% endfor %}
   };

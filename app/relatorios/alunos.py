@@ -1,4 +1,10 @@
-"""Listagem filtrável de alunos para relatórios e sua exportação em Excel."""
+"""Listagem filtrável de alunos para relatórios e sua exportação em Excel.
+
+ONDA 3B
+    Leitura de PCD e acompanhante migrada para tabela/coluna novas
+    (`PerfilDiversidade.saude_laudo` e `Aluno.acompanhante_aulas`),
+    com fallback para os JSONs antigos.
+"""
 
 from datetime import date, datetime
 from io import BytesIO
@@ -12,6 +18,7 @@ from app.utils.logica import get_unidade_id
 
 from . import bp_relatorios
 from .shared import ROLES_RELATORIOS, aplicar_filtros_alunos, ler_filtros_alunos
+
 
 COLUMN_LABELS = {
     "nome": "Nome Completo",
@@ -36,11 +43,47 @@ COLUMN_OPTIONS = [
 ]
 
 
+# =============================================================================
+# HELPERS DE LEITURA (Onda 3B — com fallback JSON)
+# =============================================================================
+
 def _calcular_idade(aluno):
     if hasattr(aluno, 'idade'):
         return aluno.idade
-    return datetime.now().year - aluno.data_nascimento.year if aluno.data_nascimento else '-'
+    return (
+        datetime.now().year - aluno.data_nascimento.year
+        if aluno.data_nascimento else '-'
+    )
 
+
+def _is_pcd(aluno) -> bool:
+    """
+    True se o aluno possui laudo de saúde (PCD).
+
+    Prefere `PerfilDiversidade.saude_laudo` (Onda 3A); cai no JSON legado
+    se ainda não houver registro migrado.
+    """
+    if aluno.perfil_diversidade is not None:
+        return bool(aluno.perfil_diversidade.saude_laudo)
+    return bool((aluno.diversidade_json or {}).get('saude_laudo', False))
+
+
+def _acompanhante(aluno) -> str:
+    """
+    Nome do acompanhante para as aulas.
+
+    Prefere a coluna `Aluno.acompanhante_aulas` (Onda 3A); cai no JSON
+    legado se a coluna estiver vazia.
+    """
+    valor = aluno.acompanhante_aulas
+    if valor:
+        return valor
+    return (aluno.identificacao_json or {}).get("acompanhante_aulas") or "-"
+
+
+# =============================================================================
+# LISTAGEM
+# =============================================================================
 
 @bp_relatorios.route("/alunos")
 @login_required
@@ -88,16 +131,22 @@ def relatorio_alunos():
                 "id": a.id,
                 "nome": a.nome,
                 "nome_social": a.nome_social or "-",
-                "data_nascimento": a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-",
+                "data_nascimento": (
+                    a.data_nascimento.strftime("%d/%m/%Y")
+                    if a.data_nascimento else "-"
+                ),
                 "idade": _calcular_idade(a),
                 "nivel": a.nivel or "-",
-                "pcd": a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False,
-                "acompanhante_aulas": a.identificacao_json.get("acompanhante_aulas") or "-",
+                "pcd": _is_pcd(a),
+                "acompanhante_aulas": _acompanhante(a),
                 "turmas_aluno": True,
             }
             turmas_vinculadas = a.turmas[:3] if hasattr(a, "turmas") else []
             for i in range(1, 4):
-                d[f"turma_{i}"] = turmas_vinculadas[i - 1].nome if len(turmas_vinculadas) >= i else "-"
+                d[f"turma_{i}"] = (
+                    turmas_vinculadas[i - 1].nome
+                    if len(turmas_vinculadas) >= i else "-"
+                )
             alunos_data.append(d)
         alunos = alunos_data
 
@@ -118,6 +167,10 @@ def relatorio_alunos():
     )
 
 
+# =============================================================================
+# EXPORTAÇÃO
+# =============================================================================
+
 @bp_relatorios.route("/relatorio_alunos/exportar")
 @login_required
 def exportar_relatorio_alunos():
@@ -137,7 +190,11 @@ def exportar_relatorio_alunos():
         query = query.filter_by(unidade_id=u_id)
     query = aplicar_filtros_alunos(query, filtros)
 
-    alunos_lista = query.distinct().order_by(Aluno.matricula.asc(), Aluno.id.asc()).all()
+    alunos_lista = (
+        query.distinct()
+        .order_by(Aluno.matricula.asc(), Aluno.id.asc())
+        .all()
+    )
 
     data_to_df = []
     for a in alunos_lista:
@@ -148,12 +205,14 @@ def exportar_relatorio_alunos():
             elif col == "idade":
                 row[COLUMN_LABELS[col]] = _calcular_idade(a)
             elif col == "pcd":
-                pcd = a.diversidade_json.get('saude_laudo', False) if a.diversidade_json else False
-                row[COLUMN_LABELS[col]] = "Sim" if pcd else "Não"
+                row[COLUMN_LABELS[col]] = "Sim" if _is_pcd(a) else "Não"
             elif col == "acompanhante_aulas":
-                row[COLUMN_LABELS[col]] = a.identificacao_json.get("acompanhante_aulas") or "-"
+                row[COLUMN_LABELS[col]] = _acompanhante(a)
             elif col == "data_nascimento":
-                row[COLUMN_LABELS[col]] = a.data_nascimento.strftime("%d/%m/%Y") if a.data_nascimento else "-"
+                row[COLUMN_LABELS[col]] = (
+                    a.data_nascimento.strftime("%d/%m/%Y")
+                    if a.data_nascimento else "-"
+                )
             else:
                 row[COLUMN_LABELS[col]] = getattr(a, col, "-")
         data_to_df.append(row)

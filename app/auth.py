@@ -1,3 +1,22 @@
+"""
+================================================================================
+AUTH.PY - Autenticação, autorização e administração de usuários
+================================================================================
+
+Cobre:
+    - Login híbrido (local + LDAP/AD + Google OAuth)
+    - Rotas administrativas (painel, cadastro de usuário, unidades)
+    - Auditoria (logs)
+    - Troca de senha do próprio usuário
+
+NOTA ONDA 2B
+    Comparações de `current_user.role` usam `UserRole` do `app.models.enums`
+    em vez de strings soltas. Isso dá autocomplete e evita erro de digitação.
+    Valores de role vindos de formulário (dinâmicos) são deixados como string
+    — o CHECK constraint do banco valida.
+================================================================================
+"""
+
 from flask import Blueprint, current_app, render_template, request, redirect, flash, url_for, abort, session
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
@@ -6,6 +25,7 @@ from collections import defaultdict
 import secrets
 
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
+from app.models.enums import UserRole
 from app.database import db
 from app.services.auth_service import (
     _build_ldap_bind_user,
@@ -49,7 +69,7 @@ def aguardando_aprovacao():
     administrador, o acesso ao sistema fica restrito a esta tela, evitando que
     o perfil alcance áreas operacionais sem a devida classificação.
     """
-    if current_user.role != 'pendente':
+    if current_user.role != UserRole.PENDENTE:
         return redirect(url_for('main.dashboard'))
     return render_template('aguardando.html')
 
@@ -121,7 +141,7 @@ def login():
                             name=formatar_nome_proprio(ldap_identity.split('@')[0].replace('.', ' ')),
                             email=ldap_identity,
                             password="",
-                            role='pendente', # Trava de segurança total no sistema
+                            role=UserRole.PENDENTE.value,   # trava de segurança total no sistema
                             is_ad_user=True,
                             is_active=True,
                             first_login=False,
@@ -170,6 +190,7 @@ def login():
         flash('Credenciais recusadas pelo domínio e banco de dados.', 'danger')
 
     return render_template('login.html')
+
 
 @bp.route('/logout')
 @login_required
@@ -335,7 +356,7 @@ def google_callback():
                 name=google_name,
                 email=google_email,
                 password="",
-                role="pendente",
+                role=UserRole.PENDENTE.value,
                 is_ad_user=False,
                 is_active=True,
                 first_login=False,
@@ -363,7 +384,7 @@ def google_callback():
 
     register_security_log("Acesso via Google", f"Usuário {user.name} ({google_email}) autenticado pelo Google OAuth.")
 
-    if user.role == "pendente":
+    if user.role == UserRole.PENDENTE:
         flash("Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.", "info")
         return redirect(url_for("auth.aguardando_aprovacao"))
 
@@ -375,7 +396,7 @@ def google_callback():
 @bp.route('/admin/painel')
 @login_required
 def painel_admin():
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         flash("Quebra de Hierarquia: O Painel administrativo está bloqueado para você.", "danger")
         return redirect(url_for('main.dashboard'))
 
@@ -385,7 +406,7 @@ def painel_admin():
     usuarios = db.session.execute(
         select(User).order_by(User.name)
     ).scalars().all()
-    
+
     unidades = db.session.execute(
         select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
     ).scalars().all()
@@ -396,7 +417,7 @@ def painel_admin():
 @bp.route('/admin/cadastrar', methods=['POST'])
 @login_required
 def cadastrar_usuario():
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
 
     email = request.form.get('email', '').strip()
@@ -406,15 +427,15 @@ def cadastrar_usuario():
 
     nome  = request.form.get('nome')
     senha = request.form.get('password')
-    
+
     if not nome or not senha:
          flash("Preencha todos os dados corretamente.", "warning")
          return redirect(url_for('auth.painel_admin'))
-         
+
     try:
         unidade_id = request.form.get('unidade_id')
         unidade_id = int(unidade_id) if unidade_id and unidade_id.isdigit() else None
-        
+
         novo = User(name=nome, email=email, role=request.form.get('role'),
                     unidade_id=unidade_id, first_login=True)
         novo.set_password(senha)
@@ -433,7 +454,7 @@ def cadastrar_usuario():
 @bp.route('/usuarios/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_usuario(id):
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
 
     usuario = db.session.get(User, id)
@@ -458,9 +479,9 @@ def editar_usuario(id):
 @bp.route('/usuarios/resetar/<int:id>', methods=['POST'])
 @login_required
 def resetar_senha(id):
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
-    
+
     usuario = db.session.get(User, id)
     if usuario:
         if usuario.is_ad_user:
@@ -489,7 +510,7 @@ def resetar_senha(id):
 @bp.route('/usuarios/excluir/<int:id>', methods=['POST'])
 @login_required
 def excluir_usuario(id):
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
 
     usuario = db.session.get(User, id)
@@ -513,19 +534,20 @@ def excluir_usuario(id):
 @login_required
 def admin_unidades():
     """Lista todas as unidades para gestão administrativa."""
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
-    
+
     unidades = Unidade.query.order_by(Unidade.nome).all()
     return render_template('admin/unidades.html', unidades=unidades)
+
 
 @bp.route('/admin/unidades/cadastrar', methods=['POST'])
 @login_required
 def cadastrar_unidade():
     """Cria uma nova unidade organizacional."""
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
-        
+
     nome = request.form.get('nome')
     if nome:
         try:
@@ -538,20 +560,21 @@ def cadastrar_unidade():
             db.session.rollback()
             current_app.logger.exception("Falha ao criar unidade.")
             flash("Erro ao criar unidade.", "danger")
-    
+
     return redirect(url_for('auth.admin_unidades'))
+
 
 @bp.route('/admin/unidades/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_unidade(id):
     """Atualiza dados de uma unidade existente."""
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
-        
+
     unidade = db.get_or_404(Unidade, id)
     nome_antigo = unidade.nome
     novo_nome = request.form.get('nome')
-    
+
     if novo_nome:
         try:
             unidade.nome = novo_nome
@@ -562,19 +585,20 @@ def editar_unidade(id):
             db.session.rollback()
             current_app.logger.exception("Falha ao editar unidade.")
             flash("Erro ao atualizar unidade.", "danger")
-            
+
     return redirect(url_for('auth.admin_unidades'))
+
 
 @bp.route('/admin/unidades/alternar/<int:id>')
 @login_required
 def alternar_unidade_status(id):
     """Ativa ou Inativa uma unidade (Exclusão Lógica)."""
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
-        
+
     unidade = db.get_or_404(Unidade, id)
     unidade.ativo = not unidade.ativo
-    
+
     try:
         db.session.commit()
         status = "ativada" if unidade.ativo else "inativada"
@@ -584,7 +608,7 @@ def alternar_unidade_status(id):
         db.session.rollback()
         current_app.logger.exception("Falha ao alternar status da unidade.")
         flash("Erro ao alterar status da unidade.", "danger")
-        
+
     return redirect(url_for('auth.admin_unidades'))
 
 
@@ -592,10 +616,11 @@ def alternar_unidade_status(id):
 
 from unidecode import unidecode
 
+
 @bp.route('/admin/logs')
 @login_required
 def ver_logs():
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
 
     page = request.args.get('page', 1, type=int)
@@ -663,15 +688,16 @@ def _executar_limpar_logs(automatico=False):
         current_app.logger.exception("Falha ao limpar logs antigos")
         return -1
 
+
 @bp.route('/admin/logs/limpar-antigos', methods=['POST'])
 @login_required
 def limpar_logs_antigos():
     """Remove logs com mais de 30 dias para evitar inchaço do SQLite DB local."""
-    if current_user.role != 'admin':
+    if current_user.role != UserRole.ADMIN:
         abort(403)
 
     qtd = _executar_limpar_logs(automatico=False)
-    
+
     if qtd >= 0:
         flash(f'Limpeza de Logs: {qtd} logs removidos!', 'success')
     else:

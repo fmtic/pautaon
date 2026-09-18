@@ -1,7 +1,8 @@
+from datetime import date, datetime
+
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import select
-from datetime import datetime
 
 from app.database import db
 from app.models import (
@@ -15,15 +16,19 @@ from app.models import (
     Turma,
     User,
 )
+from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.logica import carregar_contexto_turma, get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, obter_proximo_ordenacao
+from app.models.enums import UserRole
 
 
 @bp.route("/turma")
 @login_required
 def turma():
-    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia", "professor"]:
+    if current_user.role not in [
+        "admin", "pedagogico", "secretaria", "gerencia", "professor",
+    ]:
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -88,7 +93,7 @@ def nova_turma():
         centro_custo = request.form.get("centro_custo") or None
 
         if periodo_letivo_id:
-            periodo_obj = PeriodoLetivo.query.get(periodo_letivo_id)
+            periodo_obj = db.session.get(PeriodoLetivo, periodo_letivo_id)
             if not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id):
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.nova_turma"))
@@ -109,7 +114,7 @@ def nova_turma():
                 return redirect(url_for("registros.nova_turma"))
 
         if centro_custo and periodo_letivo_id:
-            periodo_obj = PeriodoLetivo.query.get(periodo_letivo_id)
+            periodo_obj = db.session.get(PeriodoLetivo, periodo_letivo_id)
             centros_disponiveis = (
                 [c.strip() for c in periodo_obj.centro_custo.split(",")]
                 if periodo_obj and periodo_obj.centro_custo
@@ -125,10 +130,11 @@ def nova_turma():
             turno=turno,
             centro_custo=centro_custo,
             professor_id=professor_id,
-            data_inicio=request.form.get("data_inicio") or None,
-            data_fim=request.form.get("data_fim") or None,
-            hora_inicio=request.form.get("hora_inicio") or None,
-            hora_fim=request.form.get("hora_fim") or None,
+            # Onda 2A: colunas são DATE/TIME. Parse explícito.
+            data_inicio=parse_date(request.form.get("data_inicio")),
+            data_fim=parse_date(request.form.get("data_fim")),
+            hora_inicio=parse_time(request.form.get("hora_inicio")),
+            hora_fim=parse_time(request.form.get("hora_fim")),
             dias_semana=dias_string,
             periodo_letivo_id=periodo_letivo_id,
             unidade_id=unidade_id,
@@ -153,7 +159,7 @@ def nova_turma():
             )
             return redirect(url_for("registros.nova_turma"))
 
-    professores = User.query.filter_by(role="professor")
+    professores = User.query.filter_by(role=UserRole.PROFESSOR.value)
     if unidade_id:
         professores = professores.filter_by(unidade_id=unidade_id)
     professores = professores.order_by(User.name).all()
@@ -172,9 +178,9 @@ def nova_turma():
         else []
     )
     periodos_centros = {
-        str(p.id): [c.strip() for c in p.centro_custo.split(",")]
-        if p.centro_custo
-        else []
+        str(p.id): (
+            [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []
+        )
         for p in periodos
     }
     return render_template(
@@ -250,35 +256,34 @@ def enturmar_alunos(turma_id):
                 nivel_form = request.form.get(f"nivel_{aluno.id}")
                 nivel_val = None if nivel_form == "Não se aplica" else nivel_form
 
-                # Atualiza o nível padrão do aluno se informado
                 if nivel_form:
                     aluno.nivel = nivel_val
 
-                # Verifica se já existe inscrição ativa nesta turma
                 inscricao_existente = Inscricao.query.filter_by(
                     aluno_id=aluno.id, turma_id=turma_obj.id, ativo=True
                 ).first()
                 if inscricao_existente:
-                    continue  # já enturmado, pula
+                    continue
 
-                # Cria a inscrição explicitamente para garantir todos os campos obrigatórios
                 nova_inscricao = Inscricao(
                     aluno_id=aluno.id,
                     turma_id=turma_obj.id,
                     nivel=nivel_val,
                     ativo=True,
-                    data_inicio=datetime.utcnow().date(),
+                    # Usa fuso local em vez de UTC, alinhado com o default do modelo.
+                    data_inicio=date.today(),
                 )
                 db.session.add(nova_inscricao)
                 enturmados += 1
 
             db.session.commit()
             flash(
-                f"{enturmados} aluno(s) inscrito(s) na turma {turma_obj.nome}!", "success"
+                f"{enturmados} aluno(s) inscrito(s) na turma {turma_obj.nome}!",
+                "success",
             )
         except Exception:
             db.session.rollback()
-            raise  # propaga para o debugger em modo debug
+            raise
     else:
         flash("Rejeitado: Nenhum aluno foi parametrizado.", "warning")
 
@@ -299,15 +304,19 @@ def editar_turma(id):
     if request.method == "POST":
         try:
             limpar_lancamentos = request.form.get("limpar_lancamentos") == "1"
-            novo_data_inicio = request.form.get("data_inicio") or ""
-            novo_data_fim = request.form.get("data_fim") or ""
+            novo_data_inicio_raw = request.form.get("data_inicio") or ""
+            novo_data_fim_raw = request.form.get("data_fim") or ""
             dias_selecionados = request.form.getlist("dias_semana")
             novo_dias_semana = ", ".join([dia for dia in dias_selecionados if dia])
 
+            # Onda 2A: parse uma vez, use como `date` na comparação abaixo.
+            novo_data_inicio_date = parse_date(novo_data_inicio_raw)
+            novo_data_fim_date = parse_date(novo_data_fim_raw)
+
             dados_de_lancamento_alterados = (
                 novo_dias_semana != (turma_obj.dias_semana or "")
-                or novo_data_inicio != (turma_obj.data_inicio or "")
-                or novo_data_fim != (turma_obj.data_fim or "")
+                or novo_data_inicio_date != turma_obj.data_inicio
+                or novo_data_fim_date != turma_obj.data_fim
             )
 
             if dados_de_lancamento_alterados:
@@ -325,15 +334,13 @@ def editar_turma(id):
             turma_obj.nome = request.form.get("turma")
             turma_obj.programa = request.form.get("programa")
             turma_obj.turno = request.form.get("turno")
-            turma_obj.data_inicio = novo_data_inicio or None
-            turma_obj.data_fim = novo_data_fim or None
-            turma_obj.hora_inicio = request.form.get("hora_inicio")
-            turma_obj.hora_fim = request.form.get("hora_fim")
+            turma_obj.data_inicio = novo_data_inicio_date
+            turma_obj.data_fim = novo_data_fim_date
+            turma_obj.hora_inicio = parse_time(request.form.get("hora_inicio"))
+            turma_obj.hora_fim = parse_time(request.form.get("hora_fim"))
             turma_obj.professor_id = request.form.get("professor_id") or None
 
-            turma_obj.dias_semana = (
-                novo_dias_semana or turma_obj.dias_semana
-            )
+            turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
 
             original_periodo_id = turma_obj.periodo_letivo_id
             novo_periodo_id = request.form.get("periodo_letivo_id")
@@ -346,7 +353,7 @@ def editar_turma(id):
 
             professor_id = turma_obj.professor_id
             periodo_obj = (
-                PeriodoLetivo.query.get(novo_periodo_id)
+                db.session.get(PeriodoLetivo, novo_periodo_id)
                 if novo_periodo_id
                 else turma_obj.periodo_letivo
             )
@@ -371,7 +378,7 @@ def editar_turma(id):
 
             centro_custo = request.form.get("centro_custo") or None
             if centro_custo and novo_periodo_id:
-                periodo_obj = PeriodoLetivo.query.get(novo_periodo_id)
+                periodo_obj = db.session.get(PeriodoLetivo, novo_periodo_id)
                 centros_disponiveis = (
                     [c.strip() for c in periodo_obj.centro_custo.split(",")]
                     if periodo_obj and periodo_obj.centro_custo
@@ -389,8 +396,12 @@ def editar_turma(id):
                 turma_obj.ordenacao = obter_proximo_ordenacao(novo_periodo_id)
 
             if limpar_lancamentos and dados_de_lancamento_alterados:
-                Frequencia.query.filter_by(turma_id=id).delete(synchronize_session=False)
-                RegistroAula.query.filter_by(turma_id=id).delete(synchronize_session=False)
+                Frequencia.query.filter_by(turma_id=id).delete(
+                    synchronize_session=False
+                )
+                RegistroAula.query.filter_by(turma_id=id).delete(
+                    synchronize_session=False
+                )
 
             curso_id = request.form.get("curso_id")
             turma_obj.curso_id = int(curso_id) if curso_id else None
@@ -427,8 +438,9 @@ def editar_turma(id):
         .all()
     )
     periodos_centros_edit = {
-        str(p.id): [c.strip() for c in p.centro_custo.split(",")]
-        if p.centro_custo else []
+        str(p.id): (
+            [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []
+        )
         for p in periodos
     }
     tem_lancamentos = bool(
@@ -522,20 +534,32 @@ def imprimir_pauta(id):
     if mes_selecionado:
         ctx["datas"] = [data for data in ctx["datas"] if f"-{mes_selecionado}-" in data]
         nomes_meses = {
-            "01": "Janeiro", "02": "Fevereiro", "03": "Março",
-            "04": "Abril", "05": "Maio", "06": "Junho",
-            "07": "Julho", "08": "Agosto", "09": "Setembro",
-            "10": "Outubro", "11": "Novembro", "12": "Dezembro",
+            "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+            "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+            "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
         }
         ctx["mes_nome"] = nomes_meses.get(mes_selecionado, mes_selecionado)
 
-    registros = Frequencia.query.filter(
-        Frequencia.turma_id == id,
-        Frequencia.data.in_(ctx["datas"]),
-    ).all() if ctx["datas"] else []
+    # Onda 2A: Frequencia.data é `date`, mas ctx["datas"] é list[str].
+    # Converter para date antes do IN, senão nunca casa.
+    datas_ctx = ctx["datas"]
+    datas_date = [parse_date(d) for d in datas_ctx]
+    datas_date = [d for d in datas_date if d is not None]
+
+    registros = (
+        Frequencia.query.filter(
+            Frequencia.turma_id == id,
+            Frequencia.data.in_(datas_date),
+        ).all()
+        if datas_date
+        else []
+    )
+
+    # O template indexa por string. Mantemos as chaves no formato 'YYYY-MM-DD'.
     frequencias = {}
     for registro in registros:
-        frequencias.setdefault(registro.data, {})[registro.aluno_id] = registro.conceito
+        chave = registro.data.strftime('%Y-%m-%d')
+        frequencias.setdefault(chave, {})[registro.aluno_id] = registro.conceito
 
     return render_template(
         "frequencia/imprimir_pauta.html",

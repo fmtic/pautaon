@@ -1,12 +1,40 @@
+"""
+================================================================================
+CORE.PY - Registros pedagógicos (form legado, painel do professor, frequência,
+          cursos, planejamento, níveis e temas)
+================================================================================
+
+NOTA ONDA 2B (limpeza)
+    Comparações de `current_user.role` usam `UserRole` do `app.models.enums`
+    em vez de strings soltas. Autocomplete e rename seguro.
+================================================================================
+"""
+
+import json
+
 from flask import flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
-from app.models import (Registro, Turma, Aluno, Frequencia, RegistroAula,
-                    TemaAula, PerguntaConselho, User, ConfiguracaoSistema, PeriodoLetivo,
-                    Inscricao, Curso)
-from app.database import db
 from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
+
+from app.database import db
+from app.models import (
+    Registro,
+    Turma,
+    Aluno,
+    Frequencia,
+    RegistroAula,
+    TemaAula,
+    PerguntaConselho,
+    User,
+    ConfiguracaoSistema,
+    PeriodoLetivo,
+    Inscricao,
+    Curso,
+)
+from app.models.enums import UserRole
+from app.utils.datetime_parse import parse_date
 from app.utils.logica import (
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
@@ -15,7 +43,6 @@ from app.utils.logica import (
     salvar_frequencia,
 )
 from . import bp
-import json
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +73,11 @@ def form():
     turmas = Turma.get_ativas()
     return render_template('form.html', turmas=turmas)
 
+
 @bp.route('/editar/<int:id>', methods=['GET', 'POST'])
 @login_required
 def editar(id):
-    if current_user.role != 'pedagogico':
+    if current_user.role != UserRole.PEDAGOGICO:
         abort(403)
 
     registro = db.get_or_404(Registro, id)
@@ -68,10 +96,11 @@ def editar(id):
 
     return render_template('editar.html', registro=registro)
 
+
 @bp.route('/excluir/<int:id>')
 @login_required
 def excluir(id):
-    if current_user.role != 'pedagogico':
+    if current_user.role != UserRole.PEDAGOGICO:
         abort(403)
 
     try:
@@ -81,7 +110,7 @@ def excluir(id):
     except Exception:
         db.session.rollback()
         flash("O banco recusou a deleção do bloco de registro.", "warning")
-        
+
     return redirect(url_for('registros.form'))
 
 
@@ -91,28 +120,30 @@ def excluir(id):
 @bp.route('/professor/painel')
 @login_required
 def painel_professor():
-    if current_user.role not in ['admin', 'professor', 'pedagogico', 'secretaria']:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PROFESSOR,
+        UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         flash("Permissões insuficientes. Autenticação RBAC Negou Rota.", "warning")
         return redirect(url_for('main.dashboard'))
 
     programa_selecionado = request.args.get('programa', 'Todos')
     unidade_id = get_unidade_id()
 
-    # Programas disponíveis respeitando contexto de unidade
     stmt_prog = select(Turma.programa).distinct().where(Turma.ativo == True)
     if unidade_id:
         stmt_prog = stmt_prog.where(Turma.unidade_id == unidade_id)
     lista_programas = db.session.execute(stmt_prog).scalars().all()
 
-    if current_user.role in ['admin', 'pedagogico', 'secretaria']:
-        # Vê todas as turmas ativas da unidade
+    if current_user.role in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+    ):
         stmt = select(Turma).options(joinedload(Turma.professor)).where(Turma.ativo == True)
         if unidade_id:
             stmt = stmt.where(Turma.unidade_id == unidade_id)
         if programa_selecionado != 'Todos':
             stmt = stmt.where(Turma.programa == programa_selecionado)
     else:
-        # Professor vê apenas suas próprias turmas
         stmt = select(Turma).where(
             Turma.professor_id == current_user.id,
             Turma.ativo == True
@@ -122,7 +153,6 @@ def painel_professor():
 
     todas_turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
 
-    # Conta alunos ativos únicos em todas as turmas listadas
     ids_turmas = [t.id for t in todas_turmas]
     total_alunos = 0
     if ids_turmas:
@@ -142,7 +172,7 @@ def painel_professor():
                            total_alunos=total_alunos,
                            lista_programas=lista_programas,
                            programa_ativo=programa_selecionado,
-                           is_readonly=current_user.role == 'secretaria')
+                           is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
 @bp.route('/frequencia', methods=['GET', 'POST'])
@@ -150,19 +180,20 @@ def painel_professor():
 def frequencia():
     """
     Controlador de Submissões em Lote do Diário Online.
-    Utiliza Atomic Transactions oriuntas do utilitario logica.py.
+    Utiliza Atomic Transactions oriundas do utilitário logica.py.
     """
-    if current_user.role not in ['admin', 'pedagogico', 'professor', 'secretaria']:
+    if current_user.role not in (
+        UserRole.ADMIN, UserRole.PEDAGOGICO,
+        UserRole.PROFESSOR, UserRole.SECRETARIA,
+    ):
         abort(403)
 
     if request.method == 'POST':
-        # Secretaria tem acesso somente leitura — não pode salvar frequência
-        if current_user.role == 'secretaria':
+        if current_user.role == UserRole.SECRETARIA:
             abort(403)
 
-        # Valida que professor só salva frequência das suas próprias turmas
         turma_post_id = request.form.get('turma', '')
-        if current_user.role == 'professor' and turma_post_id:
+        if current_user.role == UserRole.PROFESSOR and turma_post_id:
             turma_post = db.session.get(Turma, int(turma_post_id)) if turma_post_id.isdigit() else None
             if not turma_post or turma_post.professor_id != current_user.id:
                 abort(403)
@@ -188,8 +219,7 @@ def frequencia():
 
     unidade_id = get_unidade_id()
 
-    # Professor vê apenas suas próprias turmas; admin/pedagogico vê todas da unidade
-    if current_user.role == 'professor':
+    if current_user.role == UserRole.PROFESSOR:
         stmt = select(Turma).where(
             Turma.ativo == True,
             Turma.professor_id == current_user.id
@@ -202,50 +232,44 @@ def frequencia():
         if unidade_id:
             turmas = [t for t in turmas if t.unidade_id == unidade_id]
 
-    # Garante que o professor não acesse turma de outro professor via URL direta
-    if turma_id and current_user.role == 'professor':
+    if turma_id and current_user.role == UserRole.PROFESSOR:
         turma_ids_permitidos = {t.id for t in turmas}
         if turma_id not in turma_ids_permitidos:
             flash('Você não tem permissão para acessar esta turma.', 'danger')
             return redirect(url_for('registros.frequencia'))
-    
-    # Previne quebra de dict ou query se args não foram chamados inda
+
     ctx = {}
     freqs = {}
     tema_sel = None
     obs = ""
-    
+
     if turma_id:
-         ctx = carregar_contexto_turma(turma_id)
-         if data:
-              freqs, tema_sel, obs = carregar_frequencias(turma_id, data)
+        ctx = carregar_contexto_turma(turma_id)
+        if data:
+            freqs, tema_sel, obs = carregar_frequencias(turma_id, data)
 
-         # Injeta estats_freq e pode_receber_frequencia em cada aluno
-         for aluno in ctx.get('alunos', []):
-             # Busca registros desta turma; fallback apenas para registros legados sem turma_id
-             registros = Frequencia.query.filter_by(
-                 aluno_id=aluno.id, turma_id=turma_id
-             ).all()
-             if not registros:
-                 # Compatibilidade com registros antigos sem turma_id
-                 registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
+        for aluno in ctx.get('alunos', []):
+            registros = Frequencia.query.filter_by(
+                aluno_id=aluno.id, turma_id=turma_id
+            ).all()
+            if not registros:
+                registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
 
-             estatisticas = calcular_estatisticas_frequencia(
-                 registro.conceito for registro in registros
-             )
-             aluno.estats_freq = type('E', (), {
-                 'presenca': estatisticas['presenca_percentual'],
-                 'falta': estatisticas['falta_percentual'],
-                 'justificada': estatisticas['justificada_percentual'],
-                 'justificadas': estatisticas['justificadas'],
-                 'total_aulas': estatisticas['total'],
-             })()
+            estatisticas = calcular_estatisticas_frequencia(
+                registro.conceito for registro in registros
+            )
+            aluno.estats_freq = type('E', (), {
+                'presenca': estatisticas['presenca_percentual'],
+                'falta': estatisticas['falta_percentual'],
+                'justificada': estatisticas['justificada_percentual'],
+                'justificadas': estatisticas['justificadas'],
+                'total_aulas': estatisticas['total'],
+            })()
 
-             # Verifica se a inscrição do aluno nesta turma está ativa
-             insc = Inscricao.query.filter_by(
-                 aluno_id=aluno.id, turma_id=int(turma_id)
-             ).first()
-             aluno.pode_receber_frequencia = bool(insc and insc.ativo)
+            insc = Inscricao.query.filter_by(
+                aluno_id=aluno.id, turma_id=int(turma_id)
+            ).first()
+            aluno.pode_receber_frequencia = bool(insc and insc.ativo)
 
     return render_template('frequencia/lancar.html',
                            turmas=turmas,
@@ -259,18 +283,24 @@ def frequencia():
                            datas=ctx.get('datas', []),
                            temas=ctx.get('temas', []),
                            meses=ctx.get('meses', []),
-                           is_readonly=current_user.role == 'secretaria')
+                           is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
 @bp.route('/frequencia_relatorio')
 @login_required
 def frequencia_relatorio():
-    if current_user.role != 'pedagogico':
+    if current_user.role != UserRole.PEDAGOGICO:
         abort(403)
 
-    turma_id   = request.args.get('turma')
-    data_inicio = request.args.get('inicio')
-    data_fim   = request.args.get('fim')
+    turma_id = request.args.get('turma')
+
+    # Onda 2A: Frequencia.data é `date`. Os parâmetros da URL chegam como
+    # string e precisam ser normalizados antes de filtrar, senão o filtro
+    # nunca casa (date == str).
+    data_inicio_raw = request.args.get('inicio')
+    data_fim_raw = request.args.get('fim')
+    data_inicio = parse_date(data_inicio_raw)
+    data_fim = parse_date(data_fim_raw)
 
     unidade_id = get_unidade_id()
     turmas_query = Turma.query.filter_by(ativo=True)
@@ -319,13 +349,14 @@ def frequencia_relatorio():
                 "percentual": estatisticas['presenca_percentual'],
             })
 
+    # Preserva as strings originais no template (inputs type="date" esperam string).
     return render_template('frequencia/relatorio.html',
                            dados=resultado,
                            turmas=turmas,
                            turma_id=turma_id,
                            turma_selecionada=turma_selecionada,
-                           inicio=data_inicio,
-                           fim=data_fim)
+                           inicio=data_inicio_raw or '',
+                           fim=data_fim_raw or '')
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +367,7 @@ def frequencia_relatorio():
 @login_required
 def listar_cursos():
     """Retorna JSON com os cursos da unidade — usado pelo modal de planejamento."""
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     unidade_id = get_unidade_id()
     q = Curso.query.filter_by(ativo=True)
@@ -349,7 +380,7 @@ def listar_cursos():
 @bp.route('/cursos/novo', methods=['POST'])
 @login_required
 def novo_curso():
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     unidade_id = get_unidade_id()
     if not unidade_id:
@@ -382,7 +413,7 @@ def novo_curso():
 @bp.route('/cursos/<int:curso_id>/editar', methods=['POST'])
 @login_required
 def editar_curso(curso_id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
@@ -416,14 +447,13 @@ def editar_curso(curso_id):
 @bp.route('/cursos/<int:curso_id>/excluir', methods=['POST'])
 @login_required
 def excluir_curso(curso_id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
     if unidade_id and curso.unidade_id != unidade_id:
         abort(403)
 
-    # Soft delete — preserva integridade com turmas existentes
     curso.ativo = False
     try:
         db.session.commit()
@@ -443,7 +473,7 @@ def excluir_curso(curso_id):
 @bp.route('/planejamento', methods=['GET', 'POST'])
 @login_required
 def planejamento():
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
 
     if request.method == 'POST':
@@ -461,26 +491,24 @@ def planejamento():
                     ))
                     db.session.commit()
                     flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
-                except Exception as e:
+                except Exception:
                     db.session.rollback()
                     flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
             return redirect(url_for('registros.planejamento'))
 
-        # tipo_post == 'tema' (padrão)
         curso_id  = request.form.get('curso_id')
         titulo_tema = request.form.get('titulo')
         if curso_id and titulo_tema:
             try:
                 curso = Curso.query.get(int(curso_id))
-                
-                # Calcula a próxima ordem disponível para este curso
+
                 ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
                     curso_id=int(curso_id)
                 ).scalar()
                 nova_ordem = (ultima_ordem or 0) + 1
-                
+
                 db.session.add(TemaAula(
                     curso_id=int(curso_id),
                     titulo=titulo_tema,
@@ -511,7 +539,6 @@ def planejamento():
     prog_filtro = request.args.get('programa', 'Todos')
     programas   = sorted({t.programa for t in turmas if t.programa})
 
-    # Temas: filtra pela unidade via join com Curso
     q_temas = TemaAula.query.join(Curso, TemaAula.curso_id == Curso.id).filter(
         TemaAula.curso_id.isnot(None)
     )
@@ -524,18 +551,15 @@ def planejamento():
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
 
-    # Períodos ativos da unidade (para o modal de calendário)
     q_periodos = PeriodoLetivo.query.filter_by(ativo=True)
     if unidade_id:
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
     periodos_ativos = q_periodos.order_by(PeriodoLetivo.data_inicio.desc()).all()
 
-    # Filtra temas conforme curso selecionado (filtro_curso) ou mostra todos
     filtro_curso = request.args.get('curso_id', '')
     if filtro_curso:
         lista_temas = [t for t in lista_temas if str(t.curso_id) == filtro_curso]
 
-    # Cursos da unidade (para o modal de cursos)
     q_cursos = Curso.query.filter_by(ativo=True)
     if unidade_id:
         q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
@@ -553,6 +577,7 @@ def planejamento():
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
+
 # ---------------------------------------------------------------------------
 # TEMAS DE AULA — edição e inativação
 # ---------------------------------------------------------------------------
@@ -560,39 +585,36 @@ def planejamento():
 @bp.route('/planejamento/tema/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_tema(id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
     if unidade_id and tema.unidade_id and tema.unidade_id != unidade_id:
         abort(403)
-    
+
     novo_titulo = request.form.get('titulo', '').strip()
     nova_ordem = request.form.get('ordem')
-    
+
     if novo_titulo:
         try:
             tema.titulo = novo_titulo
             if nova_ordem:
                 tema.ordem = int(nova_ordem)
-            
+
             db.session.flush()
-            
-            # Reorganiza a ordem de todos os temas do curso de forma crescente (1, 2, 3...)
-            # Em caso de empate na ordem (ex: o usuário colocou o número de outro existente), 
-            # o tema recém-editado ganha prioridade (TemaAula.id != tema.id)
+
             temas_curso = TemaAula.query.filter_by(curso_id=tema.curso_id).order_by(
                 TemaAula.ordem,
                 TemaAula.id != tema.id,
                 TemaAula.id
             ).all()
-            
+
             for i, t in enumerate(temas_curso, start=1):
                 t.ordem = i
-                
+
             db.session.commit()
             flash("Tema atualizado com sucesso!", 'success')
-        except Exception as e:
+        except Exception:
             db.session.rollback()
             flash("Erro ao atualizar tema.", 'danger')
     else:
@@ -603,7 +625,7 @@ def editar_tema(id):
 @bp.route('/planejamento/tema/inativar/<int:id>', methods=['POST'])
 @login_required
 def inativar_tema(id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
@@ -620,15 +642,6 @@ def inativar_tema(id):
     return redirect(url_for('registros.planejamento'))
 
 
-# TODO: Implementar rota mover_tema após resolver problemas de login
-# @bp.route('/temas/<int:id>/mover/<string:direcao>', methods=['POST'])
-# @login_required
-# def mover_tema(id, direcao):
-#     """Move um tema para cima ou para baixo na ordem."""
-#     pass
-
-
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # NÍVEIS — edição e inativação
 # ---------------------------------------------------------------------------
@@ -636,11 +649,11 @@ def inativar_tema(id):
 @bp.route('/planejamento/nivel/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_nivel(id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
-    
+
     novo_nome = request.form.get('nome_nivel', '').strip()
     if novo_nome:
         try:
@@ -658,7 +671,7 @@ def editar_nivel(id):
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
 @login_required
 def inativar_nivel(id):
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
@@ -680,7 +693,7 @@ def inativar_nivel(id):
 @bp.route('/planejamento/imprimir-temas')
 @login_required
 def imprimir_temas():
-    if current_user.role not in ['admin', 'pedagogico']:
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
         abort(403)
 
     filtro_curso = request.args.get('curso_id', '')
@@ -697,7 +710,6 @@ def imprimir_temas():
 
     temas = query.order_by(Curso.nome, TemaAula.id).all()
 
-    # Cursos para o select de filtro na impressão
     q_cursos = Curso.query.filter_by(ativo=True)
     if unidade_id:
         q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
@@ -710,7 +722,6 @@ def imprimir_temas():
                            now=datetime.now())
 
 
-
 # ---------------------------------------------------------------------------
 # API SERVERSIDE BINDINGS
 # ---------------------------------------------------------------------------
@@ -721,6 +732,3 @@ def api_alunos(turma_id):
     turma = Turma.query.get_or_404(turma_id)
     alunos = turma.alunos.all()
     return jsonify([{"id": a.id, "nome": a.nome} for a in alunos])
-
-
-
