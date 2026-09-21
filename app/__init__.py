@@ -203,13 +203,13 @@ def _register_cli(app: Flask) -> None:
 
 
 def _register_error_handlers(app: Flask) -> None:
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import SQLAlchemyError
     from flask import render_template
     from werkzeug.exceptions import HTTPException
 
-    @app.errorhandler(OperationalError)
-    def handle_db_down_error(e):
-        app.logger.error(f"Erro de conexão com o banco de dados interceptado: {e}")
+    @app.errorhandler(SQLAlchemyError)
+    def handle_db_error(e):
+        app.logger.error(f"Erro de banco de dados interceptado: {e}")
         if app.debug:
             raise e
         return render_template('sistema_indisponivel.html'), 503

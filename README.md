@@ -1,159 +1,254 @@
 # pautaON
 
-Aplicação web para gestão escolar e pedagógica, com autenticação local e integração opcional com Active Directory/LDAP.
+Sistema de gestão escolar e pedagógica desenvolvido em Flask, com suporte a autenticação local, Active Directory/LDAP e Google OAuth2.
 
-## Visão geral
+---
 
-O projeto é construído com Flask, SQLAlchemy, Flask-Login e templates Jinja2. Ele suporta:
+## Funcionalidades
 
-- autenticação local e híbrida com AD/LDAP;
-- cadastro e gestão de usuários, unidades, turmas, alunos e períodos letivos;
-- importação em lote de alunos a partir de arquivos Excel;
-- tratamento centralizado de falhas críticas para exibir a tela de indisponibilidade do sistema.
+- Autenticação híbrida: local, AD/LDAP e Google OAuth2
+- Gestão de usuários, unidades, turmas, alunos e períodos letivos
+- Registro de frequência, atendimentos pedagógicos e serviço social
+- Conselho de classe com perguntas configuráveis
+- Planejamento de aulas e temas
+- Integração com Google Calendar e Google Chat
+- Importação em lote de alunos via planilha Excel
+- Relatórios e histórico por aluno
+- Controle de acesso por perfil (RBAC) com isolamento multitenant por unidade
+- Servimento seguro e autenticado de documentos e fotos de alunos
+
+---
 
 ## Requisitos
 
 - Python 3.11+
-- Dependências listadas em requirements.txt
-- Banco de dados configurado via variável DATABASE_URL ou SQLite local
+- PostgreSQL (recomendado para produção) ou SQLite (desenvolvimento)
+- Dependências listadas em `requirements.txt`
 
-## Configuração rápida
+---
 
-### Ambiente virtual (Windows)
+## Configuração
 
-No repositório já existe uma pasta de ambiente virtual local em .venv. Para usá-la, execute:
+### 1. Ambiente virtual
 
 ```powershell
+# Windows — ativar o .venv já presente no repositório
 .\.venv\Scripts\Activate.ps1
-```
 
-Se o PowerShell bloquear a execução do script, rode antes:
-
-```powershell
+# Se o PowerShell bloquear a execução:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ```
 
-### Instalação das dependências
+```bash
+# Linux / macOS
+source .venv/bin/activate
+```
+
+### 2. Dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Variáveis de ambiente
+### 3. Variáveis de ambiente
 
-Defina as variáveis de ambiente necessárias, por exemplo:
+Copie `.env.example` para `.env` e ajuste os valores:
 
-```powershell
-$env:SECRET_KEY="troque-esta-chave"
-$env:DATABASE_URL="postgresql://usuario:senha@host:5432/banco"
+```bash
+cp .env.example .env
 ```
 
-Em sistemas Linux/macOS, o equivalente é usar export.
+Variáveis obrigatórias:
 
-### Execução local
+| Variável | Descrição |
+|---|---|
+| `SECRET_KEY` | Chave criptográfica da sessão Flask |
+| `DATABASE_URL` | URI de conexão com o banco de dados |
+| `APP_ENV` | `development` ou `production` |
+
+### 4. Banco de dados
+
+```bash
+# Criar as tabelas (primeira execução)
+flask db upgrade
+
+# Se o banco já existir mas estiver fora de sincronia com o Alembic:
+python -c "from app import create_app; from app.database import db; import app.models; app = create_app(); app.app_context().push(); db.create_all()"
+flask db stamp head
+```
+
+### 5. Usuário administrador inicial
+
+```bash
+python scripts/reset_admin.py admin@exemplo.com senha_inicial
+```
+
+### 6. Execução local
 
 ```bash
 python run.py
 ```
 
-Ou, se preferir executar pelo WSGI do projeto:
+---
 
-```bash
-python wsgi.py
-```
+## Deploy em produção
 
-### Produção local / IIS / WSGI
+Consulte [`docs/manual_deploy.md`](docs/manual_deploy.md) para instruções detalhadas de deploy no IIS (Windows) e Apache (Linux).
 
-Em ambientes Windows com IIS ou outro gateway WSGI, o projeto pode ser servido via wsgi.py e o arquivo web.config já presente na raiz do projeto. Nesse cenário, é fundamental garantir que:
+Pontos essenciais para qualquer ambiente de produção:
 
-- SECRET_KEY esteja definido corretamente;
-- DATABASE_URL aponte para o banco de produção;
-- as dependências estejam instaladas no ambiente Python usado pelo servidor.
+- `SECRET_KEY` deve ser uma string aleatória longa e única
+- `DATABASE_URL` deve apontar para o banco de produção (PostgreSQL)
+- `APP_ENV=production` ativa `SESSION_COOKIE_SECURE`, HSTS e outros controles
+- Uploads ficam em `instance/uploads/` — garanta permissão de escrita para o processo do servidor
+- Arquivos estáticos podem ser servidos diretamente pelo servidor web (Nginx/Apache/IIS) para melhor desempenho
+
+---
 
 ## Autenticação
 
-A aplicação suporta dois fluxos principais:
+### Login local
 
-- Login local: usa credenciais armazenadas no banco.
-- Login AD/LDAP: tenta validar o usuário no domínio quando a integração estiver habilitada.
+Credenciais armazenadas no banco com hash bcrypt. Na primeira autenticação, o usuário é obrigado a definir uma nova senha.
 
-Para habilitar o fluxo do Active Directory, configure as variáveis abaixo:
+### Active Directory / LDAP
 
-```bash
-export LDAP_ENABLED=true
-export LDAP_SERVER_URI="ldaps://srv001.dominio.local"
-export LDAP_DOMAIN="dominio.local"
-export LDAP_USE_SSL=true
-export LDAP_VALIDATE_CERT=true
-export LDAP_CA_CERT_FILE="/caminho/para/ca.pem"
+Configure as variáveis abaixo para habilitar o fluxo AD:
+
+```env
+LDAP_ENABLED=true
+LDAP_SERVER_URI=ldaps://srv001.dominio.local
+LDAP_DOMAIN=dominio.local
+LDAP_USE_SSL=true
+LDAP_VALIDATE_CERT=true
+LDAP_CA_CERT_FILE=/caminho/para/ca.pem
+LDAP_CONNECT_TIMEOUT=10
 ```
 
-A autenticação no AD deve aceitar as três formas mais comuns de identidade do usuário:
+Formatos de identidade aceitos: `usuario`, `usuario@dominio.local`, `DOMINIO\usuario`.
 
-- nome simples: `usuario`
-- UPN: `usuario@dominio.local`
-- formato domínio\usuário: `DOMINIO\usuario`
+Usuários autenticados pelo AD são provisionados localmente com perfil `pendente` e precisam de aprovação administrativa antes de acessar o sistema.
 
-Quando a autenticação AD/LDAP é bem-sucedida, o usuário pode ser provisionado localmente em status pendente para aprovação administrativa. O sistema também bloqueia o bind quando a integração estiver desabilitada ou quando `LDAP_SERVER_URI` estiver ausente, evitando tentativas inúteis e diagnóstico incorreto.
+### Google OAuth2
 
-## Tratamento de indisponibilidade
+Configure as variáveis abaixo para habilitar o botão "Entrar com Google":
 
-Quando ocorrem falhas críticas, como problemas de conexão com o banco ou exceções inesperadas, a aplicação renderiza o template de indisponibilidade para o usuário com status HTTP 503.
+```env
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_OAUTH_REDIRECT_URI=https://seudominio.com.br/auth/google/callback
+GOOGLE_OAUTH_ALLOWED_DOMAINS=escola.edu.br   # opcional — restringe por domínio
+GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED=true
+```
 
-Esse comportamento está centralizado na criação da aplicação e ajuda a manter uma experiência consistente durante incidentes.
+Consulte [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md) para criação do projeto no Google Cloud Console.
+
+---
+
+## Perfis de acesso (RBAC)
+
+| Perfil | Descrição |
+|---|---|
+| `admin` | Acesso total, gestão de usuários e unidades |
+| `gerencia` | Visão global entre unidades, sem gestão de usuários |
+| `pedagogico` | Gestão de turmas, alunos, frequência e conselho |
+| `secretaria` | Cadastro e matrícula de alunos |
+| `professor` | Lançamento de frequência e visualização de suas turmas |
+| `servico_social` | Atendimentos e agendamentos do serviço social |
+| `pendente` | Acesso bloqueado — aguarda aprovação administrativa |
+
+---
 
 ## Importação de alunos por planilha
-
-A importação em lote pode ser feita com o script:
 
 ```bash
 python scripts/ImportaçãoPlanilha/importar_matriculas.py caminho/para/arquivo.xlsx
 ```
 
-Regras importantes:
+Regras:
+- A coluna de unidade é obrigatória em cada linha com dados
+- A unidade informada deve existir no cadastro do sistema
+- Linhas sem nome são ignoradas
+- Valores longos são truncados para respeitar o schema do banco
 
-- a coluna de unidade é obrigatória para cada linha com dados;
-- a unidade informada precisa existir no cadastro de unidades do sistema;
-- valores longos são truncados para respeitar o schema do banco;
-- linhas sem nome são ignoradas.
+---
 
-## Estrutura principal
+## Estrutura do projeto
 
-- app/: aplicação Flask, modelos, rotas, templates e serviços
-- scripts/: utilidades de manutenção, bootstrap e importação
-- config.py: configuração central da aplicação
+```
+app/
+├── auth.py                  # Autenticação, OAuth, administração de usuários
+├── conselho.py              # Conselho de classe
+├── planejamento.py          # Planejamento de aulas
+├── main/                    # Dashboards por perfil
+├── models/                  # Modelos SQLAlchemy
+├── registros/               # Alunos, turmas, frequência, atendimentos, períodos
+├── relatorios/              # Geração de relatórios
+├── services/                # Serviços de negócio (auth, calendar, bootstrap)
+├── templates/               # Templates Jinja2
+├── static/                  # CSS, JS, imagens
+└── utils/                   # Helpers (erros, datas, lógica)
+config.py                    # Configuração central
+migrations/                  # Revisões Alembic
+scripts/                     # Utilitários de manutenção e importação
+docs/                        # Manuais e documentação técnica
+instance/                    # Dados locais: banco SQLite, uploads, logs, certificados
+```
 
-## Manutenção
+---
 
-Ao alterar fluxos de login, tratamento de erro ou importação em lote, mantenha os comentários de intenção e as regras de negócio no próprio código para facilitar a compreensão futura.
+## Segurança
 
-## Códigos de Erro e Suporte
+O projeto passou por auditoria interna documentada em [`docs/checklist_seguranca_dividas_tecnicas.md`](docs/checklist_seguranca_dividas_tecnicas.md). Controles implementados:
 
-Para evitar exposição de detalhes internos aos usuários, o sistema gera um código curto sempre que uma exceção não tratada ocorre. O usuário vê apenas:
+- Documentos e fotos de alunos servidos por rotas autenticadas — sem exposição via `/static`
+- Operações destrutivas restritas ao método `POST` com token CSRF obrigatório
+- Interceptor global (`before_request`) para perfis `pendente` e `first_login`
+- Isolamento multitenant por unidade com `assert_unidade_context` em todas as rotas sensíveis
+- Proteção contra Pre-Account Takeover no Google OAuth
+- Troca de senha exige confirmação da senha atual (exceto no primeiro acesso)
+- Rate limiting de login persistido em banco — resistente a reinicializações WSGI
+- `ProxyFix` configurado para leitura correta de IP real atrás de proxy reverso
+- Cabeçalhos HTTP de segurança: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `HSTS`
+- `SESSION_COOKIE_SECURE` ativado automaticamente em `APP_ENV=production`
 
-- "Um erro foi encontrado (código CODE), contate o suporte."
+---
 
-Onde `CODE` tem o formato `CC-YYYYMMDDThhmmss-XXXXXX`, por exemplo `01-20260909T111523-3f4a1b`.
+## Códigos de erro
 
-Mapeamento de prefixos (CC):
+Exceções não tratadas geram um código de rastreamento exibido ao usuário no formato:
 
-- `01`: Banco de dados / SQLAlchemy
-- `02`: Chamadas externas / HTTP APIs
-- `03`: LDAP / Active Directory
-- `04`: Template / URL building
-- `05`: Autenticação / Autorização
-- `06`: Validação de entrada
-- `99`: Desconhecido / Outros
+```
+CC-YYYYMMDDThhmmss-XXXXXX
+```
 
-Onde procurar o diagnóstico:
+Exemplo: `01-20260909T111523-3f4a1b`
 
-- Logs da aplicação: `instance/error.log` (procure pelo código exato entre colchetes, por exemplo `[01-20260909T111523-3f4a1b]`).
-- Em ambiente WSGI, verifique também `instance/wsgi_error.log` se aplicável.
+| Prefixo | Categoria |
+|---|---|
+| `01` | Banco de dados / SQLAlchemy |
+| `02` | Chamadas externas / HTTP APIs |
+| `03` | LDAP / Active Directory |
+| `04` | Template / URL building |
+| `05` | Autenticação / Autorização |
+| `06` | Validação de entrada |
+| `99` | Desconhecido / Outros |
 
-Procedimento para suporte:
+**Para suporte:**
+1. Solicite ao usuário o código exibido na tela
+2. Pesquise o código em `instance/error.log` (ex.: `grep "01-20260909T111523-3f4a1b" instance/error.log`)
+3. Leia o stacktrace completo registrado ao lado do código
+4. Use o timestamp embutido para correlacionar com logs de infraestrutura (banco, LDAP, rede)
 
-1. Peça ao usuário o código exibido na tela.
-2. No servidor, pesquise nos logs por esse código e revise o stacktrace completo registrado ao lado do código.
-3. Use o timestamp embutido no código para correlacionar logs de infra (DB / LDAP / rede).
+O helper de geração e registro dos códigos está em `app/utils/errors.py`.
 
-Desenvolvedores: o helper para gerar e registrar esses códigos está em `app/utils/errors.py`.
+---
+
+## Documentação adicional
+
+| Documento | Conteúdo |
+|---|---|
+| [`docs/manual_deploy.md`](docs/manual_deploy.md) | Deploy no IIS e Apache, configuração WSGI |
+| [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md) | Google Cloud, OAuth2, Calendar e Chat |
+| [`docs/checklist_seguranca_dividas_tecnicas.md`](docs/checklist_seguranca_dividas_tecnicas.md) | Auditoria de segurança e LGPD |
+| [`app/models/MER.md`](app/models/MER.md) | Modelo entidade-relacionamento |

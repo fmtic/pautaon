@@ -52,8 +52,15 @@ def _login_attempts_key(ip_address: str) -> str:
 
 
 def _load_failed_attempts(ip_address: str) -> list[datetime]:
-    """Carrega tentativas falhas persistidas em banco para o IP informado."""
-    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
+    """Carrega tentativas falhas persistidas em banco para o IP informado.
+
+    Em caso de falha de banco (tabela inexistente, conexão recusada etc.),
+    faz fallback silencioso para o dicionário em memória para não bloquear o login.
+    """
+    try:
+        record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
+    except Exception:
+        return list(_FAILED_ATTEMPTS.get(ip_address, []))
     if not record or not record.valor:
         return []
     try:
@@ -70,15 +77,25 @@ def _load_failed_attempts(ip_address: str) -> list[datetime]:
 
 
 def _persist_failed_attempts(ip_address: str, attempts: list[datetime]) -> None:
-    """Persiste o histórico de tentativas falhas no banco."""
-    key = _login_attempts_key(ip_address)
-    record = ConfiguracaoSistema.query.filter_by(chave=key).first()
-    if record is None:
-        record = ConfiguracaoSistema(chave=key, valor=json.dumps([ts.isoformat() for ts in attempts]))
-        db.session.add(record)
-    else:
-        record.valor = json.dumps([ts.isoformat() for ts in attempts])
-    db.session.commit()
+    """Persiste o histórico de tentativas falhas no banco.
+
+    Falhas de banco são logadas e ignoradas: a proteção em memória continua ativa
+    para a instância atual, evitando que um problema de schema derrube o login.
+    """
+    try:
+        key = _login_attempts_key(ip_address)
+        record = ConfiguracaoSistema.query.filter_by(chave=key).first()
+        if record is None:
+            record = ConfiguracaoSistema(chave=key, valor=json.dumps([ts.isoformat() for ts in attempts]))
+            db.session.add(record)
+        else:
+            record.valor = json.dumps([ts.isoformat() for ts in attempts])
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.warning(
+            "Não foi possível persistir tentativas de login no banco (fallback em memória ativo)."
+        )
 
 
 def _is_login_blocked(ip_address: str) -> bool:
@@ -151,9 +168,14 @@ def login():
         ]
         if lookup_candidates[0] != email:
             lookup_candidates.append(email)
-        user = db.session.execute(
-            select(User).where(User.email.in_(lookup_candidates))
-        ).scalars().first()
+        try:
+            user = db.session.execute(
+                select(User).where(User.email.in_(lookup_candidates))
+            ).scalars().first()
+        except Exception:
+            current_app.logger.exception("Falha ao consultar usuário no banco durante login.")
+            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
+            return redirect(url_for('auth.login'))
 
         login_ok = False
         ldap_identity = email
