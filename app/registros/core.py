@@ -64,7 +64,7 @@ def form():
             )
             db.session.add(novo)
             db.session.commit()
-            return redirect(url_for('main.dashboard'))
+            return redirect(url_for('main.painel'))
         except Exception as e:
             from app.utils.errors import flash_and_log
 
@@ -126,7 +126,7 @@ def painel_professor():
         UserRole.PEDAGOGICO, UserRole.SECRETARIA,
     ):
         flash("Permissões insuficientes. Autenticação RBAC Negou Rota.", "warning")
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.painel'))
 
     programa_selecionado = request.args.get('programa', 'Todos')
     unidade_id = get_unidade_id()

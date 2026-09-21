@@ -38,7 +38,7 @@ bp = Blueprint("servico_social", __name__, url_prefix="/servico-social")
 def agendar_entrevista():
     if current_user.role not in ["admin", "secretaria", "servico_social"]:
         flash("Você não tem permissão para realizar agendamentos.", "danger")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.painel"))
 
     titulo = request.form.get("titulo")
     data = request.form.get("data")
@@ -50,7 +50,7 @@ def agendar_entrevista():
 
     if not all([titulo, data, hora, categoria]):
         flash("Por favor, preencha todos os campos obrigatórios.", "warning")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.painel"))
 
     start_iso = f"{data}T{hora}:00-03:00"
     hora_fim_int = (int(hora[:2]) + 1) % 24
@@ -81,7 +81,7 @@ def agendar_entrevista():
         calendar_id = current_app.config.get("GOOGLE_CALENDAR_ID")
         if not service or not calendar_id:
             flash("Integração com Google Calendar não configurada.", "danger")
-            return redirect(url_for("main.dashboard"))
+            return redirect(url_for("main.painel"))
 
         created_event = (
             service.events()
@@ -111,7 +111,7 @@ def agendar_entrevista():
         )
         flash("Erro na sincronização do agendamento.", "danger")
 
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.painel"))
 
 
 @bp.route("/excluir-agendamento/<int:id>", methods=["POST"])
@@ -142,7 +142,7 @@ def excluir_agendamento(id):
         current_app.logger.exception("Falha ao remover agendamento.")
         flash("Erro ao remover o agendamento.", "danger")
 
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.painel"))
 
 
 # =============================================================================

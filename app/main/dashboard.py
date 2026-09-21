@@ -1,4 +1,4 @@
-"""Rota central do painel: decide qual dashboard renderizar conforme o perfil do usuário.
+"""Rota central do painel: decide qual view renderizar conforme o perfil do usuário.
 
 A lógica de cada perfil vive em seu próprio módulo (dashboard_admin,
 dashboard_professor, dashboard_servico_social) — esta rota é só o roteador.
@@ -13,15 +13,15 @@ from .dashboard_professor import render_dashboard_professor
 from .dashboard_servico_social import render_dashboard_servico_social
 
 
-@bp.route("/dashboard")
+@bp.route("/painel")
 @login_required
-def dashboard():
+def painel():
     """Controlador central do painel do sistema."""
     if current_user.role == "pendente":
         return redirect(url_for("auth.aguardando_aprovacao"))
 
     if current_user.role == "secretaria":
-        return redirect(url_for("main.dashboard_secretaria"))
+        return redirect(url_for("main.painel_secretaria"))
 
     if current_user.role in ("admin", "gerencia", "pedagogico"):
         return render_dashboard_gerencial()

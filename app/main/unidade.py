@@ -23,4 +23,4 @@ def trocar_unidade(id):
             abort(404)
         session["unidade_id"] = id
         flash(f"Você agora está na Unidade {uni.nome}", "info")
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.painel"))

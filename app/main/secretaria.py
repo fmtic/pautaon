@@ -1,4 +1,4 @@
-"""Dashboard consolidado usado pela secretaria (e demais perfis com acesso)."""
+"""Painel consolidado usado pela secretaria (e demais perfis com acesso)."""
 
 from datetime import date
 
@@ -20,9 +20,9 @@ from app.utils.logica import get_unidade_id
 from . import bp
 
 
-@bp.route('/dashboard/secretaria')
+@bp.route('/painel/secretaria')
 @login_required
-def dashboard_secretaria():
+def painel_secretaria():
     if current_user.role not in [
         'admin', 'pedagogico', 'secretaria', 'gerencia', 'servico_social'
     ]:
