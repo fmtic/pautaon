@@ -27,19 +27,33 @@ def obter_proximo_ordenacao(periodo_letivo_id):
 def assert_unidade_context(obj_unidade_id, unidade_id):
     """Impede que dados de uma unidade sejam acessados em outra.
 
-    Este helper centraliza a regra de segurança por contexto de unidade e ajuda a
-    manter consistência entre os módulos do sistema acadêmico.
+    Qualquer operador local sem unidade vinculada ou sem contexto de sessão
+    válido deve ser bloqueado imediatamente para evitar IDOR e isolamento
+    multitenant quebrado.
     """
-    if unidade_id and obj_unidade_id != unidade_id:
+    if obj_unidade_id is None:
+        abort(403)
+    if unidade_id is None:
+        abort(403)
+    if obj_unidade_id != unidade_id:
         abort(403)
 
 
+def _get_upload_root() -> Path:
+    """Retorna o diretório base seguro de uploads configurado."""
+    folder = current_app.config.get("UPLOAD_FOLDER")
+    if folder:
+        return Path(folder)
+    return Path(current_app.instance_path) / "uploads"
+
+
 def _build_upload_path(*parts: str) -> str:
-    """Constrói um caminho de upload confiável, evitando traversal e caminhos maliciosos."""
-    base_path = Path(current_app.static_folder) / "uploads"
-    target_path = base_path.joinpath(*parts)
-    target_path = target_path.resolve()
+    """Constrói um caminho de upload confiável dentro da pasta segura de uploads,
+    evitando traversal e caminhos maliciosos.
+    """
+    base_path = _get_upload_root()
     base_resolved = base_path.resolve()
+    target_path = base_path.joinpath(*parts).resolve()
     if not str(target_path).startswith(str(base_resolved)):
         raise ValueError("Caminho de upload inválido.")
     return str(target_path)

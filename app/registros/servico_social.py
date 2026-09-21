@@ -114,10 +114,16 @@ def agendar_entrevista():
     return redirect(url_for("main.dashboard"))
 
 
-@bp.route("/excluir-agendamento/<int:id>")
+@bp.route("/excluir-agendamento/<int:id>", methods=["POST"])
 @login_required
 def excluir_agendamento(id):
+    from app.models.enums import UserRole
     agendamento = AgendaServicoSocial.query.get_or_404(id)
+
+    # SEC-04: Apenas o autor, admin ou servico_social podem excluir
+    if current_user.role not in (UserRole.ADMIN, UserRole.SERVICO_SOCIAL) \
+            and agendamento.responsavel_id != current_user.id:
+        abort(403)
 
     try:
         service = get_calendar_service()

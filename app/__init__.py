@@ -1,7 +1,9 @@
 # puataon/app/__init__.py
 
-from flask import Flask
+from flask import Flask, current_app, request, redirect, url_for
+from flask_login import current_user
 from flask_migrate import Migrate
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from app.extensions import csrf, db, login_manager
 import logging
@@ -13,6 +15,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     """Cria a aplicação Flask sem efeitos colaterais no import."""
     app = Flask(__name__)
     app.config.from_object(config_class)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Configura log em arquivo para captura de erros em produção/WSGI
     try:
@@ -35,6 +38,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         pass
     _configure_extensions(app)
     _register_user_loader()
+    _register_security_hooks(app)
     _register_blueprints(app)
     _register_template_filters(app)
     _register_context_processors(app)
@@ -65,6 +69,40 @@ def _register_template_filters(app: Flask) -> None:
         if len(digitos) == 11:
             return f"{digitos[:3]}.{digitos[3:6]}.{digitos[6:9]}-{digitos[9:]}"
         return digitos  # anômalo: mostra como está, sem quebrar
+
+
+def _register_security_hooks(app: Flask) -> None:
+    from app.models.enums import UserRole
+
+    @app.before_request
+    def enforce_user_access_state():
+        if request.endpoint in {None, 'static'}:
+            return None
+        if request.endpoint.startswith('static'):
+            return None
+        if not current_user.is_authenticated:
+            return None
+
+        if current_user.role == UserRole.PENDENTE and request.endpoint not in {
+            'auth.aguardando_aprovacao', 'auth.logout', 'auth.login'
+        }:
+            return redirect(url_for('auth.aguardando_aprovacao'))
+
+        if current_user.first_login and not current_user.is_ad_user and request.endpoint not in {
+            'auth.trocar_senha', 'auth.logout', 'auth.login'
+        }:
+            return redirect(url_for('auth.trocar_senha'))
+
+        return None
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        if app.config.get('APP_ENV') == 'production':
+            response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return response
 
 
 def _register_user_loader() -> None:

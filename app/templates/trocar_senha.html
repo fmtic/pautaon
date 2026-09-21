@@ -25,6 +25,15 @@
           <form action="{{ url_for('auth.trocar_senha') }}" method="POST" id="formSenha">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+            {% if not first_login %}
+            <div class="mb-3">
+              <label class="form-label fw-bold">Senha Atual</label>
+              <input type="password" name="senha_atual" id="senhaAtual"
+                     class="form-control" placeholder="Digite sua senha atual"
+                     required autocomplete="current-password">
+            </div>
+            {% endif %}
+
             <div class="mb-3">
               <label class="form-label fw-bold">Nova Senha</label>
               <input type="password" name="nova_senha" id="novaSenha"

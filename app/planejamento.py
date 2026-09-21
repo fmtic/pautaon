@@ -32,7 +32,7 @@ def salvar_configuracao_conselho():
 
     return redirect(url_for("registros.planejamento"))
 
-@bp_planejamento.route("/turma/alternar-conselho/<int:turma_id>")
+@bp_planejamento.route("/turma/alternar-conselho/<int:turma_id>", methods=["POST"])
 @login_required
 def alternar_conselho(turma_id):
     if current_user.role not in ["admin", "pedagogico"]:

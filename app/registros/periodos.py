@@ -315,26 +315,32 @@ def periodo_letivo_editar(id):
     return render_template("periodos/form.html", periodo=periodo, unidade=unidade)
 
 
-@bp.route("/periodo-letivo/inativar/<int:id>")
+@bp.route("/periodo-letivo/inativar/<int:id>", methods=["POST"])
 @login_required
 def periodo_letivo_inativar(id):
     if current_user.role not in ["admin", "pedagogico"]:
         abort(403)
 
+    from app.utils.logica import get_unidade_id
+    from .shared import assert_unidade_context
     periodo = db.get_or_404(PeriodoLetivo, id)
+    assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = False
     db.session.commit()
     flash(f"Período '{periodo.nome}' inativado.", "info")
     return redirect(url_for("registros.periodo_letivo"))
 
 
-@bp.route("/periodo-letivo/ativar/<int:id>")
+@bp.route("/periodo-letivo/ativar/<int:id>", methods=["POST"])
 @login_required
 def periodo_letivo_ativar(id):
     if current_user.role not in ["admin", "pedagogico"]:
         abort(403)
 
+    from app.utils.logica import get_unidade_id
+    from .shared import assert_unidade_context
     periodo = db.get_or_404(PeriodoLetivo, id)
+    assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = True
     db.session.commit()
     flash(f"Período '{periodo.nome}' reativado.", "success")

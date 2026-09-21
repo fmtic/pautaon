@@ -105,7 +105,7 @@
                     <td>
                         <div class="rounded bg-light d-flex align-items-center justify-content-center overflow-hidden"
                             style="width: 30px; height: 40px; border: 1px solid #ddd">
-                            <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                            <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                 class="w-100 h-100 object-fit-cover" />
                         </div>
                     </td>
@@ -134,11 +134,13 @@
                             onclick="return confirm('Transferir este aluno da turma {{ turma.nome }} para outra turma?');">
                             <i class="bi bi-arrow-left-right"></i>
                         </a>
-                        <a href="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id) }}"
-                            class="btn btn-sm btn-outline-danger" title="Remover da Turma"
-                            onclick="return confirm('Deseja remover este aluno da turma atual?');">
-                            <i class="bi bi-person-dash"></i>
-                        </a>
+                        <form action="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id) }}" method="POST" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Remover da Turma"
+                                onclick="return confirm('Deseja remover este aluno da turma atual?');">
+                                <i class="bi bi-person-dash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

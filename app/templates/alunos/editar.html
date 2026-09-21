@@ -52,7 +52,7 @@
                                     style="width: 140px; height: 140px; position: relative;">
                                     {% if aluno.foto_path %}
                                     <img id="img-preview"
-                                        src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) }}"
+                                        src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                         class="w-100 h-100 object-fit-cover">
                                     {% else %}
                                     <i class="bi bi-person-fill text-muted display-1" id="placeholder-icon"></i>

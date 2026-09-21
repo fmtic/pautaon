@@ -22,6 +22,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
 from collections import defaultdict
+import json
 import secrets
 
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
@@ -36,27 +37,66 @@ from app.services.auth_service import (
 
 bp = Blueprint('auth', __name__)
 
-# Nota técnica: este controle básico evita tentativas repetidas de login em sequência
-# sem exigir uma nova estrutura de cache ou armazenamento externo.
+# Nota técnica: a proteção contra brute-force não deve depender da memória do
+# processo. Em ambientes WSGI multi-worker ela é perdida em reinicialização e não
+# oferece isolamento de estado entre instâncias. Persistimos o histórico em
+# ConfiguracaoSistema, que já é um armazenamento compartilhado do app.
 _FAILED_ATTEMPTS = defaultdict(list)
 _MAX_ATTEMPTS = 5
 _ATTEMPT_WINDOW_SECONDS = 900
 
 
+def _login_attempts_key(ip_address: str) -> str:
+    """Gera uma chave estável para o histórico de tentativas do IP."""
+    return f"login_attempts:{ip_address}"
+
+
+def _load_failed_attempts(ip_address: str) -> list[datetime]:
+    """Carrega tentativas falhas persistidas em banco para o IP informado."""
+    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
+    if not record or not record.valor:
+        return []
+    try:
+        payload = json.loads(record.valor)
+    except (TypeError, ValueError):
+        return []
+    values = []
+    for item in payload:
+        try:
+            values.append(datetime.fromisoformat(item))
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _persist_failed_attempts(ip_address: str, attempts: list[datetime]) -> None:
+    """Persiste o histórico de tentativas falhas no banco."""
+    key = _login_attempts_key(ip_address)
+    record = ConfiguracaoSistema.query.filter_by(chave=key).first()
+    if record is None:
+        record = ConfiguracaoSistema(chave=key, valor=json.dumps([ts.isoformat() for ts in attempts]))
+        db.session.add(record)
+    else:
+        record.valor = json.dumps([ts.isoformat() for ts in attempts])
+    db.session.commit()
+
+
 def _is_login_blocked(ip_address: str) -> bool:
     """Bloqueia temporariamente IPs com muitas tentativas consecutivas de login."""
-    attempts = _FAILED_ATTEMPTS.get(ip_address, [])
+    attempts = _load_failed_attempts(ip_address)
     now = datetime.now()
     attempts[:] = [ts for ts in attempts if (now - ts).total_seconds() < _ATTEMPT_WINDOW_SECONDS]
     _FAILED_ATTEMPTS[ip_address] = attempts
+    _persist_failed_attempts(ip_address, attempts)
     return len(attempts) >= _MAX_ATTEMPTS
 
 
 def _register_failed_attempt(ip_address: str) -> None:
     """Registra uma tentativa falha para posterior bloqueio temporário."""
-    attempts = _FAILED_ATTEMPTS.get(ip_address, [])
+    attempts = _load_failed_attempts(ip_address)
     attempts.append(datetime.now())
     _FAILED_ATTEMPTS[ip_address] = attempts
+    _persist_failed_attempts(ip_address, attempts)
 
 
 @bp.route('/aguardando-aprovacao')
@@ -330,9 +370,20 @@ def google_callback():
         flash("O Google não retornou um identificador de conta válido.", "danger")
         return redirect(url_for("auth.login"))
 
+    if current_app.config.get("GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True) and not userinfo.get("email_verified"):
+        flash("A conta Google precisa ter o e-mail verificado para continuar.", "danger")
+        return redirect(url_for("auth.login"))
+
+    allowed_domains = current_app.config.get("GOOGLE_OAUTH_ALLOWED_DOMAINS") or []
+    if allowed_domains:
+        domain = google_email.rsplit("@", 1)[1].lower() if "@" in google_email else ""
+        if domain not in {item.lower() for item in allowed_domains}:
+            flash("Este e-mail não está autorizado para acesso ao sistema.", "danger")
+            return redirect(url_for("auth.login"))
+
     # --- 3. Localiza ou cria o perfil local ---
     # Prioridade: (a) conta já vinculada pelo google_id;
-    #             (b) conta existente com mesmo e-mail → vincula automaticamente;
+    #             (b) conta existente com mesmo e-mail -> exige senha local antes de vincular;
     #             (c) novo provisionamento com perfil pendente.
     user = db.session.execute(
         select(User).where(User.google_id == google_id)
@@ -342,6 +393,10 @@ def google_callback():
         user = db.session.execute(
             select(User).where(User.email == google_email)
         ).scalars().first()
+
+    if user and user.password and not user.google_id:
+        flash("Para vincular sua conta Google, confirme primeiro a senha local do usuário.", "warning")
+        return redirect(url_for("auth.login"))
 
     try:
         if user:
@@ -589,7 +644,7 @@ def editar_unidade(id):
     return redirect(url_for('auth.admin_unidades'))
 
 
-@bp.route('/admin/unidades/alternar/<int:id>')
+@bp.route('/admin/unidades/alternar/<int:id>', methods=['POST'])
 @login_required
 def alternar_unidade_status(id):
     """Ativa ou Inativa uma unidade (Exclusão Lógica)."""
@@ -716,8 +771,14 @@ def trocar_senha():
         return redirect(url_for('main.dashboard'))
 
     if request.method == 'POST':
-        nova     = request.form.get('nova_senha', '')
+        nova = request.form.get('nova_senha', '')
         confirma = request.form.get('confirma_senha', '')
+        senha_atual = request.form.get('senha_atual', '')
+
+        if not current_user.first_login and not current_user.is_ad_user:
+            if not senha_atual or not current_user.check_password(senha_atual):
+                flash('Senha atual incorreta. Digite a senha vigente para continuar.', 'danger')
+                return redirect(url_for('auth.trocar_senha'))
 
         # ── Validação de complexidade ──────────────────────────────────────
         erros = validate_password_strength(nova)

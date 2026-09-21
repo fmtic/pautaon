@@ -29,6 +29,7 @@ Thumbs.db
 # Pastas de uploads
 uploads/
 app/static/uploads/
+instance/uploads/
 
 # Logs e cobertura
 *.log

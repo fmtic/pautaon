@@ -40,12 +40,14 @@ class Config:
 
     REMEMBER_COOKIE_DURATION = timedelta(hours=8)
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
-    SESSION_COOKIE_SECURE = get_bool("SESSION_COOKIE_SECURE", get_bool("FLASK_DEBUG", False) is False and os.getenv("FLASK_ENV") == "production")
+    SESSION_COOKIE_SECURE = get_bool("SESSION_COOKIE_SECURE", APP_ENV == "production")
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str(INSTANCE_DIR / "uploads"))
 
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
     ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrador")
@@ -65,4 +67,11 @@ class Config:
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
     GOOGLE_CALENDAR_DELEGATED_USER = os.getenv("GOOGLE_CALENDAR_DELEGATED_USER")
     GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+    GOOGLE_OAUTH_ALLOWED_DOMAINS = [
+        item.strip().lower()
+        for item in os.getenv("GOOGLE_OAUTH_ALLOWED_DOMAINS", "").split(",")
+        if item.strip()
+    ]
+    GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED = get_bool("GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True)
 

@@ -41,11 +41,15 @@
                                 <i class="bi bi-pencil"></i> Editar
                             </button>
                             
-                            <a href="{{ url_for('auth.alternar_unidade_status', id=uni.id) }}" 
-                               class="btn btn-sm {% if uni.ativo %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
-                                <i class="bi {% if uni.ativo %}bi-toggle-on{% else %}bi-toggle-off{% endif %}"></i>
-                                {% if uni.ativo %}Inativar{% else %}Ativar{% endif %}
-                            </a>
+                            <form action="{{ url_for('auth.alternar_unidade_status', id=uni.id) }}"
+                                method="POST" class="d-inline"
+                                onsubmit="return confirm('Confirma alteração de status da unidade {{ uni.nome }}?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm {% if uni.ativo %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                    <i class="bi {% if uni.ativo %}bi-toggle-on{% else %}bi-toggle-off{% endif %}"></i>
+                                    {% if uni.ativo %}Inativar{% else %}Ativar{% endif %}
+                                </button>
+                            </form>
                         </td>
                     </tr>
 

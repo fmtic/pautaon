@@ -33,9 +33,10 @@ def salvar_informacao_padrao():
         db.session.commit()
         register_security_log("Informacao Padrao", "Administrador atualizou dados institucionais padrao.")
         flash("Informacoes padrao atualizadas com sucesso.", "success")
-    except ValueError as exc:
+    except ValueError:
         db.session.rollback()
-        flash(str(exc), "warning")
+        current_app.logger.warning("Dados inválidos ao atualizar informações padrão.")
+        flash("Dados inválidos para atualizar as informações institucionais.", "warning")
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao atualizar informacoes padrao.")

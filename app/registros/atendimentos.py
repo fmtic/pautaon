@@ -9,7 +9,10 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import (
+    abort, current_app, flash, jsonify, redirect, render_template, request,
+    send_from_directory, url_for,
+)
 from flask_login import current_user, login_required
 from sqlalchemy import and_, select
 from sqlalchemy.orm import contains_eager
@@ -19,7 +22,7 @@ from app.database import db
 from app.models import Aluno, Atendimento
 from app.utils.logica import get_unidade_id
 from . import bp
-from .shared import _build_upload_path, assert_unidade_context
+from .shared import _build_upload_path, _get_upload_root, assert_unidade_context
 
 # Roles com acesso ao módulo de atendimentos
 _ROLES_ATENDIMENTO = {"admin", "pedagogico", "gerencia", "secretaria", "servico_social"}
@@ -260,6 +263,7 @@ def historico_atendimentos(aluno_id):
             "dados": a.dados or {},
             "atendido_por_nome": a.atendido_por_nome or "",
             "created_at": a.created_at.strftime("%d/%m/%Y %H:%M") if a.created_at else "",
+            "anexo_url": url_for("registros.baixar_anexo_atendimento", id=a.id) if (a.dados or {}).get("anexo") else None,
             "pode_editar": (
                 current_user.id == a.atendido_por_id
                 or current_user.role == "admin"
@@ -305,8 +309,9 @@ def registrar_atendimento(aluno_id):
 
     try:
         anexo = _salvar_anexo(aluno_id)
-    except ValueError as exc:
-        return jsonify({"ok": False, "erro": str(exc)}), 400
+    except ValueError:
+        current_app.logger.warning("Arquivo de anexo inválido ao registrar atendimento.")
+        return jsonify({"ok": False, "erro": "Anexo inválido."}), 400
     if anexo:
         dados["anexo"] = anexo
 
@@ -340,6 +345,7 @@ def detalhe_atendimento(id):
         abort(403)
 
     a = db.get_or_404(Atendimento, id)
+    assert_unidade_context(a.unidade_id, get_unidade_id())
     setor_info = SETORES.get(a.setor, {"label": a.setor, "color": "secondary"})
 
     return jsonify({
@@ -351,6 +357,7 @@ def detalhe_atendimento(id):
         "data_atendimento": a.data_atendimento.strftime("%Y-%m-%d") if a.data_atendimento else "",
         "resumo": a.resumo or "",
         "dados": a.dados or {},
+        "anexo_url": url_for("registros.baixar_anexo_atendimento", id=a.id) if (a.dados or {}).get("anexo") else None,
         "atendido_por_nome": a.atendido_por_nome or "",
         "created_at": a.created_at.strftime("%d/%m/%Y %H:%M") if a.created_at else "",
         "pode_editar": (
@@ -396,17 +403,19 @@ def editar_atendimento(id):
 
     try:
         anexo = _salvar_anexo(a.aluno_id)
-    except ValueError as exc:
-        return jsonify({"ok": False, "erro": str(exc)}), 400
+    except ValueError:
+        current_app.logger.warning("Arquivo de anexo inválido ao editar atendimento.")
+        return jsonify({"ok": False, "erro": "Anexo inválido."}), 400
     if anexo:
         a.dados = {**(a.dados or {}), "anexo": anexo}
 
     try:
         db.session.commit()
         return jsonify({"ok": True})
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
-        return jsonify({"ok": False, "erro": str(exc)}), 500
+        current_app.logger.exception("Falha ao editar atendimento.")
+        return jsonify({"ok": False, "erro": "Não foi possível atualizar o atendimento."}), 500
 
 
 @bp.route("/atendimentos/<int:id>/excluir", methods=["POST"])
@@ -425,6 +434,43 @@ def excluir_atendimento(id):
         db.session.delete(a)
         db.session.commit()
         return jsonify({"ok": True})
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
-        return jsonify({"ok": False, "erro": str(exc)}), 500
+        current_app.logger.exception("Falha ao excluir atendimento.")
+        return jsonify({"ok": False, "erro": "Não foi possível excluir o atendimento."}), 500
+
+
+@bp.route("/atendimentos/<int:id>/anexo")
+@login_required
+def baixar_anexo_atendimento(id: int):
+    """Serve anexo de atendimento com autenticação e validação de permissão."""
+    if current_user.role not in _ROLES_ATENDIMENTO:
+        abort(403)
+
+    a = db.get_or_404(Atendimento, id)
+    assert_unidade_context(a.unidade_id, get_unidade_id())
+
+    anexo_info = (a.dados or {}).get("anexo")
+    if not anexo_info or not isinstance(anexo_info, dict):
+        abort(404)
+
+    rel_path = anexo_info.get("arquivo", "")
+    if not rel_path:
+        abort(404)
+
+    filename = Path(rel_path).name
+    if not filename:
+        abort(404)
+
+    upload_root = _get_upload_root()
+    pasta = upload_root / "documentos" / "atendimentos"
+    target_file = pasta / filename
+    if target_file.is_file():
+        return send_from_directory(
+            str(pasta),
+            filename,
+            download_name=anexo_info.get("nome", filename),
+            as_attachment=False,
+        )
+
+    abort(404)

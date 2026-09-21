@@ -215,7 +215,7 @@ def salvar_pergunta():
     return redirect(url_for('conselho.gerenciar_perguntas'))
 
 
-@bp.route('/conselho/pergunta/excluir/<int:id>')
+@bp.route('/conselho/pergunta/excluir/<int:id>', methods=['POST'])
 @login_required
 def excluir_pergunta(id):
     if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):

@@ -51,11 +51,14 @@
                                 onclick="editarPergunta('{{ p.id }}', '{{ p.etapa }}', '{{ p.tipo }}', '{{ p.texto }}', '{{ p.opcoes }}')">
                                 <i class="bi bi-pencil-square"></i>
                             </button>
-                            <a href="{{ url_for('conselho.excluir_pergunta', id=p.id) }}"
-                                class="btn btn-sm btn-outline-danger border-0"
-                                onclick="return confirm('Deseja excluir esta pergunta?')">
-                                <i class="bi bi-trash3"></i>
-                            </a>
+                            <form action="{{ url_for('conselho.excluir_pergunta', id=p.id) }}"
+                                method="POST" class="d-inline"
+                                onsubmit="return confirm('Deseja excluir esta pergunta?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger border-0">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}

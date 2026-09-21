@@ -85,7 +85,7 @@
         {% set identificacao = aluno.identificacao_json or {} %}
         <tr class="row-atendimento" data-aluno-id="{{ aluno.id }}"
           data-aluno-nome="{{ aluno.nome_social or aluno.nome }}" data-aluno-matricula="{{ aluno.matricula or '-' }}"
-          data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+          data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
           data-aluno-turma="{{ turma_atual.nome if turma_atual else '' }}"
           data-aluno-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '' }}"
           data-aluno-horario="{{ (turma_atual.hora_inicio or '') ~ (' - ' ~ turma_atual.hora_fim if turma_atual and turma_atual.hora_fim else '') if turma_atual else '' }}"
@@ -101,7 +101,7 @@
           <td class="text-center">
             <div class="foto-cell mx-auto">
               <img
-                src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                 alt="Foto {{ aluno.nome }}">
             </div>
           </td>
@@ -473,7 +473,7 @@ MODAL — FORMULÁRIO DE ATENDIMENTO (NOVO / EDITAR)
             ${acordosEducando ? `<p class="mb-1 small"><span class="fw-bold text-muted">Acordos com o educando:</span> ${acordosEducando}</p>` : ''}
             ${acordosFamilia ? `<p class="mb-1 small"><span class="fw-bold text-muted">Acordos com a família:</span> ${acordosFamilia}</p>` : ''}
             ${observacoes ? `<p class="mb-1 small text-muted fst-italic">${observacoes}</p>` : ''}
-            ${a.dados?.anexo?.nome ? `<p class="mb-1 small"><i class="bi bi-paperclip me-1"></i><a href="/static/uploads/documentos/${a.dados.anexo.arquivo}" target="_blank" rel="noopener">${a.dados.anexo.nome}</a></p>` : ''}
+            ${a.anexo_url ? `<p class="mb-1 small"><i class="bi bi-paperclip me-1"></i><a href="${a.anexo_url}" target="_blank" rel="noopener">${a.dados.anexo.nome}</a></p>` : (a.dados?.anexo?.nome ? `<p class="mb-1 small"><i class="bi bi-paperclip me-1"></i><a href="/atendimentos/${a.id}/anexo" target="_blank" rel="noopener">${a.dados.anexo.nome}</a></p>` : '')}
             <div class="text-end">
               <small class="text-muted" style="font-size:.68rem;">
                 <i class="bi bi-person-check me-1"></i>${a.atendido_por_nome}

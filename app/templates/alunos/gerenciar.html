@@ -176,7 +176,7 @@
                         <div class="d-flex justify-content-center">
                             <div class="rounded bg-light overflow-hidden shadow-sm"
                                 style="width: 42px; height: 56px; border: 1px solid #ddd">
-                                <img src="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                     class="w-100 h-100 object-fit-cover" />
                             </div>
                         </div>
@@ -239,7 +239,7 @@
                             {% set ns = namespace(found=false) %}
                             {% for doc_id, label, icon, color in docs_map %}
                             {% if docs.get(doc_id) and docs.get(doc_id) not in [False, 'false', '0', '', None] %}
-                            <a href="{{ url_for('static', filename='uploads/documentos/' + mat_folder + '/' + doc_id + '.pdf') }}"
+                            <a href="{{ url_for('registros.ver_documento_aluno', aluno_id=aluno.id, doc_id=doc_id) }}"
                                 target="_blank" title="{{ label }}" class="{{ color }}" style="font-size: 0.95rem;">
                                 <i class="bi {{ icon }}"></i>
                             </a>
@@ -269,7 +269,7 @@
                             <button type="button" class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
                                 data-aluno-id="{{ aluno.id }}" data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
                                 data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                                data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                 data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
                                 data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
                                 data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
@@ -278,10 +278,13 @@
                                 title="Registro Pedagógico">
                                 <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
                             </button>
-                            <a href="/aluno/excluir/{{ aluno.id }}" class="btn btn-sm btn-outline-danger py-1 px-2"
-                                onclick="return confirm('Excluir aluno?');" title="Excluir">
-                                <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
-                            </a>
+                            <form action="{{ url_for('registros.excluir_aluno', id=aluno.id) }}" method="POST" class="d-inline"
+                                onsubmit="return confirm('Excluir aluno permanentemente?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Excluir">
+                                    <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+                                </button>
+                            </form>
                         </div>
                         {% else %}
                         {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else none
@@ -294,7 +297,7 @@
                             <button type="button" class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
                                 data-aluno-id="{{ aluno.id }}" data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
                                 data-aluno-matricula="{{ aluno.matricula or '-' }}"
-                                data-aluno-foto="{{ url_for('static', filename='uploads/fotos/' + aluno.foto_path) if aluno.foto_path else informacao_padrao.foto_default_aluno_url }}"
+                                data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                 data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
                                 data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
                                 data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"

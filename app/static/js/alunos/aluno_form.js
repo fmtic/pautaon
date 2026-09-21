@@ -7,14 +7,32 @@ document.addEventListener('DOMContentLoaded', function () {
     // ==================== MÁSCARAS ====================
 
     // Máscara CPF
+    function mascaraCPF(valor) {
+        return valor
+            .replace(/\D/g, '')
+            .slice(0, 11)
+            .replace(/^(\d{3})(\d)/, '$1.$2')
+            .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+            .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+    }
+
     document.querySelectorAll('.mask-cpf').forEach(input => {
-        input.addEventListener('input', function (e) {
-            let v = e.target.value.replace(/\D/g, '');
-            if (v.length > 11) v = v.substring(0, 11);
-            v = v.replace(/(\d{3})(\d)/, '$1.$2');
-            v = v.replace(/(\d{3})(\d)/, '$1.$2');
-            v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-            e.target.value = v;
+        // Aplica na carga, para valores já preenchidos
+        input.value = mascaraCPF(input.value);
+
+        input.addEventListener('input', e => {
+            const el = e.target;
+            const digitosAntes = el.value.slice(0, el.selectionStart).replace(/\D/g, '').length;
+
+            el.value = mascaraCPF(el.value);
+
+            // Reposiciona o cursor logo após o mesmo número de dígitos
+            let pos = 0, cont = 0;
+            while (pos < el.value.length && cont < digitosAntes) {
+                if (/\d/.test(el.value[pos])) cont++;
+                pos++;
+            }
+            el.setSelectionRange(pos, pos);
         });
     });
 
@@ -92,34 +110,26 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ==================== VALIDAÇÃO VISUAL DE CPF (opcional) ====================
-    function validarCPF(cpf) {
-        cpf = cpf.replace(/\D/g, '');
-        if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
-        // ... (lógica completa mantida)
-        let add = 0;
-        for (let i = 0; i < 9; i++) add += parseInt(cpf.charAt(i)) * (10 - i);
-        let rev = 11 - (add % 11);
-        if (rev === 10 || rev === 11) rev = 0;
-        if (rev !== parseInt(cpf.charAt(9))) return false;
+    function validarCPF(valor) {
+        if (typeof valor !== 'string') return false;
+        if (!/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(valor.trim())) return false;
 
-        add = 0;
-        for (let i = 0; i < 10; i++) add += parseInt(cpf.charAt(i)) * (11 - i);
-        rev = 11 - (add % 11);
-        if (rev === 10 || rev === 11) rev = 0;
-        if (rev !== parseInt(cpf.charAt(10))) return false;
+        const cpf = valor.replace(/\D/g, '');
+        if (/^(\d)\1{10}$/.test(cpf)) return false;
 
-        return true;
+        const calcDigito = (base) => {
+            const soma = base
+                .split('')
+                .reduce((acc, n, i) => acc + Number(n) * (base.length + 1 - i), 0);
+            const resto = (soma * 10) % 11;
+            return resto === 10 ? 0 : resto;
+        };
+
+        const d1 = calcDigito(cpf.slice(0, 9));
+        const d2 = calcDigito(cpf.slice(0, 9) + d1);
+
+        return cpf === cpf.slice(0, 9) + d1 + d2;
     }
-
-    document.querySelectorAll('.validate-cpf').forEach(input => {
-        input.addEventListener('blur', function () {
-            if (this.value && !validarCPF(this.value)) {
-                this.classList.add('is-invalid');
-            } else {
-                this.classList.remove('is-invalid');
-            }
-        });
-    });
 
     // ==================== IBGE - NATURALIDADE ====================
     const ufSelect = document.getElementById('natural_uf');

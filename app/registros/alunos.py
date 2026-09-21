@@ -32,12 +32,15 @@ ONDA 3B
 """
 
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from flask import (
-    abort, flash, jsonify, redirect, render_template, request, session, url_for,
+    abort, current_app, flash, jsonify, redirect, render_template, request,
+    send_from_directory, session, url_for,
 )
 from flask_login import current_user, login_required
 from sqlalchemy import select
+from werkzeug.utils import secure_filename
 
 from app.database import db
 from app.models import Aluno, Frequencia, Inscricao, SituacaoEscolar, Turma
@@ -52,7 +55,12 @@ from app.services.aluno_perfil import (
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 from . import bp
-from .shared import assert_unidade_context, salvar_documento, salvar_foto
+from .shared import (
+    _get_upload_root,
+    assert_unidade_context,
+    salvar_documento,
+    salvar_foto,
+)
 
 
 # =============================================================================
@@ -585,9 +593,11 @@ def editar_aluno(id):
 # EXCLUSÃO / INATIVAÇÃO / DESENTURMAÇÃO
 # =============================================================================
 
-@bp.route("/aluno/excluir/<int:id>")
+@bp.route("/aluno/excluir/<int:id>", methods=["POST"])
 @login_required
 def excluir_aluno(id):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+        abort(403)
     aluno = db.get_or_404(Aluno, id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
     tem_presenca = (
@@ -615,9 +625,11 @@ def excluir_aluno(id):
     return redirect(url_for("registros.gerenciar_alunos"))
 
 
-@bp.route("/aluno/inativar/<int:id>")
+@bp.route("/aluno/inativar/<int:id>", methods=["POST"])
 @login_required
 def inativar_aluno(id):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
     """
     Inativa um aluno (soft delete).
 
@@ -636,7 +648,7 @@ def inativar_aluno(id):
     return redirect(url_for("registros.gerenciar_alunos"))
 
 
-@bp.route("/turma/desenturmar/<int:id>")
+@bp.route("/turma/desenturmar/<int:id>", methods=["POST"])
 @login_required
 def desenturmar_alunos(id):
     if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN):
@@ -701,10 +713,31 @@ def desenturmar_alunos(id):
 def historico_aluno(aluno_id):
     from app.models import ConselhoClasse
 
+    allowed_roles = {
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+    }
+    if current_user.role not in allowed_roles:
+        if current_user.role == UserRole.PROFESSOR:
+            tem_turma_do_professor = (
+                Inscricao.query.join(Turma, Inscricao.turma_id == Turma.id)
+                .filter(
+                    Inscricao.aluno_id == aluno_id,
+                    Inscricao.ativo.is_(True),
+                    Turma.professor_id == current_user.id,
+                )
+                .first()
+            )
+            if not tem_turma_do_professor:
+                abort(403)
+        else:
+            abort(403)
+
     unidade_id = get_unidade_id()
     aluno = db.get_or_404(Aluno, aluno_id)
-    if unidade_id and aluno.unidade_id and aluno.unidade_id != unidade_id:
-        abort(403)
+    assert_unidade_context(aluno.unidade_id, unidade_id)
 
     inscricoes = Inscricao.query.filter_by(aluno_id=aluno_id).all()
     dados = []
@@ -953,3 +986,71 @@ def transferir_aluno(aluno_id):
         flash_and_log(e, location="registros.transferir_aluno", hint="db")
 
     return redirect(url_for("registros.ver_turma", id=turma_origem_id))
+
+
+# =============================================================================
+# DOWNLOADS E VISUALIZAÇÃO SEGURA DE ARQUIVOS (SEC-01)
+# =============================================================================
+
+@bp.route("/aluno/<int:aluno_id>/documento/<doc_id>")
+@login_required
+def ver_documento_aluno(aluno_id: int, doc_id: str):
+    """Serve documentos e laudos do aluno de forma segura e autenticada."""
+    allowed_roles = (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+        UserRole.SERVICO_SOCIAL,
+    )
+    if current_user.role not in allowed_roles:
+        abort(403)
+
+    if doc_id not in DOC_IDS:
+        abort(404)
+
+    aluno = db.get_or_404(Aluno, aluno_id)
+    assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
+    filename = secure_filename(f"{doc_id}.pdf")
+    candidate_folders = []
+    if aluno.matricula:
+        candidate_folders.append(aluno.matricula.replace(".", "_"))
+    candidate_folders.append(f"aluno_{aluno.id}")
+    candidate_folders.append("sem_matricula")
+
+    upload_root = _get_upload_root()
+    for folder in candidate_folders:
+        dir_path = upload_root / "documentos" / folder
+        target = dir_path / filename
+        if target.is_file():
+            return send_from_directory(
+                str(dir_path),
+                filename,
+                mimetype="application/pdf",
+                as_attachment=False,
+            )
+
+    abort(404)
+
+
+@bp.route("/aluno/<int:aluno_id>/foto")
+@login_required
+def foto_aluno(aluno_id: int):
+    """Serve a foto de perfil do aluno autenticada e protegida."""
+    aluno = db.get_or_404(Aluno, aluno_id)
+    assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
+    if aluno.foto_path:
+        filename = secure_filename(aluno.foto_path)
+        upload_root = _get_upload_root()
+
+        foto_dir = upload_root / "fotos"
+        if (foto_dir / filename).is_file():
+            return send_from_directory(str(foto_dir), filename)
+
+    from app.services.informacao_padrao import get_informacao_padrao_context
+
+    info = get_informacao_padrao_context()
+    default_url = info.get("foto_default_aluno_url", "/static/img/default.png")
+    return redirect(default_url)

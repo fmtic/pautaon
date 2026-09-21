@@ -43,6 +43,7 @@ from app.utils.logica import (
     salvar_frequencia,
 )
 from . import bp
+from .shared import assert_unidade_context
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +98,7 @@ def editar(id):
     return render_template('editar.html', registro=registro)
 
 
-@bp.route('/excluir/<int:id>')
+@bp.route('/excluir/<int:id>', methods=['POST'])
 @login_required
 def excluir(id):
     if current_user.role != UserRole.PEDAGOGICO:
@@ -729,6 +730,15 @@ def imprimir_temas():
 @login_required
 def api_alunos(turma_id):
     """Integrações Async com Frontend AJAX para Fetch de Alunos por ID."""
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+    ):
+        abort(403)
+
     turma = Turma.query.get_or_404(turma_id)
+    assert_unidade_context(turma.unidade_id, get_unidade_id())
     alunos = turma.alunos.all()
     return jsonify([{"id": a.id, "nome": a.nome} for a in alunos])

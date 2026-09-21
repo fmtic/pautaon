@@ -116,17 +116,22 @@
                    class="btn btn-sm btn-outline-dark" title="Calendário de dias sem aula">
                   <i class="bi bi-calendar-x"></i>
                 </a>
-                <a href="{{ url_for('registros.periodo_letivo_inativar', id=p.id) }}"
-                   class="btn btn-sm btn-outline-secondary"
-                   onclick="return confirm('Inativar o período {{ p.nome }}? Todos os lançamentos ficarão bloqueados.')">
-                   Inativar</a>
+                <form action="{{ url_for('registros.periodo_letivo_inativar', id=p.id) }}" method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary"
+                          onclick="return confirm('Inativar o período {{ p.nome }}? Todos os lançamentos ficarão bloqueados.')">
+                    Inativar
+                  </button>
+                </form>
                 {% else %}
                 <a href="{{ url_for('registros.periodo_letivo_calendario', id=p.id) }}"
                    class="btn btn-sm btn-outline-secondary" title="Consultar calendário">
                   <i class="bi bi-calendar-x"></i>
                 </a>
-                <a href="{{ url_for('registros.periodo_letivo_ativar', id=p.id) }}"
-                   class="btn btn-sm btn-outline-success">Reativar</a>
+                <form action="{{ url_for('registros.periodo_letivo_ativar', id=p.id) }}" method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Reativar</button>
+                </form>
                 {% endif %}
                 <a href="{{ url_for('registros.periodo_letivo_relatorio_certificado', id=p.id) }}"
                    class="btn btn-sm btn-outline-info">Certificados</a>
