@@ -238,7 +238,7 @@
                                     <label class="form-label small">Quem acompanha?</label>
                                     {% set acompanhante = ident.get('acompanhante_aulas', '') %}
                                     <select name="acompanhante_aulas" id="acompanhante_aulas" class="form-select"
-                                        onchange="toggleOutroAcompanhante(this)">
+                                        onchange="window.toggleOutroAcompanhante(this)">
                                         <option value="">Selecione...</option>
                                         <option value="Mãe" {{ 'selected' if acompanhante=='Mãe' }}>Mãe</option>
                                         <option value="Pai" {{ 'selected' if acompanhante=='Pai' }}>Pai</option>
@@ -746,21 +746,6 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/alunos/aluno_form.js') }}"></script>
-<script src="{{ url_for('static', filename='js/alunos/calcularIdade.js') }}"></script>
-<script src="{{ url_for('static', filename='js/alunos/situacao_escolar.js') }}"></script>
-
-<script>
-    // Configuração injetada pelo servidor
-    // Onda 3B: usa `perfil` (tabelas novas com fallback) em vez dos JSONs legados.
-    window.alunoEditConfig = {
-        alunoId: {{ aluno.id }},
-    fotoPath: { { aluno.foto_path | tojson } },
-    identificacao: { { ident | tojson } },
-    socioeconomico: { { socio | tojson } },
-    escolaridade: { { edu | tojson } },
-    diversidade: { { div | tojson } }
-    };
-</script>
-<script src="{{ url_for('static', filename='js/alunos/editar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alunos/aluno_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/alunos/aluno.js') }}"></script>
 {% endblock %}

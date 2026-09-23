@@ -1,77 +1,73 @@
 // static/js/alunos/transferir.js
+(function () {
+  'use strict';
 
-(function() {
-    'use strict';
+  // ------------------------------------------------------------
+  // Elementos — falha rápido se o HTML não bater
+  // ------------------------------------------------------------
+  const form       = document.getElementById('transferForm');
+  const destino    = document.getElementById('turma_destino');
+  const obs        = document.getElementById('observacoes');
+  const btnAbrir   = document.getElementById('btnAbrirModal');
+  const btnOk      = document.getElementById('confirmarTransferenciaBtn');
+  const modalEl    = document.getElementById('confirmarTransferenciaModal');
+  const modalDest  = document.getElementById('modalTurmaDestino');
+  const modalObs   = document.getElementById('modalObservacoes');
 
-    const form = document.getElementById('transferForm');
-    const destinoSelect = document.getElementById('turma_destino');
-    const observacoes = document.getElementById('observacoes');
-    const btnAbrirModal = document.getElementById('btnAbrirModal');
-    const confirmarBtn = document.getElementById('confirmarTransferenciaBtn');
-    const modalElement = document.getElementById('confirmarTransferenciaModal');
+  if (!form || !destino || !obs || !btnAbrir || !modalEl) {
+    console.error('transferir.js: elementos obrigatórios ausentes no HTML.');
+    return;
+  }
+  if (typeof bootstrap === 'undefined') {
+    console.error('transferir.js: Bootstrap JS não carregado.');
+    return;
+  }
 
-    if (!modalElement) {
-        console.error('Modal não encontrado!');
-        return;
+  const modal = new bootstrap.Modal(modalEl);
+
+  // ------------------------------------------------------------
+  // Validação
+  // ------------------------------------------------------------
+  function validar() {
+    if (!destino.value) {
+      alert('Selecione a turma de destino.');
+      destino.focus();
+      return false;
     }
-
-    let modal;
-    if (typeof bootstrap !== 'undefined') {
-        modal = new bootstrap.Modal(modalElement);
-    } else {
-        console.error('Bootstrap JS não carregado');
-        return;
+    if (!obs.value.trim()) {
+      alert('As observações são obrigatórias.');
+      obs.focus();
+      obs.classList.add('is-invalid');
+      return false;
     }
+    obs.classList.remove('is-invalid');
+    return true;
+  }
 
-    // Preenche os campos do modal
-    function preencherModal() {
-        const destinoOption = destinoSelect.options[destinoSelect.selectedIndex];
-        const nomeDestino = destinoOption ? destinoOption.text : '';
-        const obs = observacoes.value.trim();
+  // ------------------------------------------------------------
+  // Abrir modal
+  // ------------------------------------------------------------
+  btnAbrir.addEventListener('click', () => {
+    if (!validar()) return;
 
-        const modalDestino = document.getElementById('modalTurmaDestino');
-        const modalObs = document.getElementById('modalObservacoes');
+    if (modalDest) modalDest.textContent = destino.selectedOptions[0]?.text || '';
+    if (modalObs)  modalObs.textContent  = obs.value.trim();
 
-        if (modalDestino) modalDestino.textContent = nomeDestino;
-        if (modalObs) modalObs.textContent = obs;
-    }
+    modal.show();
+  });
 
-    // Abrir modal com validação
-    if (btnAbrirModal) {
-        btnAbrirModal.addEventListener('click', function() {
-            // Valida destino
-            if (!destinoSelect.value) {
-                alert('Selecione a turma de destino.');
-                destinoSelect.focus();
-                return;
-            }
-            // Valida observações
-            const obsValue = observacoes.value.trim();
-            if (obsValue === '') {
-                alert('As observações são obrigatórias.');
-                observacoes.focus();
-                observacoes.classList.add('is-invalid');
-                return;
-            } else {
-                observacoes.classList.remove('is-invalid');
-            }
-            preencherModal();
-            modal.show();
-        });
-    }
+  // ------------------------------------------------------------
+  // Confirmar
+  // ------------------------------------------------------------
+  btnOk?.addEventListener('click', () => {
+    modal.hide();
+    form.submit();
+  });
 
-    // Confirmar transferência
-    if (confirmarBtn) {
-        confirmarBtn.addEventListener('click', function() {
-            modal.hide();
-            form.submit();
-        });
-    }
-
-    // Remover classe de erro ao digitar
-    if (observacoes) {
-        observacoes.addEventListener('input', function() {
-            if (this.value.trim() !== '') this.classList.remove('is-invalid');
-        });
-    }
+  // ------------------------------------------------------------
+  // Limpar erro ao digitar
+  // ------------------------------------------------------------
+  obs.addEventListener('input', () => {
+    if (obs.value.trim()) obs.classList.remove('is-invalid');
+  });
 })();

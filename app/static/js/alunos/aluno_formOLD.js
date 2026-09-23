@@ -119,32 +119,65 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Acompanhante
-    const acompanhanteSelect =
-        document.getElementById("acompanhante_aulas");
-
-    if (acompanhanteSelect) {
-        toggleOutroAcompanhante(acompanhanteSelect);
-    }
-    window.toggleOutroAcompanhante = function (select) {
-
-        const div = document.getElementById(
-            "acompanhante_aulas_outro_div"
-        );
-
-        const campo = document.getElementById(
-            "acompanhante_aulas_outro"
-        );
-
-        if (!div || !campo) return;
-
-        if (select.value === "Outro") {
-            div.classList.remove("d-none");
-        } else {
-            div.classList.add("d-none");
-            campo.value = "";
+    // Acompanhante das aulas
+    
+    /**
+     * Switch "Vai acompanhado para as aulas?"
+     * Mostra/esconde o bloco "Quem acompanha?".
+     */
+    window.toggleAcompanhanteAulas = function (checkbox) {
+      const div        = document.getElementById("acompanhante_aulas_div");
+      const select     = document.getElementById("acompanhante_aulas");
+      const outroDiv   = document.getElementById("acompanhante_aulas_outro_div");
+      const outroCampo = document.getElementById("acompanhante_aulas_outro");
+    
+      if (!div) return;
+    
+      if (checkbox.checked) {
+        div.classList.remove("d-none");
+      } else {
+        div.classList.add("d-none");
+        if (select) select.value = "";
+        if (outroDiv) outroDiv.classList.add("d-none");
+        if (outroCampo) {
+          outroCampo.value = "";
+          outroCampo.required = false;
         }
+      }
     };
+    
+    /**
+     * Select "Quem acompanha?" -> se for "Outro", libera o input de texto.
+     */
+    window.toggleOutroAcompanhante = function (select) {
+      const div   = document.getElementById("acompanhante_aulas_outro_div");
+      const campo = document.getElementById("acompanhante_aulas_outro");
+    
+      if (!div || !campo) return;
+    
+      if (select.value === "Outro") {
+        div.classList.remove("d-none");
+        campo.required = true;
+        campo.focus();
+      } else {
+        div.classList.add("d-none");
+        campo.value = "";
+        campo.required = false;
+      }
+    };
+    
+    // Restaura estado ao carregar (ex.: quando o form volta com erro do backend)
+    document.addEventListener("DOMContentLoaded", function () {
+      const checkbox = document.getElementById("vai_acompanhado_aulas");
+      const select   = document.getElementById("acompanhante_aulas");
+    
+      if (checkbox && checkbox.checked) {
+        window.toggleAcompanhanteAulas(checkbox);
+        if (select && select.value) {
+          window.toggleOutroAcompanhante(select);
+        }
+      }
+    });
 
     // ==================== VALIDAÇÃO VISUAL DE CPF ====================
     function validarCPF(valor) {
