@@ -32,6 +32,23 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="card shadow-lg card-modern p-4 mb-4">
+          {# Seletor de unidade — só aparece quando a view envia a lista (usuário global) #}
+          {% if unidades %}
+          <div class="alert alert-primary border-primary-subtle d-flex flex-column gap-2 mb-4">
+            <label for="unidade_id" class="fw-bold text-primary mb-0">
+              <i class="bi bi-building me-1"></i> Unidade de cadastro
+            </label>
+            <select name="unidade_id" id="unidade_id" class="form-select" required>
+              <option value="">Selecione a unidade...</option>
+              {% for unidade in unidades %}
+              <option value="{{ unidade.id }}">{{ unidade.nome }}</option>
+              {% endfor %}
+            </select>
+            <small class="text-muted">
+              O aluno será vinculado à unidade selecionada e aparecerá apenas para ela.
+            </small>
+          </div>
+          {% endif %}
           <!-- STEP 1: IDENTIFICAÇÃO -->
           <div class="form-step active" id="step-1">
             <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa I: Identificação Principal</h4>
@@ -112,7 +129,7 @@
                   <div class="col-md-4">
                     <label class="form-label fw-bold text-uppercase">CPF do Aluno</label>
                     <input type="text" name="cpf" class="form-control mask-cpf validate-cpf"
-                      placeholder="000.000.000-00" placeholder="000.000.000-00">
+                      placeholder="000.000.000-00">
                     <div class="invalid-feedback">CPF inválido</div>
                   </div>
                   <div class="col-md-4">

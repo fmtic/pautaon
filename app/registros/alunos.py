@@ -51,7 +51,14 @@ from sqlalchemy import select
 from werkzeug.utils import secure_filename
 
 from app.database import db
-from app.models import Aluno, Frequencia, Inscricao, SituacaoEscolar, Turma
+from app.models import (
+    Aluno,
+    Frequencia,
+    Inscricao,
+    SituacaoEscolar,
+    Turma,
+    Unidade,
+)
 from app.models.enums import UserRole
 from app.services.aluno_perfil import (
     get_perfil_completo,
@@ -410,7 +417,13 @@ def novo_aluno():
     ):
         abort(403)
     if request.method == "GET":
-        return render_template("alunos/novo.html")
+        # Usuário global (sem contexto de unidade) precisa escolher a unidade
+        # antes de cadastrar — caso contrário o aluno ficaria órfão de unidade
+        # e não apareceria em nenhuma listagem filtrada.
+        unidades = []
+        if get_unidade_id() is None:
+            unidades = Unidade.query.order_by(Unidade.nome).all()
+        return render_template("alunos/novo.html", unidades=unidades)
 
     from app.utils.logica import formatar_nome_proprio
 
@@ -430,6 +443,24 @@ def novo_aluno():
         )
         return redirect(url_for("registros.novo_aluno"))
 
+    # -------------------------------------------------------------------------
+    # Resolve a unidade de cadastro:
+    #   - usuário com unidade fixa  → usa a dele automaticamente
+    #   - usuário global sem contexto → exige `unidade_id` do formulário
+    # -------------------------------------------------------------------------
+    unidade_id = get_unidade_id()
+    if unidade_id is None:
+        unidade_id = request.form.get("unidade_id", type=int)
+        if not unidade_id:
+            flash(
+                "Selecione a unidade em que o aluno será cadastrado.",
+                "warning",
+            )
+            return redirect(url_for("registros.novo_aluno"))
+        if not db.session.get(Unidade, unidade_id):
+            flash("Unidade inválida.", "danger")
+            return redirect(url_for("registros.novo_aluno"))
+
     try:
         # ---------------------------------------------------------------------
         # 1. Colunas diretas em Aluno
@@ -439,7 +470,7 @@ def novo_aluno():
             nome_social=formatar_nome_proprio(request.form.get("nome_social")),
             nivel=request.form.get("nivel"),
             ativo=True,
-            unidade_id=get_unidade_id(),
+             unidade_id=unidade_id,
             cpf=_sanitizar_cpf(cpf_raw),
             rg=request.form.get("rg") or None,
             whatsapp=request.form.get("whatsapp"),

@@ -45,12 +45,27 @@
 
   function validarEtapaAtual() {
     const step = $(`step-${currentStep}`);
-    if (!step || typeof U.validarCampoCPF !== 'function') return true;
+    if (!step) return true;
+
+    // 1) CPFs preenchidos precisam ser válidos
     let primeiro = null;
-    step.querySelectorAll('.validate-cpf').forEach(input => {
-      if (!U.validarCampoCPF(input) && !primeiro) primeiro = input;
-    });
+    if (typeof U.validarCampoCPF === 'function') {
+      step.querySelectorAll('.validate-cpf').forEach(input => {
+        if (!U.validarCampoCPF(input) && !primeiro) primeiro = input;
+      });
+    }
     if (primeiro) { primeiro.focus(); return false; }
+
+    // 2) Campos [required] visíveis e vazios
+    const visivel = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    const obrigatorio = Array.from(step.querySelectorAll('[required]'))
+      .find(el => !el.disabled && visivel(el) && !el.checkValidity());
+    if (obrigatorio) {
+      obrigatorio.reportValidity?.();
+      obrigatorio.focus();
+      return false;
+    }
+
     return true;
   }
 
@@ -159,7 +174,7 @@
   function syncResponsavel() {
     const tipo = $('responsavel_tipo')?.value;
     const nome = $('responsavel_nome');
-    const cpf  = $('responsavel_cpf');
+    const cpf = $('responsavel_cpf');
     if (!nome) return;
 
     const copiar = (nomeId, cpfId) => {
@@ -197,7 +212,7 @@
   // ============================================================
   function adicionarBeneficioSocial() {
     const input = $('beneficio_social_input');
-    const tags  = $('beneficio_social_tags');
+    const tags = $('beneficio_social_tags');
     if (!input || !tags) return;
     const nome = input.value.trim();
     if (!nome) return;
@@ -250,8 +265,8 @@
 
     const [bg, border] =
       idade < 14 ? ['#ffcccc', '#f5c2c7'] :
-      idade < 18 ? ['#fff3cd', '#ffecb5'] :
-                   ['#cfe2ff', '#b6d4fe'];
+        idade < 18 ? ['#fff3cd', '#ffecb5'] :
+          ['#cfe2ff', '#b6d4fe'];
     out.style.setProperty('background-color', bg, 'important');
     out.style.setProperty('border-color', border, 'important');
   }
@@ -261,12 +276,12 @@
   // ============================================================
   function toggleSituacaoEscolar() {
     const v = id => $(id)?.value;
-    toggleHidden($('status-outro'),        v('status_escolar')    !== 'Outros');
-    toggleHidden($('periodo-superior'),    v('escolaridade')      !== 'Ensino superior');
-    toggleHidden($('escolaridade-outro'),  v('escolaridade')      !== 'Outros');
-    toggleHidden($('bolsista-div'),        v('tipo_instituicao')  !== 'Privada');
-    toggleHidden($('instituicao-outro'),   v('tipo_instituicao')  !== 'Outro');
-    toggleHidden($('turno-outro'),         v('turno_escolar')     !== 'Outros');
+    toggleHidden($('status-outro'), v('status_escolar') !== 'Outros');
+    toggleHidden($('periodo-superior'), v('escolaridade') !== 'Ensino superior');
+    toggleHidden($('escolaridade-outro'), v('escolaridade') !== 'Outros');
+    toggleHidden($('bolsista-div'), v('tipo_instituicao') !== 'Privada');
+    toggleHidden($('instituicao-outro'), v('tipo_instituicao') !== 'Outro');
+    toggleHidden($('turno-outro'), v('turno_escolar') !== 'Outros');
   }
 
   // ============================================================
