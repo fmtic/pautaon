@@ -63,6 +63,11 @@ class Aluno(db.Model):
     # colunas `_escolaridade_json`, etc.
     _escolaridade_json: str = db.Column('escolaridade_json', db.Text)
     _identificacao_json: str = db.Column('identificacao_json', db.Text)
+    # Legado: objeto JSON com renda_familiar, residente_maior_renda,
+    # pessoas_residencia, ocupacao, beneficio_social_status,
+    # beneficio_social_nome, meio_transporte e vulnerabilidade_social.
+    # A leitura passa por `socioeconomico_json` e cai neste campo apenas
+    # enquanto o PerfilSocioeconomico estruturado não existir.
     _socioeconomico_json: str = db.Column('socioeconomico_json', db.Text)
     _diversidade_json: str = db.Column('diversidade_json', db.Text)
 

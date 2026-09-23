@@ -14,6 +14,7 @@ from .dashboard_servico_social import render_dashboard_servico_social
 
 
 @bp.route("/painel")
+@bp.route("/dashboard", endpoint="dashboard")
 @login_required
 def painel():
     """Controlador central do painel do sistema."""

@@ -51,8 +51,7 @@
                                     class="bg-light border rounded-circle mx-auto overflow-hidden shadow-sm mb-2"
                                     style="width: 140px; height: 140px; position: relative;">
                                     {% if aluno.foto_path %}
-                                    <img id="img-preview"
-                                        src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
+                                    <img id="img-preview" src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                         class="w-100 h-100 object-fit-cover">
                                     {% else %}
                                     <i class="bi bi-person-fill text-muted display-1" id="placeholder-icon"></i>
@@ -238,7 +237,8 @@
                                 <div class="mb-3 {{ '' if vai_acompanhado else 'd-none' }}" id="acompanhante_aulas_div">
                                     <label class="form-label small">Quem acompanha?</label>
                                     {% set acompanhante = ident.get('acompanhante_aulas', '') %}
-                                    <select name="acompanhante_aulas" class="form-select">
+                                    <select name="acompanhante_aulas" id="acompanhante_aulas" class="form-select"
+                                        onchange="toggleOutroAcompanhante(this)">
                                         <option value="">Selecione...</option>
                                         <option value="Mãe" {{ 'selected' if acompanhante=='Mãe' }}>Mãe</option>
                                         <option value="Pai" {{ 'selected' if acompanhante=='Pai' }}>Pai</option>
@@ -250,6 +250,10 @@
                                         <option value="Vai sozinho" {{ 'selected' if acompanhante=='Vai sozinho' }}>Vai
                                             sozinho</option>
                                     </select>
+                                    <div class="mt-2 d-none" id="acompanhante_aulas_outro_div">
+                                        <input type="text" name="acompanhante_aulas_outro" id="acompanhante_aulas_outro"
+                                            class="form-control" placeholder="Informe quem acompanha">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -470,17 +474,21 @@
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label small fw-bold">Renda Familiar Mensal</label>
-                                {% set rf = socio.get('renda_familiar', '') %}
-                                <select name="renda_familiar" class="form-select">
-                                    <option value="Até 1 salário" {{ 'selected' if rf=='Até 1 salário' }}>Até 1 Salário
-                                        Mínimo</option>
-                                    <option value="1 a 3 salários" {{ 'selected' if rf=='1 a 3 salários' }}>De 1 a 3
-                                        Salários</option>
-                                    <option value="3 a 5 salários" {{ 'selected' if rf=='3 a 5 salários' }}>De 3 a 5
-                                        Salários</option>
-                                    <option value="Acima de 5" {{ 'selected' if rf=='Acima de 5' }}>Acima de 5 Salários
-                                    </option>
-                                </select>
+                                <div class="input-group">
+                                    <span class="input-group-text">R$</span>
+                                    <input type="number" name="renda_familiar" class="form-control" min="0" step="0.01"
+                                        inputmode="decimal" value="{{ socio.get('renda_familiar', '') or '' }}"
+                                        placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold">Renda per capita</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">R$</span>
+                                    <input type="text" id="renda_per_capita" class="form-control"
+                                        value="{{ socio.get('renda_per_capita', '') or '' }}" readonly
+                                        aria-readonly="true">
+                                </div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label small fw-bold">Residente de maior renda</label>
@@ -524,9 +532,31 @@
                             </div>
                             <div class="col-md-4 {{ 'd-none' if bs_status != 'Sim' }}" id="beneficio_social_div">
                                 <label class="form-label small fw-bold">Qual programa?</label>
-                                <input type="text" name="beneficio_social_nome" class="form-control"
-                                    list="programas_sociais" value="{{ socio.get('beneficio_social_nome', '') }}"
-                                    placeholder="Ex: Bolsa Família">
+                                {% set beneficios_salvos = (socio.get('beneficio_social_nome', '') or '').split('|') %}
+                                <div id="beneficio_social_tags" class="d-flex flex-wrap gap-2 mb-2">
+                                    {% for beneficio in beneficios_salvos %}
+                                    {% if beneficio.strip() %}
+                                    <span
+                                        class="badge bg-primary-subtle text-primary-emphasis d-inline-flex align-items-center gap-1"
+                                        data-beneficio="{{ beneficio.strip() }}">
+                                        {{ beneficio.strip() }}
+                                        <button type="button" class="btn-close btn-close-sm"
+                                            aria-label="Remover {{ beneficio.strip() }}"
+                                            onclick="window.removerBeneficioSocial(this)"></button>
+                                        <input type="hidden" name="beneficio_social_nome"
+                                            value="{{ beneficio.strip() }}">
+                                    </span>
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <div class="input-group">
+                                    <input type="text" id="beneficio_social_input" class="form-control"
+                                        list="programas_sociais" placeholder="Selecione ou digite um programa">
+                                    <button type="button" class="btn btn-outline-primary"
+                                        onclick="window.adicionarBeneficioSocial()">
+                                        <i class="bi bi-plus-lg" aria-hidden="true"></i> Adicionar
+                                    </button>
+                                </div>
                                 <datalist id="programas_sociais">
                                     <option value="Bolsa Família">
                                     <option value="Cadastro Único">
@@ -567,9 +597,32 @@
                                                 id="saude_laudo" onchange="window.toggleLaudoUpload(this)" {{ 'checked'
                                                 if has_laudo }}>
                                             <label class="form-check-label fw-bold text-danger" for="saude_laudo">
-                                                Aluno possui deficiência ou laudo médico?
+                                                Aluno possui deficiência e/ou laudo médico?
                                             </label>
                                         </div>
+                                    </div>
+                                    {% set tipo_def = div.get('tipo_deficiencia', '') %}
+                                    <div class="col-md-6 {{ '' if has_laudo else 'd-none' }}"
+                                        id="tipo_deficiencia_container">
+                                        <label class="form-label small fw-bold">Tipo de deficiência</label>
+                                        <select name="tipo_deficiencia" id="tipo_deficiencia" class="form-select" {{ ''
+                                            if has_laudo else 'disabled' }}>
+                                            <option value="">Selecione</option>
+                                            <option value="Não se aplica" {{ 'selected' if tipo_def=='Não se aplica' }}>
+                                                Não se aplica</option>
+                                            <option value="Motora/Física" {{ 'selected' if tipo_def=='Motora/Física' }}>
+                                                Motora/Física</option>
+                                            <option value="Auditiva" {{ 'selected' if tipo_def=='Auditiva' }}>Auditiva
+                                            </option>
+                                            <option value="Psicossocial" {{ 'selected' if tipo_def=='Psicossocial' }}>
+                                                Psicossocial</option>
+                                            <option value="Intelectual/Mental" {{ 'selected' if
+                                                tipo_def=='Intelectual/Mental' }}>Intelectual/Mental</option>
+                                            <option value="Visual" {{ 'selected' if tipo_def=='Visual' }}>Visual
+                                            </option>
+                                            <option value="TEA" {{ 'selected' if tipo_def=='TEA' }}>TEA</option>
+                                            <option value="Outro" {{ 'selected' if tipo_def=='Outra' }}>Outro</option>
+                                        </select>
                                     </div>
                                     <div class="col-md-6 {{ 'd-none' if not has_laudo }}" id="laudo_upload_container">
                                         {% set doc_saved = docs.get('doc_laudo') %}
@@ -601,7 +654,8 @@
                                             placeholder="Nome do medicamento">
                                     </div>
                                     <div class="col-md-12">
-                                        <label class="form-label small fw-bold">Observações de Saúde / Alergias</label>
+                                        <label class="form-label small fw-bold">Observações de Saúde / Alimentar e
+                                            Alergias</label>
                                         <textarea name="saude_observacoes" class="form-control"
                                             rows="2">{{ div.get('saude_observacoes', '') }}</textarea>
                                     </div>
@@ -701,11 +755,11 @@
     // Onda 3B: usa `perfil` (tabelas novas com fallback) em vez dos JSONs legados.
     window.alunoEditConfig = {
         alunoId: {{ aluno.id }},
-        fotoPath: {{ aluno.foto_path | tojson }},
-        identificacao: {{ ident | tojson }},
-        socioeconomico: {{ socio | tojson }},
-        escolaridade: {{ edu | tojson }},
-        diversidade: {{ div | tojson }}
+    fotoPath: { { aluno.foto_path | tojson } },
+    identificacao: { { ident | tojson } },
+    socioeconomico: { { socio | tojson } },
+    escolaridade: { { edu | tojson } },
+    diversidade: { { div | tojson } }
     };
 </script>
 <script src="{{ url_for('static', filename='js/alunos/editar.js') }}"></script>

@@ -445,12 +445,12 @@ erDiagram
 | id | int | não | auto | PK |
 | aluno_id | int | não | — | **UNIQUE** — FK → aluno |
 | unidade_id | int | sim | — | FK → unidade |
-| renda_familiar | varchar(50) | sim | — | Faixa de renda |
+| renda_familiar | numeric(12,2) | sim | — | Renda familiar mensal em reais |
 | residente_maior_renda | varchar(50) | sim | — | Aluno / Pai / Mãe / … |
 | pessoas_residencia | int | sim | — | Nº moradores |
 | ocupacao | varchar(50) | sim | — | Estudante / CLT / … |
 | beneficio_social_status | varchar(20) | sim | — | Sim / Não |
-| beneficio_social_nome | varchar(100) | sim | — | Nome do programa |
+| beneficio_social_nome | text | sim | — | Nomes dos programas, separados internamente por ` | ` |
 | meio_transporte | varchar(30) | sim | — | Ônibus / Bicicleta / … |
 | vulnerabilidade_social | bool | não | false | — |
 | created_at | timestamp | sim | now | Auditoria |
@@ -466,6 +466,7 @@ erDiagram
 | genero | varchar(30) | sim | — | — |
 | raca_cor | varchar(30) | sim | — | — |
 | saude_laudo | bool | não | false | PCD |
+| tipo_deficiencia | varchar(30) | sim | — | Motora/Física, Auditiva, Psicossocial, Intelectual/Mental, Visual, Outro ou TEA |
 | saude_medicacao | varchar(5) | sim | — | Sim / Não |
 | saude_medicamento_nome | varchar(150) | sim | — | — |
 | saude_observacoes | text | sim | — | — |
@@ -865,6 +866,15 @@ erDiagram
 **Onde:** `_escolaridade_json`, `_identificacao_json`,
 `_socioeconomico_json`, `_diversidade_json`.
 **Status:** a serem removidos na Onda 3C.
+
+`_socioeconomico_json` é uma coluna `text` que contém um objeto JSON legado
+com as chaves `renda_familiar`, `residente_maior_renda`,
+`pessoas_residencia`, `ocupacao`, `beneficio_social_status`,
+`beneficio_social_nome`, `meio_transporte` e `vulnerabilidade_social`.
+O acesso deve ser feito pela propriedade `Aluno.socioeconomico_json`; o
+serviço `app.services.aluno_perfil` usa esse JSON somente como fallback quando
+`PerfilSocioeconomico` ainda não existe. Dados novos devem ser gravados na
+tabela estruturada, e não duplicados nesse JSON.
 
 ### 12.5 `Turma.dias_semana` como CSV
 **Onde:** coluna `varchar(20)` com nomes separados por vírgula.

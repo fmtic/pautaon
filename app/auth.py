@@ -127,7 +127,7 @@ def aguardando_aprovacao():
     o perfil alcance áreas operacionais sem a devida classificação.
     """
     if current_user.role != UserRole.PENDENTE:
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.painel'))
     return render_template('aguardando.html')
 
 
@@ -244,7 +244,7 @@ def login():
                 flash('Bem-vindo! Por segurança, defina sua senha pessoal antes de continuar.', 'warning')
                 return redirect(url_for('auth.trocar_senha'))
 
-            return redirect(url_for('main.dashboard'))
+            return redirect(url_for('main.painel'))
 
         # Falha total ou Desabilitado
         register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo de e-mail: {email}")
@@ -465,7 +465,7 @@ def google_callback():
         flash("Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.", "info")
         return redirect(url_for("auth.aguardando_aprovacao"))
 
-    return redirect(url_for("main.dashboard"))
+    return redirect(url_for("main.painel"))
 
 
 # ====================== ROTAS ADMINISTRAÇÃO ======================
@@ -475,7 +475,7 @@ def google_callback():
 def painel_admin():
     if current_user.role != UserRole.ADMIN:
         flash("Quebra de Hierarquia: O Painel administrativo está bloqueado para você.", "danger")
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.painel'))
 
     # Nota técnica: o painel administrativo só deve expor dados de usuários e unidades
     # para o perfil de administrador, preservando o modelo RBAC atual.
@@ -790,7 +790,7 @@ def limpar_logs_antigos():
 def trocar_senha():
     if current_user.is_ad_user:
         flash('Usuários federados pelo LDAP não precisam alterar uma senha local no banco.', 'info')
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.painel'))
 
     if request.method == 'POST':
         nova = request.form.get('nova_senha', '')
@@ -824,7 +824,7 @@ def trocar_senha():
             db.session.commit()
             register_security_log("Troca de Senha", f"{current_user.name} definiu nova senha.")
             flash('Senha atualizada com sucesso!', 'success')
-            return redirect(url_for('main.dashboard'))
+            return redirect(url_for('main.painel'))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao trocar senha do usuário atual.")

@@ -68,16 +68,28 @@ Variáveis obrigatórias:
 
 ### 4. Banco de dados
 
+Para um banco PostgreSQL vazio, crie primeiro as tabelas a partir dos models e
+somente depois registre a revisão atual. A cadeia histórica contém migrations
+incrementais sobre um schema existente e não deve ser iniciada em `base`.
+
 ```bash
-# Criar as tabelas (primeira execução)
+# PowerShell — criar as tabelas na primeira execução
+python scripts/create_postgres_schema.py
+flask db stamp head
+
+# Se o banco já existir e tiver tabelas, use migrations normalmente:
 flask db upgrade
 
-# Se o banco já existir mas estiver fora de sincronia com o Alembic:
+# Se o banco já existir mas o schema estiver fora de sincronia com o Alembic,
+# faça backup e valide as tabelas antes de usar create_all/stamp head:
 python -c "from app import create_app; from app.database import db; import app.models; app = create_app(); app.app_context().push(); db.create_all()"
 flask db stamp head
 ```
 
 ### 5. Usuário administrador inicial
+
+O cadastro de múltiplos programas sociais e a manutenção da lista de sugestões
+estão descritos em [`docs/manual_programas_sociais.md`](docs/manual_programas_sociais.md).
 
 ```bash
 python scripts/reset_admin.py admin@exemplo.com senha_inicial

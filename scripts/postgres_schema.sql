@@ -4,8 +4,8 @@
 
 CREATE TABLE conselho_pergunta (
 	id SERIAL NOT NULL, 
-	etapa VARCHAR(20), 
-	tipo VARCHAR(20), 
+	etapa etapa_conselho_enum, 
+	tipo tipo_pergunta_enum, 
 	texto TEXT NOT NULL, 
 	opcoes TEXT, 
 	ativo BOOLEAN NOT NULL, 
@@ -36,7 +36,6 @@ CREATE TABLE configuracao_sistema (
 	descricao VARCHAR(255), 
 	unidade_id INTEGER, 
 	PRIMARY KEY (id), 
-	UNIQUE (chave), 
 	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
 );
 
@@ -91,7 +90,10 @@ CREATE TABLE "user" (
 	is_ad_user BOOLEAN NOT NULL, 
 	unidade_id INTEGER, 
 	first_login BOOLEAN, 
+	google_id VARCHAR(100), 
+	google_email VARCHAR(120), 
 	PRIMARY KEY (id), 
+	CONSTRAINT ck_user_role CHECK (role IN ('admin', 'pedagogico', 'professor', 'secretaria', 'servico_social', 'gerencia', 'pendente')), 
 	UNIQUE (email), 
 	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
 );
@@ -121,6 +123,7 @@ CREATE TABLE aluno (
 	ativo BOOLEAN NOT NULL, 
 	data_nascimento DATE, 
 	foto_path VARCHAR(255), 
+	documentos_entregues JSONB, 
 	escolaridade_json TEXT, 
 	identificacao_json TEXT, 
 	socioeconomico_json TEXT, 
@@ -130,6 +133,16 @@ CREATE TABLE aluno (
 	whatsapp VARCHAR(30), 
 	email VARCHAR(120), 
 	nivel VARCHAR(20), 
+	orgao_rg VARCHAR(20), 
+	nacionalidade VARCHAR(50), 
+	natural_uf VARCHAR(2), 
+	natural_cidade VARCHAR(100), 
+	nome_mae VARCHAR(150), 
+	cpf_mae VARCHAR(20), 
+	nome_pai VARCHAR(150), 
+	cpf_pai VARCHAR(20), 
+	vai_acompanhado_aulas BOOLEAN NOT NULL, 
+	acompanhante_aulas VARCHAR(150), 
 	created_by_id INTEGER, 
 	created_by_name VARCHAR(100), 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
@@ -140,37 +153,10 @@ CREATE TABLE aluno (
 );
 
 
-CREATE TABLE situacao_escolar (
-	id SERIAL NOT NULL,
-	aluno_id INTEGER NOT NULL,
-	unidade_id INTEGER,
-	escolaridade VARCHAR(40),
-	ensino_superior_periodo INTEGER,
-	escolaridade_outro VARCHAR(150),
-	status VARCHAR(20),
-	status_outro VARCHAR(150),
-	nome_instituicao VARCHAR(200),
-	tipo_instituicao VARCHAR(20),
-	bolsista BOOLEAN NOT NULL,
-	tipo_instituicao_outro VARCHAR(150),
-	turno VARCHAR(20),
-	turno_outro VARCHAR(100),
-	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-	PRIMARY KEY (id),
-	UNIQUE (aluno_id),
-	FOREIGN KEY(aluno_id) REFERENCES aluno (id),
-	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
-);
-
-
-CREATE INDEX ix_situacao_escolar_unidade_nome ON situacao_escolar (unidade_id, nome_instituicao);
-
-
 CREATE TABLE dia_bloqueado (
 	id SERIAL NOT NULL, 
 	data DATE NOT NULL, 
-	tipo VARCHAR(50) NOT NULL, 
+	tipo tipo_dia_bloqueado_enum NOT NULL, 
 	descricao VARCHAR(200), 
 	periodo_letivo_id INTEGER NOT NULL, 
 	unidade_id INTEGER NOT NULL, 
@@ -198,6 +184,20 @@ CREATE TABLE log_acao (
 );
 
 
+CREATE TABLE periodo_conselho (
+	id SERIAL NOT NULL, 
+	nome VARCHAR(100) NOT NULL, 
+	data_inicio DATE NOT NULL, 
+	data_fim DATE NOT NULL, 
+	conselho_final BOOLEAN NOT NULL, 
+	periodo_letivo_id INTEGER NOT NULL, 
+	unidade_id INTEGER NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(periodo_letivo_id) REFERENCES periodo_letivo (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
 CREATE TABLE registro (
 	id SERIAL NOT NULL, 
 	educador_id INTEGER NOT NULL, 
@@ -217,10 +217,10 @@ CREATE TABLE turma (
 	id SERIAL NOT NULL, 
 	nome VARCHAR(100) NOT NULL, 
 	ativo BOOLEAN NOT NULL, 
-	data_inicio VARCHAR(10), 
-	data_fim VARCHAR(10), 
-	hora_inicio VARCHAR(5), 
-	hora_fim VARCHAR(5), 
+	data_inicio DATE, 
+	data_fim DATE, 
+	hora_inicio TIME WITHOUT TIME ZONE, 
+	hora_fim TIME WITHOUT TIME ZONE, 
 	dias_semana VARCHAR(20), 
 	programa VARCHAR(50), 
 	turno VARCHAR(20), 
@@ -242,11 +242,30 @@ CREATE TABLE turma (
 );
 
 
+CREATE TABLE atendimento (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	setor VARCHAR(50) NOT NULL, 
+	data_atendimento DATE NOT NULL, 
+	resumo VARCHAR(255), 
+	dados JSONB NOT NULL, 
+	atendido_por_id INTEGER, 
+	atendido_por_nome VARCHAR(150), 
+	unidade_id INTEGER, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(atendido_por_id) REFERENCES "user" (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
 CREATE TABLE conselho_classe (
 	id SERIAL NOT NULL, 
 	turma_id INTEGER NOT NULL, 
 	aluno_id INTEGER NOT NULL, 
-	etapa VARCHAR(20) NOT NULL, 
+	etapa etapa_conselho_enum NOT NULL, 
 	data_inicio DATE, 
 	data_fim DATE, 
 	concluido BOOLEAN NOT NULL, 
@@ -256,6 +275,8 @@ CREATE TABLE conselho_classe (
 	proxima_turma_id INTEGER, 
 	unidade_id INTEGER, 
 	PRIMARY KEY (id), 
+	CONSTRAINT uix_conselho_turma_aluno_etapa UNIQUE (turma_id, aluno_id, etapa), 
+	CONSTRAINT ck_conselho_situacao_final CHECK (situacao_final IS NULL OR situacao_final IN ('Aprovado', 'Reprovado por Falta', 'Desistente', 'Evadido', 'Participação', 'Concluído')), 
 	FOREIGN KEY(turma_id) REFERENCES turma (id), 
 	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
 	FOREIGN KEY(instrutor_id) REFERENCES "user" (id), 
@@ -267,7 +288,7 @@ CREATE TABLE conselho_classe (
 CREATE TABLE dia_bloqueado_turma (
 	id SERIAL NOT NULL, 
 	turma_id INTEGER NOT NULL, 
-	data VARCHAR(10) NOT NULL, 
+	data DATE NOT NULL, 
 	unidade_id INTEGER, 
 	criado_por_id INTEGER, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
@@ -279,14 +300,36 @@ CREATE TABLE dia_bloqueado_turma (
 );
 
 
+CREATE TABLE endereco_aluno (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	unidade_id INTEGER, 
+	cep VARCHAR(10), 
+	rua VARCHAR(200), 
+	numero VARCHAR(20), 
+	bairro VARCHAR(100), 
+	cidade VARCHAR(100), 
+	uf VARCHAR(2), 
+	zona VARCHAR(20), 
+	possui_acesso_internet BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	UNIQUE (aluno_id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
 CREATE TABLE frequencia (
 	id SERIAL NOT NULL, 
 	aluno_id INTEGER NOT NULL, 
 	turma_id INTEGER NOT NULL, 
-	data VARCHAR(20) NOT NULL, 
-	conceito VARCHAR(1), 
+	data DATE NOT NULL, 
+	conceito conceito_frequencia_enum, 
 	unidade_id INTEGER, 
 	PRIMARY KEY (id), 
+	CONSTRAINT uix_frequencia_aluno_turma_data UNIQUE (aluno_id, turma_id, data), 
 	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
 	FOREIGN KEY(turma_id) REFERENCES turma (id), 
 	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
@@ -294,6 +337,7 @@ CREATE TABLE frequencia (
 
 
 CREATE TABLE inscricoes (
+	id SERIAL NOT NULL, 
 	aluno_id INTEGER NOT NULL, 
 	turma_id INTEGER NOT NULL, 
 	nivel VARCHAR(30), 
@@ -301,9 +345,68 @@ CREATE TABLE inscricoes (
 	data_inicio DATE NOT NULL, 
 	data_desativacao TIMESTAMP WITHOUT TIME ZONE, 
 	motivo_desativacao VARCHAR(50), 
-	PRIMARY KEY (aluno_id, turma_id), 
+	PRIMARY KEY (id), 
 	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
 	FOREIGN KEY(turma_id) REFERENCES turma (id)
+);
+
+
+CREATE TABLE perfil_diversidade (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	unidade_id INTEGER, 
+	genero VARCHAR(30), 
+	raca_cor VARCHAR(30), 
+	saude_laudo BOOLEAN NOT NULL, 
+	tipo_deficiencia VARCHAR(30), 
+	saude_medicacao VARCHAR(5), 
+	saude_medicamento_nome VARCHAR(150), 
+	saude_observacoes TEXT, 
+	informacoes_para_professor TEXT, 
+	autorizacao_imagem BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	UNIQUE (aluno_id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
+CREATE TABLE perfil_socioeconomico (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	unidade_id INTEGER, 
+	renda_familiar NUMERIC(12, 2), 
+	residente_maior_renda VARCHAR(50), 
+	pessoas_residencia INTEGER, 
+	ocupacao VARCHAR(50), 
+	beneficio_social_status VARCHAR(20), 
+	beneficio_social_nome VARCHAR(100), 
+	meio_transporte VARCHAR(30), 
+	vulnerabilidade_social BOOLEAN NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	UNIQUE (aluno_id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
+);
+
+
+CREATE TABLE responsavel_aluno (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	unidade_id INTEGER, 
+	tipo VARCHAR(30), 
+	nome VARCHAR(150), 
+	cpf VARCHAR(20), 
+	telefone VARCHAR(30), 
+	created_at TIMESTAMP WITHOUT TIME ZONE, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
 );
 
 
@@ -312,12 +415,36 @@ CREATE TABLE respostas_formulario (
 	tipo_formulario VARCHAR(50) NOT NULL, 
 	aluno_id INTEGER, 
 	usuario_id INTEGER NOT NULL, 
-	dados JSON NOT NULL, 
+	dados JSONB NOT NULL, 
 	created_at TIMESTAMP WITHOUT TIME ZONE, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
 	FOREIGN KEY(usuario_id) REFERENCES "user" (id)
+);
+
+
+CREATE TABLE situacao_escolar (
+	id SERIAL NOT NULL, 
+	aluno_id INTEGER NOT NULL, 
+	unidade_id INTEGER, 
+	escolaridade VARCHAR(40), 
+	ensino_superior_periodo INTEGER, 
+	escolaridade_outro VARCHAR(150), 
+	status VARCHAR(20), 
+	status_outro VARCHAR(150), 
+	nome_instituicao VARCHAR(200), 
+	tipo_instituicao VARCHAR(20), 
+	bolsista BOOLEAN NOT NULL, 
+	tipo_instituicao_outro VARCHAR(150), 
+	turno VARCHAR(20), 
+	turno_outro VARCHAR(100), 
+	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (aluno_id), 
+	FOREIGN KEY(aluno_id) REFERENCES aluno (id), 
+	FOREIGN KEY(unidade_id) REFERENCES unidade (id)
 );
 
 
@@ -329,7 +456,8 @@ CREATE TABLE tema_aula (
 	titulo VARCHAR(200), 
 	programa VARCHAR(50), 
 	ativo BOOLEAN NOT NULL, 
-	data VARCHAR(20), 
+	data DATE, 
+	ordem INTEGER NOT NULL, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(curso_id) REFERENCES curso (id), 
 	FOREIGN KEY(turma_id) REFERENCES turma (id), 
@@ -372,7 +500,7 @@ CREATE TABLE conselho_resposta (
 CREATE TABLE registro_aula (
 	id SERIAL NOT NULL, 
 	turma_id INTEGER NOT NULL, 
-	data VARCHAR(20) NOT NULL, 
+	data DATE NOT NULL, 
 	tema_id INTEGER, 
 	observacoes TEXT, 
 	instrutor_id INTEGER, 

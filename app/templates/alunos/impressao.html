@@ -139,7 +139,8 @@
     <div class="section-title">IV - Perfil Socioeconômico e Saúde</div>
     <div class="data-row">
       <div class="data-label">Renda Familiar:</div>
-      <div class="data-value">{{ socio.get('renda_familiar', '-') }} | Maior renda: {{
+      <div class="data-value">R$ {{ socio.get('renda_familiar', '-') or '-' }} | Per capita: R$ {{
+        socio.get('renda_per_capita', '-') or '-' }} | Maior renda: {{
         socio.get('residente_maior_renda', '-') }}</div>
     </div>
     <div class="data-row">
@@ -159,7 +160,7 @@
     </div>
     <div class="data-row">
       <div class="data-label">Condição de Saúde:</div>
-      <div class="data-value">Laudo Médico: {{ 'Sim' if div.get('saude_laudo') else 'Não' }} | Medicação: {{
+      <div class="data-value">Laudo Médico: {{ 'Sim' if div.get('saude_laudo') else 'Não' }}{% if div.get('tipo_deficiencia') %} | Tipo: {{ div.get('tipo_deficiencia') }}{% endif %} | Medicação: {{
         div.get('saude_medicacao', 'Não') }} {% if div.get('saude_medicamento_nome') %}({{
         div.get('saude_medicamento_nome') }}){% endif %}</div>
     </div>

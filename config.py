@@ -20,6 +20,20 @@ def get_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_database_uri() -> str:
+    raw_uri = os.getenv("DATABASE_URL")
+    if not raw_uri:
+        return f"sqlite:///{DEFAULT_DB_PATH.as_posix()}"
+    if raw_uri.startswith("sqlite:///instance/"):
+        rel_file = raw_uri[len("sqlite:///instance/"):]
+        return f"sqlite:///{(INSTANCE_DIR / rel_file).as_posix()}"
+    if raw_uri.startswith("sqlite:///") and not raw_uri.startswith("sqlite:////") and ":" not in raw_uri[10:]:
+        # Caminho relativo no Windows (ex: sqlite:///database.db)
+        rel_file = raw_uri[len("sqlite:///"):]
+        return f"sqlite:///{(BASE_DIR / rel_file).as_posix()}"
+    return raw_uri
+
+
 class Config:
     """Configuração central do sistema.
 
@@ -44,7 +58,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+    SQLALCHEMY_DATABASE_URI = _get_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str(INSTANCE_DIR / "uploads"))

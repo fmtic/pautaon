@@ -199,7 +199,8 @@
                 </div>
                 <div class="mb-3 d-none" id="acompanhante_aulas_div">
                   <label class="form-label small">Quem acompanha?</label>
-                  <select name="acompanhante_aulas" class="form-select">
+                  <select name="acompanhante_aulas" id="acompanhante_aulas" class="form-select"
+                    onchange="toggleOutroAcompanhante(this)">
                     <option value="">Selecione...</option>
                     <option value="Mãe">Mãe</option>
                     <option value="Pai">Pai</option>
@@ -208,6 +209,10 @@
                     <option value="Outro">Outro</option>
                     <option value="Vai sozinho">Vai sozinho</option>
                   </select>
+                  <div class="mt-2 d-none" id="acompanhante_aulas_outro_div">
+                    <input type="text" name="acompanhante_aulas_outro" id="acompanhante_aulas_outro"
+                      class="form-control" placeholder="Informe quem acompanha">
+                  </div>
                 </div>
               </div>
             </div>
@@ -374,16 +379,18 @@
             <div class="row g-3">
               <div class="col-md-4">
                 <label class="form-label small fw-bold">Renda Familiar Mensal</label>
-                <select name="renda_familiar" class="form-select">
-                  <option value="Até 1 salário">Até 1 Salário
-                    Mínimo</option>
-                  <option value="1 a 3 salários">De 1 a 3
-                    Salários</option>
-                  <option value="3 a 5 salários">De 3 a 5
-                    Salários</option>
-                  <option value="Acima de 5">Acima de 5 Salários
-                  </option>
-                </select>
+                <div class="input-group">
+                  <span class="input-group-text">R$</span>
+                  <input type="number" name="renda_familiar" class="form-control" min="0" step="0.01"
+                    inputmode="decimal" placeholder="0,00">
+                </div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-bold">Renda per capita</label>
+                <div class="input-group">
+                  <span class="input-group-text">R$</span>
+                  <input type="text" id="renda_per_capita" class="form-control" value="" readonly aria-readonly="true">
+                </div>
               </div>
               <div class="col-md-4">
                 <label class="form-label small fw-bold">Residente de maior renda</label>
@@ -423,8 +430,14 @@
               </div>
               <div class="col-md-4 d-none" id="beneficio_social_div">
                 <label class="form-label small fw-bold">Qual programa?</label>
-                <input type="text" name="beneficio_social_nome" class="form-control" list="programas_sociais"
-                  placeholder="Ex: Bolsa Família">
+                <div id="beneficio_social_tags" class="d-flex flex-wrap gap-2 mb-2"></div>
+                <div class="input-group">
+                  <input type="text" id="beneficio_social_input" class="form-control" list="programas_sociais"
+                    placeholder="Selecione ou digite um programa">
+                  <button type="button" class="btn btn-outline-primary" onclick="window.adicionarBeneficioSocial()">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Adicionar
+                  </button>
+                </div>
                 <datalist id="programas_sociais">
                   <option value="Bolsa Família">
                   <option value="Cadastro Único">
@@ -461,9 +474,23 @@
                       <input class="form-check-input" type="checkbox" name="saude_laudo" id="saude_laudo"
                         onchange="window.toggleLaudoUpload(this)">
                       <label class="form-check-label fw-bold text-danger" for="saude_laudo">
-                        Aluno possui deficiência ou laudo médico?
+                        Aluno possui deficiência e/ou laudo médico?
                       </label>
                     </div>
+                  </div>
+                  <div class="col-md-6 d-none" id="tipo_deficiencia_container">
+                    <label class="form-label small fw-bold">Tipo de deficiência</label>
+                    <select name="tipo_deficiencia" id="tipo_deficiencia" class="form-select" disabled>
+                      <option value="">Selecione</option>
+                      <option value="Motora/Física">Não se aplica</option>
+                      <option value="Motora/Física">Motora/Física</option>
+                      <option value="Auditiva">Auditiva</option>
+                      <option value="Psicossocial">Psicossocial</option>
+                      <option value="Intelectual/Mental">Intelectual/Mental</option>
+                      <option value="Visual">Visual</option>
+                      <option value="TEA">TEA</option>
+                      <option value="Outro">Outro</option>
+                    </select>
                   </div>
                   <div class="col-md-6 d-none" id="laudo_upload_container">
                     <div class="pdf-upload-box py-2" onclick="document.getElementById('input_doc_laudo').click()">
@@ -490,7 +517,7 @@
                       placeholder="Nome do medicamento">
                   </div>
                   <div class="col-md-12">
-                    <label class="form-label small fw-bold">Observações de Saúde / Alergias</label>
+                    <label class="form-label small fw-bold">Observações de Saúde / Alimentar e Alergias</label>
                     <textarea name="saude_observacoes" class="form-control" rows="2"></textarea>
                   </div>
                   <div class="col-md-12">

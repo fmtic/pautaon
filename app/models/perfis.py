@@ -23,6 +23,8 @@ Relação com os JSONs antigos:
 ================================================================================
 """
 
+from decimal import Decimal
+
 from app.models.base import db, datetime, get_local_now
 
 
@@ -112,10 +114,8 @@ class PerfilSocioeconomico(db.Model):
 
     Migrado de `Aluno.socioeconomico_json` na Onda 3A.
 
-    Campos de baixa cardinalidade (`renda_familiar`, `meio_transporte`)
-    permanecem como `str` livre por enquanto. CHECK constraints serão
-    adicionadas quando houver massa de dados suficiente para definir
-    o conjunto canônico.
+    `renda_familiar` armazena o valor mensal em reais. A renda per capita
+    é calculada pelo serviço a partir deste campo e de `pessoas_residencia`.
     """
     __tablename__ = 'perfil_socioeconomico'
 
@@ -127,12 +127,12 @@ class PerfilSocioeconomico(db.Model):
         db.Integer, db.ForeignKey('unidade.id'), nullable=True
     )
 
-    renda_familiar: str = db.Column(db.String(50))
+    renda_familiar: Decimal = db.Column(db.Numeric(12, 2))
     residente_maior_renda: str = db.Column(db.String(50))
     pessoas_residencia: int = db.Column(db.Integer)
     ocupacao: str = db.Column(db.String(50))
     beneficio_social_status: str = db.Column(db.String(20))
-    beneficio_social_nome: str = db.Column(db.String(100))
+    beneficio_social_nome: str = db.Column(db.Text)
     meio_transporte: str = db.Column(db.String(30))
     vulnerabilidade_social: bool = db.Column(
         db.Boolean, default=False, nullable=False
@@ -175,6 +175,7 @@ class PerfilDiversidade(db.Model):
     raca_cor: str = db.Column(db.String(30))
 
     saude_laudo: bool = db.Column(db.Boolean, default=False, nullable=False)
+    tipo_deficiencia: str = db.Column(db.String(30))
     saude_medicacao: str = db.Column(db.String(5))           # Sim / Não
     saude_medicamento_nome: str = db.Column(db.String(150))
     saude_observacoes: str = db.Column(db.Text)

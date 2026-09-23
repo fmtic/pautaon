@@ -35,8 +35,16 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import (
-    abort, current_app, flash, jsonify, redirect, render_template, request,
-    send_from_directory, session, url_for,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
 )
 from flask_login import current_user, login_required
 from sqlalchemy import select
@@ -62,10 +70,10 @@ from .shared import (
     salvar_foto,
 )
 
-
 # =============================================================================
 # HELPERS INTERNOS
 # =============================================================================
+
 
 def _validar_cpf(cpf: str) -> bool:
     """Valida dígitos verificadores do CPF. Retorna True se válido ou vazio."""
@@ -216,16 +224,18 @@ def _aplicar_campos_civis(aluno: Aluno, form) -> None:
 
     vai_acompanhado = bool(form.get("vai_acompanhado_aulas"))
     aluno.vai_acompanhado_aulas = vai_acompanhado
-    aluno.acompanhante_aulas = (
-        (form.get("acompanhante_aulas") or "").strip() or None
-        if vai_acompanhado
-        else None
-    )
+    acompanhante = (form.get("acompanhante_aulas") or "").strip()
+
+    if acompanhante == "Outro":
+        acompanhante = (form.get("acompanhante_aulas_outro") or "").strip()
+
+    aluno.acompanhante_aulas = acompanhante or None if vai_acompanhado else None
 
 
 # =============================================================================
 # AUTOCOMPLETE E AJUSTES RÁPIDOS
 # =============================================================================
+
 
 @bp.route("/alunos/instituicoes")
 @login_required
@@ -246,9 +256,7 @@ def buscar_instituicoes():
     return jsonify(
         [
             nome
-            for (nome,) in consulta.order_by(
-                SituacaoEscolar.nome_instituicao
-            ).limit(10)
+            for (nome,) in consulta.order_by(SituacaoEscolar.nome_instituicao).limit(10)
         ]
     )
 
@@ -257,7 +265,9 @@ def buscar_instituicoes():
 @login_required
 def atualizar_nivel_aluno(aluno_id):
     if current_user.role not in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
     ):
         abort(403)
 
@@ -286,6 +296,7 @@ def atualizar_nivel_aluno(aluno_id):
 # =============================================================================
 # LISTAGEM
 # =============================================================================
+
 
 @bp.route("/alunos")
 @login_required
@@ -349,7 +360,7 @@ def gerenciar_alunos():
     per_page = 20
     total_filtrado = len(alunos_lista)
     start = (page - 1) * per_page
-    items = alunos_lista[start:start + per_page]
+    items = alunos_lista[start : start + per_page]
 
     class Paginator:
         def __init__(self, items, page, per_page, total):
@@ -374,9 +385,7 @@ def gerenciar_alunos():
         "alunos/gerenciar.html",
         pagination=pagination,
         total_alunos=total_q.count(),
-        total_enturmados=enturm_q.filter(
-            Aluno.turmas.any(Turma.ativo == True)
-        ).count(),
+        total_enturmados=enturm_q.filter(Aluno.turmas.any(Turma.ativo == True)).count(),
         search_nome=search_nome,
         search_matr=search_matr,
         search_cpf=search_cpf,
@@ -390,11 +399,14 @@ def gerenciar_alunos():
 # CADASTRO
 # =============================================================================
 
+
 @bp.route("/aluno/novo", methods=["GET", "POST"])
 @login_required
 def novo_aluno():
     if current_user.role not in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
     ):
         abort(403)
     if request.method == "GET":
@@ -490,16 +502,26 @@ def novo_aluno():
 # EDIÇÃO
 # =============================================================================
 
+
 @bp.route("/aluno/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_aluno(id):
     if current_user.role not in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
     ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)
-    assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
+    contexto_id = get_unidade_id()
+
+    if contexto_id is None:
+        flash("Selecione uma unidade antes de editar alunos.", "warning")
+        return redirect(url_for("registros.gerenciar_alunos"))
+
+    assert_unidade_context(aluno.unidade_id, contexto_id)
 
     if request.method == "GET":
         chave_retorno = f"retorno_edicao_aluno_{aluno.id}"
@@ -516,9 +538,7 @@ def editar_aluno(id):
             # 1. Colunas diretas em Aluno
             # -----------------------------------------------------------------
             aluno.nome = formatar_nome_proprio(request.form.get("nome"))
-            aluno.nome_social = formatar_nome_proprio(
-                request.form.get("nome_social")
-            )
+            aluno.nome_social = formatar_nome_proprio(request.form.get("nome_social"))
             nivel = request.form.get("nivel")
             if nivel is not None:
                 aluno.nivel = nivel
@@ -526,8 +546,7 @@ def editar_aluno(id):
             cpf_raw = request.form.get("cpf", "")
             if not _validar_cpf(cpf_raw):
                 flash(
-                    "CPF inválido. Informe somente os 11 dígitos numéricos "
-                    "do CPF.",
+                    "CPF inválido. Informe somente os 11 dígitos numéricos " "do CPF.",
                     "danger",
                 )
                 return redirect(url_for("registros.editar_aluno", id=aluno.id))
@@ -593,6 +612,7 @@ def editar_aluno(id):
 # EXCLUSÃO / INATIVAÇÃO / DESENTURMAÇÃO
 # =============================================================================
 
+
 @bp.route("/aluno/excluir/<int:id>", methods=["POST"])
 @login_required
 def excluir_aluno(id):
@@ -607,8 +627,7 @@ def excluir_aluno(id):
     )
     if tem_presenca:
         flash(
-            "Proteção Sistêmica: Aluno blindado para Exclusão Física, pois "
-            "possui Diário. Desative-o apenas.",
+            "Aluno não pode ser excluído, pois " "possui Diário. Desative-o apenas.",
             "warning",
         )
         return redirect(url_for("registros.gerenciar_alunos"))
@@ -616,7 +635,7 @@ def excluir_aluno(id):
         db.session.delete(aluno)
         db.session.commit()
         flash(
-            "Aluno purgado dos registros institucionais permanentemente.",
+            "Aluno excluído dos registros permanentemente.",
             "success",
         )
     except Exception:
@@ -628,7 +647,11 @@ def excluir_aluno(id):
 @bp.route("/aluno/inativar/<int:id>", methods=["POST"])
 @login_required
 def inativar_aluno(id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
         abort(403)
     """
     Inativa um aluno (soft delete).
@@ -637,14 +660,25 @@ def inativar_aluno(id):
     que não existe no modelo. Simplificado para voltar à listagem.
     """
     try:
+        unidade_id = get_unidade_id()
+
+        if unidade_id is None:
+            flash("Selecione uma unidade antes de inativar alunos.", "warning")
+            return redirect(url_for("registros.gerenciar_alunos"))
+
         aluno = db.get_or_404(Aluno, id)
-        assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
+        assert_unidade_context(aluno.unidade_id, unidade_id)
+
         aluno.ativo = False
         db.session.commit()
+
         flash(f"Aluno {aluno.nome} inativado.", "info")
+
     except Exception:
         db.session.rollback()
         flash("Erro ao inativar aluno.", "danger")
+
     return redirect(url_for("registros.gerenciar_alunos"))
 
 
@@ -708,6 +742,7 @@ def desenturmar_alunos(id):
 # HISTÓRICO / IMPRESSÃO / TRANSFERÊNCIA
 # =============================================================================
 
+
 @bp.route("/aluno/<int:aluno_id>/historico")
 @login_required
 def historico_aluno(aluno_id):
@@ -718,7 +753,9 @@ def historico_aluno(aluno_id):
         UserRole.PEDAGOGICO,
         UserRole.SECRETARIA,
         UserRole.GERENCIA,
+        UserRole.SERVICO_SOCIAL,
     }
+
     if current_user.role not in allowed_roles:
         if current_user.role == UserRole.PROFESSOR:
             tem_turma_do_professor = (
@@ -730,12 +767,18 @@ def historico_aluno(aluno_id):
                 )
                 .first()
             )
+
             if not tem_turma_do_professor:
                 abort(403)
         else:
             abort(403)
 
     unidade_id = get_unidade_id()
+
+    if unidade_id is None:
+        flash("Selecione uma unidade antes de acessar o histórico do aluno.", "warning")
+        return redirect(url_for("registros.gerenciar_alunos"))
+
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
@@ -746,12 +789,8 @@ def historico_aluno(aluno_id):
         if not turma:
             continue
 
-        freqs = Frequencia.query.filter_by(
-            aluno_id=aluno_id, turma_id=turma.id
-        ).all()
-        estatisticas = calcular_estatisticas_frequencia(
-            freq.conceito for freq in freqs
-        )
+        freqs = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id).all()
+        estatisticas = calcular_estatisticas_frequencia(freq.conceito for freq in freqs)
 
         def get_conselho(etapa):
             return ConselhoClasse.query.filter_by(
@@ -775,18 +814,14 @@ def historico_aluno(aluno_id):
                 "curso": turma.curso.nome if turma.curso else "—",
                 "programa": turma.programa or "—",
                 "professor": turma.professor.name if turma.professor else "—",
-                "periodo": (
-                    turma.periodo_letivo.nome if turma.periodo_letivo else "—"
-                ),
+                "periodo": (turma.periodo_letivo.nome if turma.periodo_letivo else "—"),
                 "dias": turma.dias_semana or "—",
                 "horario": horario,
                 "data_inicio": (
-                    turma.data_inicio.strftime("%d/%m/%Y")
-                    if turma.data_inicio else "—"
+                    turma.data_inicio.strftime("%d/%m/%Y") if turma.data_inicio else "—"
                 ),
                 "data_fim": (
-                    turma.data_fim.strftime("%d/%m/%Y")
-                    if turma.data_fim else "—"
+                    turma.data_fim.strftime("%d/%m/%Y") if turma.data_fim else "—"
                 ),
                 "nivel": insc.nivel or aluno.nivel or "—",
                 "total_aulas": estatisticas["total"],
@@ -794,23 +829,16 @@ def historico_aluno(aluno_id):
                 "faltas": estatisticas["faltas"],
                 "justificadas": estatisticas["justificadas"],
                 "pct_presenca": estatisticas["presenca_percentual"],
-                "status_inicial": (
-                    c_inicial.situacao_final if c_inicial else "—"
-                ),
-                "status_percurso": (
-                    c_percurso.situacao_final if c_percurso else "—"
-                ),
-                "situacao_final": (
-                    c_final.situacao_final if c_final else "—"
-                ),
+                "status_inicial": (c_inicial.situacao_final if c_inicial else "—"),
+                "status_percurso": (c_percurso.situacao_final if c_percurso else "—"),
+                "situacao_final": (c_final.situacao_final if c_final else "—"),
                 "ativo": insc.ativo,
             }
         )
 
     dados.sort(key=lambda item: (not item["ativo"], item["periodo"]))
     data_cadastro = (
-        aluno.created_at.strftime("%d/%m/%Y")
-        if aluno.created_at else "Não disponível"
+        aluno.created_at.strftime("%d/%m/%Y") if aluno.created_at else "Não disponível"
     )
     return render_template(
         "alunos/historico.html",
@@ -823,13 +851,24 @@ def historico_aluno(aluno_id):
 @bp.route("/aluno/imprimir/<int:id>")
 @login_required
 def imprimir_aluno(id):
+
     if current_user.role not in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.SERVICO_SOCIAL,
     ):
         abort(403)
 
+    unidade_id = get_unidade_id()
+
+    if unidade_id is None:
+        flash("Selecione uma unidade antes de imprimir a ficha do aluno.", "warning")
+        return redirect(url_for("registros.gerenciar_alunos"))
+
     aluno = db.get_or_404(Aluno, id)
-    assert_unidade_context(aluno.unidade_id, get_unidade_id())
+
+    assert_unidade_context(aluno.unidade_id, unidade_id)
 
     return render_template(
         "alunos/impressao.html",
@@ -843,12 +882,20 @@ def imprimir_aluno(id):
 @login_required
 def transferir_aluno(aluno_id):
     if current_user.role not in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
     ):
         abort(403)
 
-    aluno = db.get_or_404(Aluno, aluno_id)
     unidade_id = get_unidade_id()
+
+    if unidade_id is None:
+        flash("Selecione uma unidade antes de transferir alunos.", "warning")
+        return redirect(url_for("registros.gerenciar_alunos"))
+
+    aluno = db.get_or_404(Aluno, aluno_id)
+
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
     turma_origem_id = request.args.get("turma_origem_id", type=int)
@@ -863,16 +910,12 @@ def transferir_aluno(aluno_id):
         aluno_id=aluno.id, turma_id=turma_origem_id, ativo=True
     ).first()
     if not inscricao_origem:
-        flash(
-            "Aluno não está ativo na turma de origem informada.", "danger"
-        )
+        flash("Aluno não está ativo na turma de origem informada.", "danger")
         return redirect(url_for("registros.gerenciar_alunos"))
 
     # --- GET: formulário ---
     if request.method == "GET":
-        query = Turma.query.filter(
-            Turma.ativo == True, Turma.id != turma_origem_id
-        )
+        query = Turma.query.filter(Turma.ativo == True, Turma.id != turma_origem_id)
         if unidade_id is not None:
             query = query.filter(Turma.unidade_id == unidade_id)
         turmas_destino = query.order_by(Turma.nome).all()
@@ -991,6 +1034,7 @@ def transferir_aluno(aluno_id):
 # =============================================================================
 # DOWNLOADS E VISUALIZAÇÃO SEGURA DE ARQUIVOS (SEC-01)
 # =============================================================================
+
 
 @bp.route("/aluno/<int:aluno_id>/documento/<doc_id>")
 @login_required

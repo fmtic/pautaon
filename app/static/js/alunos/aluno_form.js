@@ -4,6 +4,7 @@
 
 document.addEventListener('DOMContentLoaded', function () {
 
+
     // ==================== MÁSCARAS ====================
 
     // Máscara CPF
@@ -68,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // ==================== LÓGICA RESPONSÁVEL LEGAL ====================
+    // ==================== LÓGICA RESPONSÁVEL LEGAL E ACOMPANHANTE ====================
     const respTipo = document.getElementById('responsavel_tipo');
     const respNome = document.getElementById('responsavel_nome');
     const respCpf = document.getElementById('responsavel_cpf');
@@ -84,17 +85,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (tipo === 'Mãe' && nomeMae) {
             respNome.value = nomeMae.value || '';
-            if (respCpf && cpfMae) respCpf.value = cpfMae.value || '';
+            if (respCpf && cpfMae) {
+                respCpf.value = cpfMae.value || '';
+                validarCampoCPF(respCpf);
+            }
             respNome.readOnly = true;
             if (respCpf) respCpf.readOnly = true;
         } else if (tipo === 'Pai' && nomePai) {
             respNome.value = nomePai.value || '';
-            if (respCpf && cpfPai) respCpf.value = cpfPai.value || '';
+            if (respCpf && cpfPai) {
+                respCpf.value = cpfPai.value || '';
+                validarCampoCPF(respCpf);
+            }
             respNome.readOnly = true;
             if (respCpf) respCpf.readOnly = true;
         } else {
             respNome.readOnly = false;
-            if (respCpf) respCpf.readOnly = false;
+            if (respCpf) {
+                respCpf.readOnly = false;
+                validarCampoCPF(respCpf);
+            }
         }
     }
 
@@ -109,12 +119,38 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // ==================== VALIDAÇÃO VISUAL DE CPF (opcional) ====================
+    // Acompanhante
+    const acompanhanteSelect =
+        document.getElementById("acompanhante_aulas");
+
+    if (acompanhanteSelect) {
+        toggleOutroAcompanhante(acompanhanteSelect);
+    }
+    window.toggleOutroAcompanhante = function (select) {
+
+        const div = document.getElementById(
+            "acompanhante_aulas_outro_div"
+        );
+
+        const campo = document.getElementById(
+            "acompanhante_aulas_outro"
+        );
+
+        if (!div || !campo) return;
+
+        if (select.value === "Outro") {
+            div.classList.remove("d-none");
+        } else {
+            div.classList.add("d-none");
+            campo.value = "";
+        }
+    };
+
+    // ==================== VALIDAÇÃO VISUAL DE CPF ====================
     function validarCPF(valor) {
         if (typeof valor !== 'string') return false;
-        if (!/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(valor.trim())) return false;
-
         const cpf = valor.replace(/\D/g, '');
+        if (cpf.length !== 11) return false;
         if (/^(\d)\1{10}$/.test(cpf)) return false;
 
         const calcDigito = (base) => {
@@ -129,6 +165,91 @@ document.addEventListener('DOMContentLoaded', function () {
         const d2 = calcDigito(cpf.slice(0, 9) + d1);
 
         return cpf === cpf.slice(0, 9) + d1 + d2;
+    }
+
+    function validarCampoCPF(input) {
+        if (!input) return true;
+        const digits = input.value.replace(/\D/g, '');
+
+        // CPF é opcional no formulário se estiver vazio
+        if (digits.length === 0) {
+            input.classList.remove('is-invalid', 'is-valid');
+            input.setCustomValidity('');
+            return true;
+        }
+
+        if (validarCPF(input.value)) {
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+            input.setCustomValidity('');
+            return true;
+        } else {
+            input.classList.remove('is-valid');
+            input.classList.add('is-invalid');
+            input.setCustomValidity('CPF inválido');
+            return false;
+        }
+    }
+
+    window.validarCPF = validarCPF;
+    window.validarCampoCPF = validarCampoCPF;
+
+    // Configura listeners para todos os campos com validação de CPF
+    document.querySelectorAll('.validate-cpf').forEach(input => {
+        // Valida na carga se o campo já veio preenchido (ex: edição)
+        if (input.value.trim() !== '') {
+            validarCampoCPF(input);
+        }
+
+        // Validação reativa ao digitar
+        input.addEventListener('input', () => {
+            const digits = input.value.replace(/\D/g, '');
+            if (digits.length === 11 || input.classList.contains('is-invalid')) {
+                validarCampoCPF(input);
+            } else if (digits.length === 0) {
+                input.classList.remove('is-invalid', 'is-valid');
+                input.setCustomValidity('');
+            }
+        });
+
+        // Validação ao sair do campo
+        input.addEventListener('blur', () => {
+            validarCampoCPF(input);
+        });
+
+        // Validação em evento change
+        input.addEventListener('change', () => {
+            validarCampoCPF(input);
+        });
+    });
+
+    // Interceptar envio do formulário para garantir que CPFs preenchidos sejam válidos
+    const formAluno = document.getElementById('multiStepForm') || document.querySelector('form');
+    if (formAluno) {
+        formAluno.addEventListener('submit', function (e) {
+            const cpfInputs = formAluno.querySelectorAll('.validate-cpf');
+            let primeiroInvalido = null;
+
+            cpfInputs.forEach(input => {
+                if (!validarCampoCPF(input) && !primeiroInvalido) {
+                    primeiroInvalido = input;
+                }
+            });
+
+            if (primeiroInvalido) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const stepEl = primeiroInvalido.closest('.form-step');
+                if (stepEl && stepEl.id && typeof window.goToStep === 'function') {
+                    const stepNum = Number(stepEl.id.replace('step-', ''));
+                    if (Number.isInteger(stepNum)) {
+                        window.goToStep(stepNum);
+                    }
+                }
+                primeiroInvalido.focus();
+            }
+        });
     }
 
     // ==================== IBGE - NATURALIDADE ====================

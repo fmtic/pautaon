@@ -25,6 +25,7 @@ Quando a Onda 3C dropar os JSONs, remova o bloco `FALLBACK` de cada função
 ================================================================================
 """
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Optional
 
 from app.database import db
@@ -34,6 +35,17 @@ from app.models import (
     PerfilDiversidade,
     PerfilSocioeconomico,
     ResponsavelAluno,
+)
+
+
+TIPOS_DEFICIENCIA = (
+    'Motora/Física',
+    'Auditiva',
+    'Psicossocial',
+    'Intelectual/Mental',
+    'Visual',
+    'Outro',
+    'TEA',
 )
 
 
@@ -59,6 +71,50 @@ def i(value: Any) -> Optional[int]:
         return None
 
 
+def money(value: Any) -> Optional[Decimal]:
+    """Normaliza um valor monetário brasileiro para duas casas decimais."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, Decimal):
+        number = value
+    else:
+        text = str(value).strip().replace('R$', '').replace(' ', '')
+        if not text:
+            return None
+        if ',' in text:
+            text = text.replace('.', '').replace(',', '.')
+        try:
+            number = Decimal(text)
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError('Renda familiar mensal inválida.') from exc
+    if not number.is_finite() or number < 0:
+        raise ValueError('Renda familiar mensal inválida.')
+    return number.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def renda_per_capita(renda: Any, pessoas: Any) -> Optional[Decimal]:
+    """Calcula a renda por pessoa quando os dois valores estão disponíveis."""
+    renda_decimal = money(renda)
+    pessoas_int = i(pessoas)
+    if renda_decimal is None or pessoas_int is None:
+        return None
+    if pessoas_int <= 0:
+        raise ValueError('O número de pessoas na residência deve ser maior que zero.')
+    return (renda_decimal / pessoas_int).quantize(
+        Decimal('0.01'), rounding=ROUND_HALF_UP
+    )
+
+
+def tipo_deficiencia(value: Any) -> Optional[str]:
+    """Valida o tipo de deficiência contra o catálogo oficial do formulário."""
+    value = s(value)
+    if value is None:
+        return None
+    if value not in TIPOS_DEFICIENCIA:
+        raise ValueError('Tipo de deficiência inválido.')
+    return value
+
+
 def b(value: Any) -> bool:
     """Bool tolerante: aceita True/False, 'on', '1', 'true', 'sim'."""
     if isinstance(value, bool):
@@ -76,6 +132,26 @@ def _campo(form, nome):
         return form.get(nome)
     except Exception:
         return None
+
+
+def _programas_sociais(form) -> Optional[str]:
+    """Combina os benefícios enviados como entradas separadas pelo formulário."""
+    try:
+        valores = form.getlist('beneficio_social_nome')
+    except AttributeError:
+        valores = [_campo(form, 'beneficio_social_nome')]
+
+    nomes = []
+    vistos = set()
+    for valor in valores:
+        nome = s(valor)
+        if not nome:
+            continue
+        chave = nome.casefold()
+        if chave not in vistos:
+            nomes.append(nome)
+            vistos.add(chave)
+    return ' | '.join(nomes) or None
 
 
 # =============================================================================
@@ -156,15 +232,22 @@ def upsert_perfil_socioeconomico(aluno: Aluno, form) -> Optional[PerfilSocioecon
     vulnerabilidade_social.
     """
     campos = {
-        'renda_familiar': s(_campo(form, 'renda_familiar')),
+        'renda_familiar': money(_campo(form, 'renda_familiar')),
         'residente_maior_renda': s(_campo(form, 'residente_maior_renda')),
         'pessoas_residencia': i(_campo(form, 'pessoas_residencia')),
         'ocupacao': s(_campo(form, 'ocupacao')),
         'beneficio_social_status': s(_campo(form, 'beneficio_social_status')),
-        'beneficio_social_nome': s(_campo(form, 'beneficio_social_nome')),
+        'beneficio_social_nome': (
+            _programas_sociais(form)
+            if s(_campo(form, 'beneficio_social_status')) == 'Sim'
+            else None
+        ),
         'meio_transporte': s(_campo(form, 'meio_transporte')),
         'vulnerabilidade_social': b(_campo(form, 'vulnerabilidade_social')),
     }
+
+    if campos['pessoas_residencia'] is not None and campos['pessoas_residencia'] <= 0:
+        raise ValueError('O número de pessoas na residência deve ser maior que zero.')
 
     if not any(v not in (None, False) for v in campos.values()):
         return None
@@ -184,7 +267,8 @@ def upsert_perfil_diversidade(aluno: Aluno, form) -> Optional[PerfilDiversidade]
     """
     Cria ou atualiza o PerfilDiversidade do aluno.
 
-    Campos lidos: genero, raca_cor, saude_laudo, saude_medicacao,
+    Campos lidos: genero, raca_cor, saude_laudo, tipo_deficiencia,
+    saude_medicacao,
     saude_medicamento_nome, saude_observacoes, informacoes_para_professor,
     autorizacao_imagem.
     """
@@ -192,12 +276,16 @@ def upsert_perfil_diversidade(aluno: Aluno, form) -> Optional[PerfilDiversidade]
         'genero': s(_campo(form, 'genero')),
         'raca_cor': s(_campo(form, 'raca_cor')),
         'saude_laudo': b(_campo(form, 'saude_laudo')),
+        'tipo_deficiencia': tipo_deficiencia(_campo(form, 'tipo_deficiencia')),
         'saude_medicacao': s(_campo(form, 'saude_medicacao')),
         'saude_medicamento_nome': s(_campo(form, 'saude_medicamento_nome')),
         'saude_observacoes': s(_campo(form, 'saude_observacoes')),
         'informacoes_para_professor': s(_campo(form, 'informacoes_para_professor')),
         'autorizacao_imagem': b(_campo(form, 'autorizacao_imagem')),
     }
+
+    if not campos['saude_laudo']:
+        campos['tipo_deficiencia'] = None
 
     if not any(v not in (None, False) for v in campos.values()):
         return None
@@ -260,7 +348,10 @@ def get_perfil_socioeconomico(aluno: Aluno) -> dict:
     p = aluno.perfil_socioeconomico
     if p is not None:
         return {
-            'renda_familiar': p.renda_familiar or '',
+            'renda_familiar': p.renda_familiar,
+            'renda_per_capita': renda_per_capita(
+                p.renda_familiar, p.pessoas_residencia
+            ),
             'residente_maior_renda': p.residente_maior_renda or '',
             'pessoas_residencia': p.pessoas_residencia,
             'ocupacao': p.ocupacao or '',
@@ -281,6 +372,7 @@ def get_perfil_diversidade(aluno: Aluno) -> dict:
             'genero': p.genero or '',
             'raca_cor': p.raca_cor or '',
             'saude_laudo': p.saude_laudo,
+            'tipo_deficiencia': p.tipo_deficiencia or '',
             'saude_medicacao': p.saude_medicacao or '',
             'saude_medicamento_nome': p.saude_medicamento_nome or '',
             'saude_observacoes': p.saude_observacoes or '',
@@ -341,7 +433,7 @@ def get_perfil_completo(aluno: Aluno) -> dict:
 
 __all__ = [
     # normalizadores
-    's', 'i', 'b',
+    's', 'i', 'b', 'money', 'renda_per_capita', 'tipo_deficiencia',
     # escritas
     'upsert_endereco',
     'upsert_responsavel',
