@@ -1,9 +1,8 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ informacao_padrao.nome_instituicao or 'PautaOn' }} - PautaON</title>
     <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png">
@@ -13,20 +12,11 @@
     {% block styles %}{% endblock %}
 </head>
 
-<body class="d-flex flex-column min-vh-100">
+<body>
 
     <nav class="navbar navbar-dark bg-dark px-3">
-        <div class="d-flex align-items-center">
-            <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo" class="d-inline-block align-text-top"
-                style="height: 30px;">
-            {# BADGE DE VERSÃO — discreto, ao lado da logo. Mostra "beta"
-            sempre que app_stage não estiver vazio; some sozinho quando
-            a versão sair do beta (ver app/version.py). #}
-            <span class="badge bg-secondary ms-2 align-self-center" style="font-size: 0.65rem;"
-                title="Versão do sistema">
-                v{{ app_version }}{% if app_stage %} · {{ app_stage }}{% endif %}
-            </span>
-        </div>
+        <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo" class="d-inline-block align-text-top"
+            style="height: 30px;">
         <div class="d-flex align-items-center">
             {% if current_user.is_authenticated %}
             <span class="text-light me-3 small">
@@ -57,10 +47,7 @@
             </div>
             {% endif %}
 
-            <a href="{{ url_for('main.painel') }}"
-                class="btn btn-outline-light btn-sm me-2 {% if request.endpoint == 'main.painel' %}active{% endif %}">
-                Painel Geral
-            </a>
+            <a href="{{ url_for('main.painel') }}" class="btn btn-outline-light btn-sm me-2">Painel Geral</a>
 
             {# ACESSO RESTRITO: Admin, Pedagógico, Gerência e Secretaria #}
             {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'servico_social'] %}
@@ -85,14 +72,8 @@
             </div>
             {% endif %}
             {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
-            <a href="{{ url_for('registros.turma') }}"
-                class="btn btn-outline-warning btn-sm me-2 {% if request.endpoint == 'registros.turma' %}active{% endif %}">
-                Turmas
-            </a>
-            <a href="{{ url_for('registros.periodo_letivo') }}"
-                class="btn btn-outline-info btn-sm me-2 {% if request.endpoint == 'registros.periodo_letivo' %}active{% endif %}">
-                Períodos
-            </a>
+            <a href="{{ url_for('registros.turma') }}" class="btn btn-outline-warning btn-sm me-2">Turmas</a>
+            <a href="{{ url_for('registros.periodo_letivo') }}" class="btn btn-outline-info btn-sm me-2">Períodos</a>
             {% if current_user.is_authenticated %}
             <div class="dropdown d-inline-block me-2">
                 <button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown">
@@ -100,14 +81,12 @@
                 </button>
                 <ul class="dropdown-menu shadow">
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'conselho.informacoes' %}active{% endif %}"
-                            href="{{ url_for('conselho.informacoes') }}">
+                        <a class="dropdown-item" href="{{ url_for('conselho.informacoes') }}">
                             <i class="bi bi-info-circle me-2"></i>Data-Informações
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'conselho.index_conselho' %}active{% endif %}"
-                            href="{{ url_for('conselho.index_conselho') }}">
+                        <a class="dropdown-item" href="{{ url_for('conselho.index_conselho') }}">
                             <i class="bi bi-grid-3x3-gap me-2"></i>Painel de Turmas
                         </a>
                     </li>
@@ -116,8 +95,7 @@
                         <hr class="dropdown-divider">
                     </li>
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'conselho.gerenciar_perguntas' %}active{% endif %}"
-                            href="{{ url_for('conselho.gerenciar_perguntas') }}">
+                        <a class="dropdown-item" href="{{ url_for('conselho.gerenciar_perguntas') }}">
                             <i class="bi bi-gear-fill me-2"></i>Gerenciar Perguntas
                         </a>
                     </li>
@@ -131,26 +109,17 @@
                 </button>
                 <ul class="dropdown-menu shadow">
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'relatorios.relatorio_geral' %}active{% endif %}"
-                            href="{{ url_for('relatorios.relatorio_geral') }}">
+                        <a class="dropdown-item" href="{{ url_for('relatorios.relatorio_geral') }}">
                             <i class="bi bi-speedometer2 me-2"></i>Painel de Relatórios
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'relatorios.relatorio_alunos' %}active{% endif %}"
-                            href="{{ url_for('relatorios.relatorio_alunos') }}">
+                        <a class="dropdown-item" href="{{ url_for('relatorios.relatorio_alunos') }}">
                             <i class="bi bi-people me-2"></i>Exportar Alunos
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'relatorios.bi_dashboard' %}active{% endif %}"
-                            href="{{ url_for('relatorios.bi_dashboard') }}">
-                            <i class="bi bi-bar-chart-line me-2"></i>Central de BI
-                        </a>
-                    </li>
-                    <li>
-                        <a class="dropdown-item {% if request.endpoint == 'relatorios.resultado_conselho' %}active{% endif %}"
-                            href="{{ url_for('relatorios.resultado_conselho') }}">
+                        <a class="dropdown-item" href="{{ url_for('relatorios.resultado_conselho') }}">
                             <i class="bi bi-bar-chart-line me-2"></i>Resultado do Conselho
                         </a>
                     </li>
@@ -166,14 +135,12 @@
                 <button class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown">Admin</button>
                 <ul class="dropdown-menu dropdown-menu-end shadow">
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'auth.painel_admin' %}active{% endif %}"
-                            href="{{ url_for('auth.painel_admin') }}">
+                        <a class="dropdown-item" href="{{ url_for('auth.painel_admin') }}">
                             <i class="bi bi-person-gear me-2"></i>Gerir Usuários
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item {% if request.endpoint == 'auth.admin_unidades' %}active{% endif %}"
-                            href="{{ url_for('auth.admin_unidades') }}">
+                        <a class="dropdown-item" href="{{ url_for('auth.admin_unidades') }}">
                             <i class="bi bi-buildings me-2"></i>Gerir Unidades
                         </a>
                     </li>
@@ -207,7 +174,7 @@
     </div>
     {% endif %}
 
-    <main class="container mt-4 flex-grow-1">
+    <main class="container mt-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
         {% for category, message in messages %}
@@ -221,13 +188,6 @@
 
         {% block content %}{% endblock %}
     </main>
-
-    <footer class="text-center text-muted small py-3 mt-4 border-top">
-        {{ informacao_padrao.nome_instituicao or 'PautaOn' }} &middot;
-        PautaON v{{ app_version }}{% if app_stage %} ({{ app_stage }}){% endif %} &middot;
-        &copy; {{ ano_atual }}
-    </footer>
-
     <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 

@@ -1,0 +1,17 @@
+/* ── Central de BI ── */
+
+.bi-card {
+    border: 0;
+    border-radius: 12px;
+}
+
+.bi-chart-wrap {
+    position: relative;
+    height: 360px;
+}
+
+.bi-kpi {
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    color: #fff;
+}
