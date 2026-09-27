@@ -19,11 +19,10 @@
         <div class="d-flex align-items-center">
             <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo" class="d-inline-block align-text-top"
                 style="height: 30px;">
-            {# BADGE DE VERSÃO — discreto, ao lado da logo. Mostra "beta"
+            {# VERSÃO — discreto, ao lado da logo. Mostra "beta"
             sempre que app_stage não estiver vazio; some sozinho quando
             a versão sair do beta (ver app/version.py). #}
-            <span class="badge bg-secondary ms-2 align-self-center" style="font-size: 0.65rem;"
-                title="Versão do sistema">
+            <span class="text-white-50 ms-2 align-self-center" style="font-size: 0.65rem;" title="Versão do sistema">
                 v{{ app_version }}{% if app_stage %} · {{ app_stage }}{% endif %}
             </span>
         </div>
