@@ -4,8 +4,8 @@
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
 
-**Última atualização:** 2026-09-17 — Onda 3B concluída (JSONs do Aluno →
-tabelas estruturadas).
+**Última atualização:** 2026-09-27 — Onda 3B-bis: Etapa VI do cadastro do
+aluno (renda mensal, tipo de deficiência e programas sociais).
 
 ---
 
@@ -451,6 +451,13 @@ erDiagram
 | created_at              | timestamp     | sim  | now      | Auditoria                                            |
 | updated_at              | timestamp     | sim  | onupdate | Auditoria                                            |
 
+**Notas (Etapa VI, 2026-09-22):**
+
+- `renda_familiar` é valor mensal em reais; a renda per capita é derivada em
+  runtime (`renda_per_capita()`) e não é persistida.
+- `beneficio_social_nome` só é preenchido quando `beneficio_social_status =
+  'Sim'` (vários programas unidos por ` | `).
+
 ### 7.14 `perfil_diversidade` (Onda 3A)
 
 | Coluna                     | Tipo         | Nulo | Default  | Descrição                                                                       |
@@ -469,6 +476,9 @@ erDiagram
 | autorizacao_imagem         | bool         | não  | false    | —                                                                               |
 | created_at                 | timestamp    | sim  | now      | Auditoria                                                                       |
 | updated_at                 | timestamp    | sim  | onupdate | Auditoria                                                                       |
+
+**Nota:** `tipo_deficiencia` é restrito ao catálogo `TIPOS_DEFICIENCIA` do
+serviço e só é mantido enquanto `saude_laudo = true`.
 
 ### 7.15 `inscricoes`
 
@@ -717,13 +727,17 @@ erDiagram
 - `idade` = calculada em runtime a partir de `data_nascimento`.
 - `nome_social` deve prevalecer sobre `nome` em todas as telas e relatórios.
 
-### 8.6 Perfil do Aluno (Onda 3A/3B)
+### 8.6 Perfil do Aluno (Onda 3A/3B + Etapa VI)
 
 - **Toda leitura/escrita** dos dados de perfil passa por `app.services.aluno_perfil`. Nunca acessar `aluno.*_json` direto fora do módulo de serviço.
 - Os JSONs legados (`_identificacao_json`, etc.) são **fallback de leitura** durante a transição. O código novo **não escreve** neles.
 - `upsert_endereco`, `upsert_responsavel`, `upsert_perfil_socioeconomico`, `upsert_perfil_diversidade` criam/atualizam os registros a partir do `request.form`. NÃO commitam — quem chama é responsável pelo commit.
 - `get_perfil_completo(aluno)` retorna um dict com todas as seções (identificação, endereço, responsável, socioeconômico, diversidade) já resolvido, com fallback. É o ponto de entrada para templates e rotas.
 - `Aluno.documentos_dict()` e `Aluno.documento_entregue(doc_id)` são os acessores de `documentos_entregues` — usam o JSONB novo, caindo no `escolaridade_json` legado se necessário.
+- `money()` normaliza valores monetários brasileiros (`1.234,56`, `R$ 250,00`) para `Decimal` com 2 casas; valores negativos ou inválidos levantam `ValueError`.
+- `renda_per_capita()` devolve `None` quando falta renda ou nº de moradores e recusa `pessoas_residencia <= 0`.
+- `upsert_perfil_socioeconomico` zera `beneficio_social_nome` quando o status não é 'Sim'.
+- `upsert_perfil_diversidade` valida `tipo_deficiencia` contra o catálogo e o zera quando `saude_laudo = False`.
 
 ### 8.7 Atendimento
 
@@ -810,6 +824,13 @@ erDiagram
 - `registros/servico_social.py` usa `get_perfil_completo`.
 - Templates `editar.html`, `impressao.html`, `atendimento_pedagogico.html`, `gerenciar.html` refatorados para usar `perfil` injetado pela rota.
 
+### Onda 3B-bis — Etapa VI do cadastro do aluno (2026-09-22)
+
+- `perfil_socioeconomico.renda_familiar`: `varchar(50)` (faixa textual) → `numeric(12,2)` (valor mensal em reais); faixas antigas descartadas na conversão, sem estimativa retroativa.
+- `perfil_socioeconomico.beneficio_social_nome`: `varchar(100)` → `text` (vários programas unidos por ` | `).
+- `perfil_diversidade.tipo_deficiencia`: nova coluna `varchar(30)`, restrita ao catálogo `TIPOS_DEFICIENCIA` do serviço.
+- `app/services/aluno_perfil.py`: normalizador `money()`, cálculo de `renda_per_capita()` em runtime e validação `tipo_deficiencia()`.
+
 ### Onda 3C — Pendente (~2 semanas)
 
 - Dropar os 4 JSONs de `Aluno`.
@@ -835,6 +856,8 @@ erDiagram
 | `ef4e5af7e876` | `a1bbf3c29231` | **Onda 2B**: enums + CHECK              | ✅      |
 | `5ae559bc9d87` | `ef4e5af7e876` | **Onda 3A**: tabelas de perfil          | ✅      |
 | `29a29fdbc2aa` | `5ae559bc9d87` | **Onda 3A-bis**: `documentos_entregues` | ✅      |
+| `3b7c9d1e4f20` | `29a29fdbc2aa` | **Onda 3B-bis**: renda e deficiência    | ✅      |
+| `4c8e2f7a1b30` | `3b7c9d1e4f20` | **Onda 3B-bis**: programas sociais      | ✅      |
 
 > Consulte `flask db history` para confirmar a cadeia em execução. Toda
 > migration deve ter `revision` e `down_revision` preenchidos com hashes

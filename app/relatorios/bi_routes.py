@@ -1,3 +1,5 @@
+"app/relatorios/bi_routes.py"
+
 """Rotas do módulo de Relatórios e BI."""
 
 from flask import abort, jsonify, render_template, request
@@ -36,11 +38,11 @@ def bi_api_dados():
 
     # Mapeamento de dimensão → código de indicador disponível
     DIMENSAO_INDICADOR = {
-        "unidade":    "ALU-008",
-        "sexo":       "ALU-005",
+        "unidade": "ALU-008",
+        "sexo": "ALU-005",
         "faixa_etaria": "ALU-006",
-        "curso":      "ALU-009",
-        "turma":      "ALU-010",
+        "curso": "ALU-009",
+        "turma": "ALU-010",
     }
 
     codigo = DIMENSAO_INDICADOR.get(dimensao)

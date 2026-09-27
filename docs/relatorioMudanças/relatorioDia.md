@@ -165,3 +165,197 @@ python scripts\smoke_models.py
 # Verificação de cada onda
 python scripts\check_onda2a.py
 python scripts\check_onda2b.py
+```
+
+### Limpeza final do mesmo dia (commit `4b4566e`, 22:29)
+
+- Removido o `app/models.py` monolítico (732 linhas), artefato que restava da Onda 1 — a partir daqui o projeto usa exclusivamente o pacote `app/models/`.
+- Removidos `app/models.zip` e `app/LEIA-ME.md` (obsoletos).
+- Ajustado o `.vscode/settings.json`.
+
+---
+
+### Alterações do dia — 20/09/2026
+
+- Data da intervenção: 20/09/2026
+- Commit: `896115c` — segurança: corrige IDOR, CSRF e exposição de arquivos estáticos (23:57)
+
+Auditoria interna de segurança, privacidade e dívidas técnicas (LGPD/ECA) registrada em `docs/checklist_seguranca_dividas_tecnicas.md`, com 11 achados (SEC-01 a SEC-11) remediados neste mesmo commit.
+
+### Principais correções aplicadas
+
+- **SEC-01 (crítica)** — uploads de documentos, laudos e fotos deixam `app/static/uploads/` e passam para `instance/uploads/`; os arquivos agora são servidos por rotas autenticadas (`@login_required` + validação de unidade), eliminando download anônimo por URL previsível.
+- **SEC-02 (crítica)** — rotas de exclusão/inativação/desenturmação migradas de `GET` para `POST` com token CSRF (alunos, turmas, unidades, perguntas do conselho, períodos letivos, agendamentos do serviço social); templates convertem links em formulários `POST`.
+- **SEC-03 a SEC-05** — interceptor global `enforce_user_access_state` (perfis `pendente`/`first_login`), checagem de perfil (RBAC) nas ações destrutivas e reforço do `assert_unidade_context` (bloqueia unidade nula), fechando IDOR entre unidades.
+- **SEC-06** — Google OAuth: exigência de e-mail verificado, restrição por domínio (`GOOGLE_OAUTH_ALLOWED_DOMAINS`) e bloqueio de vinculação automática quando já existe conta local com senha.
+- **SEC-07** — troca de senha passa a exigir a senha atual (fora do fluxo de primeiro acesso).
+- **SEC-08** — histórico de brute-force persistido em banco (`ConfiguracaoSistema`), sem perda de estado em reinicializações multi-worker; `ProxyFix` aplicado para leitura do IP real atrás de proxy reverso.
+- **SEC-09 a SEC-11** — `SESSION_COOKIE_SECURE` corrigida; cabeçalhos de segurança (`X-Frame-Options`, `HSTS`, `X-Content-Type-Options`, `Referrer-Policy`) via `after_request`; mensagens de erro deixam de vazar detalhes internos do banco.
+- `_get_upload_root` centraliza o diretório de uploads via `UPLOAD_FOLDER` (`instance/`).
+- Arquivos de upload de desenvolvimento removidos do repositório.
+
+### Novos scripts, testes e documentação
+
+- `scripts/migrar_uploads_para_instance.py` — migração dos arquivos físicos legados para a pasta protegida.
+- `scripts/verificar_sec01.py` — verificação automatizada do SEC-01.
+- `tests/test_security_regressions.py` e `tests/test_sec01_uploads.py` — regressões de segurança; configuração do pytest no `pyproject.toml`.
+- `docs/checklist_seguranca_dividas_tecnicas.md` — novo documento-âncora da auditoria.
+
+### Arquivos alterados nesta parte
+
+| Arquivo | Natureza da mudança |
+| --- | --- |
+| `app/__init__.py` | Interceptor global de acesso + cabeçalhos de segurança + `ProxyFix` |
+| `app/auth.py` | CSRF no admin, brute-force em banco, senha atual obrigatória, OAuth endurecido |
+| `app/registros/alunos.py`, `atendimentos.py`, `core.py`, `periodos.py`, `servico_social.py`, `shared.py` | Uploads protegidos, `POST`+CSRF, RBAC e isolamento de unidade |
+| `config.py` | `UPLOAD_FOLDER`, `GOOGLE_OAUTH_ALLOWED_DOMAINS`, cookie seguro |
+| `app/templates/**` | Links de mutação convertidos em formulários `POST` com `csrf_token` |
+| `docs/checklist_seguranca_dividas_tecnicas.md` | Novo |
+| `scripts/migrar_uploads_para_instance.py`, `scripts/verificar_sec01.py` | Novos |
+| `tests/test_security_regressions.py`, `tests/test_sec01_uploads.py` | Novos |
+| `pyproject.toml` | Configuração do pytest |
+| `app/static/uploads/**` | Arquivos de desenvolvimento removidos do versionamento |
+
+---
+
+### Alterações do dia — 21/09/2026
+
+- Data da intervenção: 21/09/2026 (sessão da madrugada)
+- Commits: `0b19c7a` (00:16) e `35439c7` (00:25)
+
+### README e robustez do login (`0b19c7a`)
+
+- `README.md` reescrito e ampliado.
+- Login deixa de quebrar em falha de banco: a consulta de usuário é protegida e exibe "Sistema temporariamente indisponível" em vez de erro 500.
+- Persistência do histórico de tentativas falhas com fallback silencioso em memória (se o banco falhar, a proteção em memória segue ativa na instância).
+- Error handler global ampliado de `OperationalError` para `SQLAlchemyError` (tela `sistema_indisponivel.html` em 503).
+
+### Nomenclatura de "dashboard" para "Painel" (`35439c7`)
+
+- Renomeação de dashboard → Painel na nomenclatura interna e nos textos: endpoint `main.painel` (antes `main.dashboard`), redirecionamentos, docstrings e templates. Sem mudança de comportamento.
+
+### Arquivos alterados nesta parte
+
+| Arquivo | Natureza da mudança |
+| --- | --- |
+| `README.md` | Reescrito e ampliado |
+| `app/auth.py` | Login resiliente a falha de banco; fallback do rate limit em memória |
+| `app/__init__.py` | Error handler ampliado (`SQLAlchemyError`) |
+| `app/main/__init__.py`, `dashboard.py`, `secretaria.py`, `unidade.py`, `app/registros/core.py`, `app/registros/servico_social.py` | Renomeação dashboard → Painel |
+| `app/templates/base.html`, `app/templates/dashboard/index.html` | Textos "Painel" |
+
+---
+
+### Alterações do dia — 22/09/2026
+
+- Data da intervenção: 22/09/2026
+- Commit: `f66a731` — Etapa VI do cadastro do aluno + relatório de exportação de alunos (21:56)
+
+### Etapa VI — perfil socioeconômico e diversidade
+
+- `perfil_socioeconomico.renda_familiar`: `varchar(50)` (faixa textual) → `numeric(12,2)` (valor mensal em reais); faixas antigas descartadas na conversão, sem estimativa retroativa.
+- `perfil_socioeconomico.beneficio_social_nome`: `varchar(100)` → `text` (vários programas unidos por ` | `).
+- `perfil_diversidade.tipo_deficiencia`: nova coluna (`varchar(30)`), restrita ao catálogo do serviço.
+- `app/services/aluno_perfil.py`: normalizador `money()` (formato brasileiro → `Decimal`), cálculo de `renda_per_capita()` em runtime (não persistido) e validação/limpeza de `tipo_deficiencia` (mantido apenas com `saude_laudo`).
+- Cadastro e edição (`novo.html`, `editar.html`, `registros/alunos.py`) passam a gravar os novos campos; JS ajustado (unificado no dia seguinte).
+- Migrations novas: `3b7c9d1e4f20` (renda + tipo_deficiencia) e `4c8e2f7a1b30` (programas sociais).
+
+### Relatório de exportação de alunos
+
+- Filtros gerais na tela: Data Inicial, Data Final e Período Letivo.
+- Nova coluna "Data da Matrícula" (usa `created_at`) disponível para seleção e exportação.
+- Exportação passa a ser ordenada por nome.
+
+### Infraestrutura e documentação
+
+- `config.py`: `_get_database_uri()` normaliza `DATABASE_URL` SQLite (caminhos relativos do Windows e prefixo `instance/`).
+- `scripts/postgres_schema.sql` atualizado com as colunas novas e `scripts/create_postgres_schema.py` ajustado.
+- `MER.md`: dicionário de dados atualizado (renda numérica, `beneficio_social_nome` texto, `tipo_deficiencia`).
+- `docs/manual_programas_sociais.md` criado; `tests/test_aluno_perfil.py` ampliado.
+- Observação: `instance/database.db.bak` (backup do SQLite, 270 KB) entrou por engano no commit e ainda aguarda a remoção do versionamento.
+
+### Arquivos alterados nesta parte
+
+| Arquivo | Natureza da mudança |
+| --- | --- |
+| `app/models/perfis.py`, `pessoas.py` | Novas colunas e documentação do JSON legado |
+| `migrations/versions/3b7c9d1e4f20_*.py`, `4c8e2f7a1b30_*.py` | Novas migrations (Onda 3B-bis) |
+| `app/services/aluno_perfil.py` | `money()`, `renda_per_capita()`, `tipo_deficiencia()` |
+| `app/registros/alunos.py` | Persistência da Etapa VI |
+| `app/templates/alunos/novo.html`, `editar.html`, `impressao.html`, `gerenciar.html` | Campos novos da Etapa VI |
+| `app/static/js/alunos/aluno_form.js`, `novo.js`, `editar.js` | Máscaras e validações dos campos novos |
+| `app/relatorios/alunos.py`, `app/templates/relatorios/relatorio_alunos.html` | Filtros gerais, coluna Data da Matrícula, ordenação por nome |
+| `config.py` | `_get_database_uri()` |
+| `scripts/postgres_schema.sql`, `scripts/create_postgres_schema.py` | Schema atualizado |
+| `docs/manual_programas_sociais.md` | Novo |
+| `tests/test_aluno_perfil.py` | Ampliado |
+| `app/models/MER.md` | Dicionário atualizado |
+
+---
+
+### Alterações do dia — 23/09/2026
+
+- Data da intervenção: 23/09/2026
+- Commits: `ef933b8` (11:36) e `dba5464` (19:13)
+
+### Unificação do JS do formulário do aluno (`ef933b8`)
+
+- Lógica consolidada em dois arquivos: `aluno_utils.js` (máscaras, CPF, CEP, IBGE, webcam, data de emissão) e `aluno.js` (stepper, toggles, validações, renda, idade, situação escolar, autocomplete de instituições).
+- Arquivos antigos (`aluno_form.js`, `calcularIdade.js`, `situacao_escolar.js`, `novo.js`, `editar.js`, `historico.js`) preservados como `*OLD.js`.
+- Corrigido listener `DOMContentLoaded` aninhado que impedia restaurar o estado do acompanhante quando o formulário voltava com erro do backend.
+- Corrigido `SyntaxError` no `editar.html` (delimitadores Jinja inválidos `{ { ... } }`); handlers inline exportados em `window` (`toggleOutroAcompanhante`).
+- `transferir.js` refatorado (versão anterior em `transferirOLD.js`).
+
+### Unidade de cadastro obrigatória para usuário global (`dba5464`)
+
+- Usuário global (sem unidade ativa) passa a escolher explicitamente a unidade de destino ao cadastrar aluno — select obrigatório no Step 1 de `novo.html`.
+- Backend (`novo_aluno`) resolve a unidade em duas vias: contexto ativo ou `unidade_id` do formulário (validado); impede a criação de aluno órfão (`unidade_id=None`), que não aparecia em nenhuma listagem.
+- `aluno.js`: validação do stepper agora considera campos `[required]` visíveis (o botão PRÓXIMO não é submit, então o HTML5 sozinho não bloqueava).
+
+### Arquivos alterados nesta parte
+
+| Arquivo | Natureza da mudança |
+| --- | --- |
+| `app/static/js/alunos/aluno.js`, `aluno_utils.js` | Novos (JS unificado) |
+| `app/static/js/alunos/*OLD.js` | Versões antigas preservadas |
+| `app/static/js/alunos/transferir.js`, `transferirOLD.js` | Refatorado + backup |
+| `app/templates/alunos/novo.html`, `editar.html`, `historico.html` | Novo carregamento de scripts; select de unidade |
+| `app/registros/alunos.py` | Unidade de cadastro obrigatória no `novo_aluno` |
+
+---
+
+### Alterações do dia — 27/09/2026
+
+- Data da intervenção: 27/09/2026
+- Commit: `d1217ea` — novos relatórios e combinações de dados (Central de BI) (01:45)
+
+### Central de BI
+
+- Novo módulo em camadas: `catalogo.py` (indicadores, dimensões e tipos de resultado — sem acesso a banco), `bi.py` (execução/despacho por código), `bi_alunos.py` (cálculos) e `bi_routes.py` (rotas).
+- Rotas novas: `/relatorios/bi` (Central de BI), `/relatorios/bi/dados` (API JSON para gráfico dinâmico por dimensão), `/relatorios/bi/indicador/<codigo>` (JSON) e `/relatorios/bi/exportar` (placeholder 501, previsto com openpyxl).
+- Indicadores implementados: ALU-001 a ALU-004, ALU-007 a ALU-010 e INS-001 a INS-005 (último: `bi_alunos.inscricoes_desativadas`). ALU-005 (sexo) e ALU-006 (faixa etária) estão no catálogo e mapeados nas dimensões, mas ainda sem função de cálculo.
+- Nova tela `relatorios/bi.html` + `bi.css` e item "Central de BI" no menu de Relatórios.
+
+### Cabeçalho e layout global
+
+- `base.html`: badge de versão (`v{{ app_version }} · {{ app_stage }}`) e rodapé com versão — dependem de `app/version.py`, ainda não criado (referência registrada em comentário no template; renderizam vazio até então).
+- Estados `active` nos itens do menu, correções de layout (body flex, footer, viewport) e `lang="pt-BR"`.
+- Versão anterior do layout preservada em `baseOLD.html`.
+
+### Preservação e documentação
+
+- Pacote antigo de relatórios copiado para `app/relatoriosOLD/` (`alunos.py`, `conselho.py`, `geral.py`, `shared.py`) como backup; os arquivos originais seguem ativos em `app/relatorios/`.
+- Novo `docs/relatorioMudanças/relatorios.md`: catálogo de indicadores (ALU, INS, FRE, TUR) e regra metodológica dimensão × métrica; Parte 2 prevista (pedagógico: aulas, avaliações, conselho, aprovação/evasão).
+- `MER.md`: normalização de fim de linha (sem mudanças relevantes de conteúdo).
+
+### Arquivos alterados nesta parte
+
+| Arquivo | Natureza da mudança |
+| --- | --- |
+| `app/relatorios/catalogo.py`, `bi.py`, `bi_alunos.py`, `bi_routes.py` | Novos (motor BI) |
+| `app/relatorios/__init__.py` | Registro do `bi_routes` |
+| `app/templates/relatorios/bi.html`, `app/static/css/relatorios/bi.css` | Novos (Central de BI) |
+| `app/templates/base.html`, `baseOLD.html` | Badge de versão, active states, layout + backup |
+| `app/relatoriosOLD/**` | Backup do pacote antigo |
+| `docs/relatorioMudanças/relatorios.md` | Novo (catálogo de indicadores) |
+| `app/models/MER.md` | Normalização de fim de linha |

@@ -19,18 +19,24 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
     # Configura log em arquivo para captura de erros em produção/WSGI
     try:
-        instance_path = os.path.join(app.root_path, '..', 'instance')
+        instance_path = os.path.join(app.root_path, "..", "instance")
         os.makedirs(instance_path, exist_ok=True)
-        log_file = os.path.join(instance_path, 'error.log')
-        file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8')
-        formatter = logging.Formatter('%(asctime)s %(levelname)s in %(module)s: %(message)s')
+        log_file = os.path.join(instance_path, "error.log")
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s in %(module)s: %(message)s"
+        )
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.WARNING)
         if not app.logger.handlers:
             app.logger.addHandler(file_handler)
         else:
             # Avoid duplicate handlers when reloading in debug
-            has_file = any(isinstance(h, RotatingFileHandler) for h in app.logger.handlers)
+            has_file = any(
+                isinstance(h, RotatingFileHandler) for h in app.logger.handlers
+            )
             if not has_file:
                 app.logger.addHandler(file_handler)
     except Exception:
@@ -58,14 +64,14 @@ def _configure_extensions(app: Flask) -> None:
 def _register_template_filters(app: Flask) -> None:
     import re
 
-    @app.template_filter('format_cpf')
+    @app.template_filter("format_cpf")
     def format_cpf_filter(cpf) -> str:
         """Formata CPF armazenado como dígitos puros para xxx.xxx.xxx-xx.
         Retorna string vazia se None/vazio, dígitos brutos se != 11 dígitos.
         """
-        digitos = re.sub(r'\D', '', cpf or '')
+        digitos = re.sub(r"\D", "", cpf or "")
         if not digitos:
-            return ''
+            return ""
         if len(digitos) == 11:
             return f"{digitos[:3]}.{digitos[3:6]}.{digitos[6:9]}-{digitos[9:]}"
         return digitos  # anômalo: mostra como está, sem quebrar
@@ -76,32 +82,41 @@ def _register_security_hooks(app: Flask) -> None:
 
     @app.before_request
     def enforce_user_access_state():
-        if request.endpoint in {None, 'static'}:
+        if request.endpoint in {None, "static"}:
             return None
-        if request.endpoint.startswith('static'):
+        if request.endpoint.startswith("static"):
             return None
         if not current_user.is_authenticated:
             return None
 
         if current_user.role == UserRole.PENDENTE and request.endpoint not in {
-            'auth.aguardando_aprovacao', 'auth.logout', 'auth.login'
+            "auth.aguardando_aprovacao",
+            "auth.logout",
+            "auth.login",
         }:
-            return redirect(url_for('auth.aguardando_aprovacao'))
+            return redirect(url_for("auth.aguardando_aprovacao"))
 
-        if current_user.first_login and not current_user.is_ad_user and request.endpoint not in {
-            'auth.trocar_senha', 'auth.logout', 'auth.login'
-        }:
-            return redirect(url_for('auth.trocar_senha'))
+        if (
+            current_user.first_login
+            and not current_user.is_ad_user
+            and request.endpoint
+            not in {"auth.trocar_senha", "auth.logout", "auth.login"}
+        ):
+            return redirect(url_for("auth.trocar_senha"))
 
         return None
 
     @app.after_request
     def set_security_headers(response):
-        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
-        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
-        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
-        if app.config.get('APP_ENV') == 'production':
-            response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        if app.config.get("APP_ENV") == "production":
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
         return response
 
 
@@ -138,6 +153,17 @@ def _register_blueprints(app: Flask) -> None:
 
 def _register_context_processors(app: Flask) -> None:
     @app.context_processor
+    def inject_app_globals() -> dict[str, object]:
+        from datetime import datetime
+        from app.version import APP_VERSION, APP_STAGE
+
+        return {
+            "app_version": APP_VERSION,
+            "app_stage": APP_STAGE,
+            "ano_atual": datetime.now().year,
+        }
+
+    @app.context_processor
     def inject_unidade_context() -> dict[str, object]:
         from flask import session
         from flask_login import current_user
@@ -172,13 +198,18 @@ def _register_context_processors(app: Flask) -> None:
         try:
             unidade_id = get_unidade_id()
             unidades_query = Unidade.query.filter_by(ativo=True)
-            if current_user.role not in {"admin", "gerencia"} and current_user.unidade_id:
+            if (
+                current_user.role not in {"admin", "gerencia"}
+                and current_user.unidade_id
+            ):
                 unidades_query = unidades_query.filter_by(id=current_user.unidade_id)
             unidades = unidades_query.order_by(Unidade.nome).all()
             unidade_contexto = "Visão Global"
 
             if unidade_id:
-                unidade = next((item for item in unidades if item.id == unidade_id), None)
+                unidade = next(
+                    (item for item in unidades if item.id == unidade_id), None
+                )
                 if unidade:
                     unidade_contexto = unidade.nome
 
@@ -212,7 +243,7 @@ def _register_error_handlers(app: Flask) -> None:
         app.logger.error(f"Erro de banco de dados interceptado: {e}")
         if app.debug:
             raise e
-        return render_template('sistema_indisponivel.html'), 503
+        return render_template("sistema_indisponivel.html"), 503
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(e):
@@ -224,7 +255,7 @@ def _register_error_handlers(app: Flask) -> None:
         app.logger.warning(f"HTTP Exception interceptada: {e.code} {e.description}")
         if app.debug:
             return e
-        return render_template('sistema_indisponivel.html'), e.code
+        return render_template("sistema_indisponivel.html"), e.code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e):
@@ -235,4 +266,4 @@ def _register_error_handlers(app: Flask) -> None:
         app.logger.exception("Unhandled exception: %s", e)
         if app.debug:
             raise e
-        return render_template('sistema_indisponivel.html'), 500
+        return render_template("sistema_indisponivel.html"), 500

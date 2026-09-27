@@ -18,6 +18,9 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        return
+
     # =========================================================================
     # TURMA - datas e horas
     #
@@ -173,3 +176,5 @@ def downgrade() -> None:
             existing_nullable=True,
             postgresql_using="data_inicio::text",
         )
+
+

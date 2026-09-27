@@ -25,10 +25,39 @@ def upgrade() -> None:
                type_=sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'),
                existing_nullable=False)
 
-    with op.batch_alter_table('configuracao_sistema', schema=None) as batch_op:
-        batch_op.drop_constraint(batch_op.f('configuracao_sistema_chave_key'), type_='unique')
-        batch_op.create_index('ix_config_chave_global', ['chave'], unique=True, postgresql_where=sa.text('unidade_id IS NULL'))
-        batch_op.create_index('ix_config_chave_unidade', ['chave', 'unidade_id'], unique=True, postgresql_where=sa.text('unidade_id IS NOT NULL'))
+    if op.get_bind().dialect.name == "sqlite":
+        op.create_index(
+            "ix_config_chave_global",
+            "configuracao_sistema",
+            ["chave"],
+            unique=True,
+            sqlite_where=sa.text("unidade_id IS NULL"),
+        )
+        op.create_index(
+            "ix_config_chave_unidade",
+            "configuracao_sistema",
+            ["chave", "unidade_id"],
+            unique=True,
+            sqlite_where=sa.text("unidade_id IS NOT NULL"),
+        )
+    else:
+        with op.batch_alter_table("configuracao_sistema", schema=None) as batch_op:
+            batch_op.drop_constraint(
+                batch_op.f("configuracao_sistema_chave_key"),
+                type_="unique",
+            )
+            batch_op.create_index(
+                "ix_config_chave_global",
+                ["chave"],
+                unique=True,
+                postgresql_where=sa.text("unidade_id IS NULL"),
+            )
+            batch_op.create_index(
+                "ix_config_chave_unidade",
+                ["chave", "unidade_id"],
+                unique=True,
+                postgresql_where=sa.text("unidade_id IS NOT NULL"),
+            )
 
     with op.batch_alter_table('conselho_classe', schema=None) as batch_op:
         batch_op.create_unique_constraint('uix_conselho_turma_aluno_etapa', ['turma_id', 'aluno_id', 'etapa'])
@@ -75,3 +104,4 @@ def downgrade() -> None:
                existing_nullable=False)
 
     # ### end Alembic commands ###
+

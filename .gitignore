@@ -25,6 +25,8 @@ instance/*.sqlite3
 *.swp
 Thumbs.db
 .DS_Store
+.qoder/
+bloco.txt
 
 # Pastas de uploads
 uploads/
