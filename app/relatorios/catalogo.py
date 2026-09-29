@@ -16,7 +16,7 @@ Este módulo NÃO deve:
     - conhecer regras específicas de apresentação.
 
 As consultas e regras de cálculo serão implementadas nos módulos
-especializados de app/services/relatorios/.
+especializados de app/relatorios/.
 """
 
 # =============================================================================
@@ -541,6 +541,71 @@ INDICADORES = {
             "periodo",
             "curso",
             "professor",
+        ],
+    },
+    # -------------------------------------------------------------------------
+    # AULAS
+    # -------------------------------------------------------------------------
+    "AUL-001": {
+        "nome": "Total de aulas registradas",
+        "categoria": "aulas",
+        "tipo": "contagem",
+        "unidade": "aulas",
+        "fonte": "RegistroAula",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "curso",
+            "turma",
+            "professor",
+        ],
+    },
+    "AUL-002": {
+        "nome": "Aulas por turma",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / Turma",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "curso",
+            "turma",
+        ],
+    },
+    "AUL-003": {
+        "nome": "Aulas por período",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / Turma / PeriodoLetivo",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+        ],
+    },
+    "AUL-004": {
+        "nome": "Aulas por professor",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / Turma / User",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "professor",
+        ],
+    },
+    "AUL-005": {
+        "nome": "Aulas por curso",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / Turma / Curso",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "curso",
         ],
     },
 }

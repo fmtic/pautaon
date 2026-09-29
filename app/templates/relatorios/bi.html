@@ -1,204 +1,103 @@
-{% extends "base.html" %}
-
-{% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/bi.css') }}">
-{% endblock %}
-
-{% block content %}
-<div class="container-fluid py-3">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2 class="fw-bold mb-1 text-dark">
-                <i class="bi bi-bar-chart-line text-primary me-2"></i>Central de BI
-            </h2>
-            <p class="text-muted small mb-0">
-                Explore os dados por dimensão, monte os gráficos que fizerem sentido
-                para o relatório e exporte um Excel completo com gráficos nativos.
-            </p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="{{ url_for('relatorios.relatorio_alunos') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-table me-1"></i> Relatório Detalhado
-            </a>
-            <a href="{{ url_for('relatorios.relatorio_geral') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-arrow-left me-1"></i> Painel Geral
-            </a>
-        </div>
+{% extends "base.html" %} {% block title %}Central de BI{% endblock %} {% block
+content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1">Central de BI</h1>
+      <p class="text-muted mb-0">Indicadores e relatórios acadêmicos</p>
     </div>
 
-    <!-- FILTROS (mesmos parâmetros usados no relatório de alunos) -->
-    <div class="card bi-card shadow-sm mb-4">
-        <div class="card-body p-3">
-            <div class="row g-3 align-items-end">
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold text-muted">Cidade</label>
-                    <input type="text" id="f_cidade" class="form-control form-control-sm">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold text-muted">Bairro</label>
-                    <input type="text" id="f_bairro" class="form-control form-control-sm">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold text-muted">Vulnerabilidade Social</label>
-                    <select id="f_vulnerabilidade" class="form-select form-select-sm">
-                        <option value="">Todos</option>
-                        <option value="1">Somente vulneráveis</option>
-                        <option value="0">Somente não vulneráveis</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <button class="btn btn-primary btn-sm w-100" onclick="atualizarGrafico()">
-                        <i class="bi bi-funnel me-1"></i> Aplicar Filtros
-                    </button>
-                </div>
-            </div>
-        </div>
+    <div class="d-flex gap-2">
+      <a
+        href="{{ url_for('relatorios.relatorio_alunos') }}"
+        class="btn btn-outline-secondary"
+      >
+        Relatório detalhado
+      </a>
+    </div>
+  </div>
+
+  <!-- Seleção do indicador -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>Indicador</strong>
     </div>
 
-    <div class="row g-4">
-        <!-- GRÁFICO DINÂMICO -->
-        <div class="col-lg-8">
-            <div class="card bi-card shadow-sm h-100">
-                <div class="card-body p-4">
-                    <div class="row g-2 mb-3 align-items-end">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted">Dimensão (o que analisar)</label>
-                            <select id="sel_dimensao" class="form-select" onchange="atualizarGrafico()">
-                                <option value="faixa_etaria">Faixa Etária</option>
-                                {% for chave, label in dimensoes %}
-                                <option value="{{ chave }}">{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-muted">Tipo de Gráfico</label>
-                            <select id="sel_tipo" class="form-select" onchange="atualizarGrafico()">
-                                <option value="bar">Barras</option>
-                                <option value="pie">Pizza</option>
-                                <option value="doughnut">Rosca</option>
-                                <option value="line">Linha</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-outline-success w-100" onclick="baixarGraficoPng()">
-                                <i class="bi bi-image"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="bi-chart-wrap">
-                        <canvas id="graficoPrincipal"></canvas>
-                    </div>
-                    <div id="msgVazio" class="text-center text-muted py-5 d-none">
-                        Nenhum dado encontrado para esta dimensão com os filtros atuais.
-                    </div>
-                </div>
-            </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="indicador" class="form-label"> Indicador </label>
+
+          <select id="indicador" class="form-select">
+            <option value="">Selecione um indicador</option>
+
+            {% for categoria, itens in categorias.items() %}
+            <optgroup label="{{ categoria|capitalize }}">
+              {% for codigo, indicador in itens %}
+              <option value="{{ codigo }}">
+                {{ codigo }} — {{ indicador["nome"] }}
+              </option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
         </div>
 
-        <!-- EXPORTAÇÃO -->
-        <div class="col-lg-4">
-            <div class="card bi-card shadow-sm h-100">
-                <div class="card-body p-4">
-                    <h6 class="fw-bold mb-3"><i class="bi bi-file-earmark-excel text-success me-1"></i>
-                        Exportar para Patrocinadores</h6>
-                    <p class="text-muted small">
-                        Gera um Excel com uma aba por dimensão escolhida, cada uma já com
-                        tabela e gráfico nativo — pronto para anexar ao relatório.
-                    </p>
-                    <div class="mb-3" style="max-height: 260px; overflow-y: auto;">
-                        {% for chave, label in dimensoes %}
-                        <div class="form-check">
-                            <input class="form-check-input export-dim" type="checkbox" value="{{ chave }}"
-                                id="exp_{{ chave }}" {% if chave in
-                                ['genero','raca_cor','pcd','beneficio_social_status','vulnerabilidade_social','zona','bairro','programa','situacao_final']
-                                %}checked{% endif %}>
-                            <label class="form-check-label small" for="exp_{{ chave }}">{{ label }}</label>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <button class="btn btn-success w-100 fw-bold" onclick="exportarExcel()">
-                        <i class="bi bi-download me-1"></i> Exportar Workbook Completo
-                    </button>
-                </div>
-            </div>
+        <div class="col-md-6 d-flex align-items-end">
+          <button type="button" id="btnExecutar" class="btn btn-primary">
+            Executar indicador
+          </button>
         </div>
+      </div>
     </div>
+  </div>
+
+  <!-- Informações do indicador -->
+  <div id="informacoesIndicador" class="card shadow-sm mb-4 d-none">
+    <div class="card-header">
+      <strong>Informações do indicador</strong>
+    </div>
+
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <small class="text-muted d-block">Código</small>
+          <span id="infoCodigo">—</span>
+        </div>
+
+        <div class="col-md-3">
+          <small class="text-muted d-block">Tipo</small>
+          <span id="infoTipo">—</span>
+        </div>
+
+        <div class="col-md-3">
+          <small class="text-muted d-block">Unidade</small>
+          <span id="infoUnidade">—</span>
+        </div>
+
+        <div class="col-md-3">
+          <small class="text-muted d-block">Fonte</small>
+          <span id="infoFonte">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resultado -->
+  <div id="resultadoIndicador" class="card shadow-sm d-none">
+    <div class="card-header">
+      <strong>Resultado</strong>
+    </div>
+
+    <div class="card-body">
+      <div id="resultadoNumerico" class="display-4 text-center d-none"></div>
+
+      <div id="resultadoTabela" class="table-responsive d-none"></div>
+
+      <div id="resultadoVazio" class="text-muted text-center d-none">
+        Nenhum resultado encontrado.
+      </div>
+    </div>
+  </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script>
-    let chart = null;
-
-    function filtrosAtuais() {
-        const params = new URLSearchParams();
-        const cidade = document.getElementById('f_cidade').value;
-        const bairro = document.getElementById('f_bairro').value;
-        const vulner = document.getElementById('f_vulnerabilidade').value;
-        if (cidade) params.set('cidade', cidade);
-        if (bairro) params.set('bairro', bairro);
-        if (vulner) params.set('vulnerabilidade_social', vulner);
-        return params;
-    }
-
-    async function atualizarGrafico() {
-        const dimensao = document.getElementById('sel_dimensao').value;
-        const tipo = document.getElementById('sel_tipo').value;
-        const params = filtrosAtuais();
-        params.set('dimensao', dimensao);
-
-        const resp = await fetch(`{{ url_for('relatorios.bi_api_dados') }}?${params.toString()}`);
-        const dados = await resp.json();
-
-        const canvas = document.getElementById('graficoPrincipal');
-        const msgVazio = document.getElementById('msgVazio');
-
-        if (!dados.labels || dados.labels.length === 0) {
-            canvas.classList.add('d-none');
-            msgVazio.classList.remove('d-none');
-            if (chart) { chart.destroy(); chart = null; }
-            return;
-        }
-        canvas.classList.remove('d-none');
-        msgVazio.classList.add('d-none');
-
-        const paleta = ['#0d6efd', '#6f42c1', '#198754', '#fd7e14', '#dc3545', '#20c997', '#6c757d', '#0dcaf0'];
-
-        if (chart) chart.destroy();
-        chart = new Chart(canvas.getContext('2d'), {
-            type: tipo,
-            data: {
-                labels: dados.labels,
-                datasets: [{
-                    label: dados.label_eixo,
-                    data: dados.values,
-                    backgroundColor: dados.labels.map((_, i) => paleta[i % paleta.length]),
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: tipo === 'pie' || tipo === 'doughnut' } }
-            }
-        });
-    }
-
-    function baixarGraficoPng() {
-        if (!chart) return;
-        const link = document.createElement('a');
-        link.download = 'grafico_bi.png';
-        link.href = chart.toBase64Image();
-        link.click();
-    }
-
-    function exportarExcel() {
-        const params = filtrosAtuais();
-        document.querySelectorAll('.export-dim:checked').forEach(el => params.append('dimensoes', el.value));
-        window.location.href = `{{ url_for('relatorios.bi_exportar') }}?${params.toString()}`;
-    }
-
-    document.addEventListener('DOMContentLoaded', atualizarGrafico);
-</script>
 {% endblock %}

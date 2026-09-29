@@ -19,6 +19,32 @@ INDICADORES_ALUNOS = {
     "INS-003": bi_alunos.inscricoes_encerradas,
     "INS-004": bi_alunos.novas_inscricoes,
     "INS-005": bi_alunos.inscricoes_desativadas,
+    #INS-006 → motivo da desativação → não implementado, pois não há dados
+    #INS-007 → tempo médio de permanência → não implementado, pois não há registros com data_desativacao
+    "INS-008": bi_alunos.inscricoes_por_curso,
+    "FRE-001": bi_alunos.total_lancamentos_frequencia,
+    "FRE-002": bi_alunos.total_presencas,
+    "FRE-003": bi_alunos.total_faltas,
+    "FRE-004": bi_alunos.total_faltas_justificadas,
+    "FRE-005": bi_alunos.frequencia_media,
+    "FRE-006": bi_alunos.alunos_frequencia_90,
+    "FRE-007": bi_alunos.alunos_frequencia_75_89,
+    "FRE-008": bi_alunos.alunos_frequencia_inferior_75,
+    "FRE-009": bi_alunos.frequencia_por_turma,
+    "FRE-010": bi_alunos.frequencia_por_curso,
+    "TUR-001": bi_alunos.total_turmas,
+    "TUR-002": bi_alunos.turmas_ativas,
+    "TUR-003": bi_alunos.alunos_por_turma,
+    "TUR-004": bi_alunos.media_alunos_por_turma,
+    "TUR-005": bi_alunos.turmas_por_curso,
+    "TUR-006": bi_alunos.turmas_por_periodo,
+    "TUR-007": bi_alunos.turmas_por_unidade,
+    "TUR-008": bi_alunos.turmas_por_professor,
+    "AUL-001": bi_alunos.total_aulas_registradas,
+    "AUL-002": bi_alunos.aulas_por_turma,
+    "AUL-003": bi_alunos.aulas_por_periodo,
+    "AUL-004": bi_alunos.aulas_por_professor,
+    "AUL-005": bi_alunos.aulas_por_curso,
 }
 
 
@@ -38,3 +64,10 @@ def executar_indicador(codigo, **filtros):
         )
 
     return funcao(**filtros)
+
+
+
+
+
+
+

@@ -359,3 +359,145 @@ Auditoria interna de segurança, privacidade e dívidas técnicas (LGPD/ECA) reg
 | `app/relatoriosOLD/**` | Backup do pacote antigo |
 | `docs/relatorioMudanças/relatorios.md` | Novo (catálogo de indicadores) |
 | `app/models/MER.md` | Normalização de fim de linha |
+
+**### Alterações do dia — 28/09/2026**
+
+* Data da intervenção: 28/09/2026
+
+Sessão de continuidade do desenvolvimento da **Central de BI**, com foco na categoria **AUL — Aulas**. A implementação seguiu o padrão já estabelecido para ALU, INS, FRE e TUR, mantendo separação entre catálogo, execução e cálculos.
+
+**### Central de BI — Indicadores de aulas**
+
+Foram implementados e validados os indicadores **AUL-001 a AUL-005**:
+
+| Indicador   | Descrição                  | Resultado validado |
+| ----------- | -------------------------- | -----------------: |
+| **AUL-001** | Total de aulas registradas |                 71 |
+| **AUL-002** | Aulas por turma            |                 71 |
+| **AUL-003** | Aulas por período          |                 71 |
+| **AUL-004** | Aulas por professor        |                 71 |
+| **AUL-005** | Aulas por curso            |                 71 |
+
+**### AUL-001 — Total de aulas registradas**
+
+* Criado o indicador no catálogo.
+* Implementada a função `total_aulas_registradas()`.
+* A consulta utiliza `RegistroAula` como origem.
+* O vínculo com unidade acadêmica é realizado por `Turma.unidade_id`, pois `RegistroAula.unidade_id` possui registros nulos no conjunto de dados atual.
+* Implementados filtros por unidade, período letivo, curso, turma, professor e intervalo de datas.
+* Resultado geral validado: **71 aulas**.
+* Filtros individuais validados com os dados existentes.
+
+**### AUL-002 — Aulas por turma**
+
+* Criado o indicador no catálogo.
+
+* Implementada a função `aulas_por_turma()`.
+
+* Agrupamento realizado por turma.
+
+* Implementados filtros por unidade, período letivo, curso, turma, professor e intervalo de datas.
+
+* Resultado validado:
+
+  * `01 - Natação`: 19
+  * `10 - Intermediário Dingue T1`: 22
+  * `Fibra de vidro`: 10
+  * `Mecânica de Popa`: 20
+
+* Total: **71 aulas**.
+
+* Validação catálogo × execução concluída.
+
+**### AUL-003 — Aulas por período**
+
+* Criado o indicador no catálogo.
+
+* Implementada a função `aulas_por_periodo()`.
+
+* Agrupamento realizado por `PeriodoLetivo`.
+
+* Implementados filtros por unidade, período letivo, curso, turma, professor e intervalo de datas.
+
+* Resultado validado:
+
+  * `2026.1`: 71 aulas
+
+* Validação catálogo × execução concluída.
+
+**### AUL-004 — Aulas por professor**
+
+* Criado o indicador no catálogo.
+
+* Implementada a função `aulas_por_professor()`.
+
+* Agrupamento realizado por professor (`User`).
+
+* Durante a implementação foi corrigida a utilização do atributo do modelo `User`: o campo correto é `User.name`, e não `User.nome`.
+
+* Implementados filtros por unidade, período letivo, curso, turma, professor e intervalo de datas.
+
+* Resultado validado:
+
+  * Arilton Novaes: 19
+  * Daniel Bezerra: 22
+  * Jaqueline Santuchi: 10
+  * Luciano Campos: 20
+
+* Total: **71 aulas**.
+
+* Validação catálogo × execução concluída.
+
+**### AUL-005 — Aulas por curso**
+
+* Criado o indicador no catálogo.
+
+* Implementada a função `aulas_por_curso()`.
+
+* Agrupamento realizado por curso (`Curso`).
+
+* Implementados filtros por unidade, período letivo, curso, turma, professor e intervalo de datas.
+
+* Resultado validado:
+
+  * Fibra de vidro: 10
+  * Mecânica de Popa: 20
+  * Natação: 19
+  * Vela Dingue: 22
+
+* Total: **71 aulas**.
+
+* Validação catálogo × execução concluída.
+
+**### Registro dos componentes alterados**
+
+| Arquivo                            | Natureza da mudança                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| `app/relatorios/catalogo.py`       | Inclusão dos indicadores AUL-001 a AUL-005                                                    |
+| `app/relatorios/bi_alunos.py`      | Implementação dos cálculos AUL-001 a AUL-005                                                  |
+| `app/relatorios/bi.py`             | Registro dos indicadores AUL-001 a AUL-005 no despacho de execução                            |
+| `app/relatorios/bi_routes.py`      | Ajuste da rota `/bi` para organizar indicadores por categoria e disponibilizá-los ao template |
+| `app/templates/relatorios/bi.html` | Nova estrutura inicial para seleção e futura exibição dos indicadores                         |
+
+**### Validações realizadas**
+
+Foram realizados testes diretos das funções e testes através de `executar_indicador()`.
+
+Foram validados, conforme aplicável:
+
+* execução sem filtros;
+* filtro por unidade;
+* filtro por período letivo;
+* filtro por curso;
+* filtro por turma;
+* filtro por professor;
+* filtro por intervalo de datas;
+* consistência entre catálogo e função executora.
+
+Os cinco indicadores AUL implementados permanecem consistentes com os dados atualmente registrados no banco.
+
+**### Estado ao final da sessão**
+
+A categoria **AUL — Aulas** possui atualmente os indicadores **AUL-001 a AUL-005 implementados, registrados no catálogo, conectados ao mecanismo de execução e validados**.
+
+A evolução da interface da Central de BI foi iniciada, porém sua implementação funcional foi deliberadamente deixada em espera para priorizar a conclusão dos indicadores AUL.

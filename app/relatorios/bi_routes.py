@@ -14,16 +14,21 @@ from .shared import ROLES_RELATORIOS
 @bp_relatorios.route("/bi")
 @login_required
 def bi_dashboard():
-    """Renderiza a Central de BI com o catálogo de dimensões."""
-
     if current_user.role not in ROLES_RELATORIOS:
         abort(403)
 
-    # Converte o dicionário de dimensões em lista de tuplas (chave, nome)
-    # para uso no template Jinja2.
-    dimensoes = [(chave, dim["nome"]) for chave, dim in DIMENSOES.items()]
+    # Organiza os indicadores por categoria para exibição no template.
+    indicadores = listar_indicadores()
 
-    return render_template("relatorios/bi.html", dimensoes=dimensoes)
+    categorias = {}
+    for codigo, indicador in indicadores.items():
+        categoria = indicador["categoria"]
+        categorias.setdefault(categoria, []).append((codigo, indicador))
+
+    return render_template(
+        "relatorios/bi.html",
+        categorias=categorias,
+    )
 
 
 @bp_relatorios.route("/bi/dados")
