@@ -8,12 +8,16 @@ from app.models import (
     Frequencia,
     Inscricao,
     PeriodoLetivo,
+    PerfilDiversidade,
     RegistroAula,
+    TemaAula,
     Turma,
     Unidade,
     User,
 )
 from app import db
+from sqlalchemy import func, case, cast, Integer
+from datetime import date
 
 
 def total_alunos(
@@ -97,6 +101,147 @@ def alunos_inativos(
     query = aplicar_filtros_aluno(query, filtros)
 
     return query.count()
+
+
+def alunos_sexo(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """
+    ALU-005: Distribuição de alunos ativos por gênero/sexo.
+
+    Prioriza o campo estruturado `PerfilDiversidade.genero` (Onda 3A).
+    Para alunos sem perfil estruturado, faz fallback no JSON legado
+    `Aluno.diversidade_json` via Python, garantindo cobertura total.
+    Suporta os filtros globais do BI (unidade, período, curso, turma, professor).
+    """
+    from .bi_filtros import aplicar_filtros_aluno
+
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    query = Aluno.query.filter(Aluno.ativo.is_(True))
+    query = aplicar_filtros_aluno(query, filtros)
+    alunos = query.all()
+
+    contagem: dict[str, int] = {}
+    for aluno in alunos:
+        # Fonte 1: campo estruturado PerfilDiversidade.genero (Onda 3A)
+        if aluno.perfil_diversidade is not None and aluno.perfil_diversidade.genero:
+            rotulo = aluno.perfil_diversidade.genero.strip() or "Não Informado"
+        else:
+            # Fonte 2: fallback no JSON legado diversidade_json
+            genero_legado = (aluno.diversidade_json or {}).get("genero", "") or ""
+            rotulo = genero_legado.strip() if genero_legado.strip() else "Não Informado"
+
+        contagem[rotulo] = contagem.get(rotulo, 0) + 1
+
+    dados = [
+        {"id": rotulo, "nome": rotulo, "valor": total}
+        for rotulo, total in contagem.items()
+    ]
+    dados.sort(key=lambda x: x["valor"], reverse=True)
+    return dados
+
+
+def alunos_por_faixa_etaria(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """
+    ALU-006: Distribuição de alunos ativos por faixa etária.
+
+    Calcula a idade a partir de `Aluno.data_nascimento` via Python para
+    compatibilidade com SQLite (desenvolvimento) e PostgreSQL (produção).
+    Alunos sem data_nascimento são agrupados em "Não Informado".
+    Suporta os filtros globais do BI (unidade, período, curso, turma, professor).
+
+    Faixas:
+        - Menor de 12 anos
+        - 12 a 17 anos
+        - 18 a 24 anos
+        - 25 a 39 anos
+        - 40 a 59 anos
+        - 60 anos ou mais
+        - Não Informado
+    """
+    from .bi_filtros import aplicar_filtros_aluno
+
+    # Ordem de exibição das faixas
+    ORDEM_FAIXAS = [
+        "Menor de 12 anos",
+        "12 a 17 anos",
+        "18 a 24 anos",
+        "25 a 39 anos",
+        "40 a 59 anos",
+        "60 anos ou mais",
+        "Não Informado",
+    ]
+
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    query = Aluno.query.filter(Aluno.ativo.is_(True))
+    query = aplicar_filtros_aluno(query, filtros)
+    alunos = query.all()
+
+    hoje = date.today()
+    contagem: dict[str, int] = {faixa: 0 for faixa in ORDEM_FAIXAS}
+
+    for aluno in alunos:
+        if not aluno.data_nascimento:
+            contagem["Não Informado"] += 1
+            continue
+
+        dn = aluno.data_nascimento
+        idade = hoje.year - dn.year - (
+            (hoje.month, hoje.day) < (dn.month, dn.day)
+        )
+
+        if idade < 12:
+            contagem["Menor de 12 anos"] += 1
+        elif idade <= 17:
+            contagem["12 a 17 anos"] += 1
+        elif idade <= 24:
+            contagem["18 a 24 anos"] += 1
+        elif idade <= 39:
+            contagem["25 a 39 anos"] += 1
+        elif idade <= 59:
+            contagem["40 a 59 anos"] += 1
+        else:
+            contagem["60 anos ou mais"] += 1
+
+    # Retorna na ordem definida, omitindo faixas com 0 alunos
+    dados = [
+        {"id": faixa, "nome": faixa, "valor": contagem[faixa]}
+        for faixa in ORDEM_FAIXAS
+        if contagem[faixa] > 0
+    ]
+    return dados
 
 
 def novos_alunos(
@@ -1802,4 +1947,623 @@ def aulas_por_curso(
     return [
         {"id": curso_id_resultado, "nome": nome, "valor": total}
         for curso_id_resultado, nome, total in resultados
+    ]
+
+
+def aulas_por_tema(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de aulas registradas agrupada por tema."""
+
+    query = RegistroAula.query.join(
+        Turma,
+        Turma.id == RegistroAula.turma_id,
+    ).join(
+        TemaAula,
+        TemaAula.id == RegistroAula.tema_id,
+    )
+
+    if unidade_id:
+        query = query.filter(Turma.unidade_id == unidade_id)
+    if periodo_letivo_id:
+        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+    if curso_id:
+        query = query.filter(Turma.curso_id == curso_id)
+    if turma_id:
+        query = query.filter(Turma.id == turma_id)
+    if professor_id:
+        query = query.filter(Turma.professor_id == professor_id)
+    if data_inicio:
+        query = query.filter(RegistroAula.data >= data_inicio)
+    if data_fim:
+        query = query.filter(RegistroAula.data <= data_fim)
+
+    resultados = (
+        query.with_entities(
+            TemaAula.id,
+            TemaAula.titulo,
+            func.count(RegistroAula.id),
+        )
+        .group_by(TemaAula.id, TemaAula.titulo)
+        .order_by(TemaAula.titulo)
+        .all()
+    )
+
+    return [
+        {"id": tema_id, "nome": titulo, "valor": total}
+        for tema_id, titulo, total in resultados
+    ]
+
+
+def aulas_por_unidade(
+    unidade_id=None,
+    periodo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    query = (
+        db.session.query(
+            Unidade.id,
+            Unidade.nome,
+            func.count(RegistroAula.id),
+        )
+        .join(Turma, Turma.unidade_id == Unidade.id)
+        .join(RegistroAula, RegistroAula.turma_id == Turma.id)
+    )
+
+    if unidade_id:
+        query = query.filter(Unidade.id == unidade_id)
+
+    if periodo_id:
+        query = query.filter(RegistroAula.periodo_id == periodo_id)
+
+    if curso_id:
+        query = query.filter(Turma.curso_id == curso_id)
+
+    if turma_id:
+        query = query.filter(Turma.id == turma_id)
+
+    if professor_id:
+        query = query.filter(RegistroAula.professor_id == professor_id)
+
+    if data_inicio:
+        query = query.filter(RegistroAula.data >= data_inicio)
+
+    if data_fim:
+        query = query.filter(RegistroAula.data <= data_fim)
+
+    resultados = query.group_by(Unidade.id, Unidade.nome).order_by(Unidade.nome).all()
+
+    return [
+        {
+            "id": unidade_id,
+            "nome": nome,
+            "valor": valor,
+        }
+        for unidade_id, nome, valor in resultados
+    ]
+
+
+def aulas_por_dia(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de aulas registradas agrupada por data."""
+
+    query = RegistroAula.query.join(
+        Turma,
+        Turma.id == RegistroAula.turma_id,
+    )
+
+    if unidade_id:
+        query = query.filter(Turma.unidade_id == unidade_id)
+    if periodo_letivo_id:
+        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+    if curso_id:
+        query = query.filter(Turma.curso_id == curso_id)
+    if turma_id:
+        query = query.filter(Turma.id == turma_id)
+    if professor_id:
+        query = query.filter(Turma.professor_id == professor_id)
+    if data_inicio:
+        query = query.filter(RegistroAula.data >= data_inicio)
+    if data_fim:
+        query = query.filter(RegistroAula.data <= data_fim)
+
+    resultados = (
+        query.with_entities(
+            RegistroAula.data,
+            func.count(RegistroAula.id),
+        )
+        .group_by(RegistroAula.data)
+        .order_by(RegistroAula.data)
+        .all()
+    )
+
+    return [
+        {"id": data, "nome": str(data), "valor": total} for data, total in resultados
+    ]
+
+
+def alunos_por_faixa_renda(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de alunos distintos agrupada por faixa de renda familiar."""
+    from .bi_filtros import aplicar_filtros_aluno
+    from app.models import PerfilSocioeconomico
+
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    query = Aluno.query.outerjoin(PerfilSocioeconomico)
+    query = aplicar_filtros_aluno(query, filtros)
+
+    resultados = (
+        query.with_entities(
+            Aluno.id,
+            PerfilSocioeconomico.renda_familiar,
+        )
+        .distinct()
+        .all()
+    )
+
+    faixas = {
+        "nao_informado": {"nome": "Não informado", "valor": 0},
+        "ate_1500": {"nome": "Até R$ 1.500,00", "valor": 0},
+        "1500_3000": {"nome": "De R$ 1.500,01 a R$ 3.000,00", "valor": 0},
+        "3000_6000": {"nome": "De R$ 3.000,01 a R$ 6.000,00", "valor": 0},
+        "acima_6000": {"nome": "Acima de R$ 6.000,00", "valor": 0},
+    }
+
+    for _, renda in resultados:
+        if renda is None:
+            faixas["nao_informado"]["valor"] += 1
+        elif renda <= 1500:
+            faixas["ate_1500"]["valor"] += 1
+        elif renda <= 3000:
+            faixas["1500_3000"]["valor"] += 1
+        elif renda <= 6000:
+            faixas["3000_6000"]["valor"] += 1
+        else:
+            faixas["acima_6000"]["valor"] += 1
+
+    return [
+        {"id": k, "nome": v["nome"], "valor": v["valor"]} for k, v in faixas.items()
+    ]
+
+
+def alunos_beneficiarios_programas_sociais(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de alunos beneficiários de programas sociais."""
+    from .bi_filtros import aplicar_filtros_aluno
+    from app.models import PerfilSocioeconomico
+
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    query = Aluno.query.outerjoin(PerfilSocioeconomico)
+    query = aplicar_filtros_aluno(query, filtros)
+    query = query.filter(PerfilSocioeconomico.beneficio_social_status == "Sim")
+
+    return query.count()
+
+
+def alunos_por_tipo_deficiencia(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de alunos com laudo agrupada por tipo de deficiência."""
+    from .bi_filtros import aplicar_filtros_aluno
+    from app.models import PerfilDiversidade
+
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+    query = Aluno.query.outerjoin(PerfilDiversidade)
+    query = aplicar_filtros_aluno(query, filtros)
+    query = query.filter(PerfilDiversidade.saude_laudo.is_(True))
+
+    resultados = (
+        query.with_entities(
+            PerfilDiversidade.tipo_deficiencia,
+            db.func.count(db.distinct(Aluno.id)),
+        )
+        .group_by(PerfilDiversidade.tipo_deficiencia)
+        .order_by(PerfilDiversidade.tipo_deficiencia)
+        .all()
+    )
+
+    return [
+        {
+            "id": tipo or "nao_informado",
+            "nome": tipo or "Não informado",
+            "valor": total,
+        }
+        for tipo, total in resultados
+    ]
+
+
+def total_atendimentos(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna o total de atendimentos conforme os filtros do BI."""
+    from app.models import Atendimento, Aluno, Inscricao, Turma
+
+    query = Atendimento.query
+
+    if unidade_id:
+        query = query.filter(Atendimento.unidade_id == unidade_id)
+
+    if data_inicio:
+        query = query.filter(Atendimento.data_atendimento >= data_inicio)
+
+    if data_fim:
+        query = query.filter(Atendimento.data_atendimento <= data_fim)
+
+    if periodo_letivo_id or curso_id or turma_id or professor_id:
+        query = (
+            query.join(Aluno, Aluno.id == Atendimento.aluno_id)
+            .join(Inscricao, Inscricao.aluno_id == Aluno.id)
+            .join(Turma, Turma.id == Inscricao.turma_id)
+        )
+
+        if periodo_letivo_id:
+            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+        if curso_id:
+            query = query.filter(Turma.curso_id == curso_id)
+        if turma_id:
+            query = query.filter(Turma.id == turma_id)
+        if professor_id:
+            query = query.filter(Turma.professor_id == professor_id)
+
+        query = query.distinct()
+
+    return query.count()
+
+
+def frequencia_critica_por_vulnerabilidade(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de alunos com frequência < 75% agrupada por vulnerabilidade social."""
+    from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
+    from app.models import PerfilSocioeconomico, Turma, Frequencia
+
+    query = Frequencia.query
+    if unidade_id:
+        query = query.filter(Frequencia.unidade_id == unidade_id)
+    if data_inicio:
+        query = query.filter(Frequencia.data >= data_inicio)
+    if data_fim:
+        query = query.filter(Frequencia.data <= data_fim)
+
+    if periodo_letivo_id or curso_id or turma_id or professor_id:
+        query = query.join(Turma, Turma.id == Frequencia.turma_id)
+        if periodo_letivo_id:
+            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+        if curso_id:
+            query = query.filter(Turma.curso_id == curso_id)
+        if turma_id:
+            query = query.filter(Turma.id == turma_id)
+        if professor_id:
+            query = query.filter(Turma.professor_id == professor_id)
+
+    registros = query.all()
+    frequencias = {}
+    for reg in registros:
+        if reg.conceito not in CONCEITOS_CONTABEIS:
+            continue
+        frequencias.setdefault(reg.aluno_id, []).append(reg.conceito)
+
+    alunos_criticos_ids = []
+    for aluno_id, conceitos in frequencias.items():
+        presentes = sum(1 for c in conceitos if c in CONCEITOS_PRESENCA)
+        freq = (presentes / len(conceitos)) * 100
+        if freq < 75:
+            alunos_criticos_ids.append(aluno_id)
+
+    if not alunos_criticos_ids:
+        return [
+            {"id": "sim", "nome": "Vulnerável (Sim)", "valor": 0},
+            {"id": "nao", "nome": "Não Vulnerável (Não)", "valor": 0},
+        ]
+
+    perfis = PerfilSocioeconomico.query.filter(
+        PerfilSocioeconomico.aluno_id.in_(alunos_criticos_ids)
+    ).all()
+    mapa_vuln = {p.aluno_id: p.vulnerabilidade_social for p in perfis}
+
+    vulneravel_count = sum(
+        1 for aid in alunos_criticos_ids if mapa_vuln.get(aid, False)
+    )
+    nao_vulneravel_count = len(alunos_criticos_ids) - vulneravel_count
+
+    return [
+        {"id": "sim", "nome": "Vulnerável (Sim)", "valor": vulneravel_count},
+        {"id": "nao", "nome": "Não Vulnerável (Não)", "valor": nao_vulneravel_count},
+    ]
+
+
+def alunos_raca_conselho(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a distribuição de alunos por raça/cor avaliados no Conselho de Classe."""
+    from app.models import ConselhoClasse, PerfilDiversidade, Turma
+
+    query = ConselhoClasse.query.join(
+        PerfilDiversidade, PerfilDiversidade.aluno_id == ConselhoClasse.aluno_id
+    )
+    if unidade_id:
+        query = query.filter(ConselhoClasse.unidade_id == unidade_id)
+
+    if periodo_letivo_id or curso_id or turma_id or professor_id:
+        query = query.join(Turma, Turma.id == ConselhoClasse.turma_id)
+        if periodo_letivo_id:
+            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+        if curso_id:
+            query = query.filter(Turma.curso_id == curso_id)
+        if turma_id:
+            query = query.filter(Turma.id == turma_id)
+        if professor_id:
+            query = query.filter(Turma.professor_id == professor_id)
+
+    resultados = (
+        query.with_entities(
+            PerfilDiversidade.raca_cor,
+            db.func.count(db.distinct(ConselhoClasse.aluno_id)),
+        )
+        .group_by(PerfilDiversidade.raca_cor)
+        .order_by(PerfilDiversidade.raca_cor)
+        .all()
+    )
+
+    return [
+        {
+            "id": raca or "nao_informado",
+            "nome": raca or "Não informado",
+            "valor": total,
+        }
+        for raca, total in resultados
+    ]
+
+
+def sem_internet_por_bairro_zona(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna alunos sem acesso à internet agrupados por zona e bairro."""
+    from .bi_filtros import aplicar_filtros_aluno
+    from app.models import EnderecoAluno
+
+    query = Aluno.query.join(EnderecoAluno, EnderecoAluno.aluno_id == Aluno.id)
+    query = query.filter(EnderecoAluno.possui_acesso_internet.is_(False))
+    query = aplicar_filtros_aluno(
+        query,
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+    )
+
+    resultados = (
+        query.with_entities(
+            EnderecoAluno.zona,
+            EnderecoAluno.bairro,
+            db.func.count(db.distinct(Aluno.id)),
+        )
+        .group_by(EnderecoAluno.zona, EnderecoAluno.bairro)
+        .order_by(EnderecoAluno.zona, EnderecoAluno.bairro)
+        .all()
+    )
+
+    return [
+        {
+            "id": f"{zona or 'Indefinida'}_{bairro or 'Indefinido'}",
+            "nome": f"{zona or 'Zona N/I'} - {bairro or 'Bairro N/I'}",
+            "valor": total,
+        }
+        for zona, bairro, total in resultados
+    ]
+
+
+def transferencias_por_curso(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna a quantidade de transferências agrupada por curso de origem."""
+    from app.models import Transferencia, Turma, Curso
+
+    query = Transferencia.query.join(
+        Turma, Turma.id == Transferencia.turma_origem_id
+    ).join(Curso, Curso.id == Turma.curso_id)
+
+    if unidade_id:
+        query = query.filter(Transferencia.unidade_id == unidade_id)
+    if periodo_letivo_id:
+        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+    if curso_id:
+        query = query.filter(Turma.curso_id == curso_id)
+    if turma_id:
+        query = query.filter(Turma.id == turma_id)
+    if professor_id:
+        query = query.filter(Turma.professor_id == professor_id)
+    if data_inicio:
+        query = query.filter(Transferencia.data_transferencia >= data_inicio)
+    if data_fim:
+        query = query.filter(Transferencia.data_transferencia <= data_fim)
+
+    resultados = (
+        query.with_entities(
+            Curso.id,
+            Curso.nome,
+            db.func.count(Transferencia.id),
+        )
+        .group_by(Curso.id, Curso.nome)
+        .order_by(Curso.nome)
+        .all()
+    )
+
+    return [
+        {
+            "id": cid,
+            "nome": nome,
+            "valor": total,
+        }
+        for cid, nome, total in resultados
+    ]
+
+
+def desempenho_conselho_por_renda(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Retorna o desempenho no Conselho de Classe agrupado por faixa de renda familiar."""
+    from app.models import ConselhoClasse, PerfilSocioeconomico, Turma
+
+    query = ConselhoClasse.query.join(
+        PerfilSocioeconomico, PerfilSocioeconomico.aluno_id == ConselhoClasse.aluno_id
+    )
+
+    if unidade_id:
+        query = query.filter(ConselhoClasse.unidade_id == unidade_id)
+
+    if periodo_letivo_id or curso_id or turma_id or professor_id:
+        query = query.join(Turma, Turma.id == ConselhoClasse.turma_id)
+        if periodo_letivo_id:
+            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+        if curso_id:
+            query = query.filter(Turma.curso_id == curso_id)
+        if turma_id:
+            query = query.filter(Turma.id == turma_id)
+        if professor_id:
+            query = query.filter(Turma.professor_id == professor_id)
+
+    resultados = query.with_entities(
+        ConselhoClasse.situacao_final,
+        PerfilSocioeconomico.renda_familiar,
+    ).all()
+
+    faixas = {
+        "ate_1500": {"nome": "Até R$ 1.500,00", "aprovados": 0, "outros": 0},
+        "1500_3000": {
+            "nome": "De R$ 1.500,01 a R$ 3.000,00",
+            "aprovados": 0,
+            "outros": 0,
+        },
+        "acima_3000": {"nome": "Acima de R$ 3.000,00", "aprovados": 0, "outros": 0},
+        "nao_informado": {"nome": "Não informado", "aprovados": 0, "outros": 0},
+    }
+
+    for sit, renda in resultados:
+        if renda is None:
+            chave_renda = "nao_informado"
+        elif renda <= 1500:
+            chave_renda = "ate_1500"
+        elif renda <= 3000:
+            chave_renda = "1500_3000"
+        else:
+            chave_renda = "acima_3000"
+
+        if sit and "APROVADO" in str(sit).upper():
+            faixas[chave_renda]["aprovados"] += 1
+        else:
+            faixas[chave_renda]["outros"] += 1
+
+    return [
+        {
+            "id": k,
+            "nome": f"{v['nome']} (Aprovados: {v['aprovados']}, Outros: {v['outros']})",
+            "valor": v["aprovados"] + v["outros"],
+        }
+        for k, v in faixas.items()
     ]

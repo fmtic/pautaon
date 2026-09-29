@@ -26,11 +26,11 @@ content %}
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <label for="indicador" class="form-label"> Indicador </label>
-
+          <label for="indicador" class="form-label"
+            >Selecione o Indicador</label
+          >
           <select id="indicador" class="form-select">
             <option value="">Selecione um indicador</option>
-
             {% for categoria, itens in categorias.items() %}
             <optgroup label="{{ categoria|capitalize }}">
               {% for codigo, indicador in itens %}
@@ -62,22 +62,22 @@ content %}
       <div class="row g-3">
         <div class="col-md-3">
           <small class="text-muted d-block">Código</small>
-          <span id="infoCodigo">—</span>
+          <span id="infoCodigo" class="fw-semibold">—</span>
         </div>
 
         <div class="col-md-3">
           <small class="text-muted d-block">Tipo</small>
-          <span id="infoTipo">—</span>
+          <span id="infoTipo" class="fw-semibold">—</span>
         </div>
 
         <div class="col-md-3">
           <small class="text-muted d-block">Unidade</small>
-          <span id="infoUnidade">—</span>
+          <span id="infoUnidade" class="fw-semibold">—</span>
         </div>
 
         <div class="col-md-3">
           <small class="text-muted d-block">Fonte</small>
-          <span id="infoFonte">—</span>
+          <span id="infoFonte" class="fw-semibold">—</span>
         </div>
       </div>
     </div>
@@ -85,19 +85,141 @@ content %}
 
   <!-- Resultado -->
   <div id="resultadoIndicador" class="card shadow-sm d-none">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
       <strong>Resultado</strong>
+      <span id="badgeTipoResultado" class="badge bg-secondary"></span>
     </div>
 
     <div class="card-body">
-      <div id="resultadoNumerico" class="display-4 text-center d-none"></div>
+      <!-- Alerta de erro -->
+      <div
+        id="resultadoErro"
+        class="alert alert-danger d-none"
+        role="alert"
+      ></div>
 
-      <div id="resultadoTabela" class="table-responsive d-none"></div>
+      <!-- Exibição Numérica / Escalar -->
+      <div
+        id="resultadoNumerico"
+        class="display-4 text-center text-primary py-4 d-none"
+      ></div>
 
-      <div id="resultadoVazio" class="text-muted text-center d-none">
-        Nenhum resultado encontrado.
+      <!-- Exibição em Tabela (Distribuição / Listas) -->
+      <div id="resultadoTabela" class="table-responsive d-none">
+        <table class="table table-striped table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Item / Dimensão</th>
+              <th class="text-end" style="width: 150px">Valor</th>
+            </tr>
+          </thead>
+          <tbody id="tabelaCorpo"></tbody>
+        </table>
+      </div>
+
+      <!-- Estado Vazio -->
+      <div id="resultadoVazio" class="text-muted text-center py-4 d-none">
+        Nenhum resultado encontrado para os parâmetros informados.
       </div>
     </div>
   </div>
 </div>
+
+<script>
+  document.getElementById("btnExecutar").addEventListener("click", function () {
+    const codigo = document.getElementById("indicador").value;
+    if (!codigo) {
+      alert("Por favor, selecione um indicador.");
+      return;
+    }
+
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = "Executando...";
+
+    fetch(`/relatorios/bi/indicador/${codigo}`)
+      .then((response) =>
+        response
+          .json()
+          .then((data) => ({ status: response.status, body: data })),
+      )
+      .then(({ status, body }) => {
+        btn.disabled = false;
+        btn.textContent = "Executar indicador";
+
+        if (status !== 200) {
+          alert(body.erro || "Erro ao executar o indicador.");
+          return;
+        }
+
+        // Preenche informações
+        document.getElementById("infoCodigo").textContent =
+          body.indicador || codigo;
+        document.getElementById("infoTipo").textContent = body.tipo || "—";
+        document.getElementById("infoUnidade").textContent =
+          body.unidade || "—";
+        document.getElementById("infoFonte").textContent = body.fonte || "—";
+        document
+          .getElementById("informacoesIndicador")
+          .classList.remove("d-none");
+
+        // Limpa estados anteriores
+        const divNumerico = document.getElementById("resultadoNumerico");
+        const divTabela = document.getElementById("resultadoTabela");
+        const divVazio = document.getElementById("resultadoVazio");
+        const corpoTabela = document.getElementById("tabelaCorpo");
+        const badge = document.getElementById("badgeTipoResultado");
+
+        divNumerico.classList.add("d-none");
+        divTabela.classList.add("d-none");
+        divVazio.classList.add("d-none");
+        corpoTabela.innerHTML = "";
+
+        badge.textContent = body.tipo ? body.tipo.toUpperCase() : "";
+
+        const resultado = body.resultado;
+
+        if (resultado === null || resultado === undefined) {
+          divVazio.classList.remove("d-none");
+        } else if (
+          typeof resultado === "number" ||
+          typeof resultado === "string"
+        ) {
+          // Resultado Escalar (Contagem, Média, etc.)
+          divNumerico.textContent = resultado;
+          divNumerico.classList.remove("d-none");
+        } else if (Array.isArray(resultado)) {
+          // Resultado em Lista/Distribuição
+          if (resultado.length === 0) {
+            divVazio.classList.remove("d-none");
+          } else {
+            resultado.forEach((item) => {
+              const tr = document.createElement("tr");
+              const tdNome = document.createElement("td");
+              const tdValor = document.createElement("td");
+
+              tdNome.textContent = item.nome || item.id || "—";
+              tdValor.textContent = item.valor !== undefined ? item.valor : "—";
+              tdValor.className = "text-end fw-semibold";
+
+              tr.appendChild(tdNome);
+              tr.appendChild(tdValor);
+              corpoTabela.appendChild(tr);
+            });
+            divTabela.classList.remove("d-none");
+          }
+        }
+
+        document
+          .getElementById("resultadoIndicador")
+          .classList.remove("d-none");
+      })
+      .catch((error) => {
+        btn.disabled = false;
+        btn.textContent = "Executar indicador";
+        console.error("Erro:", error);
+        alert("Erro de comunicação com o servidor.");
+      });
+  });
+</script>
 {% endblock %}

@@ -10,6 +10,8 @@ INDICADORES_ALUNOS = {
     "ALU-002": bi_alunos.alunos_ativos,
     "ALU-003": bi_alunos.alunos_inativos,
     "ALU-004": bi_alunos.novos_alunos,
+    "ALU-005": bi_alunos.alunos_sexo,
+    "ALU-006": bi_alunos.alunos_por_faixa_etaria,
     "ALU-007": bi_alunos.alunos_pcd,
     "ALU-008": bi_alunos.alunos_por_unidade,
     "ALU-009": bi_alunos.alunos_por_curso,
@@ -45,6 +47,18 @@ INDICADORES_ALUNOS = {
     "AUL-003": bi_alunos.aulas_por_periodo,
     "AUL-004": bi_alunos.aulas_por_professor,
     "AUL-005": bi_alunos.aulas_por_curso,
+    "AUL-006": bi_alunos.aulas_por_unidade,
+    "AUL-007": bi_alunos.aulas_por_tema,
+    "AUL-008": bi_alunos.aulas_por_dia,
+    "SOC-001": bi_alunos.alunos_por_faixa_renda,
+    "SOC-002": bi_alunos.alunos_beneficiarios_programas_sociais,
+    "DIV-001": bi_alunos.alunos_por_tipo_deficiencia,
+    "ATD-001": bi_alunos.total_atendimentos,
+    "CRU-001": bi_alunos.frequencia_critica_por_vulnerabilidade,
+    "CRU-002": bi_alunos.alunos_raca_conselho,
+    "CRU-003": bi_alunos.sem_internet_por_bairro_zona,
+    "CRU-004": bi_alunos.transferencias_por_curso,
+    "CRU-005": bi_alunos.desempenho_conselho_por_renda,
 }
 
 

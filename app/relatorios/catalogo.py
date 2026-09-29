@@ -608,6 +608,134 @@ INDICADORES = {
             "curso",
         ],
     },
+    "AUL-006": {
+        "nome": "Aulas por unidade",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / Turma / Unidade",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "AUL-007": {
+        "nome": "Aulas por tema",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula / TemaAula",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "curso",
+            "turma",
+        ],
+    },
+    "AUL-008": {
+        "nome": "Aulas por dia",
+        "categoria": "aulas",
+        "tipo": "distribuicao",
+        "unidade": "aulas",
+        "fonte": "RegistroAula",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+            "curso",
+            "turma",
+            "professor",
+        ],
+    },
+    # -------------------------------------------------------------------------
+    # SOCIOECONOMICO
+    # -------------------------------------------------------------------------
+    "SOC-001": {
+        "nome": "Alunos por faixa de renda familiar",
+        "categoria": "alunos",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "Aluno / PerfilSocioeconomico",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+        ],
+    },
+    "SOC-002": {
+        "nome": "Alunos beneficiários de programas sociais",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / PerfilSocioeconomico",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+        ],
+    },
+    "DIV-001": {
+        "nome": "Alunos por tipo de deficiência",
+        "categoria": "alunos",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "Aluno / PerfilDiversidade",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+        ],
+    },
+    # -------------------------------------------------------------------------
+    # ATENDIMENTO
+    # -------------------------------------------------------------------------
+    "ATD-001": {
+        "nome": "Total de atendimentos",
+        "categoria": "atendimento",
+        "tipo": "contagem",
+        "unidade": "atendimentos",
+        "fonte": "Atendimento",
+        "dimensoes": [
+            "unidade",
+            "periodo",
+        ],
+    },
+    # -------------------------------------------------------------------------
+    # INDICADORES CRUZADOS (CRU)
+    # -------------------------------------------------------------------------
+    "CRU-001": {
+        "nome": "Frequência crítica (< 75%) por vulnerabilidade social",
+        "categoria": "frequencia",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "Frequencia / PerfilSocioeconomico",
+        "dimensoes": ["unidade", "periodo", "curso", "turma"],
+    },
+    "CRU-002": {
+        "nome": "Alunos por raça/cor no Conselho de Classe",
+        "categoria": "conselho",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "ConselhoClasse / PerfilDiversidade",
+        "dimensoes": ["unidade", "periodo", "curso", "turma"],
+    },
+    "CRU-003": {
+        "nome": "Alunos sem acesso à internet por bairro e zona",
+        "categoria": "alunos",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "Aluno / EnderecoAluno",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "CRU-004": {
+        "nome": "Transferências por curso de origem",
+        "categoria": "matriculas",
+        "tipo": "distribuicao",
+        "unidade": "transferências",
+        "fonte": "Transferencia / Turma / Curso",
+        "dimensoes": ["unidade", "periodo", "curso"],
+    },
+    "CRU-005": {
+        "nome": "Desempenho no Conselho de Classe por faixa de renda",
+        "categoria": "conselho",
+        "tipo": "distribuicao",
+        "unidade": "alunos",
+        "fonte": "ConselhoClasse / PerfilSocioeconomico",
+        "dimensoes": ["unidade", "periodo", "curso", "turma"],
+    },
 }
 
 

@@ -104,6 +104,7 @@ def bi_indicador(codigo):
             "nome": indicador["nome"],
             "tipo": indicador["tipo"],
             "unidade": indicador["unidade"],
+            "fonte": indicador.get("fonte", "—"),
             "resultado": resultado,
         }
     )
