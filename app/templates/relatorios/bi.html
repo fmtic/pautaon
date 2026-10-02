@@ -1,5 +1,8 @@
-{% extends "base.html" %} {% block title %}Central de BI{% endblock %} {% block
-content %}
+{% extends "base.html" %}
+
+{% block title %}Central de BI{% endblock %}
+
+{% block content %}
 <div class="container-fluid py-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -14,6 +17,44 @@ content %}
       >
         Relatório detalhado
       </a>
+    </div>
+  </div>
+
+  <!-- Painel de Filtros -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header">
+      <strong>Filtros de Análise</strong>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label for="filtroPeriodo" class="form-label">Período Letivo</label>
+          <select id="filtroPeriodo" class="form-select">
+            <option value="">Todos</option>
+            {% for p in periodos %}
+            <option value="{{ p.id }}">{{ p.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="filtroUnidade" class="form-label">Unidade</label>
+          <select id="filtroUnidade" class="form-select">
+            <option value="">Todas</option>
+            {% for u in unidades %}
+            <option value="{{ u.id }}">{{ u.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="filtroTurno" class="form-label">Turno</label>
+          <select id="filtroTurno" class="form-select">
+            <option value="">Todos</option>
+            {% for t in turnos %}
+            <option value="{{ t }}">{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -85,24 +126,60 @@ content %}
 
   <!-- Resultado -->
   <div id="resultadoIndicador" class="card shadow-sm d-none">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <strong>Resultado</strong>
-      <span id="badgeTipoResultado" class="badge bg-secondary"></span>
+
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <!-- Seletor de visualização (exibido apenas para distribuições) -->
+        <select
+          id="seletorVisualizacao"
+          class="form-select form-select-sm d-none"
+          style="width: auto"
+        >
+          <option value="tabela">Tabela de Dados</option>
+          <option value="barras">Gráfico de Barras</option>
+          <option value="linhas">Gráfico de Linhas</option>
+          <option value="pizza">Gráfico de Pizza</option>
+          <option value="rosca">Gráfico de Rosca</option>
+        </select>
+
+        <span id="badgeTipoResultado" class="badge bg-secondary"></span>
+
+        <!-- Botões de exportação -->
+        <button
+          type="button"
+          id="btnExportarXlsx"
+          class="btn btn-sm btn-success d-none"
+          title="Exportar dados como planilha Excel"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+            <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707L9.293 0zM9 1.707V4h2.293L9 1.707zM4 1h4.5v3.5A.5.5 0 0 0 9 5h3v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/>
+            <path d="M5 8.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5z"/>
+          </svg>
+          Exportar XLSX
+        </button>
+
+        <button
+          type="button"
+          id="btnExportarPng"
+          class="btn btn-sm btn-outline-primary d-none"
+          title="Exportar gráfico como imagem PNG"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="me-1" viewBox="0 0 16 16">
+            <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+            <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
+          </svg>
+          Exportar PNG
+        </button>
+      </div>
     </div>
 
     <div class="card-body">
       <!-- Alerta de erro -->
-      <div
-        id="resultadoErro"
-        class="alert alert-danger d-none"
-        role="alert"
-      ></div>
+      <div id="resultadoErro" class="alert alert-danger d-none" role="alert"></div>
 
       <!-- Exibição Numérica / Escalar -->
-      <div
-        id="resultadoNumerico"
-        class="display-4 text-center text-primary py-4 d-none"
-      ></div>
+      <div id="resultadoNumerico" class="display-4 text-center text-primary py-4 d-none"></div>
 
       <!-- Exibição em Tabela (Distribuição / Listas) -->
       <div id="resultadoTabela" class="table-responsive d-none">
@@ -117,6 +194,15 @@ content %}
         </table>
       </div>
 
+      <!-- Container do Gráfico -->
+      <div
+        id="containerGrafico"
+        class="d-none"
+        style="position: relative; height: 400px; width: 100%"
+      >
+        <canvas id="canvasGrafico"></canvas>
+      </div>
+
       <!-- Estado Vazio -->
       <div id="resultadoVazio" class="text-muted text-center py-4 d-none">
         Nenhum resultado encontrado para os parâmetros informados.
@@ -124,102 +210,417 @@ content %}
     </div>
   </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script>
-  document.getElementById("btnExecutar").addEventListener("click", function () {
-    const codigo = document.getElementById("indicador").value;
-    if (!codigo) {
-      alert("Por favor, selecione um indicador.");
-      return;
+  document.addEventListener("DOMContentLoaded", function () {
+    const btnExecutar      = document.getElementById("btnExecutar");
+    const selectIndicador  = document.getElementById("indicador");
+    const seletorVis       = document.getElementById("seletorVisualizacao");
+    const divErro          = document.getElementById("resultadoErro");
+    const divNumerico      = document.getElementById("resultadoNumerico");
+    const divTabela        = document.getElementById("resultadoTabela");
+    const divGrafico       = document.getElementById("containerGrafico");
+    const divVazio         = document.getElementById("resultadoVazio");
+    const corpoTabela      = document.getElementById("tabelaCorpo");
+    const badgeTipo        = document.getElementById("badgeTipoResultado");
+    const cardResultado    = document.getElementById("resultadoIndicador");
+    const btnExportarXlsx  = document.getElementById("btnExportarXlsx");
+    const btnExportarPng   = document.getElementById("btnExportarPng");
+
+    // Mantém uma referência ao seletorVisualizacao com o nome original
+    // para compatibilidade com o restante do código.
+    const seletorVisualizacao = seletorVis;
+
+    // Instância Chart.js ativa e dados do último resultado em distribuição.
+    let graficoAtual = null;
+    let dadosGrafico = null;
+    let codigoAtual  = null;  // código do indicador exibido
+
+    const formatarNumero = (valor) =>
+      new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(
+        valor
+      );
+
+    // Um valor só entra no gráfico se for numérico (evita texto/None no eixo).
+    const valorNumerico = (valor) =>
+      valor !== null &&
+      valor !== undefined &&
+      valor !== "" &&
+      Number.isFinite(Number(valor));
+
+    const paletaCores = (total) => {
+      const cores = [];
+      for (let i = 0; i < total; i++) {
+        cores.push(`hsl(${Math.round((i * 360) / total)}, 65%, 45%)`);
+      }
+      return cores;
+    };
+
+    function destruirGrafico() {
+      if (graficoAtual) {
+        graficoAtual.destroy();
+        graficoAtual = null;
+      }
     }
 
-    const btn = this;
-    btn.disabled = true;
-    btn.textContent = "Executando...";
+    function mostrarErro(mensagem) {
+      divErro.textContent = mensagem;
+      divErro.classList.remove("d-none");
+      cardResultado.classList.remove("d-none");
+    }
 
-    fetch(`/relatorios/bi/indicador/${codigo}`)
-      .then((response) =>
-        response
-          .json()
-          .then((data) => ({ status: response.status, body: data })),
-      )
-      .then(({ status, body }) => {
-        btn.disabled = false;
-        btn.textContent = "Executar indicador";
+    function limparResultados() {
+      divErro.classList.add("d-none");
+      divErro.textContent = "";
+      divNumerico.classList.add("d-none");
+      divNumerico.textContent = "";
+      divTabela.classList.add("d-none");
+      divGrafico.classList.add("d-none");
+      divVazio.classList.add("d-none");
+      corpoTabela.innerHTML = "";
+      badgeTipo.textContent = "";
+      seletorVisualizacao.classList.add("d-none");
+      seletorVisualizacao.value = "tabela";
+      btnExportarXlsx.classList.add("d-none");
+      btnExportarPng.classList.add("d-none");
+      dadosGrafico = null;
+      codigoAtual  = null;
+      destruirGrafico();
+    }
 
-        if (status !== 200) {
-          alert(body.erro || "Erro ao executar o indicador.");
+    function renderizarGrafico(modo) {
+      destruirGrafico();
+
+      const { labels, values, titulo, unidade } = dadosGrafico;
+      const sufixoUnidade = unidade ? ` ${unidade}` : "";
+      const total = values.reduce((s, v) => s + v, 0);
+
+      const tipoChart =
+        modo === "barras"  ? "bar"      :
+        modo === "linhas"  ? "line"     :
+        modo === "pizza"   ? "pie"      : "doughnut";
+
+      const ehCircular = tipoChart === "pie" || tipoChart === "doughnut";
+
+      // ── Dataset ──────────────────────────────────────────────────── //
+      const dados = { labels, datasets: [{ label: titulo, data: values }] };
+
+      // ── Opções base ───────────────────────────────────────────────── //
+      const opcoes = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: titulo },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const val = ehCircular ? ctx.parsed : ctx.parsed.y;
+                const pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0.0";
+                return ehCircular
+                  ? ` ${formatarNumero(val)}${sufixoUnidade}  (${pct}%)`
+                  : ` ${formatarNumero(val)}${sufixoUnidade}`;
+              },
+            },
+          },
+          // ── Datalabels ──────────────────────────────────────────── //
+          datalabels: {
+            display: true,
+          },
+        },
+      };
+
+      if (ehCircular) {
+        // Pizza / rosca: cor por fatia + legenda com percentual
+        dados.datasets[0].backgroundColor = paletaCores(values.length);
+        dados.datasets[0].borderWidth = 2;
+        dados.datasets[0].borderColor = "#fff";
+
+        opcoes.plugins.legend = {
+          display: true,
+          position: "bottom",
+          labels: {
+            // Injeta percentual em cada item da legenda
+            generateLabels: (chart) => {
+              const ds    = chart.data.datasets[0];
+              const _total = chart.data.datasets[0].data.reduce((s, v) => s + v, 0);
+              return chart.data.labels.map((lbl, i) => {
+                const val = ds.data[i];
+                const pct = _total > 0 ? ((val / _total) * 100).toFixed(1) : "0.0";
+                return {
+                  text: `${lbl}  ${pct}%`,
+                  fillStyle: ds.backgroundColor[i],
+                  strokeStyle: ds.backgroundColor[i],
+                  lineWidth: 0,
+                  index: i,
+                  hidden: !chart.getDataVisibility(i),
+                };
+              });
+            },
+            padding: 16,
+            font: { size: 12 },
+          },
+        };
+
+        // Datalabels nas fatias: percentual + valor
+        opcoes.plugins.datalabels = {
+          display: (ctx) => {
+            // Oculta rótulos de fatias muito pequenas (< 3 %)
+            const val = ctx.dataset.data[ctx.dataIndex];
+            return total > 0 && (val / total) * 100 >= 3;
+          },
+          formatter: (val) => {
+            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0.0";
+            return `${pct}%\n${formatarNumero(val)}`;
+          },
+          color: "#fff",
+          font: { weight: "bold", size: 12 },
+          textAlign: "center",
+          textShadowBlur: 4,
+          textShadowColor: "rgba(0,0,0,0.4)",
+        };
+
+      } else {
+        // Barras / Linhas
+        if (modo === "barras") {
+          dados.datasets[0].backgroundColor = "rgba(67, 97, 238, 0.75)";
+          dados.datasets[0].borderColor      = "#4361ee";
+          dados.datasets[0].borderWidth      = 1;
+          dados.datasets[0].borderRadius     = 4;
+        } else {
+          dados.datasets[0].borderColor      = "#4361ee";
+          dados.datasets[0].backgroundColor = "rgba(67, 97, 238, 0.12)";
+          dados.datasets[0].fill            = true;
+          dados.datasets[0].tension         = 0.35;
+          dados.datasets[0].pointRadius     = 4;
+          dados.datasets[0].pointBackgroundColor = "#4361ee";
+        }
+
+        opcoes.scales = {
+          y: {
+            beginAtZero: true,
+            title: { display: Boolean(unidade), text: unidade },
+            grid: { color: "rgba(0,0,0,0.06)" },
+          },
+          x: { grid: { display: false } },
+        };
+
+        // Datalabels no topo das barras / pontos
+        opcoes.plugins.datalabels = {
+          anchor: "end",
+          align:  "top",
+          formatter: (val) => formatarNumero(val),
+          font: { size: 11, weight: "600" },
+          color: "#343a40",
+          padding: { bottom: 2 },
+        };
+      }
+
+      // Registra o plugin globalmente (idempotente)
+      Chart.register(ChartDataLabels);
+
+      graficoAtual = new Chart(document.getElementById("canvasGrafico"), {
+        type: tipoChart,
+        data: dados,
+        options: opcoes,
+      });
+    }
+
+    // Alterna entre tabela e gráfico conforme o seletor do cabeçalho.
+    seletorVisualizacao.addEventListener("change", function () {
+      if (!dadosGrafico) return;
+
+      if (this.value === "tabela") {
+        divGrafico.classList.add("d-none");
+        destruirGrafico();
+        divTabela.classList.remove("d-none");
+        btnExportarPng.classList.add("d-none");
+      } else {
+        divTabela.classList.add("d-none");
+        divGrafico.classList.remove("d-none");
+        renderizarGrafico(this.value);
+        // PNG só disponível quando gráfico estiver visível
+        btnExportarPng.classList.remove("d-none");
+      }
+    });
+
+    // ---------------------------------------------------------------- //
+    // Exportar XLSX                                                    //
+    // ---------------------------------------------------------------- //
+    btnExportarXlsx.addEventListener("click", function () {
+      if (!codigoAtual) return;
+
+      const periodoId = document.getElementById("filtroPeriodo").value;
+      const unidadeId = document.getElementById("filtroUnidade").value;
+      const turno     = document.getElementById("filtroTurno").value;
+
+      const params = new URLSearchParams({ codigo: codigoAtual });
+      if (periodoId) params.append("periodo_letivo_id", periodoId);
+      if (unidadeId) params.append("unidade_id", unidadeId);
+      if (turno)     params.append("turno", turno);
+
+      // Abre a URL de download diretamente — o browser inicia o download.
+      window.location.href = `/relatorios/bi/exportar/xlsx?${params.toString()}`;
+    });
+
+    // ---------------------------------------------------------------- //
+    // Exportar PNG                                                     //
+    // ---------------------------------------------------------------- //
+    btnExportarPng.addEventListener("click", function () {
+      if (!graficoAtual) {
+        alert("Selecione um tipo de gráfico antes de exportar.");
+        return;
+      }
+
+      // Chart.js expõe toBase64Image() que usa canvas.toDataURL internamente.
+      const imgData  = graficoAtual.toBase64Image("image/png", 1.0);
+      const nomeArq  = `pautaON_${codigoAtual}_${new Date().toISOString().slice(0,10)}.png`;
+
+      const link = document.createElement("a");
+      link.href = imgData;
+      link.download = nomeArq;
+      link.click();
+    });
+
+    // ---------------------------------------------------------------- //
+    // Executar indicador                                               //
+    // ---------------------------------------------------------------- //
+    btnExecutar.addEventListener("click", async function () {
+      const codigo = selectIndicador.value;
+      if (!codigo) {
+        alert("Por favor, selecione um indicador.");
+        return;
+      }
+
+      // Resgata os valores dos filtros
+      const periodoId = document.getElementById("filtroPeriodo").value;
+      const unidadeId = document.getElementById("filtroUnidade").value;
+      const turno = document.getElementById("filtroTurno").value;
+
+      // Monta a query string
+      const params = new URLSearchParams();
+      if (periodoId) params.append("periodo_letivo_id", periodoId);
+      if (unidadeId) params.append("unidade_id", unidadeId);
+      if (turno) params.append("turno", turno);
+
+      btnExecutar.disabled = true;
+      btnExecutar.textContent = "Executando...";
+      limparResultados();
+
+      const url = `/relatorios/bi/indicador/${codigo}?${params.toString()}`;
+
+      try {
+        const response = await fetch(url);
+
+        let body = null;
+        try {
+          body = await response.json();
+        } catch (erroJson) {
+          body = null;
+        }
+
+        // Sessão expirada: o servidor redireciona para o login (HTML).
+        if (response.redirected && !body) {
+          window.location.href = response.url;
           return;
         }
 
+        if (!response.ok || !body) {
+          mostrarErro(
+            body && body.erro
+              ? body.erro
+              : `Erro ${response.status} ao executar o indicador.`
+          );
+          return;
+        }
+
+        const { nome, tipo, unidade, fonte, resultado } = body;
+
+        // Guarda o código atual para os exportadores
+        codigoAtual = body.indicador || codigo;
+
         // Preenche informações
-        document.getElementById("infoCodigo").textContent =
-          body.indicador || codigo;
-        document.getElementById("infoTipo").textContent = body.tipo || "—";
-        document.getElementById("infoUnidade").textContent =
-          body.unidade || "—";
-        document.getElementById("infoFonte").textContent = body.fonte || "—";
+        document.getElementById("infoCodigo").textContent = codigoAtual;
+        document.getElementById("infoTipo").textContent = tipo || "—";
+        document.getElementById("infoUnidade").textContent = unidade || "—";
+        document.getElementById("infoFonte").textContent = fonte || "—";
         document
           .getElementById("informacoesIndicador")
           .classList.remove("d-none");
 
-        // Limpa estados anteriores
-        const divNumerico = document.getElementById("resultadoNumerico");
-        const divTabela = document.getElementById("resultadoTabela");
-        const divVazio = document.getElementById("resultadoVazio");
-        const corpoTabela = document.getElementById("tabelaCorpo");
-        const badge = document.getElementById("badgeTipoResultado");
+        badgeTipo.textContent = tipo ? tipo.toUpperCase() : "";
 
-        divNumerico.classList.add("d-none");
-        divTabela.classList.add("d-none");
-        divVazio.classList.add("d-none");
-        corpoTabela.innerHTML = "";
+        // Botão XLSX sempre disponível após um resultado
+        btnExportarXlsx.classList.remove("d-none");
 
-        badge.textContent = body.tipo ? body.tipo.toUpperCase() : "";
-
-        const resultado = body.resultado;
-
+        // Processa o resultado
         if (resultado === null || resultado === undefined) {
           divVazio.classList.remove("d-none");
         } else if (
           typeof resultado === "number" ||
           typeof resultado === "string"
         ) {
-          // Resultado Escalar (Contagem, Média, etc.)
-          divNumerico.textContent = resultado;
+          divNumerico.textContent =
+            typeof resultado === "number"
+              ? formatarNumero(resultado)
+              : resultado;
           divNumerico.classList.remove("d-none");
         } else if (Array.isArray(resultado)) {
-          // Resultado em Lista/Distribuição
           if (resultado.length === 0) {
             divVazio.classList.remove("d-none");
           } else {
-            resultado.forEach((item) => {
-              const tr = document.createElement("tr");
-              const tdNome = document.createElement("td");
-              const tdValor = document.createElement("td");
+            // Renderização otimizada usando Template Literals
+            corpoTabela.innerHTML = resultado
+              .map(
+                (item) => `
+                  <tr>
+                    <td>${item.nome || item.id || "—"}</td>
+                    <td class="text-end fw-semibold">${item.valor !== undefined ? item.valor : "—"}</td>
+                  </tr>
+                `
+              )
+              .join("");
 
-              tdNome.textContent = item.nome || item.id || "—";
-              tdValor.textContent = item.valor !== undefined ? item.valor : "—";
-              tdValor.className = "text-end fw-semibold";
-
-              tr.appendChild(tdNome);
-              tr.appendChild(tdValor);
-              corpoTabela.appendChild(tr);
-            });
             divTabela.classList.remove("d-none");
+
+            // Gráfico disponível apenas para distribuições com valores numéricos.
+            const podeGraficar =
+              typeof Chart !== "undefined" &&
+              resultado.every((item) => valorNumerico(item.valor));
+
+            if (podeGraficar) {
+              dadosGrafico = {
+                labels: resultado.map((item) => item.nome || item.id || "—"),
+                values: resultado.map((item) => Number(item.valor)),
+                titulo: nome || body.indicador || "Indicador",
+                unidade: unidade || "",
+              };
+              seletorVisualizacao.classList.remove("d-none");
+            } else if (typeof Chart === "undefined") {
+              console.warn(
+                "Chart.js não foi carregado (verifique o acesso ao CDN); apenas a tabela será exibida."
+              );
+            }
+
+            // PNG disponível apenas quando houver gráfico renderizado
+            // (o listener do seletorVisualizacao vai atualizar btnExportarPng)
+            btnExportarPng.classList.add("d-none");
           }
         }
 
-        document
-          .getElementById("resultadoIndicador")
-          .classList.remove("d-none");
-      })
-      .catch((error) => {
-        btn.disabled = false;
-        btn.textContent = "Executar indicador";
+        cardResultado.classList.remove("d-none");
+      } catch (error) {
         console.error("Erro:", error);
-        alert("Erro de comunicação com o servidor.");
-      });
+        mostrarErro("Erro de comunicação com o servidor.");
+      } finally {
+        btnExecutar.disabled = false;
+        btnExecutar.textContent = "Executar indicador";
+      }
+    });
   });
 </script>
 {% endblock %}

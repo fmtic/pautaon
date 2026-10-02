@@ -28,6 +28,7 @@ def total_alunos(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
     """Retorna o total de alunos distintos conforme os filtros do BI."""
     from .bi_filtros import aplicar_filtros_aluno
@@ -40,6 +41,7 @@ def total_alunos(
         "professor_id": professor_id,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
+        "turno": turno,
     }
 
     query = aplicar_filtros_aluno(Aluno.query, filtros)

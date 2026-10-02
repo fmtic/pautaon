@@ -14,6 +14,7 @@ Sistema de gestão escolar e pedagógica desenvolvido em Flask, com suporte a au
 - Integração com Google Calendar e Google Chat
 - Importação em lote de alunos via planilha Excel
 - Relatórios e histórico por aluno
+- **Central de BI** com 40+ indicadores acadêmicos, filtros interativos, visualização em tabela/gráficos (barras, linhas, pizza, rosca) com percentuais automáticos, e exportação em `.xlsx` e `.png`
 - Controle de acesso por perfil (RBAC) com isolamento multitenant por unidade
 - Servimento seguro e autenticado de documentos e fotos de alunos
 
@@ -157,6 +158,50 @@ Consulte [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md) 
 
 ---
 
+## Central de BI
+
+A Central de BI (`/relatorios/bi`) oferece análise interativa de dados acadêmicos com mais de
+**40 indicadores** organizados em 8 categorias: Alunos, Inscrições, Frequência, Turmas, Aulas,
+Socioeconômico/Diversidade, Atendimento e Indicadores Cruzados.
+
+### Filtros globais
+
+Todos os indicadores suportam filtros combinados por **Período Letivo**, **Unidade** e **Turno**,
+aplicados simultaneamente na execução e na exportação.
+
+### Tipos de visualização
+
+Resultados do tipo *distribuição* (lista) podem ser exibidos em:
+
+| Modo | Descrição |
+|---|---|
+| Tabela de Dados | Tabela HTML com linhas zebradas |
+| Gráfico de Barras | Barras com rótulo de valor no topo |
+| Gráfico de Linhas | Linha com área preenchida e rótulo por ponto |
+| Gráfico de Pizza | Fatias com percentual e valor absoluto embutidos |
+| Gráfico de Rosca | Idem pizza em formato de rosca |
+
+Os **percentuais são exibidos diretamente nas fatias** (pizza/rosca) via
+[chartjs-plugin-datalabels](https://chartjs-plugin-datalabels.netlify.app/).
+Fatias com menos de 3% não recebem rótulo para evitar poluição visual.
+A **legenda** também exibe o percentual de cada categoria.
+
+### Exportações
+
+| Tipo | Mecanismo | Nome do arquivo |
+|---|---|---|
+| `.xlsx` | Servidor Flask (`xlsxwriter`) | `pautaON_{CODIGO}_{YYYYMMDD_HHMM}.xlsx` |
+| `.png` | Client-side (`canvas.toDataURL`) | `pautaON_{CODIGO}_{YYYY-MM-DD}.png` |
+
+- **XLSX:** planilha formatada com cabeçalho, tabela zebrada, rodapé e paginação.
+  Resultados escalares aparecem em célula mesclada com fonte grande.
+- **PNG:** captura exata do gráfico visível na tela — apenas disponível quando um gráfico estiver ativo.
+
+Consulte [`app/relatorios/indicadores.md`](app/relatorios/indicadores.md) para a
+documentação completa de todos os indicadores e das funcionalidades de exportação.
+
+---
+
 ## Perfis de acesso (RBAC)
 
 | Perfil | Descrição |
@@ -195,9 +240,25 @@ app/
 ├── main/                    # Dashboards por perfil
 ├── models/                  # Modelos SQLAlchemy
 ├── registros/               # Alunos, turmas, frequência, atendimentos, períodos
-├── relatorios/              # Geração de relatórios
+├── relatorios/              # Relatórios e Central de BI
+│   ├── __init__.py          # Blueprint "relatorios" (url_prefix=/relatorios)
+│   ├── bi_routes.py         # Rotas da Central de BI (execução, exportação XLSX)
+│   ├── bi.py                # Camada de execução dos indicadores
+│   ├── bi_alunos.py         # Consultas dos indicadores (alunos, freq., turmas...)
+│   ├── bi_filtros.py        # Helpers de filtros globais do BI
+│   ├── catalogo.py          # Catálogo declarativo de indicadores e dimensões
+│   ├── indicadores.md       # Documentação de todos os indicadores e exportações
+│   ├── alunos.py            # Relatório detalhado de alunos
+│   ├── geral.py             # Relatórios gerais
+│   ├── conselho.py          # Relatório de conselho de classe
+│   └── shared.py            # Constantes e helpers compartilhados
 ├── services/                # Serviços de negócio (auth, calendar, bootstrap)
 ├── templates/               # Templates Jinja2
+│   └── relatorios/
+│       ├── bi.html          # Central de BI (gráficos, exportações)
+│       ├── relatorio_alunos.html
+│       ├── geral.html
+│       └── resultado_conselho.html
 ├── static/                  # CSS, JS, imagens
 └── utils/                   # Helpers (erros, datas, lógica)
 config.py                    # Configuração central
@@ -264,3 +325,4 @@ O helper de geração e registro dos códigos está em `app/utils/errors.py`.
 | [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md) | Google Cloud, OAuth2, Calendar e Chat |
 | [`docs/checklist_seguranca_dividas_tecnicas.md`](docs/checklist_seguranca_dividas_tecnicas.md) | Auditoria de segurança e LGPD |
 | [`app/models/MER.md`](app/models/MER.md) | Modelo entidade-relacionamento |
+| [`app/relatorios/indicadores.md`](app/relatorios/indicadores.md) | Catálogo completo de indicadores de BI e exportações |

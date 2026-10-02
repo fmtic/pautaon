@@ -1,4 +1,16 @@
 ### Alterações do dia — 11/09/2026
+### Alterações do dia — 29/09/2026
+
+- Data da intervenção: 29/09/2026
+- Início da correção: 2026-09-29 16:30
+- Conclusão da correção: 2026-09-29 16:38
+
+Esta atualização inclui:
+- Integração do plugin `chartjs-plugin-datalabels` para exibir percentuais e rótulos nos gráficos da Central de BI (pizza, rosca, barras e linhas).
+- Implementação de exportação de relatórios em `.xlsx` via rota `/relatorios/bi/exportar/xlsx` usando `xlsxwriter`.
+- Adição de botões de exportação (XLSX e PNG) na interface da Central de BI.
+- Atualização da documentação dos indicadores (`app/relatorios/indicadores.md`) com novas categorias (SOC, DIV, ATD, CRU) e detalhes de exportação.
+- Atualização do README com seção da Central de BI e detalhes de exportação.
 
 - Data da intervenção: 11/09/2026
 - Início da correção: 2026-09-11 18:35

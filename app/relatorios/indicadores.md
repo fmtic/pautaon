@@ -1,6 +1,25 @@
-# Catálogo de Indicadores - Módulo de Relatórios e BI (pautaON)
+# Catálogo de Indicadores — Módulo de Relatórios e BI (pautaON)
 
-Este documento descreve todos os indicadores implementados na camada de Business Intelligence (BI) do sistema `pautaON`. Os indicadores estão agrupados por categorias temáticas (`alunos`, `inscricoes`, `frequencia`, `turmas` e `aulas`). Cada item detalha o seu propósito funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dado retornado.
+Este documento descreve todos os indicadores implementados na camada de Business Intelligence (BI)
+do sistema `pautaON`, bem como as funcionalidades de visualização e exportação disponíveis na
+**Central de BI** (`/relatorios/bi`).
+
+Os indicadores estão agrupados por categorias temáticas. Cada item detalha o seu propósito
+funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dado retornado.
+
+---
+
+## Sumário
+
+1. [Categoria: Alunos](#1-categoria-alunos)
+2. [Categoria: Inscrições](#2-categoria-inscrições)
+3. [Categoria: Frequência](#3-categoria-frequência)
+4. [Categoria: Turmas](#4-categoria-turmas)
+5. [Categoria: Aulas](#5-categoria-aulas)
+6. [Categoria: Socioeconômico e Diversidade](#6-categoria-socioeconômico-e-diversidade)
+7. [Categoria: Atendimento](#7-categoria-atendimento)
+8. [Categoria: Indicadores Cruzados (CRU)](#8-categoria-indicadores-cruzados-cru)
+9. [Visualizações e Exportações](#9-visualizações-e-exportações)
 
 ---
 
@@ -85,6 +104,12 @@ Este documento descreve todos os indicadores implementados na camada de Business
 - **Onde busca os dados:** Tabela/Modelo `Inscricao`.
 - **O que retorna:** Um número inteiro (`int`).
 
+### INS-006: Motivos de desativação _(não implementado)_
+- **Motivo:** Não há dados de motivo de desativação registrados no banco.
+
+### INS-007: Tempo médio de permanência _(não implementado)_
+- **Motivo:** Não há registros com `data_desativacao` preenchida no banco.
+
 ### INS-008: Inscrições por curso
 - **O que faz:** Agrupa e conta o total de inscrições vinculadas a cada curso.
 - **Onde busca os dados:** Tabelas `Inscricao`, `Turma` e `Curso`.
@@ -119,18 +144,18 @@ Este documento descreve todos os indicadores implementados na camada de Business
 - **Onde busca os dados:** Tabela/Modelo `Frequencia`.
 - **O que retorna:** Um valor percentual arredondado (`float`).
 
-### FRE-006: Alunos com frequência $\ge 90\%$
-- **O que faz:** Identifica e conta o número de alunos cuja frequência individual calculada é maior ou igual a $90\%$.
+### FRE-006: Alunos com frequência ≥ 90%
+- **O que faz:** Identifica e conta o número de alunos cuja frequência individual calculada é maior ou igual a 90%.
 - **Onde busca os dados:** Tabela/Modelo `Frequencia`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### FRE-007: Alunos com frequência entre $75\%$ e $89\%$
-- **O que faz:** Identifica e conta o número de alunos com frequência individual situada na faixa entre $75\%$ e $89\%$.
+### FRE-007: Alunos com frequência entre 75% e 89%
+- **O que faz:** Identifica e conta o número de alunos com frequência individual situada na faixa entre 75% e 89%.
 - **Onde busca os dados:** Tabela/Modelo `Frequencia`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### FRE-008: Alunos com frequência inferior a $75\%$
-- **O que faz:** Identifica e conta o número de alunos cuja frequência individual está abaixo do limite crítico de $75\%$.
+### FRE-008: Alunos com frequência inferior a 75%
+- **O que faz:** Identifica e conta o número de alunos cuja frequência individual está abaixo do limite crítico de 75%.
 - **Onde busca os dados:** Tabela/Modelo `Frequencia`.
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -231,3 +256,181 @@ Este documento descreve todos os indicadores implementados na camada de Business
 - **O que faz:** Agrupa cronologicamente a quantidade de aulas registradas por data.
 - **Onde busca os dados:** Tabela/Modelo `RegistroAula`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": datetime.date, "nome": str, "valor": int}, ...]`.
+
+---
+
+## 6. Categoria: Socioeconômico e Diversidade
+
+### SOC-001: Alunos por faixa de renda familiar
+- **O que faz:** Distribui os alunos por faixas de renda familiar declarada.
+- **Onde busca os dados:** Tabelas `Aluno` e `PerfilSocioeconomico`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+### SOC-002: Alunos beneficiários de programas sociais
+- **O que faz:** Conta o total de alunos que são beneficiários de programas sociais (ex.: Bolsa Família).
+- **Onde busca os dados:** Tabelas `Aluno` e `PerfilSocioeconomico`.
+- **O que retorna:** Um número inteiro (`int`).
+
+### DIV-001: Alunos por tipo de deficiência
+- **O que faz:** Distribui os alunos PCD por tipo de deficiência declarada.
+- **Onde busca os dados:** Tabelas `Aluno` e `PerfilDiversidade`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+---
+
+## 7. Categoria: Atendimento
+
+### ATD-001: Total de atendimentos
+- **O que faz:** Retorna o total de atendimentos registrados conforme os filtros de unidade e período.
+- **Onde busca os dados:** Tabela/Modelo `Atendimento`.
+- **O que retorna:** Um número inteiro (`int`).
+
+---
+
+## 8. Categoria: Indicadores Cruzados (CRU)
+
+Indicadores que cruzam duas ou mais dimensões de dados para análises integradas.
+
+### CRU-001: Frequência crítica (< 75%) por vulnerabilidade social
+- **O que faz:** Identifica alunos com frequência crítica (< 75%) cruzando com o perfil de vulnerabilidade socioeconômica.
+- **Onde busca os dados:** Tabelas `Frequencia` e `PerfilSocioeconomico`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+### CRU-002: Alunos por raça/cor no Conselho de Classe
+- **O que faz:** Distribui os alunos participantes do Conselho de Classe por raça/cor declarada.
+- **Onde busca os dados:** Tabelas `ConselhoClasse` e `PerfilDiversidade`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+### CRU-003: Alunos sem acesso à internet por bairro e zona
+- **O que faz:** Identifica e agrupa alunos sem acesso à internet por localização geográfica (bairro/zona).
+- **Onde busca os dados:** Tabelas `Aluno` e `EnderecoAluno`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+### CRU-004: Transferências por curso de origem
+- **O que faz:** Conta e agrupa transferências de alunos por curso de origem.
+- **Onde busca os dados:** Tabelas `Transferencia`, `Turma` e `Curso`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
+
+### CRU-005: Desempenho no Conselho de Classe por faixa de renda
+- **O que faz:** Cruza os resultados do Conselho de Classe com a faixa de renda familiar dos alunos.
+- **Onde busca os dados:** Tabelas `ConselhoClasse` e `PerfilSocioeconomico`.
+- **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
+
+---
+
+## 9. Visualizações e Exportações
+
+Esta seção documenta as funcionalidades de apresentação e exportação disponíveis na
+**Central de BI** (`/relatorios/bi`), implementadas em
+`app/relatorios/bi_routes.py` e `app/templates/relatorios/bi.html`.
+
+---
+
+### 9.1 Tipos de Visualização
+
+Após executar um indicador, resultados do tipo **distribuição** (lista) oferecem quatro modos
+de visualização selecionáveis no cabeçalho do card de resultado:
+
+| Modo | Tipo Chart.js | Descrição |
+|---|---|---|
+| Tabela de Dados | — | Tabela HTML zebrada com Item e Valor |
+| Gráfico de Barras | `bar` | Barras verticais com arredondamento e rótulo de valor no topo |
+| Gráfico de Linhas | `line` | Linha com área preenchida e rótulo de valor em cada ponto |
+| Gráfico de Pizza | `pie` | Fatias com percentual e valor absoluto diretamente na fatia |
+| Gráfico de Rosca | `doughnut` | Idem pizza, em formato de rosca |
+
+**Biblioteca utilizada:** [Chart.js v4](https://www.chartjs.org/) +
+[chartjs-plugin-datalabels v2](https://chartjs-plugin-datalabels.netlify.app/) — ambos via CDN jsDelivr.
+
+---
+
+### 9.2 Rótulos e Percentuais nos Gráficos (`chartjs-plugin-datalabels`)
+
+#### Gráficos circulares (Pizza / Rosca)
+
+- **Nas fatias:** exibe `XX.X%` na primeira linha e o valor absoluto formatado na segunda linha.
+  - Fatias com menos de **3%** do total **não recebem rótulo** (evita poluição visual em fatias pequenas).
+  - Rótulos em branco com sombra para contraste em qualquer cor de fundo.
+- **Na legenda (embaixo do gráfico):** cada item exibe `Nome da categoria  XX.X%`.
+- **No tooltip (hover):** exibe `valor unidade  (XX.X%)`.
+
+#### Gráficos de barra e linha
+
+- **Rótulo de valor** exibido no topo de cada barra ou em cada ponto da linha.
+- **No tooltip:** exibe `valor unidade` (sem percentual, pois não se aplica).
+
+---
+
+### 9.3 Exportação — XLSX
+
+**Rota:** `GET /relatorios/bi/exportar/xlsx`
+
+**Parâmetros de query string:**
+
+| Parâmetro | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `codigo` | `str` | ✅ | Código do indicador (ex.: `ALU-005`) |
+| `unidade_id` | `int` | ❌ | ID da unidade selecionada no filtro |
+| `periodo_letivo_id` | `int` | ❌ | ID do período letivo selecionado |
+| `turno` | `str` | ❌ | Turno selecionado (ex.: `Manhã`) |
+
+**Comportamento:**
+- Executa o indicador com os mesmos filtros ativos na tela no momento do clique.
+- Gera o arquivo `.xlsx` em memória com `xlsxwriter` (sem gravar em disco).
+- Retorna o arquivo como download com nome `pautaON_{CODIGO}_{YYYYMMDD_HHMM}.xlsx`.
+
+**Estrutura da planilha gerada:**
+
+| Linha | Conteúdo |
+|---|---|
+| 1 | Título: `Indicador: {nome}` (fundo branco, borda inferior azul) |
+| 2 | `Código: {codigo} \| Unidade: {unidade}` (itálico, cinza) |
+| 3 | `Gerado em: DD/MM/AAAA HH:MM` (itálico, cinza) |
+| 5 | Cabeçalho da tabela: **Item / Dimensão** e **Valor** (fundo azul `#4361ee`, texto branco) |
+| 6+ | Linhas de dados, zebradas (branco / azul-claro `#f0f4ff`), bordas sutis |
+| Última | `Total de registros: N` (rodapé interno) |
+| Rodapé | `pautaON — {nome indicador} — Página X de Y` |
+
+Para resultados **escalares** (número único), o valor é exibido em célula mesclada A5:C6 com
+fonte grande (`28pt`, azul).
+
+**Implementação:** `app/relatorios/bi_routes.py` → função `bi_exportar_xlsx()`.
+**Dependência:** `xlsxwriter` (já presente em `requirements.txt`).
+
+---
+
+### 9.4 Exportação — PNG
+
+**Mecanismo:** 100% client-side, sem custo de servidor.
+
+- Usa `Chart.instance.toBase64Image("image/png", 1.0)` do Chart.js para capturar o canvas atual.
+- Cria dinamicamente um `<a download>` e dispara o clique para iniciar o download.
+- Nome do arquivo: `pautaON_{CODIGO}_{YYYY-MM-DD}.png`.
+
+**Disponibilidade do botão:**
+
+| Estado da tela | Botão XLSX | Botão PNG |
+|---|---|---|
+| Nenhum indicador executado | oculto | oculto |
+| Resultado numérico/escalar | ✅ visível | oculto |
+| Resultado em tabela | ✅ visível | oculto |
+| Gráfico ativo (barras/linhas/pizza/rosca) | ✅ visível | ✅ visível |
+| Voltou para tabela após gráfico | ✅ visível | oculto |
+
+---
+
+### 9.5 Filtros Globais
+
+Os três filtros da Central de BI são aplicados tanto na **execução dos indicadores** quanto
+na **exportação XLSX** (os valores selecionados no momento do clique em "Exportar XLSX" são
+enviados junto à requisição):
+
+| Filtro | ID HTML | Parâmetro de API |
+|---|---|---|
+| Período Letivo | `filtroPeriodo` | `periodo_letivo_id` |
+| Unidade | `filtroUnidade` | `unidade_id` |
+| Turno | `filtroTurno` | `turno` |
+
+---
+
+_Última atualização: 2026-09-29_

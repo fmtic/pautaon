@@ -99,7 +99,8 @@
               <label class="form-label small fw-bold">Usuário</label>
               <div class="input-group">
                 <span class="input-group-text text-muted"><i class="fas fa-user"></i></span>
-                <input name="email" type="text" class="form-control" placeholder="usuário e senha do computador" required>
+                <input name="email" type="text" class="form-control" placeholder="usuário e senha do computador"
+                  required>
               </div>
             </div>
 
@@ -108,7 +109,11 @@
               <label class="form-label small fw-bold">Senha</label>
               <div class="input-group">
                 <span class="input-group-text text-muted"><i class="fas fa-lock"></i></span>
-                <input name="password" type="password" class="form-control" placeholder="••••••••" required>
+                <input name="password" id="password" type="password" class="form-control" placeholder="••••••••"
+                  required>
+                <button type="button" class="btn btn-outline-secondary" id="togglePassword" style="border-left: none;">
+                  <i class="fas fa-eye" id="toggleIcon"></i>
+                </button>
               </div>
             </div>
 
@@ -124,6 +129,8 @@
       </div>
     </div>
   </div>
+
+  <script src="{{ url_for('static', filename='js/senha_trocaSenha.js') }}"></script>
 
 </body>
 
