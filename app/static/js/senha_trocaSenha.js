@@ -1,3 +1,4 @@
+document.addEventListener('DOMContentLoaded', () => {
 document.querySelectorAll('.toggle-password').forEach((button) => {
   const password = document.getElementById(button.dataset.target);
   const icon = button.querySelector('i');
@@ -57,3 +58,4 @@ document.querySelectorAll('.toggle-password').forEach((button) => {
     campo.addEventListener('input', atualizar);
     confirma.addEventListener('input', atualizar);
   })();
+});

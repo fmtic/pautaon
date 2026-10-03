@@ -4,8 +4,7 @@
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
 
-**Última atualização:** 2026-09-27 — Onda 3B-bis: Etapa VI do cadastro do
-aluno (renda mensal, tipo de deficiência e programas sociais).
+**Última atualização:** 2026-09-27 — Onda 3B-ter: auditoria de edição em `aluno` (`updated_by_id`, `updated_by_name`, `updated_at`) e registro de `LogAcao` em `editar_aluno`.
 
 ---
 
@@ -368,6 +367,9 @@ erDiagram
 | created_by_id             | int          | sim  | —       | FK → user                         |
 | created_by_name           | varchar(100) | sim  | —       | Snapshot                          |
 | created_at                | timestamp    | sim  | now     | Auditoria                         |
+| **updated_by_id**         | **int**      | sim  | —       | FK → user (Onda 3B-ter)           |
+| **updated_by_name**       | **varchar(100)** | sim | —    | Snapshot (Onda 3B-ter)            |
+| **updated_at**            | **timestamp** | sim | —      | Preenchido na 1ª edição (Onda 3B-ter) |
 | unidade_id                | int          | sim  | —       | FK → unidade                      |
 
 **Formato de** `documentos_entregues`**:**
@@ -839,6 +841,13 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - `perfil_diversidade.tipo_deficiencia`: nova coluna `varchar(30)`, restrita ao catálogo `TIPOS_DEFICIENCIA` do serviço.
 - `app/services/aluno_perfil.py`: normalizador `money()`, cálculo de `renda_per_capita()` em runtime e validação `tipo_deficiencia()`.
 
+### Onda 3B-ter — Auditoria de edição em `aluno` (2026-09-27)
+
+- Adicionadas colunas `updated_by_id` (FK → user), `updated_by_name` (snapshot) e `updated_at` (timestamp) em `aluno`.
+- `editar_aluno` grava esses campos a cada `POST` bem-sucedido.
+- `editar_aluno` registra `LogAcao` com `acao='Editar aluno'` e `detalhes='aluno_id=N nome="..."'`.
+- Permite rastrear retroativamente quem editou cada aluno consultando `aluno.updated_by_name` ou filtrando `log_acao` por `acao='Editar aluno'`.
+
 ### Onda 3C — Pendente (~2 semanas)
 
 - Dropar os 4 JSONs de `Aluno`.
@@ -866,6 +875,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `29a29fdbc2aa` | `5ae559bc9d87` | **Onda 3A-bis**: `documentos_entregues` | ✅      |
 | `3b7c9d1e4f20` | `29a29fdbc2aa` | **Onda 3B-bis**: renda e deficiência    | ✅      |
 | `4c8e2f7a1b30` | `3b7c9d1e4f20` | **Onda 3B-bis**: programas sociais      | ✅      |
+| `f1a2b3c4d5e6` | `4c8e2f7a1b30` | **Onda 3B-ter**: auditoria de edição    | ✅      |
 
 > Consulte `flask db history` para confirmar a cadeia em execução. Toda
 > migration deve ter `revision` e `down_revision` preenchidos com hashes

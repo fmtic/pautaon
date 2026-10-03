@@ -28,6 +28,13 @@ ONDA 3B
       pelo código novo; continuam existindo como fallback de leitura.
     - `editar_aluno` e `imprimir_aluno` passam `perfil=get_perfil_completo()`
       para o template.
+
+ONDA 3B-TER
+    - `editar_aluno` grava `Aluno.updated_by_id` e `Aluno.updated_by_name`
+      com os dados do usuário logado a cada POST bem-sucedido.
+    - Um registro `LogAcao` com `acao='Editar aluno'` é inserido na mesma
+      transação, permitindo rastrear o histórico de edições via
+      `log_acao` mesmo após sobrescrita dos campos de auditoria.
 ================================================================================
 """
 
@@ -59,6 +66,7 @@ from app.models import (
     Turma,
     Unidade,
 )
+from app.models.base import get_local_now
 from app.models.enums import UserRole
 from app.services.aluno_perfil import (
     get_perfil_completo,
@@ -470,7 +478,7 @@ def novo_aluno():
             nome_social=formatar_nome_proprio(request.form.get("nome_social")),
             nivel=request.form.get("nivel"),
             ativo=True,
-             unidade_id=unidade_id,
+            unidade_id=unidade_id,
             cpf=_sanitizar_cpf(cpf_raw),
             rg=request.form.get("rg") or None,
             whatsapp=request.form.get("whatsapp"),
@@ -478,6 +486,10 @@ def novo_aluno():
             data_nascimento=parse_date(request.form.get("data_nascimento")),
             created_by_id=current_user.id,
             created_by_name=current_user.name,
+            # O registro inicial já registra quem criou; o editor inicial é o mesmo
+            updated_by_id=current_user.id,
+            updated_by_name=current_user.name,
+            updated_at=get_local_now(),
         )
 
         # Campos civis (Onda 3A) direto na tabela
@@ -618,6 +630,27 @@ def editar_aluno(id):
             # 5. Documentos entregues (JSONB)
             # -----------------------------------------------------------------
             _atualizar_documentos_entregues(aluno)
+
+            # -----------------------------------------------------------------
+            # 6. Auditoria de edição (Onda 3B-ter)
+            #
+            # Grava o editor mais recente diretamente no registro do aluno
+            # (snapshot imutável do nome) e insere uma entrada em `log_acao`
+            # para preservar o histórico completo de edições, já que os
+            # campos `updated_by_*` são sobrescritos a cada nova edição.
+            # -----------------------------------------------------------------
+            aluno.updated_by_id = current_user.id
+            aluno.updated_by_name = current_user.name
+
+            from app.models.auditoria import LogAcao
+            db.session.add(LogAcao(
+                usuario_id=current_user.id,
+                usuario_nome=current_user.name,
+                acao='Editar aluno',
+                detalhes=f'aluno_id={aluno.id} nome="{aluno.nome}"',
+                ip=request.remote_addr,
+                unidade_id=aluno.unidade_id,
+            ))
 
             db.session.commit()
             flash(

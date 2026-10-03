@@ -20,6 +20,19 @@ ONDA 3A-BIS
 
     O JSON antigo `_escolaridade_json` continua existindo como fallback
     até a Onda 3C, quando será removido junto com os demais.
+
+ONDA 3B-TER
+    Adicionados três campos de auditoria de edição em `Aluno`:
+
+        - `updated_by_id`   : FK para `user.id` do último editor (nullable).
+        - `updated_by_name` : snapshot do nome do editor no momento da edição.
+        - `updated_at`      : timestamp da última edição; permanece NULL até
+                              a primeira alteração via `editar_aluno`.
+
+    O relacionamento `updated_by` expõe o objeto `User` correspondente.
+    O campo `updated_at` NÃO usa `default=get_local_now` — só é preenchido
+    quando o aluno é efetivamente editado, distinguindo registros que nunca
+    foram alterados desde o cadastro.
 ================================================================================
 """
 
@@ -91,11 +104,23 @@ class Aluno(db.Model):
     )
     acompanhante_aulas: str = db.Column(db.String(150))
 
+    # --- Auditoria de criação ------------------------------------------------
     created_by_id: int = db.Column(
         db.Integer, db.ForeignKey('user.id'), nullable=True
     )
     created_by_name: str = db.Column(db.String(100))
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+
+    # --- Auditoria de edição (Onda 3B-ter) -----------------------------------
+    # Preenchidos exclusivamente por `registros.editar_aluno` a cada POST
+    # bem-sucedido. Permanecem NULL para alunos que nunca foram editados.
+    updated_by_id: int = db.Column(
+        db.Integer, db.ForeignKey('user.id'), nullable=True
+    )
+    updated_by_name: str = db.Column(db.String(100))
+    updated_at: datetime = db.Column(
+        db.DateTime, default=None, onupdate=get_local_now, nullable=True
+    )
 
     unidade_id: int = db.Column(
         db.Integer, db.ForeignKey('unidade.id'), nullable=True
@@ -199,6 +224,10 @@ class Aluno(db.Model):
     unidade = db.relationship('Unidade', backref='alunos_unidade')
     created_by = db.relationship(
         'User', backref='alunos_criados', foreign_keys=[created_by_id]
+    )
+    # Onda 3B-ter: editor mais recente do cadastro do aluno.
+    updated_by = db.relationship(
+        'User', backref='alunos_editados', foreign_keys=[updated_by_id]
     )
 
     situacao_escolar = db.relationship(

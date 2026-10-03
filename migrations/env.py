@@ -41,7 +41,8 @@ def get_engine_url():
 
 
 # Substitui a URL do alembic.ini pela URL real do app Flask.
-config.set_main_option("sqlalchemy.url", get_engine_url())
+url = get_engine_url().replace('%', '%%')
+config.set_main_option("sqlalchemy.url", url)
 
 # Importa os modelos para que o Alembic possa comparar o schema atual
 # com os metadados e detectar alterações (autogenerate).
