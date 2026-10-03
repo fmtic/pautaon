@@ -10,9 +10,29 @@ from flask_login import current_user, login_required
 from app.models import Unidade, PeriodoLetivo
 
 from . import bp_relatorios
-from .bi import executar_indicador
+from .bi import INDICADORES_STATUS_ALUNO, executar_indicador
 from .catalogo import DIMENSOES, listar_indicadores
 from .shared import ROLES_RELATORIOS
+from app.utils.logica import get_unidade_id
+
+
+def _escopar_unidade_status(codigo, filtros):
+    if codigo not in INDICADORES_STATUS_ALUNO:
+        return filtros
+
+    if current_user.role in ("admin", "gerencia"):
+        return filtros
+
+    unidade_efetiva = get_unidade_id()
+    if unidade_efetiva is None:
+        abort(403)
+
+    unidade_solicitada = filtros.get("unidade_id")
+    if unidade_solicitada is not None and unidade_solicitada != unidade_efetiva:
+        abort(403)
+
+    filtros["unidade_id"] = unidade_efetiva
+    return filtros
 
 
 @bp_relatorios.route("/bi")
@@ -29,8 +49,21 @@ def bi_dashboard():
         categoria = indicador["categoria"]
         categorias.setdefault(categoria, []).append((codigo, indicador))
 
-    unidades = Unidade.query.filter_by(ativo=True).order_by(Unidade.nome).all()
-    periodos = PeriodoLetivo.query.order_by(PeriodoLetivo.nome.desc()).all()
+    unidade_query = Unidade.query.filter_by(ativo=True).order_by(Unidade.nome)
+    periodo_query = PeriodoLetivo.query.order_by(PeriodoLetivo.nome.desc())
+    if current_user.role not in ("admin", "gerencia"):
+        unidade_efetiva = get_unidade_id()
+        if unidade_efetiva is None:
+            unidades = []
+            periodos = []
+        else:
+            unidades = unidade_query.filter(Unidade.id == unidade_efetiva).all()
+            periodos = periodo_query.filter(
+                PeriodoLetivo.unidade_id == unidade_efetiva
+            ).all()
+    else:
+        unidades = unidade_query.all()
+        periodos = periodo_query.all()
     turnos = ["Manhã", "Tarde", "Noite", "EAD", "Outros"]
 
     return render_template(
@@ -65,8 +98,22 @@ def bi_api_dados():
     if codigo is None:
         return jsonify({"labels": [], "values": [], "label_eixo": dimensao})
 
+    from .bi import INDICADORES_ALUNOS
+
+    filtros = {}
+    unidade_efetiva = get_unidade_id()
+    if unidade_efetiva:
+        filtros["unidade_id"] = unidade_efetiva
+
     try:
-        resultado = executar_indicador(codigo)
+        funcao = INDICADORES_ALUNOS.get(codigo)
+        if funcao and filtros:
+            parametros_aceitos = inspect.signature(funcao).parameters
+            filtros = {
+                k: v for k, v in filtros.items()
+                if k in parametros_aceitos or "kwargs" in parametros_aceitos
+            }
+        resultado = executar_indicador(codigo, **filtros)
     except ValueError:
         return jsonify({"labels": [], "values": [], "label_eixo": dimensao})
 
@@ -103,6 +150,7 @@ def bi_exportar_xlsx():
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str) or None,
     }
+    filtros = _escopar_unidade_status(codigo, filtros)
     filtros_limpos = {k: v for k, v in filtros.items() if v is not None}
 
     try:
@@ -231,6 +279,7 @@ def bi_indicador(codigo):
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str),
     }
+    filtros = _escopar_unidade_status(codigo, filtros)
 
     filtros_limpos = {k: v for k, v in filtros.items() if v}
 

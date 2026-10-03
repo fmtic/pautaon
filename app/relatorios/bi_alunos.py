@@ -16,37 +16,27 @@ from app.models import (
     User,
 )
 from app import db
+from app.models.enums import StatusAluno
+from app.services.aluno_status import (
+    periodos_de_referencia_bi,
+    status_alunos_para_bi,
+)
 from sqlalchemy import func, case, cast, Integer
+from sqlalchemy.orm import selectinload
 from datetime import date
 
 
 def total_alunos(
     unidade_id=None,
     periodo_letivo_id=None,
-    curso_id=None,
-    turma_id=None,
-    professor_id=None,
-    data_inicio=None,
-    data_fim=None,
     turno=None,
 ):
-    """Retorna o total de alunos distintos conforme os filtros do BI."""
-    from .bi_filtros import aplicar_filtros_aluno
-
-    filtros = {
-        "unidade_id": unidade_id,
-        "periodo_letivo_id": periodo_letivo_id,
-        "curso_id": curso_id,
-        "turma_id": turma_id,
-        "professor_id": professor_id,
-        "data_inicio": data_inicio,
-        "data_fim": data_fim,
-        "turno": turno,
-    }
-
-    query = aplicar_filtros_aluno(Aluno.query, filtros)
-
-    return query.count()
+    """Conta cadastros ativos incluídos no escopo do período do BI."""
+    return len(status_alunos_para_bi(
+        unidade_id=unidade_id,
+        periodo_letivo_id=periodo_letivo_id,
+        turno=turno,
+    ))
 
 
 def alunos_ativos(
@@ -113,16 +103,33 @@ def alunos_sexo(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
     """
-    ALU-005: Distribuição de alunos ativos por gênero/sexo.
+    ALU-005: Distribuição de alunos enturmados no período por gênero/sexo.
 
     Prioriza o campo estruturado `PerfilDiversidade.genero` (Onda 3A).
     Para alunos sem perfil estruturado, faz fallback no JSON legado
     `Aluno.diversidade_json` via Python, garantindo cobertura total.
-    Suporta os filtros globais do BI (unidade, período, curso, turma, professor).
+    A população é Novo + Renovado + Retornante no escopo filtrado.
     """
     from .bi_filtros import aplicar_filtros_aluno
+    status_enturmados = {
+        StatusAluno.NOVO,
+        StatusAluno.RENOVADO,
+        StatusAluno.RETORNANTE,
+    }
+    ids_enturmados = [
+        aluno_id
+        for aluno_id, status in status_alunos_para_bi(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            turno=turno,
+        ).items()
+        if status in status_enturmados
+    ]
+    if not ids_enturmados:
+        return []
 
     filtros = {
         "unidade_id": unidade_id,
@@ -134,7 +141,9 @@ def alunos_sexo(
         "data_fim": data_fim,
     }
 
-    query = Aluno.query.filter(Aluno.ativo.is_(True))
+    query = Aluno.query.filter(Aluno.id.in_(ids_enturmados)).options(
+        selectinload(Aluno.perfil_diversidade)
+    )
     query = aplicar_filtros_aluno(query, filtros)
     alunos = query.all()
 
@@ -166,14 +175,15 @@ def alunos_por_faixa_etaria(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
     """
-    ALU-006: Distribuição de alunos ativos por faixa etária.
+    ALU-006: Distribuição de alunos enturmados no período por faixa etária.
 
     Calcula a idade a partir de `Aluno.data_nascimento` via Python para
     compatibilidade com SQLite (desenvolvimento) e PostgreSQL (produção).
     Alunos sem data_nascimento são agrupados em "Não Informado".
-    Suporta os filtros globais do BI (unidade, período, curso, turma, professor).
+    A população é Novo + Renovado + Retornante no escopo filtrado.
 
     Faixas:
         - Menor de 12 anos
@@ -207,7 +217,24 @@ def alunos_por_faixa_etaria(
         "data_fim": data_fim,
     }
 
-    query = Aluno.query.filter(Aluno.ativo.is_(True))
+    status_enturmados = {
+        StatusAluno.NOVO,
+        StatusAluno.RENOVADO,
+        StatusAluno.RETORNANTE,
+    }
+    ids_enturmados = [
+        aluno_id
+        for aluno_id, status in status_alunos_para_bi(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            turno=turno,
+        ).items()
+        if status in status_enturmados
+    ]
+    if not ids_enturmados:
+        return []
+
+    query = Aluno.query.filter(Aluno.id.in_(ids_enturmados))
     query = aplicar_filtros_aluno(query, filtros)
     alunos = query.all()
 
@@ -255,21 +282,44 @@ def novos_alunos(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de alunos cadastrados no período informado."""
-    from .bi_filtros import aplicar_filtros_aluno
+    """Conta cadastros criados no intervalo, sem exigir enturmação."""
+    from app.services.aluno_status import periodos_de_referencia_bi
 
-    filtros = {
-        "unidade_id": unidade_id,
-        "periodo_letivo_id": periodo_letivo_id,
-        "curso_id": curso_id,
-        "turma_id": turma_id,
-        "professor_id": professor_id,
-        "data_inicio": data_inicio,
-        "data_fim": data_fim,
-    }
+    if periodo_letivo_id is not None or (data_inicio is None and data_fim is None):
+        periodos = periodos_de_referencia_bi(
+            periodo_letivo_id=periodo_letivo_id,
+            unidade_id=unidade_id,
+            data_ref=date.today(),
+        )
+        intervalos = [
+            (
+                periodo.unidade_id,
+                data_inicio or periodo.data_inicio,
+                data_fim or periodo.data_fim,
+            )
+            for periodo in periodos
+        ]
+        if not intervalos:
+            return 0
 
-    query = aplicar_filtros_aluno(Aluno.query, filtros)
+        condicoes = [
+            db.and_(
+                Aluno.unidade_id == unidade_id_intervalo,
+                func.date(Aluno.created_at) >= inicio.isoformat(),
+                func.date(Aluno.created_at) <= fim.isoformat(),
+            )
+            for unidade_id_intervalo, inicio, fim in intervalos
+            if inicio <= fim
+        ]
+        return Aluno.query.filter(db.or_(*condicoes)).count() if condicoes else 0
 
+    query = Aluno.query
+    if unidade_id is not None:
+        query = query.filter(Aluno.unidade_id == unidade_id)
+    if data_inicio is not None:
+        query = query.filter(func.date(Aluno.created_at) >= str(data_inicio))
+    if data_fim is not None:
+        query = query.filter(func.date(Aluno.created_at) <= str(data_fim))
     return query.count()
 
 
@@ -281,9 +331,27 @@ def alunos_pcd(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
-    """Retorna a quantidade de alunos PCD conforme os filtros do BI."""
+    """Conta alunos enturmados com PCD conforme os filtros do BI."""
     from .bi_filtros import aplicar_filtros_aluno
+
+    status_enturmados = {
+        StatusAluno.NOVO,
+        StatusAluno.RENOVADO,
+        StatusAluno.RETORNANTE,
+    }
+    ids_enturmados = [
+        aluno_id
+        for aluno_id, status in status_alunos_para_bi(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            turno=turno,
+        ).items()
+        if status in status_enturmados
+    ]
+    if not ids_enturmados:
+        return 0
 
     filtros = {
         "unidade_id": unidade_id,
@@ -295,7 +363,10 @@ def alunos_pcd(
         "data_fim": data_fim,
     }
 
-    query = aplicar_filtros_aluno(Aluno.query, filtros)
+    query = Aluno.query.filter(Aluno.id.in_(ids_enturmados)).options(
+        selectinload(Aluno.perfil_diversidade)
+    )
+    query = aplicar_filtros_aluno(query, filtros)
     alunos = query.all()
 
     total = 0
@@ -392,14 +463,44 @@ def alunos_por_curso(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
-    """Retorna a quantidade de alunos distintos agrupada por curso."""
+    """Conta alunos enturmados distintos por curso no escopo de P/D."""
     from app.models import Inscricao
+    status_enturmados = {
+        StatusAluno.NOVO,
+        StatusAluno.RENOVADO,
+        StatusAluno.RETORNANTE,
+    }
+    periodos = periodos_de_referencia_bi(
+        periodo_letivo_id=periodo_letivo_id,
+        unidade_id=unidade_id,
+        data_ref=date.today(),
+    )
+    if not periodos:
+        return []
+
+    ids_enturmados = [
+        aluno_id
+        for aluno_id, status in status_alunos_para_bi(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            turno=turno,
+        ).items()
+        if status in status_enturmados
+    ]
+    if not ids_enturmados:
+        return []
 
     query = (
-        Aluno.query.join(Inscricao, Inscricao.aluno_id == Aluno.id)
+        Aluno.query.filter(Aluno.id.in_(ids_enturmados))
+        .join(Inscricao, Inscricao.aluno_id == Aluno.id)
         .join(Turma, Turma.id == Inscricao.turma_id)
         .join(Curso, Curso.id == Turma.curso_id)
+        .filter(
+            Inscricao.ativo.is_(True),
+            Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
+        )
     )
 
     if unidade_id:
@@ -452,12 +553,43 @@ def alunos_por_turma(
     professor_id=None,
     data_inicio=None,
     data_fim=None,
+    turno=None,
 ):
-    """Retorna a quantidade de alunos distintos agrupada por turma."""
+    """Conta alunos enturmados distintos por turma no escopo de P/D."""
     from app.models import Inscricao
+    status_enturmados = {
+        StatusAluno.NOVO,
+        StatusAluno.RENOVADO,
+        StatusAluno.RETORNANTE,
+    }
+    periodos = periodos_de_referencia_bi(
+        periodo_letivo_id=periodo_letivo_id,
+        unidade_id=unidade_id,
+        data_ref=date.today(),
+    )
+    if not periodos:
+        return []
 
-    query = Aluno.query.join(Inscricao, Inscricao.aluno_id == Aluno.id).join(
-        Turma, Turma.id == Inscricao.turma_id
+    ids_enturmados = [
+        aluno_id
+        for aluno_id, status in status_alunos_para_bi(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            turno=turno,
+        ).items()
+        if status in status_enturmados
+    ]
+    if not ids_enturmados:
+        return []
+
+    query = (
+        Aluno.query.filter(Aluno.id.in_(ids_enturmados))
+        .join(Inscricao, Inscricao.aluno_id == Aluno.id)
+        .join(Turma, Turma.id == Inscricao.turma_id)
+        .filter(
+            Inscricao.ativo.is_(True),
+            Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
+        )
     )
 
     if unidade_id:
@@ -2569,3 +2701,76 @@ def desempenho_conselho_por_renda(
         }
         for k, v in faixas.items()
     ]
+
+
+def _contar_status_aluno(
+    status_alvo,
+    unidade_id=None,
+    periodo_letivo_id=None,
+    turno=None,
+):
+    status = status_alunos_para_bi(
+        unidade_id=unidade_id,
+        periodo_letivo_id=periodo_letivo_id,
+        turno=turno,
+    )
+    return sum(valor in status_alvo for valor in status.values())
+
+
+def alunos_enturmados(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.NOVO, StatusAluno.RENOVADO, StatusAluno.RETORNANTE},
+        unidade_id,
+        periodo_letivo_id,
+        turno,
+    )
+
+
+def alunos_nao_enturmados(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {
+            StatusAluno.EM_JANELA,
+            StatusAluno.NAO_RENOVADO,
+            StatusAluno.DESENTURMADO,
+            StatusAluno.OUTROS,
+        },
+        unidade_id,
+        periodo_letivo_id,
+        turno,
+    )
+
+
+def alunos_novos_no_periodo(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.NOVO}, unidade_id, periodo_letivo_id, turno
+    )
+
+
+def alunos_renovados(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.RENOVADO}, unidade_id, periodo_letivo_id, turno
+    )
+
+
+def alunos_retornantes(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.RETORNANTE}, unidade_id, periodo_letivo_id, turno
+    )
+
+
+def alunos_nao_renovados(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.NAO_RENOVADO}, unidade_id, periodo_letivo_id, turno
+    )
+
+
+def alunos_em_janela(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.EM_JANELA}, unidade_id, periodo_letivo_id, turno
+    )
+
+
+def alunos_desenturmados(unidade_id=None, periodo_letivo_id=None, turno=None):
+    return _contar_status_aluno(
+        {StatusAluno.DESENTURMADO}, unidade_id, periodo_letivo_id, turno
+    )

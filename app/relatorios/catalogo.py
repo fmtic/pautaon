@@ -34,7 +34,6 @@ TIPOS_RESULTADO = {
     "evolucao": "Evolução",
 }
 
-
 # =============================================================================
 # DIMENSÕES
 # =============================================================================
@@ -79,11 +78,11 @@ INDICADORES = {
     # ALUNOS
     # -------------------------------------------------------------------------
     "ALU-001": {
-        "nome": "Total de alunos",
+        "nome": "Total de alunos com cadastro ativo no período",
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Aluno",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -91,7 +90,7 @@ INDICADORES = {
         ],
     },
     "ALU-002": {
-        "nome": "Alunos ativos",
+        "nome": "Alunos com cadastro ativo",
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
@@ -103,7 +102,7 @@ INDICADORES = {
         ],
     },
     "ALU-003": {
-        "nome": "Alunos inativos",
+        "nome": "Alunos com cadastro inativo",
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
@@ -116,7 +115,7 @@ INDICADORES = {
         ],
     },
     "ALU-004": {
-        "nome": "Novos alunos",
+        "nome": "Novos cadastros",
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
@@ -129,33 +128,33 @@ INDICADORES = {
         ],
     },
     "ALU-005": {
-        "nome": "Alunos por sexo",
+        "nome": "Alunos enturmados por sexo",
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo / PerfilDiversidade",
         "dimensoes": [
             "unidade",
             "sexo",
         ],
     },
     "ALU-006": {
-        "nome": "Alunos por faixa etária",
+        "nome": "Alunos enturmados por faixa etária",
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
         "dimensoes": [
             "unidade",
             "faixa_etaria",
         ],
     },
     "ALU-007": {
-        "nome": "Alunos PCD",
+        "nome": "Alunos PCD enturmados",
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Aluno / PerfilDiversidade",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo / PerfilDiversidade",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -163,7 +162,7 @@ INDICADORES = {
         ],
     },
     "ALU-008": {
-        "nome": "Alunos por unidade",
+        "nome": "Alunos cadastrados por unidade",
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
@@ -173,11 +172,11 @@ INDICADORES = {
         ],
     },
     "ALU-009": {
-        "nome": "Alunos por curso",
+        "nome": "Alunos enturmados por curso",
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / Curso",
+        "fonte": "Aluno / Inscricao / Turma / Curso / PeriodoLetivo",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -185,17 +184,81 @@ INDICADORES = {
         ],
     },
     "ALU-010": {
-        "nome": "Alunos por turma",
+        "nome": "Alunos enturmados por turma",
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
         "dimensoes": [
             "unidade",
             "periodo",
             "curso",
             "turma",
         ],
+    },
+    "ALU-011": {
+        "nome": "Alunos enturmados no período",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-012": {
+        "nome": "Alunos não enturmados no período",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-013": {
+        "nome": "Alunos novos no período",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-014": {
+        "nome": "Alunos renovados",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-015": {
+        "nome": "Alunos retornantes",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-016": {
+        "nome": "Alunos não renovados",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-017": {
+        "nome": "Alunos em janela de renovação",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
+    },
+    "ALU-018": {
+        "nome": "Alunos desenturmados",
+        "categoria": "alunos",
+        "tipo": "contagem",
+        "unidade": "alunos",
+        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "dimensoes": ["unidade", "periodo"],
     },
     # -------------------------------------------------------------------------
     # INSCRIÇÕES

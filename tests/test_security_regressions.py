@@ -5,17 +5,24 @@ from app import create_app
 from app.database import db
 from app.models import User, Unidade, Aluno, Turma
 from app.registros.shared import assert_unidade_context
+from config import Config
+
+
+class SQLiteTestConfig(Config):
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
 @pytest.fixture
 def app():
-    test_app = create_app()
+    test_app = create_app(SQLiteTestConfig)
     test_app.config.update({
         "TESTING": True,
         "WTF_CSRF_ENABLED": False,
         "SERVER_NAME": "localhost",
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
     })
     with test_app.app_context():
+        assert db.engine.dialect.name == "sqlite"
         db.create_all()
         yield test_app
         db.session.remove()

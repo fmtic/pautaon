@@ -1,4 +1,3 @@
-### Alterações do dia — 11/09/2026
 ### Alterações do dia — 29/09/2026
 
 - Data da intervenção: 29/09/2026
@@ -513,3 +512,66 @@ Os cinco indicadores AUL implementados permanecem consistentes com os dados atua
 A categoria **AUL — Aulas** possui atualmente os indicadores **AUL-001 a AUL-005 implementados, registrados no catálogo, conectados ao mecanismo de execução e validados**.
 
 A evolução da interface da Central de BI foi iniciada, porém sua implementação funcional foi deliberadamente deixada em espera para priorizar a conclusão dos indicadores AUL.
+
+---
+
+### Alterações do dia — 02/10/2026
+
+- Data da intervenção: 02/10/2026
+- Escopo: conceito de status do aluno por período, alinhamento dos indicadores da Central de BI, bootstrap inicial, troca de senha e documentação de referência.
+
+### Status do aluno por período — Etapas 1 e 2
+
+- Criado `app/services/aluno_status.py` como ponto central da classificação derivada; o status não é persistido no banco.
+- Criados `StatusAluno` e `JANELA_RENOVACAO_DIAS` em `app/models/enums.py`; a janela de renovação é de 14 dias, inclusiva.
+- Implementadas as categorias Novo, Renovado, Retornante, Em janela, Não renovado, Desenturmado e Outros, respeitando `Aluno.ativo` como situação cadastral e `Inscricao` como histórico de enturmação.
+- Implementada classificação individual e em lote, seleção de P-1 da mesma unidade, reconstrução para datas passadas e deduplicação por aluno.
+- No BI, sem período explícito, o serviço usa o período ativo vigente em cada unidade; períodos sobrepostos são resolvidos pelo início mais recente.
+- O filtro de turno define a coorte pelas inscrições em P ou P-1; a classificação usa o histórico completo. As rotas dos indicadores de status impõem a unidade efetiva dos perfis locais.
+- Adicionados ALU-011 a ALU-018: enturmados, não enturmados, novos no período, renovados, retornantes, não renovados, em janela e desenturmados.
+- Atualizados `app/models/MER.md` (§8.3) e, após validação da Etapa 2, os registros dos novos indicadores em `app/relatorios/indicadores.md`.
+- Sem novas tabelas ou migrations para o status.
+
+### Revisão de indicadores existentes — Etapa 3
+
+- **ALU-001:** redefinido como total de alunos com `Aluno.ativo=True` no escopo do período; teste de consistência exige `ALU-001 = ALU-011 + ALU-012`.
+- **ALU-002/ALU-003:** mantido o significado cadastral (`Aluno.ativo=True/False`); rótulos clarificados para “Alunos com cadastro ativo/inativo”.
+- **ALU-004:** redefinido e validado como “Novos cadastros”, usando `Aluno.created_at` no intervalo do período, sem exigir enturmação. Registros com `created_at` nulo ficam fora. ALU-013 continua representando Novo por primeira enturmação.
+- **ALU-005/ALU-006:** validados como distribuição dos alunos enturmados em P/D por gênero e faixa etária.
+- **ALU-007:** validado como alunos PCD enturmados, usando perfil estruturado ou fallback legado.
+- **ALU-008:** validado como total cadastral por unidade, sem mudança de população.
+- **ALU-009:** validado como alunos com inscrição ativa em P/D agrupados por curso.
+- **ALU-010:** implementado como alunos com cadastro e inscrição ativos em P/D agrupados por turma; aguarda validação manual dos números. A descrição correspondente ainda não foi atualizada em `indicadores.md`.
+- A nova etapa “Período = Todos” e série histórica por período não foi iniciada; depende da conclusão e validação da Etapa 3.
+
+### Banco e bootstrap administrativo
+
+- Conexão estabelecida com PostgreSQL `pautaon`, schema `public`.
+- Criadas/confirmadas 30 tabelas a partir dos models, sem migration. No último levantamento: 2 unidades, 0 períodos e 0 alunos; não há dados reais para amostrar os indicadores.
+- Executado o comando CLI `seed-admin` usando as configurações locais. Confirmada a existência de um administrador ativo com `first_login=True`; a senha não é registrada neste relatório.
+- Esclarecido que o bootstrap é explícito pelo comando CLI e não é executado automaticamente por `run.py`.
+
+### Segurança dos testes e troca de senha
+
+- Corrigidos os fixtures de `tests/test_aluno_status.py`, `tests/test_bi_indicadores.py`, `tests/test_sec01_uploads.py` e `tests/test_security_regressions.py` para passar uma configuração SQLite à factory antes de inicializar a engine e afirmar o dialeto antes de `drop_all()`.
+- A correção evita que a suíte use ou remova o schema PostgreSQL configurado no `.env`.
+- Corrigida a visibilidade de senha em `app/templates/trocar_senha.html` e `app/static/js/senha_trocaSenha.js`: os seletores agora usam `data-target` para cada campo, alternam ícone/estado acessível e incluem senha atual, nova e confirmação.
+
+### Wiki do sistema
+
+- Criado `docs/wi.md` como índice de referência do sistema: conceitos, perfis, arquitetura, execução local, banco, testes, BI, operação e links para manuais existentes.
+- A wiki informa que o modo histórico “Todos” ainda está planejado e não está implementado.
+
+### Testes e verificações
+
+- Suíte completa: **29 testes aprovados**, com 4 avisos de depreciação já existentes (`Query.get()` e `datetime.utcnow()`).
+- Testes focados de status e BI executados durante cada etapa.
+- Diagnósticos de código sem erros nos arquivos verificados.
+- `git diff --check` sem erros de whitespace; o Git reportou apenas avisos de normalização LF/CRLF em arquivos do worktree.
+
+### Estado ao final da sessão
+
+- Etapas 1 e 2 validadas.
+- Etapa 3 avançou até ALU-010; os indicadores ALU-001 a ALU-009 foram validados e documentados conforme as decisões recebidas.
+- ALU-010 está implementado e testado, mas aguarda validação explícita dos números antes da atualização documental e do avanço para INS-001.
+- A série histórica “Todos” permanece pausada até a conclusão de toda a Etapa 3.

@@ -16,6 +16,14 @@ INDICADORES_ALUNOS = {
     "ALU-008": bi_alunos.alunos_por_unidade,
     "ALU-009": bi_alunos.alunos_por_curso,
     "ALU-010": bi_alunos.alunos_por_turma,
+    "ALU-011": bi_alunos.alunos_enturmados,
+    "ALU-012": bi_alunos.alunos_nao_enturmados,
+    "ALU-013": bi_alunos.alunos_novos_no_periodo,
+    "ALU-014": bi_alunos.alunos_renovados,
+    "ALU-015": bi_alunos.alunos_retornantes,
+    "ALU-016": bi_alunos.alunos_nao_renovados,
+    "ALU-017": bi_alunos.alunos_em_janela,
+    "ALU-018": bi_alunos.alunos_desenturmados,
     "INS-001": bi_alunos.total_inscricoes,
     "INS-002": bi_alunos.inscricoes_ativas,
     "INS-003": bi_alunos.inscricoes_encerradas,
@@ -60,6 +68,11 @@ INDICADORES_ALUNOS = {
     "CRU-004": bi_alunos.transferencias_por_curso,
     "CRU-005": bi_alunos.desempenho_conselho_por_renda,
 }
+
+INDICADORES_STATUS_ALUNO = frozenset(
+    {"ALU-005", "ALU-006", "ALU-007", "ALU-009", "ALU-010"}
+    | {f"ALU-{codigo:03d}" for codigo in range(11, 19)}
+)
 
 
 def executar_indicador(codigo, **filtros):

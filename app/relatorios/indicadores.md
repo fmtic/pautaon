@@ -25,55 +25,97 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 
 ## 1. Categoria: Alunos
 
-### ALU-001: Total de alunos
-- **O que faz:** Retorna o total geral de alunos distintos cadastrados que correspondem aos filtros globais da central de BI.
-- **Onde busca os dados:** Tabela/Modelo `Aluno` (com suporte a filtros por unidade, período letivo, curso, turma e professor através de junções com `Inscricao` e `Turma`).
+### ALU-001: Total de alunos com cadastro ativo no período
+- **O que faz:** Conta alunos com `Aluno.ativo=True` no escopo do período, incluindo Novo, Renovado, Retornante e todas as categorias de não enturmados. Exclui cadastros inativos. ALU-001 deve ser igual a ALU-011 + ALU-012.
+- **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Um número inteiro (`int`) com a contagem total.
 
-### ALU-002: Alunos ativos
-- **O que faz:** Retorna o total de alunos cujo status está marcado como ativo (`ativo.is_(True)`).
+### ALU-002: Alunos com cadastro ativo
+- **O que faz:** Retorna o total de alunos cujo cadastro está ativo (`Aluno.ativo=True`). Esse indicador representa a situação cadastral, não a enturmação no período.
 - **Onde busca os dados:** Tabela/Modelo `Aluno`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### ALU-003: Alunos inativos
-- **O que faz:** Retorna o total de alunos cuja situação está marcada como inativa (`ativo.is_(False)`).
+### ALU-003: Alunos com cadastro inativo
+- **O que faz:** Retorna o total de alunos cujo cadastro está inativo (`Aluno.ativo=False`). Esse indicador representa a situação cadastral, não a enturmação no período.
 - **Onde busca os dados:** Tabela/Modelo `Aluno`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### ALU-004: Novos alunos
-- **O que faz:** Retorna a quantidade de novos alunos cadastrados considerando os filtros temporais ou de período informados.
-- **Onde busca os dados:** Tabela/Modelo `Aluno`.
+### ALU-004: Novos cadastros
+- **O que faz:** Conta registros criados em `Aluno.created_at` dentro do intervalo selecionado. Com período informado, usa `PeriodoLetivo.data_inicio` e `data_fim`; sem período, usa o período ativo vigente de cada unidade. Não exige enturmação nem `Aluno.ativo=True`; registros com `created_at` nulo não entram. O filtro de turno não se aplica a cadastros.
+- **Onde busca os dados:** Tabela/Modelo `Aluno` (`created_at`).
 - **O que retorna:** Um número inteiro (`int`).
 
-### ALU-005: Alunos por sexo
-- **O que faz:** Distribui e conta os alunos ativos agrupados por gênero. Prioriza o campo estruturado `PerfilDiversidade.genero` (Onda 3A); para alunos sem perfil estruturado, faz fallback no JSON legado `Aluno.diversidade_json`. Suporta os filtros globais do BI.
-- **Onde busca os dados:** Tabelas/Modelos `Aluno` e `PerfilDiversidade` (com fallback em `Aluno.diversidade_json`).
+### ALU-005: Alunos enturmados por sexo
+- **O que faz:** Distribui os alunos enturmados em P (Novo + Renovado + Retornante) agrupados por gênero. Prioriza `PerfilDiversidade.genero`; para alunos sem perfil estruturado, usa o fallback `Aluno.diversidade_json`. Suporta unidade, período e turno; o turno delimita a coorte, enquanto a classificação usa o histórico completo.
+- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `PeriodoLetivo` e `PerfilDiversidade` (com fallback no JSON legado `Aluno.diversidade_json`).
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`, ordenada do maior para o menor.
 
-### ALU-006: Alunos por faixa etária
-- **O que faz:** Distribui e conta os alunos ativos agrupados por faixa etária, calculada a partir de `Aluno.data_nascimento`. Alunos sem data de nascimento são agrupados em "Não Informado". Suporta os filtros globais do BI. As faixas são: **Menor de 12 anos**, **12 a 17 anos**, **18 a 24 anos**, **25 a 39 anos**, **40 a 59 anos**, **60 anos ou mais** e **Não Informado**.
-- **Onde busca os dados:** Tabela/Modelo `Aluno`.
+### ALU-006: Alunos enturmados por faixa etária
+- **O que faz:** Distribui os alunos enturmados em P (Novo + Renovado + Retornante) por faixa etária, calculada a partir de `Aluno.data_nascimento`. Alunos sem data de nascimento ficam em "Não Informado". Suporta unidade, período e turno. As faixas são: **Menor de 12 anos**, **12 a 17 anos**, **18 a 24 anos**, **25 a 39 anos**, **40 a 59 anos**, **60 anos ou mais** e **Não Informado**.
+- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`, na ordem das faixas definidas, omitindo faixas com zero alunos.
 
-### ALU-007: Alunos PCD
-- **O que faz:** Retorna a quantidade de alunos identificados como PCD (Pessoa com Deficiência), validando o relacionamento estruturado `PerfilDiversidade` (campo `saude_laudo`) ou fallback em dados legados JSON.
-- **Onde busca os dados:** Tabela/Modelo `Aluno` e `PerfilDiversidade`.
+### ALU-007: Alunos PCD enturmados
+- **O que faz:** Conta alunos enturmados em P (Novo + Renovado + Retornante) identificados como PCD, usando `PerfilDiversidade.saude_laudo` ou o fallback legado `Aluno.diversidade_json`.
+- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `PeriodoLetivo` e `PerfilDiversidade`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### ALU-008: Alunos por unidade
-- **O que faz:** Agrupa e conta a quantidade de alunos distintos segmentados por unidade de ensino.
+### ALU-008: Alunos cadastrados por unidade
+- **O que faz:** Agrupa e conta alunos cadastrados distintos por unidade de ensino, sem restringir pelo status da enturmação.
 - **Onde busca os dados:** Tabelas `Aluno` e `Unidade`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
-### ALU-009: Alunos por curso
-- **O que faz:** Agrupa e conta a quantidade de alunos distintos matriculados em cada curso.
-- **Onde busca os dados:** Tabelas `Aluno`, `Inscricao`, `Turma` e `Curso`.
+### ALU-009: Alunos enturmados por curso
+- **O que faz:** Agrupa por curso e conta alunos distintos enturmados em P/D (Novo + Renovado + Retornante), com inscrição vigente. Sem período explícito, usa o período vigente de cada unidade.
+- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `Curso` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### ALU-010: Alunos por turma
 - **O que faz:** Agrupa e conta a quantidade de alunos distintos vinculados a cada turma.
 - **Onde busca os dados:** Tabelas `Aluno`, `Inscricao` e `Turma`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
+
+### ALU-011: Alunos enturmados no período
+- **O que faz:** Conta alunos classificados como Novo, Renovado ou Retornante, isto é, com vínculo vigente em uma turma do período na data de referência.
+- **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-012: Alunos não enturmados no período
+- **O que faz:** Conta alunos com cadastro ativo que não estão enturmados no período na data de referência. Inclui Em janela, Não renovado, Desenturmado e Outros.
+- **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-013: Alunos novos no período
+- **O que faz:** Conta alunos enturmados em P sem inscrição em qualquer período anterior da mesma unidade.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-014: Alunos renovados
+- **O que faz:** Conta alunos com enturmação em P-1 cuja primeira inscrição em P ocorreu até o 14º dia, inclusive, contado do início de P.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-015: Alunos retornantes
+- **O que faz:** Conta alunos enturmados em P com histórico anterior que não se enquadram como Renovados.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-016: Alunos não renovados
+- **O que faz:** Conta alunos com enturmação em P-1, sem vínculo vigente em P, após o encerramento da janela de renovação.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-017: Alunos em janela de renovação
+- **O que faz:** Conta alunos com enturmação em P-1, sem vínculo vigente em P, enquanto a janela de renovação permanece aberta.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+### ALU-018: Alunos desenturmados
+- **O que faz:** Conta alunos com inscrição histórica em P, mas sem vínculo vigente em P na data de referência.
+- **Onde busca os dados:** `app.services.aluno_status`.
+- **O que retorna:** Um número inteiro (`int`) de alunos distintos.
+
+**Filtros dos indicadores ALU-011 a ALU-018:** `unidade_id`, `periodo_letivo_id` e `turno`. Sem período informado, considera o período ativo cuja vigência contém a data atual em cada unidade; se houver sobreposição, escolhe o período com início mais recente. Com turno selecionado, a coorte vem das inscrições em P ou P-1 naquele turno, mas o status é calculado com o histórico completo; Outros não entra em um filtro de turno específico por não possuir vínculo que determine turno. Perfis locais ficam restritos à própria unidade. A data de referência padrão é hoje.
 
 ---
 

@@ -28,27 +28,39 @@
             {% if not first_login %}
             <div class="mb-3">
               <label class="form-label fw-bold">Senha Atual</label>
-              <input type="password" name="senha_atual" id="senhaAtual" class="form-control"
-                placeholder="Digite sua senha atual" required autocomplete="current-password">
+              <div class="input-group">
+                <input type="password" name="senha_atual" id="senhaAtual" class="form-control"
+                  placeholder="Digite sua senha atual" required autocomplete="current-password">
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="senhaAtual"
+                  aria-label="Exibir senha" aria-pressed="false">
+                  <i class="bi bi-eye" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
             {% endif %}
 
             <div class="mb-3">
               <label class="form-label fw-bold">Nova Senha</label>
-              <input type="password" name="nova_senha" id="novaSenha" class="form-control"
-                placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
-              <button class="btn btn-outline-secondary toggle-password" type="button" data-target="novaSenha">
-                <i class="bi bi-eye"></i>
-              </button>
+              <div class="input-group">
+                <input type="password" name="nova_senha" id="novaSenha" class="form-control"
+                  placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="novaSenha"
+                  aria-label="Exibir senha" aria-pressed="false">
+                  <i class="bi bi-eye" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
 
             <div class="mb-3">
               <label class="form-label fw-bold">Confirmar Nova Senha</label>
-              <input type="password" name="confirma_senha" id="confirmaSenha" class="form-control"
-                placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
-              <button class="btn btn-outline-secondary toggle-password" type="button" data-target="confirmaSenha">
-                <i class="bi bi-eye"></i>
-              </button>
+              <div class="input-group">
+                <input type="password" name="confirma_senha" id="confirmaSenha" class="form-control"
+                  placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="confirmaSenha"
+                  aria-label="Exibir senha" aria-pressed="false">
+                  <i class="bi bi-eye" aria-hidden="true"></i>
+                </button>
+              </div>
               <div id="matchMsg" class="form-text"></div>
             </div>
 

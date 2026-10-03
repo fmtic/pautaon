@@ -105,6 +105,20 @@ class SituacaoFinal(str, enum.Enum):
     CONCLUIDO = 'Concluído'
 
 
+class StatusAluno(str, enum.Enum):
+    """Situação derivada do aluno em relação a um período letivo."""
+    NOVO = 'NOVO'
+    RENOVADO = 'RENOVADO'
+    RETORNANTE = 'RETORNANTE'
+    EM_JANELA = 'EM_JANELA'
+    NAO_RENOVADO = 'NAO_RENOVADO'
+    DESENTURMADO = 'DESENTURMADO'
+    OUTROS = 'OUTROS'
+
+
+JANELA_RENOVACAO_DIAS = 14
+
+
 # =============================================================================
 # CONJUNTOS DERIVADOS (conveniência)
 # =============================================================================
@@ -143,6 +157,8 @@ __all__ = [
     'TipoPergunta',
     'UserRole',
     'SituacaoFinal',
+    'StatusAluno',
+    'JANELA_RENOVACAO_DIAS',
     'CONCEITOS_PRESENCA',
     'CONCEITOS_CONTABEIS',
     'ETAPAS_ORDEM',

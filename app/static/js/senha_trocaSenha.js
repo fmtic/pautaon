@@ -1,16 +1,17 @@
-// Exibe ou oculta a senha digitada
-const togglePassword = document.getElementById('togglePassword');
-const password = document.getElementById('password');
-const toggleIcon = document.getElementById('toggleIcon');
+document.querySelectorAll('.toggle-password').forEach((button) => {
+  const password = document.getElementById(button.dataset.target);
+  const icon = button.querySelector('i');
 
-togglePassword.addEventListener('click', function () {
-  // Alterna entre o tipo 'password' e 'text'
-  const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-  password.setAttribute('type', type);
+  if (!password || !icon) return;
 
-  // Alterna o ícone entre olho e olho riscado (FontAwesome)
-  toggleIcon.classList.toggle('fa-eye');
-  toggleIcon.classList.toggle('fa-eye-slash');
+  button.addEventListener('click', () => {
+    const showing = password.type === 'password';
+    password.type = showing ? 'text' : 'password';
+    icon.classList.toggle('bi-eye', !showing);
+    icon.classList.toggle('bi-eye-slash', showing);
+    button.setAttribute('aria-label', showing ? 'Ocultar senha' : 'Exibir senha');
+    button.setAttribute('aria-pressed', String(showing));
+  });
 });
 
 

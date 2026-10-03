@@ -3,16 +3,23 @@ from app import create_app
 from app.database import db
 from app.models import Aluno, Atendimento, Unidade, User
 from app.models.enums import UserRole
+from config import Config
+
+
+class SQLiteTestConfig(Config):
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
 @pytest.fixture
 def app():
-    test_app = create_app()
+    test_app = create_app(SQLiteTestConfig)
     test_app.config.update({
         "TESTING": True,
         "WTF_CSRF_ENABLED": False,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
     })
     with test_app.app_context():
+        assert db.engine.dialect.name == "sqlite"
         db.create_all()
         yield test_app
         db.session.remove()
