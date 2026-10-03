@@ -575,3 +575,19 @@ A evolução da interface da Central de BI foi iniciada, porém sua implementaç
 - Etapa 3 avançou até ALU-010; os indicadores ALU-001 a ALU-009 foram validados e documentados conforme as decisões recebidas.
 - ALU-010 está implementado e testado, mas aguarda validação explícita dos números antes da atualização documental e do avanço para INS-001.
 - A série histórica “Todos” permanece pausada até a conclusão de toda a Etapa 3.
+
+### Alterações do dia — 03/10/2026
+
+- Data da intervenção: 03/10/2026
+- Início da correção: 2026-10-03 00:30
+- Conclusão da correção: 2026-10-03 01:10
+
+Esta atualização inclui:
+- Implementação de um sistema global de auditoria para ações no banco de dados.
+- Criação de `AuditoriaMixin` (app/models/auditoria_mixin.py) que inclui as colunas `updated_by_id`, `updated_by_name` e `updated_at`.
+- Aplicação do mixin às tabelas `Turma`, `TemaAula`, `RegistroAula`, `Curso`, `ConselhoClasse` e `Inscricao` (além da tabela `Aluno` tratada anteriormente).
+- Criação do `AuditoriaListener` (`app/models/auditoria_listener.py`) que preenche os campos automaticamente e adiciona um `LogAcao` (INSERT/UPDATE/DELETE).
+- Resolução de problema com `__allow_unmapped__ = True` e `@declared_attr` (necessário no SQLAlchemy 2.x).
+- Criação e estruturação dos mixins pendentes: `SoftDeleteMixin` (para a coluna `ativo`) e `TenantMixin` (para a coluna `unidade_id`) inseridos no arquivo `app/models/base.py`. Estes mixins foram aplicados de forma bem-sucedida, simplificando os modelos de `academico.py`, `pedagogico.py`, `matriculas.py`, `conselho.py` e `aulas.py`.
+- Adicionada configuração `alembic.ini` e migração de banco `a9f3c8e2d1b7` que insere as colunas nas tabelas supracitadas.
+- Atualização do arquivo `docs/wiki.md` e `app/models/MER.md` refletindo essas modernizações (resolvendo o item 12.3 da dívida técnica).

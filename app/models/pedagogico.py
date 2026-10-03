@@ -11,10 +11,11 @@ Ambos são catálogos reutilizáveis escopados por unidade.
 ================================================================================
 """
 
-from app.models.base import db, datetime, get_local_now
+from app.models.base import db, datetime, get_local_now, SoftDeleteMixin, TenantMixin
+from app.models.auditoria_mixin import AuditoriaMixin
 
 
-class Curso(db.Model):
+class Curso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     """
     Curso ofertado por uma unidade.
 
@@ -31,14 +32,13 @@ class Curso(db.Model):
     nome: str = db.Column(db.String(150), nullable=False)
     descricao: str = db.Column(db.String(300))
     carga_horaria: int = db.Column(db.Integer)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=False)
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
     unidade = db.relationship('Unidade', backref='cursos')
 
 
-class Nivel(db.Model):
+class Nivel(SoftDeleteMixin, TenantMixin, db.Model):
     """
     Nível pedagógico (ex.: Básico, Intermediário, Avançado).
 
@@ -54,5 +54,3 @@ class Nivel(db.Model):
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), unique=True, nullable=False)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'))

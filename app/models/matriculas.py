@@ -13,10 +13,11 @@ não o nome da classe.
 ================================================================================
 """
 
-from app.models.base import db, datetime, date, get_local_now
+from app.models.base import db, datetime, date, get_local_now, SoftDeleteMixin, TenantMixin
+from app.models.auditoria_mixin import AuditoriaMixin
 
 
-class Inscricao(db.Model):
+class Inscricao(SoftDeleteMixin, AuditoriaMixin, db.Model):
     """
     Vínculo entre Aluno e Turma (N:N com histórico).
 
@@ -39,8 +40,6 @@ class Inscricao(db.Model):
 
     nivel: str = db.Column(db.String(30))
 
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
-
     # Default Python-side: retorna date no fuso local da app.
     data_inicio: date = db.Column(
         db.Date,
@@ -62,7 +61,7 @@ class Inscricao(db.Model):
     )
 
 
-class Transferencia(db.Model):
+class Transferencia(TenantMixin, db.Model):
     """
     Registro de transferência de um aluno entre turmas.
 

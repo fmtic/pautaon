@@ -898,8 +898,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 ### 12.3 Falta de mixins para auditoria
 
 **Onde:** `created_at`, `updated_at`, `ativo`, `unidade_id` repetidos.
-**Plano:** criar `TimestampMixin`, `SoftDeleteMixin`, `TenantMixin` em
-`app/models/base.py`.
+**Status:** Resolvido. `AuditoriaMixin` foi implementado e aplicado. `SoftDeleteMixin` e `TenantMixin` foram criados em `app/models/base.py` e aplicados na maior parte das entidades centrais (`academico`, `pedagogico`, `matriculas`, `conselho` e `aulas`), enxugando as declarações explícitas.
 
 ### 12.4 JSONs legados em `Aluno`
 

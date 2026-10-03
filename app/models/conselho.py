@@ -20,7 +20,8 @@ NOTAS ONDA 2B
 ================================================================================
 """
 
-from app.models.base import db, datetime, date, get_local_now
+from app.models.base import db, datetime, date, get_local_now, SoftDeleteMixin, TenantMixin
+from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.enums import EtapaConselho, SituacaoFinal, TipoPergunta
 
 
@@ -60,7 +61,7 @@ class PeriodoConselho(db.Model):
     unidade = db.relationship('Unidade', backref='periodos_conselho')
 
 
-class PerguntaConselho(db.Model):
+class PerguntaConselho(SoftDeleteMixin, db.Model):
     """
     Pergunta padronizada do formulário de conselho.
 
@@ -98,10 +99,9 @@ class PerguntaConselho(db.Model):
 
     texto: str = db.Column(db.Text, nullable=False)
     opcoes: str = db.Column(db.Text)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
 
 
-class OpcaoProximaTurma(db.Model):
+class OpcaoProximaTurma(SoftDeleteMixin, db.Model):
     """
     Catálogo de destinos possíveis após o conselho final.
     Ex.: 'Aprovado para Avançado', 'Reencaminhado para Básico', 'Egresso'.
@@ -110,10 +110,9 @@ class OpcaoProximaTurma(db.Model):
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
 
 
-class ConselhoClasse(db.Model):
+class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     """
     Resultado do conselho para UM aluno em UMA turma em UMA etapa.
 
@@ -169,13 +168,12 @@ class ConselhoClasse(db.Model):
     )
     proxima_turma_obj = db.relationship('OpcaoProximaTurma')
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     unidade = db.relationship('Unidade', backref='conselhos_unidade')
 
     respostas = db.relationship('ConselhoResposta', backref='conselho', lazy=True)
 
 
-class ConselhoResposta(db.Model):
+class ConselhoResposta(TenantMixin, db.Model):
     """
     Resposta de UMA pergunta do conselho para UM aluno.
 
@@ -195,5 +193,4 @@ class ConselhoResposta(db.Model):
     resposta: str = db.Column(db.Text)
     observacao: str = db.Column(db.Text)
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     unidade = db.relationship('Unidade', backref='respostas_conselho')

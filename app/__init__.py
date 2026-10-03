@@ -6,6 +6,7 @@ from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from app.extensions import csrf, db, login_manager
+from app.models import auditoria_listener  # noqa: F401
 import logging
 from logging.handlers import RotatingFileHandler
 import os

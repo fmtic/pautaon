@@ -23,9 +23,11 @@ from datetime import time
 
 from app.models.base import db, datetime, date, select, get_local_now, List
 from app.models.enums import CONCEITOS_PRESENCA, CONCEITOS_CONTABEIS
+from app.models.auditoria_mixin import AuditoriaMixin
+from app.models.base import SoftDeleteMixin, TenantMixin
 
 
-class PeriodoLetivo(db.Model):
+class PeriodoLetivo(SoftDeleteMixin, TenantMixin, db.Model):
     """
     Período letivo (semestre, módulo, ciclo) de uma unidade.
 
@@ -45,9 +47,7 @@ class PeriodoLetivo(db.Model):
     data_fim: date = db.Column(db.Date, nullable=False)
     centro_custo: str = db.Column(db.String(150))
     estimativa_alunos: int = db.Column(db.Integer, default=0, nullable=False)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=False)
     unidade = db.relationship('Unidade', backref='periodos')
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
@@ -71,7 +71,7 @@ class PeriodoLetivo(db.Model):
         )
 
 
-class Turma(db.Model):
+class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     """
     Turma: agrupamento operacional de alunos em um curso/período.
 
@@ -90,7 +90,6 @@ class Turma(db.Model):
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
 
     # Datas/horas nativas (Onda 2A - antes eram VARCHAR).
     data_inicio: date = db.Column(db.Date)
@@ -104,7 +103,6 @@ class Turma(db.Model):
     centro_custo: str = db.Column(db.String(150))
     ordenacao: int = db.Column(db.Integer)
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     unidade = db.relationship('Unidade', backref='turmas')
 
     periodo_letivo_id: int = db.Column(db.Integer, db.ForeignKey('periodo_letivo.id'), nullable=True)
@@ -163,7 +161,7 @@ class Turma(db.Model):
         ).scalars().all()
 
 
-class TemaAula(db.Model):
+class TemaAula(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     """
     Tópico macro de ensino (planejamento pedagógico).
 
@@ -180,10 +178,8 @@ class TemaAula(db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     curso_id: int = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=True)
     turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=True)  # legado
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     titulo: str = db.Column(db.String(200))
     programa: str = db.Column(db.String(50))
-    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
     data: date = db.Column(db.Date)
     ordem: int = db.Column(db.Integer, default=0, nullable=False)
 

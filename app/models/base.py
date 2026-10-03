@@ -42,14 +42,48 @@ from app.utils.timezone import get_local_now
 JSONType = _JSON().with_variant(_JSONB(), 'postgresql')
 
 
+# --- Mixins -------------------------------------------------------------------------
+from sqlalchemy.orm import declared_attr
+
+class SoftDeleteMixin:
+    """Mixin para deleção lógica (soft delete).
+    
+    Adiciona a coluna `ativo` com valor padrão `True`.
+    """
+    __allow_unmapped__ = True
+
+    ativo = db.Column(db.Boolean, default=True, nullable=False, comment='Flag de registro ativo (soft delete)')
+
+
+class TenantMixin:
+    """Mixin para multitenancy (isolamento por unidade).
+    
+    Adiciona a coluna `unidade_id` referenciando `unidade.id`. Por padrão, 
+    o campo permite nulo para manter compatibilidade com registros globais 
+    ou legados, mas pode ser sobrescrito pelas subclasses se necessário.
+    """
+    __allow_unmapped__ = True
+
+    @declared_attr
+    def unidade_id(cls):
+        return db.Column(
+            db.Integer, 
+            db.ForeignKey('unidade.id'), 
+            nullable=True, 
+            comment='ID da unidade (tenant)'
+        )
+
+
 __all__ = [
     # Biblioteca padrão
     'json', 'datetime', 'date', 'timezone', 'List', 'Optional',
     # Terceiros
-    'UserMixin', 'select', 'hybrid_property',
+    'UserMixin', 'select', 'hybrid_property', 'declared_attr',
     'generate_password_hash', 'check_password_hash',
     # Aplicação
     'db', 'get_local_now',
     # Tipos personalizados
     'JSONType',
+    # Mixins
+    'SoftDeleteMixin', 'TenantMixin',
 ]

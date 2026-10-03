@@ -20,11 +20,12 @@ NOTAS ONDA 2B
 ================================================================================
 """
 
-from app.models.base import db, datetime, date, hybrid_property, get_local_now
+from app.models.base import db, datetime, date, hybrid_property, get_local_now, TenantMixin
+from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.enums import ConceitoFrequencia
 
 
-class Frequencia(db.Model):
+class Frequencia(TenantMixin, db.Model):
     """
     Registro unitário de presença/falta de um aluno em uma turma em um dia.
 
@@ -69,7 +70,6 @@ class Frequencia(db.Model):
         nullable=True,
     )
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     unidade = db.relationship('Unidade', backref='frequencias')
 
     @hybrid_property
@@ -93,7 +93,7 @@ class Frequencia(db.Model):
         ])
 
 
-class RegistroAula(db.Model):
+class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     """
     Diário de aula: o que o professor registrou em uma turma em um dia.
 
@@ -115,7 +115,6 @@ class RegistroAula(db.Model):
     instrutor_id: int = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
-    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=True)
     unidade = db.relationship('Unidade', backref='diarios_unidade')
     turma_rel = db.relationship('Turma', backref='diarios')
     tema = db.relationship('TemaAula', foreign_keys=[tema_id])

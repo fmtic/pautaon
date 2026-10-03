@@ -41,7 +41,7 @@ O acesso de perfis operacionais é restrito à unidade vinculada ao usuário. Ad
 ## Arquitetura
 
 - `app/__init__.py`: factory `create_app`, inicialização de extensões, registro de blueprints, hooks e comandos CLI.
-- `app/models/`: entidades SQLAlchemy e enums. `app/models/MER.md` documenta o esquema e as regras persistidas.
+- `app/models/`: entidades SQLAlchemy e enums. `app/models/MER.md` documenta o esquema e as regras persistidas. A auditoria é provida globalmente via `app/models/auditoria_mixin.py` e capturada de forma automática pelo `app/models/auditoria_listener.py`.
 - `app/services/`: regras de negócio compartilhadas, como bootstrap, calendário, perfil e status por período.
 - `app/registros/`: rotas e operações de alunos, turmas, períodos, frequência e serviço social.
 - `app/main/`: dashboards por perfil.
