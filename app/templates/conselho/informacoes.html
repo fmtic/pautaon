@@ -43,7 +43,7 @@
                 <tbody>
                     {% for c in conselhos %}
                     <tr data-id="{{ c.id }}">
-                        <td class="ps-3"><span class="badge bg-secondary">{{ c.periodo_letivo.nome }}</span></td>
+                        <td class="ps-3"><span class="badge bg-secondary">{{ c.periodo_letivo.nome_exibicao }}</span></td>
                         <td class="fw-semibold">{{ c.nome }}</td>
                         <td>
                             <i class="bi bi-calendar3 text-muted me-1 small"></i>
@@ -102,7 +102,7 @@
                         <select class="form-select" id="periodoLetivoId" required>
                             <option value="">Selecione...</option>
                             {% for p in periodos_ativos %}
-                            <option value="{{ p.id }}">{{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} a {{ p.data_fim.strftime('%d/%m/%Y') }})</option>
+                            <option value="{{ p.id }}">{{ p.nome_exibicao }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} a {{ p.data_fim.strftime('%d/%m/%Y') }})</option>
                             {% endfor %}
                         </select>
                         <div class="form-text">Apenas períodos letivos ativos são permitidos. As datas do conselho devem estar dentro das datas do período selecionado.</div>

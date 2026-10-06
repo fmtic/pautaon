@@ -53,6 +53,11 @@ class PeriodoLetivo(SoftDeleteMixin, TenantMixin, db.Model):
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
     updated_at: datetime = db.Column(db.DateTime, onupdate=get_local_now)
 
+    @property
+    def nome_exibicao(self) -> str:
+        unidade_nome = self.unidade.nome if self.unidade else None
+        return f"{unidade_nome} {self.nome}" if unidade_nome else self.nome
+
     def alunos_enturmados(self) -> int:
         """
         Retorna o total de alunos ÚNICOS matriculados em qualquer turma
@@ -112,7 +117,9 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     curso = db.relationship('Curso', backref='turmas')
 
     professor_id: int = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    professor = db.relationship('User', backref='turmas_vinculadas')
+    professor = db.relationship(
+        'User', foreign_keys=[professor_id], backref='turmas_vinculadas'
+    )
 
     avaliacao_inicial: str = db.Column(db.Text)
     avaliacao_percurso: str = db.Column(db.Text)

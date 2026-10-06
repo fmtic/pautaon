@@ -9,10 +9,9 @@
 
   <div class="d-flex justify-content-between align-items-center mb-3 no-print">
     <div>
-      <h2 class="mb-0">Certificados — {{ periodo.nome }}</h2>
+      <h2 class="mb-0">Certificados — {{ periodo.nome_exibicao }}</h2>
       <p class="text-muted small mb-0">
         {{ periodo.data_inicio.strftime('%d/%m/%Y') }} até {{ periodo.data_fim.strftime('%d/%m/%Y') }}
-        &nbsp;|&nbsp; {{ periodo.unidade.nome }}
       </p>
     </div>
     <div class="d-flex gap-2">

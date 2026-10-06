@@ -271,7 +271,7 @@ def periodo_letivo_novo():
                 "Cadastro Período Letivo",
                 f"Criado período {nome} para unidade {unidade_nome}",
             )
-            flash(f"Período letivo '{nome}' cadastrado com sucesso!", "success")
+            flash(f"Período letivo '{novo.nome_exibicao}' cadastrado com sucesso!", "success")
             return redirect(url_for("registros.periodo_letivo_calendario", id=novo.id))
         except Exception:
             db.session.rollback()
@@ -305,7 +305,7 @@ def periodo_letivo_editar(id):
             periodo.centro_custo = ", ".join(request.form.getlist("centro_custo"))
             periodo.estimativa_alunos = int(request.form.get("estimativa_alunos", 0))
             db.session.commit()
-            flash(f"Período letivo '{periodo.nome}' atualizado!", "success")
+            flash(f"Período letivo '{periodo.nome_exibicao}' atualizado!", "success")
             return redirect(url_for("registros.periodo_letivo"))
         except Exception:
             db.session.rollback()
@@ -327,7 +327,7 @@ def periodo_letivo_inativar(id):
     assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = False
     db.session.commit()
-    flash(f"Período '{periodo.nome}' inativado.", "info")
+    flash(f"Período '{periodo.nome_exibicao}' inativado.", "info")
     return redirect(url_for("registros.periodo_letivo"))
 
 
@@ -343,7 +343,7 @@ def periodo_letivo_ativar(id):
     assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = True
     db.session.commit()
-    flash(f"Período '{periodo.nome}' reativado.", "success")
+    flash(f"Período '{periodo.nome_exibicao}' reativado.", "success")
     return redirect(url_for("registros.periodo_letivo"))
 
 

@@ -56,7 +56,7 @@
                             {% for periodo in periodos %}
                             <option value="{{ periodo.id }}" {% if periodo.id==selected_periodo_id %}selected{% endif
                                 %}>
-                                {{ periodo.nome }}
+                                {{ periodo.nome_exibicao }}
                             </option>
                             {% endfor %}
                         </select>
@@ -557,7 +557,7 @@
                                     <option value="">Todos os períodos</option>
                                     {% for periodo in periodos %}
                                     <option value="{{ periodo.id }}" {% if periodo.id==selected_periodo_id %}selected{%
-                                        endif %}>{{ periodo.nome }}</option>
+                                        endif %}>{{ periodo.nome_exibicao }}</option>
                                     {% endfor %}
                                 </select>
                             </div>

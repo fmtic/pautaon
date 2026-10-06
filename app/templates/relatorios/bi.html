@@ -32,7 +32,7 @@
           <select id="filtroPeriodo" class="form-select">
             <option value="">Todos</option>
             {% for p in periodos %}
-            <option value="{{ p.id }}">{{ p.nome }}</option>
+            <option value="{{ p.id }}">{{ p.nome_exibicao }}</option>
             {% endfor %}
           </select>
         </div>

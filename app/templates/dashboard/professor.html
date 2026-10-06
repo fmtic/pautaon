@@ -166,7 +166,7 @@
                                 <td class="ps-3 fw-semibold">{{ d.data.strftime('%d/%m/%Y') }}</td>
                                 <td><span class="badge bg-{{ info[1] }}">{{ info[0] }}</span></td>
                                 <td class="text-muted small">{{ d.descricao or '—' }}</td>
-                                <td class="text-muted small">{{ d.periodo_letivo.nome }}</td>
+                                <td class="text-muted small">{{ d.periodo_letivo.nome_exibicao }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

@@ -25,7 +25,7 @@
                                     <option value="">-- Sem Período (Avulso) --</option>
                                     {% for p in periodos %}
                                     <option value="{{ p.id }}" {% if turma.periodo_letivo_id==p.id %}selected{% endif %}>
-                                        {{ p.nome }} ({{ p.unidade.nome }})
+                                        {{ p.nome_exibicao }}
                                     </option>
                                     {% endfor %}
                                 </select>

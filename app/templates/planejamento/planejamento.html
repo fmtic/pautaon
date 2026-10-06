@@ -581,7 +581,7 @@
               <option value="">Selecione um período ativo…</option>
               {% for p in periodos_ativos %}
               <option value="{{ p.id }}" data-inicio="{{ p.data_inicio.strftime('%Y-%m-%d') }}"
-                data-fim="{{ p.data_fim.strftime('%Y-%m-%d') }}">{{ p.nome }}</option>
+                data-fim="{{ p.data_fim.strftime('%Y-%m-%d') }}">{{ p.nome_exibicao }}</option>
               {% endfor %}
             </select>
           </div>

@@ -43,7 +43,7 @@
                             <select name="periodo_letivo_id" class="form-select border-primary" required>
                                 <option value="">-- Selecione o Período --</option>
                                 {% for p in periodos %}
-                                <option value="{{ p.id }}">{{ p.nome }}</option>
+                                <option value="{{ p.id }}">{{ p.nome_exibicao }}</option>
                                 {% endfor %}
                             </select>
                             <small class="text-muted">Apenas períodos ativos na unidade {{ unidade_contexto }}.</small>

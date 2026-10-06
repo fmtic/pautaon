@@ -59,6 +59,13 @@ def _world():
     return unidade, periodos[0], periodos[1], periodos[2]
 
 
+def test_periodo_nome_exibicao_prefixa_unidade():
+    unidade = Unidade(nome="NIT")
+    periodo = PeriodoLetivo(nome="2026.2", unidade=unidade)
+    assert periodo.nome_exibicao == f"{unidade.nome} {periodo.nome}"
+    assert periodo.nome == "2026.2"
+
+
 def _aluno(unidade, nome, ativo=True):
     aluno = Aluno(nome=nome, unidade_id=unidade.id, ativo=ativo)
     db.session.add(aluno)

@@ -878,7 +878,7 @@ def historico_aluno(aluno_id):
                 "curso": turma.curso.nome if turma.curso else "—",
                 "programa": turma.programa or "—",
                 "professor": turma.professor.name if turma.professor else "—",
-                "periodo": (turma.periodo_letivo.nome if turma.periodo_letivo else "—"),
+                "periodo": (turma.periodo_letivo.nome_exibicao if turma.periodo_letivo else "—"),
                 "dias": turma.dias_semana or "—",
                 "horario": horario,
                 "data_inicio": (

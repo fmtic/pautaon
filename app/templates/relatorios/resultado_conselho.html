@@ -42,7 +42,7 @@
                             <option value="">Escolha um período…</option>
                             {% for periodo in periodos %}
                             <option value="{{ periodo.id }}" {{ 'selected' if periodo.id == selected_periodo_id }}>
-                                {{ periodo.nome }}
+                                {{ periodo.nome_exibicao }}
                             </option>
                             {% endfor %}
                         </select>

@@ -1630,6 +1630,9 @@ def turmas_por_periodo(
     query = Turma.query.join(
         PeriodoLetivo,
         PeriodoLetivo.id == Turma.periodo_letivo_id,
+    ).join(
+        Unidade,
+        Unidade.id == PeriodoLetivo.unidade_id,
     )
 
     if unidade_id:
@@ -1657,11 +1660,13 @@ def turmas_por_periodo(
         query.with_entities(
             PeriodoLetivo.id,
             PeriodoLetivo.nome,
+            Unidade.nome,
             db.func.count(Turma.id),
         )
         .group_by(
             PeriodoLetivo.id,
             PeriodoLetivo.nome,
+            Unidade.nome,
         )
         .order_by(PeriodoLetivo.nome)
         .all()
@@ -1670,10 +1675,10 @@ def turmas_por_periodo(
     return [
         {
             "id": periodo_id,
-            "nome": nome,
+            "nome": f"{unidade_nome} {nome}",
             "valor": total,
         }
-        for periodo_id, nome, total in resultados
+        for periodo_id, nome, unidade_nome, total in resultados
     ]
 
 
@@ -1923,6 +1928,9 @@ def aulas_por_periodo(
     ).join(
         PeriodoLetivo,
         PeriodoLetivo.id == Turma.periodo_letivo_id,
+    ).join(
+        Unidade,
+        Unidade.id == PeriodoLetivo.unidade_id,
     )
 
     if unidade_id:
@@ -1950,11 +1958,13 @@ def aulas_por_periodo(
         query.with_entities(
             PeriodoLetivo.id,
             PeriodoLetivo.nome,
+            Unidade.nome,
             db.func.count(RegistroAula.id),
         )
         .group_by(
             PeriodoLetivo.id,
             PeriodoLetivo.nome,
+            Unidade.nome,
         )
         .order_by(PeriodoLetivo.nome)
         .all()
@@ -1963,10 +1973,10 @@ def aulas_por_periodo(
     return [
         {
             "id": periodo_id_resultado,
-            "nome": nome,
+            "nome": f"{unidade_nome} {nome}",
             "valor": total,
         }
-        for periodo_id_resultado, nome, total in resultados
+        for periodo_id_resultado, nome, unidade_nome, total in resultados
     ]
 
 

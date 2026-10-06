@@ -61,10 +61,10 @@
               <a href="{{ url_for('registros.turma') }}?periodo_id={{ p.id }}"
                  class="text-secondary text-decoration-none"
                  title="Consultar turmas deste período (somente leitura)">
-                <i class="bi bi-folder2-open me-1 opacity-50"></i>{{ p.nome }}
+                <i class="bi bi-folder2-open me-1 opacity-50"></i>{{ p.nome_exibicao }}
               </a>
               {% else %}
-              {{ p.nome }}
+              {{ p.nome_exibicao }}
               {% endif %}
             </td>
             <td>{{ p.data_inicio.strftime('%d/%m/%Y') }}</td>
@@ -119,7 +119,7 @@
                 <form action="{{ url_for('registros.periodo_letivo_inativar', id=p.id) }}" method="POST" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-sm btn-outline-secondary"
-                          onclick="return confirm('Inativar o período {{ p.nome }}? Todos os lançamentos ficarão bloqueados.')">
+                          onclick="return confirm('Inativar o período {{ p.nome_exibicao }}? Todos os lançamentos ficarão bloqueados.')">
                     Inativar
                   </button>
                 </form>

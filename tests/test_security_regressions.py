@@ -34,6 +34,28 @@ def client(app):
     return app.test_client()
 
 
+def test_local_login_succeeds_with_audited_turma_model(client, app):
+    with app.app_context():
+        user = User(
+            name="Administrador",
+            email="admin@example.com",
+            role="admin",
+            first_login=False,
+        )
+        user.set_password("SenhaLocal!123")
+        db.session.add(user)
+        db.session.commit()
+
+    response = client.post(
+        "/login",
+        data={"email": "admin@example.com", "password": "SenhaLocal!123"},
+    )
+
+    assert response.status_code == 302
+    with client.session_transaction() as session:
+        assert session["_user_id"]
+
+
 def test_pending_user_redirected_to_approval_screen(client, app):
     with app.app_context():
         user = User(
