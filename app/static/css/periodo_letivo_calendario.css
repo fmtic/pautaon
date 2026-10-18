@@ -1,129 +1,170 @@
-/* ── Tipos ── */
-:root {
-  --cor-FERIADO: #dc3545;
-  --cor-ATIVIDADE_PEDAGOGICA: #0d6efd;
-  --cor-REUNIAO_PAIS: #6f42c1;
-  --cor-ATIVIDADE_INTERNA: #fd7e14;
-  --cor-MANUTENCAO: #6c757d;
-}
-
-/* ── Grade de meses ── */
+/* Grade mensal */
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1rem;
 }
 
 .cal-month {
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 0.75rem;
   overflow: hidden;
+  background: var(--bs-body-bg, #fff);
 }
 
 .cal-month-title {
-  background: #1a1a2e;
-  color: #fff;
-  font-size: .75rem;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  color: var(--bs-emphasis-color, #212529);
+  font-size: 0.8rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-  padding: .35rem .6rem;
+  letter-spacing: 0.02em;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--bs-border-color, #dee2e6);
 }
 
 .cal-week-header {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  font-size: .6rem;
-  color: #6c757d;
-  font-weight: 700;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  font-size: 0.7rem;
+  color: var(--bs-secondary-color, #6c757d);
+  font-weight: 600;
   text-align: center;
-  text-transform: uppercase;
-  background: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  border-bottom: 1px solid var(--bs-border-color, #dee2e6);
 }
 
 .cal-week-header span {
-  padding: 3px 0;
+  padding: 0.4rem 0;
 }
 
 .cal-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .cal-day {
-  border-right: 1px solid #eee;
-  border-bottom: 1px solid #eee;
-  min-height: 40px;
-  padding: 3px;
+  border-right: 1px solid var(--bs-border-color, #eee);
+  border-bottom: 1px solid var(--bs-border-color, #eee);
+  min-height: 48px;
+  padding: 0.3rem;
   cursor: pointer;
   position: relative;
-  transition: background .1s;
+  transition: background-color 0.15s ease;
   user-select: none;
 }
 
 .cal-day:hover {
-  background: #f0f4ff;
+  background: var(--bs-primary-bg-subtle, #f0f4ff);
 }
 
 .cal-day.empty {
   cursor: default;
-  background: #fafafa;
+  background: var(--bs-tertiary-bg, #fafafa);
 }
 
 .cal-day.weekend .cal-day-num {
-  color: #adb5bd;
+  color: var(--bs-secondary-color, #6c757d);
 }
 
+/* Célula marcada: barra lateral colorida + fundo suave.
+   Fallback (navegadores sem color-mix) mantém o fundo antigo. */
 .cal-day.selecionado {
-  outline: 2px solid var(--tipo-cor, #198754);
-  outline-offset: -2px;
+  background: var(--bs-primary-bg-subtle, #f0f4ff);
+  background: color-mix(
+    in srgb,
+    var(--tipo-cor, var(--bs-primary)) 10%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 var(--tipo-cor, var(--bs-primary));
+  outline: none;
 }
 
 .cal-day-num {
-  font-size: .68rem;
-  color: #495057;
+  font-size: 0.8rem;
+  color: var(--bs-body-color, #495057);
   font-weight: 500;
 }
 
 .cal-day-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  font-size: .58rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: #fff;
-  text-align: center;
-  line-height: 20px;
-  margin-top: 2px;
+  margin-top: 0.2rem;
 }
 
-/* ── Painel lateral ── */
-#panelDia {
-  border-top: 3px solid #1a1a2e;
-}
-
-/* ── Legenda ── */
+/* Chips da legenda */
 .tipo-btn {
-  font-size: .75rem;
+  font-size: 0.8rem;
+  border-radius: 0.5rem;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .tipo-btn.ativo {
-  outline: 3px solid var(--tipo-cor);
+  background: var(--tipo-cor) !important;
+  color: #fff !important;
+  border-color: var(--tipo-cor) !important;
+  outline: none;
+  font-weight: 600;
+}
+
+.tipo-btn.ativo .dot {
+  background: #fff !important;
+}
+
+/* Sidebar de datas marcadas */
+#listaMarcadas .list-group-item {
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#listaMarcadas .list-group-item:hover {
+  background: var(--bs-primary-bg-subtle, #f0f4ff);
+}
+
+#listaMarcadas .list-group-item .badge {
+  font-size: 0.65rem;
+}
+
+/* Acessibilidade */
+.cal-day:focus-visible,
+.tipo-btn:focus-visible {
+  outline: 3px solid var(--bs-primary, #0d6efd);
   outline-offset: 2px;
 }
 
-.tipo-btn .dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  vertical-align: middle;
+@media (max-width: 575.98px) {
+  .cal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cal-day {
+    min-height: 44px;
+  }
+
+  #modalDia .modal-dialog {
+    margin: 0.5rem;
+  }
 }
 
-/* ── Readonly ── */
-.readonly-overlay {
-  pointer-events: none;
-  opacity: .7;
+/* Chips da legenda: dica de que é clicável quando ativo */
+.tipo-btn.ativo::after {
+  content: " ×";
+  font-weight: 700;
+  opacity: 0.85;
+  margin-left: 0.15rem;
+}
+
+/* Chip de filtro quando o modo é readonly não deve ter cursor pointer */
+.tipo-btn[disabled] {
+  cursor: default;
+  opacity: 0.85;
 }

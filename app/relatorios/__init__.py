@@ -19,3 +19,4 @@ bp_relatorios = Blueprint(
 # Importa os módulos após a criação do blueprint para registrar as rotas.
 from . import geral, alunos, conselho  # noqa: E402,F401
 from . import bi_routes  # noqa: E402,F401
+from . import painel_pedagogico  # noqa: E402,F401

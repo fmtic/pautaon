@@ -1,12 +1,30 @@
 from collections import defaultdict
 from datetime import date, datetime
 
-from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import (
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from app.database import db
-from app.models import Aluno, DiaBloqueado, DiaBloqueadoTurma, Inscricao, PeriodoLetivo, Turma, Unidade
+from app.models import (
+    Aluno,
+    DiaBloqueado,
+    DiaBloqueadoTurma,
+    Inscricao,
+    PeriodoLetivo,
+    Turma,
+    Unidade,
+)
 from app.services.auth_service import register_security_log
+from app.services.feriados import obter_feriados_nacionais
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import get_unidade_id
 from . import bp
@@ -57,28 +75,41 @@ def calendario_salvar():
 
     payload = request.get_json(silent=True)
     if not payload:
-        return jsonify({"success": False, "message": "Payload JSON inválido ou ausente"}), 400
+        return (
+            jsonify({"success": False, "message": "Payload JSON inválido ou ausente"}),
+            400,
+        )
 
     periodo_id = payload.get("periodo_id")
     novos_dias = payload.get("dias", [])
     if not periodo_id:
-        return jsonify({"success": False, "message": "ID do período é obrigatório"}), 400
+        return (
+            jsonify({"success": False, "message": "ID do período é obrigatório"}),
+            400,
+        )
 
     periodo = PeriodoLetivo.query.get(periodo_id)
     if not periodo:
         return jsonify({"success": False, "message": "Período não encontrado"}), 404
 
     if unidade_id and periodo.unidade_id != unidade_id:
-        return jsonify({"success": False, "message": "Acesso negado a esta unidade"}), 403
+        return (
+            jsonify({"success": False, "message": "Acesso negado a esta unidade"}),
+            403,
+        )
 
     excecoes_payload = payload.get("excecoes", {})
 
     try:
         DiaBloqueado.query.filter_by(periodo_letivo_id=periodo_id).delete()
 
-        turma_ids = [t.id for t in Turma.query.filter_by(periodo_letivo_id=periodo_id).all()]
+        turma_ids = [
+            t.id for t in Turma.query.filter_by(periodo_letivo_id=periodo_id).all()
+        ]
         if turma_ids:
-            DiaBloqueadoTurma.query.filter(DiaBloqueadoTurma.turma_id.in_(turma_ids)).delete(synchronize_session=False)
+            DiaBloqueadoTurma.query.filter(
+                DiaBloqueadoTurma.turma_id.in_(turma_ids)
+            ).delete(synchronize_session=False)
 
         bloqueios_adicionados = 0
         for item in novos_dias:
@@ -129,7 +160,7 @@ def calendario_salvar():
                 db.session.add(
                     DiaBloqueadoTurma(
                         turma_id=turma_obj.id,
-                        data=data_obj,           # <- date, não string
+                        data=data_obj,  # <- date, não string
                         unidade_id=periodo.unidade_id,
                         criado_por_id=current_user.id,
                     )
@@ -146,7 +177,12 @@ def calendario_salvar():
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Erro ao salvar calendário de dias bloqueados.")
-        return jsonify({"success": False, "message": "Erro interno ao salvar calendário."}), 500
+        return (
+            jsonify(
+                {"success": False, "message": "Erro interno ao salvar calendário."}
+            ),
+            500,
+        )
 
 
 @bp.route("/planejamento/calendario/remover/<int:dia_id>", methods=["POST"])
@@ -167,13 +203,18 @@ def calendario_remover(dia_id):
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Erro ao remover dia bloqueado.")
-        return jsonify({"success": False, "message": "Erro interno ao remover dia bloqueado."}), 500
+        return (
+            jsonify(
+                {"success": False, "message": "Erro interno ao remover dia bloqueado."}
+            ),
+            500,
+        )
 
 
 @bp.route("/planejamento/calendario/<int:periodo_id>/exportar")
 @login_required
 def calendario_exportar(periodo_id):
-    """Renderiza a view de impressão do calendário de dias bloqueados."""
+    """Renderiza a listagem de impressão dos dias bloqueados."""
     unidade_id = get_unidade_id()
     _check_calendario_access(unidade_id)
 
@@ -187,7 +228,15 @@ def calendario_exportar(periodo_id):
         .all()
     )
 
-    return render_template("planejamento/calendario_bloqueados_print.html", periodo=periodo, dias=dias)
+    current_app.logger.info(
+        "Exportar dias sem aula: periodo=%s, dias=%d", periodo_id, len(dias)
+    )
+
+    return render_template(
+        "planejamento/calendario_bloqueados_print.html",
+        periodo=periodo,
+        dias=dias,
+    )
 
 
 @bp.route("/periodo-letivo")
@@ -203,7 +252,9 @@ def periodo_letivo():
         query = query.filter_by(unidade_id=unidade_id)
 
     todos = query.order_by(PeriodoLetivo.data_inicio.desc()).all()
-    anos_disponiveis = sorted({periodo.data_inicio.year for periodo in todos}, reverse=True)
+    anos_disponiveis = sorted(
+        {periodo.data_inicio.year for periodo in todos}, reverse=True
+    )
 
     ano_atual = date.today().year
     ano_filtro = request.args.get(
@@ -235,11 +286,16 @@ def periodo_letivo_novo():
 
     unidade_id = get_unidade_id()
     if not unidade_id:
-        flash("Selecione uma unidade específica para cadastrar um novo período letivo.", "warning")
+        flash(
+            "Selecione uma unidade específica para cadastrar um novo período letivo.",
+            "warning",
+        )
         return redirect(url_for("registros.periodo_letivo"))
 
-    unidade = current_user.unidade if current_user.unidade_id == unidade_id else db.session.get(
-        Unidade, unidade_id
+    unidade = (
+        current_user.unidade
+        if current_user.unidade_id == unidade_id
+        else db.session.get(Unidade, unidade_id)
     )
 
     if request.method == "POST":
@@ -271,7 +327,10 @@ def periodo_letivo_novo():
                 "Cadastro Período Letivo",
                 f"Criado período {nome} para unidade {unidade_nome}",
             )
-            flash(f"Período letivo '{novo.nome_exibicao}' cadastrado com sucesso!", "success")
+            flash(
+                f"Período letivo '{novo.nome_exibicao}' cadastrado com sucesso!",
+                "success",
+            )
             return redirect(url_for("registros.periodo_letivo_calendario", id=novo.id))
         except Exception:
             db.session.rollback()
@@ -323,6 +382,7 @@ def periodo_letivo_inativar(id):
 
     from app.utils.logica import get_unidade_id
     from .shared import assert_unidade_context
+
     periodo = db.get_or_404(PeriodoLetivo, id)
     assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = False
@@ -339,6 +399,7 @@ def periodo_letivo_ativar(id):
 
     from app.utils.logica import get_unidade_id
     from .shared import assert_unidade_context
+
     periodo = db.get_or_404(PeriodoLetivo, id)
     assert_unidade_context(periodo.unidade_id, get_unidade_id())
     periodo.ativo = True
@@ -359,9 +420,17 @@ def periodo_letivo_calendario(id):
     if unidade_id and periodo.unidade_id != unidade_id:
         abort(403)
 
-    dias = DiaBloqueado.query.filter_by(periodo_letivo_id=id).order_by(DiaBloqueado.data).all()
+    dias = (
+        DiaBloqueado.query.filter_by(periodo_letivo_id=id)
+        .order_by(DiaBloqueado.data)
+        .all()
+    )
     dias_json = [
-        {"data": item.data.strftime("%Y-%m-%d"), "tipo": item.tipo, "descricao": item.descricao or ""}
+        {
+            "data": item.data.strftime("%Y-%m-%d"),
+            "tipo": item.tipo,
+            "descricao": item.descricao or "",
+        }
         for item in dias
     ]
 
@@ -372,17 +441,30 @@ def periodo_letivo_calendario(id):
     )
     turmas_json = [{"id": t.id, "nome": t.nome} for t in turmas]
     excecoes = (
-        DiaBloqueadoTurma.query.join(Turma)
-        .filter(Turma.periodo_letivo_id == id)
-        .all()
+        DiaBloqueadoTurma.query.join(Turma).filter(Turma.periodo_letivo_id == id).all()
     )
 
     # Onda 2A: item.data é `date`. Dict JSON precisa de chave string.
-    # Antes era `item.data` direto — quebrava no jsonify/render.
     excecoes_json = {}
     for item in excecoes:
         chave = item.data.strftime("%Y-%m-%d")
         excecoes_json.setdefault(chave, []).append(item.turma_id)
+
+    # Feriados nacionais para pré-marcação no frontend.
+    # Em modo readonly (período inativo) não envia, para evitar ruído visual
+    # em períodos históricos já consolidados.
+    feriados_json = {}
+    if periodo.ativo:
+        try:
+            feriados_json = obter_feriados_nacionais(
+                periodo.data_inicio.year,
+                periodo.data_fim.year,
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Erro ao carregar feriados nacionais para o período %s.", id
+            )
+            feriados_json = {}
 
     return render_template(
         "periodos/calendario.html",
@@ -390,6 +472,7 @@ def periodo_letivo_calendario(id):
         dias_json=dias_json,
         turmas_json=turmas_json,
         excecoes_json=excecoes_json,
+        feriados_json=feriados_json,
     )
 
 
@@ -410,7 +493,11 @@ def periodo_letivo_relatorio_certificado(id):
     for turma in turmas:
         alunos_turma = (
             Aluno.query.join(Inscricao)
-            .filter(Inscricao.turma_id == turma.id, Inscricao.ativo == True, Aluno.ativo == True)
+            .filter(
+                Inscricao.turma_id == turma.id,
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
             .order_by(Aluno.nome)
             .all()
         )
@@ -423,7 +510,9 @@ def periodo_letivo_relatorio_certificado(id):
             ).first()
             situacao = conselho.situacao_final if conselho else None
             aprovado = situacao in situacoes_aprovadas if situacao else False
-            inscricao = Inscricao.query.filter_by(aluno_id=aluno.id, turma_id=turma.id).first()
+            inscricao = Inscricao.query.filter_by(
+                aluno_id=aluno.id, turma_id=turma.id
+            ).first()
             nivel_turma = inscricao.nivel if inscricao and inscricao.nivel else None
 
             alunos_map[aluno.id]["aluno"] = aluno

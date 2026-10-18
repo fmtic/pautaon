@@ -1,25 +1,169 @@
-{% extends "base.html" %}
-{% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/calendario_bloqueados_print.css') }}">
-{% endblock %}
-{% block content %}
-<!-- conteúdo HTML original, sem style e script inline -->
+{% extends "base.html" %} {% block styles %}{{ super() }}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/planejamento/calendario_bloqueados_print.css') }}"
+/>
+<style>
+  /* ══════════════════════════════════════════
+     CABEÇALHO DE IMPRESSÃO (oculto na tela)
+     ══════════════════════════════════════════ */
+  .print-header {
+    display: none;
+  }
+
+  /* ══════════════════════════════════════════
+     IMPRESSÃO
+     ══════════════════════════════════════════ */
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 1.5cm;
+    }
+
+    /* Oculta elementos de interface */
+    nav.navbar,
+    .no-print,
+    .alert,
+    .btn {
+      display: none !important;
+    }
+
+    /* Cabeçalho: logo em cima (esquerda), texto embaixo (centro) */
+    .print-header {
+      display: block !important;
+      padding-bottom: 0.75rem;
+      margin-bottom: 1rem;
+      border-bottom: 2px solid #1a1a2e;
+    }
+
+    .print-header img {
+      display: block;
+      max-height: 60px;
+      max-width: 200px;
+      width: auto;
+      object-fit: contain;
+      margin: 0 0 0.5rem 0;
+    }
+
+    .print-header-text {
+      text-align: center;
+    }
+
+    .print-header-title {
+      font-size: 14pt;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin: 0;
+    }
+
+    .print-header-sub {
+      font-size: 10pt;
+      color: #555;
+      margin: 0;
+    }
+  }
+</style>
+{% endblock %} {% block content %}
 <div class="cal-page py-4">
-  <!-- ... -->
+  {# ── Cabeçalho de impressão (só no papel) ── #}
+  <header class="print-header">
+    {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+    <img
+      src="{{ informacao_padrao.logo_secundaria_url }}"
+      alt="Logo institucional"
+    />
+    {% endif %}
+    <div class="print-header-text">
+      <p class="print-header-title">Dias sem Aula</p>
+      <p class="print-header-sub">
+        {{ informacao_padrao.nome_instituicao if informacao_padrao else '' }} —
+        {{ periodo.nome_exibicao }}
+      </p>
+    </div>
+  </header>
+
+  {# ── Barra de ações (não sai na impressão) ── #}
+  <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <a
+      href="{{ url_for('registros.periodo_letivo_calendario', id=periodo.id) }}"
+      class="btn btn-sm btn-outline-secondary"
+    >
+      <i class="bi bi-arrow-left me-1"></i>Voltar
+    </a>
+    <button type="button" class="btn btn-sm btn-primary" id="btnImprimir">
+      <i class="bi bi-printer me-1"></i>Imprimir
+    </button>
+  </div>
+
+  {# ── Cabeçalho de tela ── #}
+  <div class="no-print mb-3">
+    <h1 class="h4 mb-1">Dias sem Aula</h1>
+    <p class="text-muted mb-0">
+      <strong>{{ periodo.nome_exibicao }}</strong> &nbsp;|&nbsp; {{
+      periodo.data_inicio.strftime('%d/%m/%Y') }} até {{
+      periodo.data_fim.strftime('%d/%m/%Y') }}
+    </p>
+  </div>
+
+  {# ── Tabela ── #} {% if dias %}
+  <div class="cal-tabela">
+    <table class="table table-sm table-bordered">
+      <colgroup>
+        <col style="width: 15%" />
+        <col style="width: 25%" />
+        <col style="width: 60%" />
+      </colgroup>
+      <thead class="table-light">
+        <tr>
+          <th>Data</th>
+          <th>Tipo</th>
+          <th>Descrição</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dias %}
+        <tr>
+          <td>{{ d.data.strftime('%d/%m/%Y') }}</td>
+          <td>
+            {{ {'FERIADO':'Feriado','ATIVIDADE_PEDAGOGICA':'At.
+            Pedagógica','REUNIAO_PAIS':'Reunião de
+            Pais','ATIVIDADE_INTERNA':'At.
+            Interna','MANUTENCAO':'Manutenção'}.get(d.tipo, d.tipo) }}
+          </td>
+          <td>{{ d.descricao or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    Nenhum dia sem aula registrado neste período.
+  </div>
+  {% endif %}
+
+  <footer
+    class="mt-4 pt-2 border-top text-muted small d-flex justify-content-between"
+  >
+    <span>{{ periodo.nome_exibicao }}</span>
+    <span id="footer-datetime"></span>
+  </footer>
 </div>
-{% endblock %}
-{% block scripts %}
+{% endblock %} {% block scripts %}{{ super() }}
 <script>
-  window.diasBloqueados = {
-      {% for d in dias %}
-  "{{ d.data.strftime('%Y-%m-%d') }}": {
-    tipo: "{{ d.tipo }}",
-      cor: "{{ {'FERIADO':'#dc3545','ATIVIDADE_PEDAGOGICA':'#0d6efd','REUNIAO_PAIS':'#6f42c1','ATIVIDADE_INTERNA':'#fd7e14','MANUTENCAO':'#6c757d'}.get(d.tipo,'#adb5bd') }}",
-        icone: "{{ {'FERIADO':'F','ATIVIDADE_PEDAGOGICA':'A','REUNIAO_PAIS':'R','ATIVIDADE_INTERNA':'I','MANUTENCAO':'M'}.get(d.tipo,'?') }}",
-          desc: {{ d.descricao | tojson if d.descricao else '""' }}
-  } {% if not loop.last %}, {% endif %}
-  {% endfor %}
-  };
+  document.title =
+    'dias_sem_aula_{{ periodo.nome_exibicao | replace(" ", "_") }}';
+
+  (function () {
+    const agora = new Date().toLocaleString("pt-BR");
+    const dataEmissaoEl = document.getElementById("data-emissao");
+    const footerDateTimeEl = document.getElementById("footer-datetime");
+    if (dataEmissaoEl) dataEmissaoEl.textContent = "Emissão: " + agora;
+    if (footerDateTimeEl) footerDateTimeEl.textContent = "Data/Hora: " + agora;
+  })();
+
+  document.getElementById("btnImprimir")?.addEventListener("click", () => {
+    window.print();
+  });
 </script>
-<script src="{{ url_for('static', filename='js/planejamento/calendario_bloqueados_print.js') }}"></script>
 {% endblock %}
