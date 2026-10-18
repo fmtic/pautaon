@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import select
 
@@ -152,11 +152,10 @@ def nova_turma():
             db.session.commit()
             flash(f"A Turma '{nome_turma}' foi cadastrada com sucesso!", "success")
             return redirect(url_for("registros.turma"))
-        except Exception as exc:
+        except Exception:
             db.session.rollback()
-            flash(
-                f"Quebra transacional ao salvar turma (Constraint db): {exc}", "danger"
-            )
+            current_app.logger.exception("Falha ao salvar turma.")
+            flash("Não foi possível salvar a turma. Verifique os dados e tente novamente.", "danger")
             return redirect(url_for("registros.nova_turma"))
 
     professores = User.query.filter_by(role=UserRole.PROFESSOR.value)

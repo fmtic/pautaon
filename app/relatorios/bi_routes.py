@@ -168,8 +168,8 @@ def bi_exportar_xlsx():
         }
 
         resultado = executar_indicador(codigo, **filtros_permitidos)
-    except ValueError as exc:
-        return jsonify({"erro": str(exc)}), 400
+    except ValueError:
+        return jsonify({"erro": "Os parâmetros informados para o indicador são inválidos."}), 400
 
     indicador = listar_indicadores().get(codigo, {})
     nome_indicador = indicador.get("nome", codigo)
@@ -302,8 +302,8 @@ def bi_indicador(codigo):
         # Executa com os filtros sanitizados
         resultado = executar_indicador(codigo, **filtros_permitidos)
 
-    except ValueError as exc:
-        return jsonify({"erro": str(exc)}), 400
+    except ValueError:
+        return jsonify({"erro": "Os parâmetros informados para o indicador são inválidos."}), 400
 
     indicador = listar_indicadores().get(codigo)
 

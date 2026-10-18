@@ -108,7 +108,7 @@
       {# ── Explicação contextual ── #}
       <p class="text-muted small mb-3">
         Sua conta Google usa o mesmo endereço de e-mail de uma conta já cadastrada
-        neste sistema. Deseja vinculá-las para poder entrar com o Google no futuro?
+        neste sistema. Confirme que as duas contas são suas para vinculá-las.
       </p>
 
       {# ── Bloco visual de fusão ── #}
@@ -184,6 +184,13 @@
         <form method="POST" action="{{ url_for('auth.google_confirmar_vinculo') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="acao" value="confirmar">
+          {% if user.password %}
+            <label for="senhaAtual" class="form-label small fw-semibold">Confirme sua senha local</label>
+            <input type="password" name="senha_atual" id="senhaAtual" class="form-control mb-3"
+                   autocomplete="current-password" required>
+          {% else %}
+            <p class="small text-muted">Sua conta não possui senha local. A confirmação explícita acima autoriza o vínculo.</p>
+          {% endif %}
           <button type="submit" class="btn btn-primary w-100 fw-bold">
             <i class="bi bi-link-45deg me-1"></i>
             Sim, vincular minha conta Google

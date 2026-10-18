@@ -329,9 +329,10 @@ def registrar_atendimento(aluno_id):
         db.session.add(novo)
         db.session.commit()
         return jsonify({"ok": True, "id": novo.id}), 201
-    except Exception as exc:
+    except Exception:
         db.session.rollback()
-        return jsonify({"ok": False, "erro": str(exc)}), 500
+        current_app.logger.exception("Falha ao registrar atendimento.")
+        return jsonify({"ok": False, "erro": "Não foi possível salvar o atendimento."}), 500
 
 
 # ---------------------------------------------------------------------------

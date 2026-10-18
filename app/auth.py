@@ -21,9 +21,9 @@ from flask import Blueprint, current_app, render_template, request, redirect, fl
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
-from collections import defaultdict
 import json
 import secrets
+import hashlib
 
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.models.enums import UserRole
@@ -37,30 +37,20 @@ from app.services.auth_service import (
 
 bp = Blueprint('auth', __name__)
 
-# Nota técnica: a proteção contra brute-force não deve depender da memória do
-# processo. Em ambientes WSGI multi-worker ela é perdida em reinicialização e não
-# oferece isolamento de estado entre instâncias. Persistimos o histórico em
-# ConfiguracaoSistema, que já é um armazenamento compartilhado do app.
-_FAILED_ATTEMPTS = defaultdict(list)
+# O histórico fica no banco compartilhado para funcionar em múltiplos workers.
 _MAX_ATTEMPTS = 5
 _ATTEMPT_WINDOW_SECONDS = 900
 
 
 def _login_attempts_key(ip_address: str) -> str:
-    """Gera uma chave estável para o histórico de tentativas do IP."""
-    return f"login_attempts:{ip_address}"
+    """Gera uma chave curta e estável sem armazenar o IP em claro."""
+    digest = hashlib.sha256(ip_address.encode("utf-8")).hexdigest()[:32]
+    return f"login_attempts:{digest}"
 
 
-def _load_failed_attempts(ip_address: str) -> list[datetime]:
-    """Carrega tentativas falhas persistidas em banco para o IP informado.
-
-    Em caso de falha de banco (tabela inexistente, conexão recusada etc.),
-    faz fallback silencioso para o dicionário em memória para não bloquear o login.
-    """
-    try:
-        record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
-    except Exception:
-        return list(_FAILED_ATTEMPTS.get(ip_address, []))
+def _load_failed_attempts(ip_address: str) -> list[int]:
+    """Carrega timestamps Unix persistidos; erros de banco são propagados."""
+    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
     if not record or not record.valor:
         return []
     try:
@@ -70,40 +60,35 @@ def _load_failed_attempts(ip_address: str) -> list[datetime]:
     values = []
     for item in payload:
         try:
-            values.append(datetime.fromisoformat(item))
+            values.append(int(item))
         except (TypeError, ValueError):
             continue
     return values
 
 
-def _persist_failed_attempts(ip_address: str, attempts: list[datetime]) -> None:
-    """Persiste o histórico de tentativas falhas no banco.
-
-    Falhas de banco são logadas e ignoradas: a proteção em memória continua ativa
-    para a instância atual, evitando que um problema de schema derrube o login.
-    """
-    try:
-        key = _login_attempts_key(ip_address)
-        record = ConfiguracaoSistema.query.filter_by(chave=key).first()
-        if record is None:
-            record = ConfiguracaoSistema(chave=key, valor=json.dumps([ts.isoformat() for ts in attempts]))
-            db.session.add(record)
-        else:
-            record.valor = json.dumps([ts.isoformat() for ts in attempts])
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        current_app.logger.warning(
-            "Não foi possível persistir tentativas de login no banco (fallback em memória ativo)."
-        )
+def _persist_failed_attempts(ip_address: str, attempts: list[int]) -> None:
+    """Persiste timestamps compactos (compatíveis com valor varchar(100))."""
+    key = _login_attempts_key(ip_address)
+    record = ConfiguracaoSistema.query.filter_by(chave=key).first()
+    if not attempts:
+        if record:
+            db.session.delete(record)
+            db.session.commit()
+        return
+    payload = json.dumps(attempts, separators=(",", ":"))
+    if record is None:
+        record = ConfiguracaoSistema(chave=key, valor=payload)
+        db.session.add(record)
+    else:
+        record.valor = payload
+    db.session.commit()
 
 
 def _is_login_blocked(ip_address: str) -> bool:
     """Bloqueia temporariamente IPs com muitas tentativas consecutivas de login."""
     attempts = _load_failed_attempts(ip_address)
-    now = datetime.now()
-    attempts[:] = [ts for ts in attempts if (now - ts).total_seconds() < _ATTEMPT_WINDOW_SECONDS]
-    _FAILED_ATTEMPTS[ip_address] = attempts
+    now = int(datetime.now().timestamp())
+    attempts = [ts for ts in attempts if now - ts < _ATTEMPT_WINDOW_SECONDS]
     _persist_failed_attempts(ip_address, attempts)
     return len(attempts) >= _MAX_ATTEMPTS
 
@@ -111,9 +96,17 @@ def _is_login_blocked(ip_address: str) -> bool:
 def _register_failed_attempt(ip_address: str) -> None:
     """Registra uma tentativa falha para posterior bloqueio temporário."""
     attempts = _load_failed_attempts(ip_address)
-    attempts.append(datetime.now())
-    _FAILED_ATTEMPTS[ip_address] = attempts
+    now = int(datetime.now().timestamp())
+    attempts = [ts for ts in attempts if now - ts < _ATTEMPT_WINDOW_SECONDS]
+    attempts.append(now)
     _persist_failed_attempts(ip_address, attempts)
+
+
+def _clear_failed_attempts(ip_address: str) -> None:
+    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
+    if record:
+        db.session.delete(record)
+        db.session.commit()
 
 
 @bp.route('/aguardando-aprovacao')
@@ -145,14 +138,26 @@ def login():
         password = request.form.get('password', '')
 
         ip_address = request.remote_addr or "unknown"
-        if _is_login_blocked(ip_address):
+        try:
+            blocked = _is_login_blocked(ip_address)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Falha ao consultar rate limit de login.")
+            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
+            return redirect(url_for('auth.login'))
+        if blocked:
             flash('Muitas tentativas de login foram detectadas. Tente novamente mais tarde.', 'danger')
             return redirect(url_for('auth.login'))
 
         # Defensivo contra envio vazio
         if not email or not password:
             flash('Informe Email e Senha.', 'warning')
-            _register_failed_attempt(ip_address)
+            try:
+                _register_failed_attempt(ip_address)
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Falha ao persistir rate limit de login.")
+                flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
             return redirect(url_for('auth.login'))
 
         # Busca o usuário já registrado localmente. Para contas federadas,
@@ -228,6 +233,11 @@ def login():
 
         # === 3. CONCLUSÃO COM SUCESSO ===
         if login_ok and user and user.is_active:
+            try:
+                _clear_failed_attempts(ip_address)
+            except Exception:
+                db.session.rollback()
+                current_app.logger.exception("Falha ao limpar rate limit após login válido.")
             login_user(user)
             session.permanent = True
             if user.unidade_id:
@@ -248,7 +258,13 @@ def login():
 
         # Falha total ou Desabilitado
         register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo de e-mail: {email}")
-        _register_failed_attempt(ip_address)
+        try:
+            _register_failed_attempt(ip_address)
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Falha ao persistir rate limit de login.")
+            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
+            return redirect(url_for('auth.login'))
         flash('Credenciais recusadas pelo domínio e banco de dados.', 'danger')
 
     return render_template('login.html')
@@ -416,9 +432,15 @@ def google_callback():
             select(User).where(User.email == google_email)
         ).scalars().first()
 
-    if user and user.password and not user.google_id:
-        flash("Para vincular sua conta Google, confirme primeiro a senha local do usuário.", "warning")
-        return redirect(url_for("auth.login"))
+    if user and not user.google_id:
+        session["google_link_pending"] = {
+            "user_id": user.id,
+            "google_id": google_id,
+            "google_email": google_email,
+            "google_name": google_name,
+            "created_at": int(datetime.now().timestamp()),
+        }
+        return redirect(url_for("auth.google_confirmar_vinculo"))
 
     try:
         if user:
@@ -781,6 +803,70 @@ def limpar_logs_antigos():
         flash(f'Falha técnica ao tentar limpar logs antigos.', 'danger')
 
     return redirect(url_for('auth.ver_logs'))
+
+
+@bp.route('/auth/google/confirmar-vinculo', methods=['GET', 'POST'])
+def google_confirmar_vinculo():
+    """Confirma com senha local o vínculo de uma conta Google existente."""
+    pending = session.get("google_link_pending")
+    now = int(datetime.now().timestamp())
+    created_at = pending.get("created_at") if isinstance(pending, dict) else None
+    if (
+        not isinstance(pending, dict)
+        or not isinstance(created_at, int)
+        or now - created_at > 600
+        or created_at > now
+    ):
+        session.pop("google_link_pending", None)
+        flash("A confirmação do vínculo expirou. Inicie novamente o login Google.", "warning")
+        return redirect(url_for("auth.login"))
+
+    user = db.session.get(User, pending.get("user_id"))
+    if not user or not user.is_active or user.google_id:
+        session.pop("google_link_pending", None)
+        flash("Não foi possível confirmar o vínculo desta conta.", "danger")
+        return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        action = request.form.get("acao")
+        if action == "recusar":
+            session.pop("google_link_pending", None)
+            flash("Vínculo cancelado. Você pode entrar com suas credenciais normais.", "info")
+            return redirect(url_for("auth.login"))
+        if action != "confirmar":
+            abort(400)
+
+        password = request.form.get("senha_atual", "")
+        if user.password and (not password or not user.check_password(password)):
+            flash("Senha local incorreta. O vínculo não foi realizado.", "danger")
+            return redirect(url_for("auth.google_confirmar_vinculo"))
+
+        user.google_id = pending["google_id"]
+        user.google_email = pending["google_email"]
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Falha ao confirmar vínculo Google.")
+            flash("Não foi possível vincular a conta agora. Tente novamente.", "danger")
+            return redirect(url_for("auth.login"))
+
+        session.pop("google_link_pending", None)
+        login_user(user)
+        session.permanent = True
+        if user.unidade_id:
+            session["unidade_id"] = user.unidade_id
+        else:
+            session.pop("unidade_id", None)
+        register_security_log("Vínculo Google", f"Vínculo Google confirmado por {user.name}.")
+        return redirect(url_for("main.painel"))
+
+    return render_template(
+        "auth/confirmar_vinculo_google.html",
+        google_email=pending["google_email"],
+        google_name=pending["google_name"],
+        user=user,
+    )
 
 
 # ====================== ROTAS DO PERFIL PESSOAL ======================

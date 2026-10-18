@@ -1146,8 +1146,31 @@ def ver_documento_aluno(aluno_id: int, doc_id: str):
 @login_required
 def foto_aluno(aluno_id: int):
     """Serve a foto de perfil do aluno autenticada e protegida."""
+    allowed_roles = (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+        UserRole.SERVICO_SOCIAL,
+        UserRole.PROFESSOR,
+    )
+    if current_user.role not in allowed_roles:
+        abort(403)
+
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
+    if current_user.role == UserRole.PROFESSOR:
+        professor_tem_aluno = (
+            Inscricao.query.join(Turma, Inscricao.turma_id == Turma.id)
+            .filter(
+                Inscricao.aluno_id == aluno.id,
+                Inscricao.ativo.is_(True),
+                Turma.professor_id == current_user.id,
+            )
+            .first()
+        )
+        if not professor_tem_aluno:
+            abort(403)
 
     if aluno.foto_path:
         filename = secure_filename(aluno.foto_path)

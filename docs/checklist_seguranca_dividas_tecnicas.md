@@ -11,23 +11,23 @@
 
 | ID | Área / Vulnerabilidade | Severidade | Esforço | Status |
 | :--- | :--- | :---: | :---: | :---: |
-| **SEC-01** | Uploads de documentos e laudos expostos na pasta pública `/static` sem autenticação | **Crítica** | Médio | `[x] Feito` |
+| **SEC-01** | Uploads de documentos e laudos expostos na pasta pública `/static` sem autenticação | **Crítica** | Médio | `[x] Código protegido; implantação a conferir` |
 | **SEC-02** | Operações de mutação e deleção via método HTTP `GET` (Vulnerabilidade CSRF) | **Crítica** | Médio | `[x] Feito` |
 | **SEC-03** | Falta de interceptor global (`before_request`) para perfil `pendente` e `first_login` | **Alta** | Baixo | `[x] Feito` |
 | **SEC-04** | Ações destrutivas e consultas de alunos/serviço social sem checagem de perfil (RBAC) | **Alta** | Médio | `[x] Feito` |
 | **SEC-05** | Quebra de isolamento multitenant entre unidades (IDOR em atendimentos e períodos) | **Alta** | Médio | `[x] Feito` |
 | **SEC-06** | Pre-Account Takeover no Google OAuth (vínculo automático sem comprovação) | **Média** | Baixo | `[x] Feito` |
 | **SEC-07** | Troca de senha não exige a senha atual do operador | **Média** | Baixo | `[x] Feito` |
-| **SEC-08** | Rate limiting de autenticação em memória volátil e risco de DoS sem `ProxyFix` | **Média** | Baixo | `[x] Feito` |
+| **SEC-08** | Rate limiting sem persistência e configuração de proxy reverso | **Média** | Baixo | `[x] Banco compartilhado; proxy a conferir na implantação` |
 | **SEC-09** | Flag `SESSION_COOKIE_SECURE` desativada quando configurado apenas `APP_ENV` | **Média** | Baixo | `[x] Feito` |
 | **SEC-10** | Ausência de cabeçalhos HTTP de segurança (*Security Headers*) e Clickjacking | **Baixa** | Baixo | `[x] Feito` |
-| **SEC-11** | Vazamento de detalhes internos e nomes de banco em mensagens *flash* | **Baixa** | Baixo | `[x] Feito` |
+| **SEC-11** | Vazamento de detalhes internos e nomes de banco em mensagens *flash* | **Baixa** | Baixo | `[x] Feito no código inspecionado` |
 
 ---
 
 ## 1. Vulnerabilidades Críticas
 
-### [SEC-01] Uploads de documentos e laudos expostos publicamente na pasta `/static`
+### [SEC-01] Uploads de documentos e laudos expostos publicamente na pasta `/static` — mitigado no código
 
 - **Arquivos afetados**:
   - `app/registros/shared.py` (funções `salvar_documento`, `salvar_foto`, `_build_upload_path`)
@@ -43,12 +43,9 @@
   4. Migrar os arquivos físicos legados já existentes em `app/static/uploads/documentos/` para a nova pasta protegida.
 
 #### Checklist SEC-01
-- [ ] Criar diretório seguro `instance/uploads/documentos/` e `instance/uploads/fotos/`.
-- [ ] Atualizar `_build_upload_path` em `app/registros/shared.py` para apontar para `instance/uploads/`.
-- [ ] Atualizar `_salvar_anexo` em `app/registros/atendimentos.py` para gravar no novo diretório seguro.
-- [ ] Criar endpoint protegido `GET /documentos/<tipo>/<int:aluno_id>/<filename>` com `@login_required` e validação de `assert_unidade_context`.
-- [ ] Substituir nos templates Jinja referências diretas de `url_for('static', filename='uploads/documentos/...')` pelo novo endpoint protegido.
-- [ ] Testar se uma requisição não autenticada recebe `302/401` ao tentar acessar um documento.
+- [ ] Confirmar no servidor implantado que não há cópias legadas de documentos ou fotos sob `static`.
+
+> Verificação local em 18/10/2026: os arquivos de documentos encontrados estão em `instance/uploads`; `app/static/uploads` contém apenas imagens institucionais. A implantação deve confirmar que não há cópias legadas fora deste checkout.
 
 ---
 
@@ -70,16 +67,7 @@
   2. Nos templates onde há botões ou links de exclusão/alteração, transformar as tags `<a>` em pequenos formulários HTML com `<button type="submit">` contendo o token CSRF (`<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`).
 
 #### Checklist SEC-02
-- [ ] Alterar rota `/aluno/excluir/<int:id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rota `/aluno/inativar/<int:id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rota `/turma/desenturmar/<int:id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rota `/admin/unidades/alternar/<int:id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rota `/conselho/pergunta/excluir/<int:id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rota `/turma/alternar-conselho/<int:turma_id>` para `methods=['POST']` e atualizar botão no template.
-- [ ] Alterar rotas `/periodo-letivo/inativar/<int:id>` e `/periodo-letivo/ativar/<int:id>` para `methods=['POST']`.
-- [ ] Alterar rota `/servico-social/excluir-agendamento/<int:id>` para `methods=['POST']`.
-- [ ] Alterar rota `/excluir/<int:id>` em `app/registros/core.py` para `methods=['POST']`.
-- [ ] Testar envio de requisições `GET` contra essas rotas e certificar que retornam `405 Method Not Allowed`.
+As rotas listadas aceitam apenas `POST`. As requisições GET foram verificadas no cliente de teste e retornaram `405`.
 
 ---
 
@@ -100,8 +88,6 @@
   - Redirecione para `auth.trocar_senha` caso `current_user.is_authenticated and current_user.first_login and not current_user.is_ad_user`.
 
 #### Checklist SEC-03
-- [ ] Implementar a função interceptora `_enforce_user_access_state` e registrá-la em `app.before_request`.
-- [ ] Adicionar exceções estritas para `static`, `auth.logout`, `auth.aguardando_aprovacao` e `auth.trocar_senha`.
 - [ ] Testar com um usuário no estado `pendente` acessando diretamente `/alunos` e certificar o redirecionamento.
 - [ ] Testar com um usuário no estado `first_login=True` tentando acessar `/dashboard` e certificar o redirecionamento forçado para `/trocar-senha`.
 
@@ -123,11 +109,7 @@
   Incluir restrições explícitas de papéis canônicos (`UserRole`) no topo das rotas usando `if current_user.role not in (...): abort(403)`.
 
 #### Checklist SEC-04
-- [ ] Proteger `/aluno/excluir/<id>` para permitir apenas `UserRole.ADMIN` e `UserRole.PEDAGOGICO`.
-- [ ] Proteger `/aluno/inativar/<id>` para permitir apenas `UserRole.ADMIN`, `UserRole.PEDAGOGICO` e `UserRole.SECRETARIA`.
-- [ ] Proteger `/servico-social/excluir-agendamento/<id>` para permitir apenas o autor do agendamento ou `UserRole.ADMIN` / `UserRole.SERVICO_SOCIAL`.
-- [ ] Proteger `/aluno/<id>/historico` validando perfil e associação de turma quando for professor.
-- [ ] Proteger `/api/alunos/<turma_id>` validando permissão e contexto de unidade.
+Os controles de perfil, autoria e unidade descritos acima estão implementados. A validação funcional desses papéis deve ocorrer na suíte de integração da implantação.
 
 ---
 
@@ -147,9 +129,6 @@
   2. Ajustar `assert_unidade_context` para rejeitar requisições de operadores locais cujo `unidade_id` seja nulo.
 
 #### Checklist SEC-05
-- [ ] Inserir `assert_unidade_context(a.unidade_id, get_unidade_id())` em `detalhe_atendimento` (`app/registros/atendimentos.py`).
-- [ ] Inserir `assert_unidade_context(periodo.unidade_id, get_unidade_id())` em `periodo_letivo_inativar` e `periodo_letivo_ativar` (`app/registros/periodos.py`).
-- [ ] Ajustar `assert_unidade_context` para validar que usuários não-globais possuam obrigatoriamente `unidade_id`.
 - [ ] Testar tentativa de acesso cruzado de um operador da Unidade A acessando o ID de atendimento da Unidade B, garantindo retorno `403 Forbidden`.
 
 ---
@@ -171,9 +150,7 @@
   3. Se a conta local já existir e possuir senha cadastrada, exigir confirmação de senha local antes do primeiro vínculo com conta externa Google.
 
 #### Checklist SEC-06
-- [ ] Adicionar validação: `if not userinfo.get("email_verified"): abort(400)`.
-- [ ] Configurar parâmetro opcional `GOOGLE_OAUTH_ALLOWED_DOMAINS` no `.env` para limitar domínios corporativos.
-- [ ] Em contas pré-existentes que nunca fizeram login via Google, solicitar confirmação da senha local antes de associar o `google_id`.
+Validação de e-mail, restrição opcional de domínio e confirmação do vínculo estão implementadas. A confirmação expira em dez minutos e exige senha local quando cadastrada.
 
 ---
 
@@ -187,25 +164,24 @@
   Exigir o campo `senha_atual` no formulário e validar via `current_user.check_password(senha_atual)` antes de aceitar a nova credencial (exceto no fluxo onde `current_user.first_login` é verdadeiro e a conta possui senha padrão inicial).
 
 #### Checklist SEC-07
-- [ ] Adicionar campo `senha_atual` no formulário `app/templates/trocar_senha.html` quando `not first_login`.
-- [ ] Validar `current_user.check_password(senha_atual)` em `app/auth.py:trocar_senha`.
 - [ ] Testar tentativa de alteração com senha atual incorreta e confirmar bloqueio.
 
 ---
 
-### [SEC-08] Rate Limiting de login em memória volátil e risco de DoS sem `ProxyFix`
+### [SEC-08] Rate Limiting de login e configuração de `ProxyFix`
 
 - **Arquivo afetado**: `app/auth.py` (funções `_is_login_blocked`, `_register_failed_attempt`)
 - **Descrição do Risco**:
-  1. A proteção de força bruta `_FAILED_ATTEMPTS` usa um dicionário Python em memória. Em servidores WSGI (Gunicorn, uWSGI, IIS com múltiplos processos), cada processo tem sua própria memória isolada e os contadores são apagados em qualquer reinicialização de worker.
-  2. Sem o middleware `werkzeug.middleware.proxy_fix.ProxyFix`, caso a aplicação rode atrás de um proxy reverso (Nginx, Traefik, IIS URL Rewrite), `request.remote_addr` será `127.0.0.1` para todos os clientes. Consequentemente, 5 erros de login por qualquer atacante bloquearão o acesso de todos os colaboradores da instituição.
+  1. Contadores em memória não seriam compartilhados entre processos WSGI; agora as tentativas são persistidas no armazenamento compartilhado do banco.
+  2. `ProxyFix` está instalado; seus valores de confiança precisam corresponder à topologia implantada para que o IP do cliente seja interpretado corretamente.
 - **Plano de Ação**:
   1. Configurar `ProxyFix` na inicialização do Flask (`app/__init__.py`).
   2. Considerar o armazenamento de tentativas de login falhas no banco de dados SQLite/Postgres ou Redis para persistência compartilhada entre processos.
 
 #### Checklist SEC-08
-- [ ] Configurar `ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)` no `create_app` se executado em produção com proxy reverso.
-- [ ] Migrar contadores de bloqueio de IP/usuário de memória volátil para persistência de curto prazo.
+- [ ] Confirmar que `x_for=1`, `x_proto=1` e `x_host=1` correspondem ao número e à configuração dos proxies no ambiente implantado.
+
+> `ProxyFix` está instalado no código. A quantidade de proxies confiáveis (`x_for=1`, `x_proto=1`, `x_host=1`) precisa corresponder à topologia real da implantação.
 
 ---
 
@@ -224,7 +200,6 @@
   Atualizar a linha para verificar `APP_ENV == "production"`.
 
 #### Checklist SEC-09
-- [ ] Atualizar `config.py` para usar `APP_ENV == "production"`.
 - [ ] Validar no navegador em ambiente HTTPS se o cookie de sessão possui a flag `Secure`.
 
 ---
@@ -242,9 +217,7 @@
   Adicionar um decorator `@app.after_request` em `app/__init__.py` para injetar os cabeçalhos em todas as respostas HTTP.
 
 #### Checklist SEC-10
-- [ ] Adicionar função `_set_security_headers` via `@app.after_request`.
-- [ ] Injetar `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` e `Strict-Transport-Security` (quando em produção).
-- [ ] Testar headers usando ferramentas de inspeção do navegador ou `curl -I`.
+- [ ] Confirmar no ambiente HTTPS de produção o recebimento dos cabeçalhos, incluindo HSTS.
 
 ---
 
@@ -260,26 +233,10 @@
   Substituir as mensagens técnicas por mensagens genéricas e amigáveis para o usuário, registrando o detalhe técnico exclusivamente via `current_app.logger.exception(...)`.
 
 #### Checklist SEC-11
-- [ ] Fazer varredura de chamadas `flash(... {exc} ...)` e `jsonify(erro=str(exc))`.
-- [ ] Padronizar mensagens para "Ocorreu um erro ao salvar o registro. A equipe técnica foi notificada."
-- [ ] Assegurar que os detalhes técnicos completos continuem sendo enviados para `app.logger.exception()`.
+Tratamento genérico ao usuário e registro de falhas operacionais estão implementados para os casos identificados.
 
 ---
 
-## 5. Roteiro Sugerido de Execução
+## 5. Validações restantes
 
-1. **Sprint 1 (Imediato - Risco Crítico)**:
-   - Implementar rota segura para downloads de arquivos e tirar documentos da pasta `static` (**SEC-01**).
-   - Converter todas as rotas destrutivas via `GET` para formulários com `POST` e token CSRF (**SEC-02**).
-   - Criar interceptor `@app.before_request` para usuários `pendente` e primeiro acesso (**SEC-03**).
-
-2. **Sprint 2 (Alto Impacto em Acessos e Multitenancy)**:
-   - Adicionar checagem de perfil nas rotas órfãs de alunos e serviço social (**SEC-04**).
-   - Corrigir checagem de unidade (`assert_unidade_context`) em atendimentos e períodos letivos (**SEC-05**).
-   - Corrigir comportamento de `assert_unidade_context` para usuários sem unidade definida (**SEC-05**).
-
-3. **Sprint 3 (Higiene de Autenticação e Configurações)**:
-   - Exigir senha atual no formulário de troca de senha (**SEC-07**).
-   - Proteger callback do Google OAuth contra Pre-Account Takeover (**SEC-06**).
-   - Corrigir `SESSION_COOKIE_SECURE` e adicionar cabeçalhos HTTP defensivos (**SEC-09**, **SEC-10**).
-   - Limpar mensagens de exceção técnica nos flashes (**SEC-11**).
+As correções de código descritas neste plano foram implementadas. Permanecem apenas os testes funcionais listados por seção e as confirmações que exigem acesso ao ambiente implantado (arquivos legados, configuração de proxy, cookie `Secure` e cabeçalhos em HTTPS).
