@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Busca de alunos{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+  <div>
+    <h1 class="h3 fw-bold mb-1">
+      <i class="bi bi-search text-primary me-2"></i>Busca de alunos
+    </h1>
+    <p class="text-muted small mb-0">
+      Encontre qualquer aluno da unidade — enturmado ou não no período vigente.
+    </p>
+  </div>
+  <a href="{{ url_for('relatorios.painel_pedagogico',
+                      periodo_letivo_id=periodo.id if periodo else None) }}"
+     class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Voltar ao painel
+  </a>
+</div>
+
+<form method="get" class="input-group mb-3">
+  <input type="search" name="q" value="{{ q }}" class="form-control"
+         placeholder="Nome ou nome social do aluno" aria-label="Buscar aluno">
+  {% if periodo %}
+    <input type="hidden" name="periodo_letivo_id" value="{{ periodo.id }}">
+  {% endif %}
+  <button class="btn btn-primary" type="submit">
+    <i class="bi bi-search"></i>
+  </button>
+</form>
+
+{% if not vinculos %}
+  <div class="alert alert-info small">
+    {% if q %}
+      Nenhum aluno encontrado para “{{ q }}”.
+    {% else %}
+      Digite um nome para buscar.
+    {% endif %}
+  </div>
+{% else %}
+<div class="card shadow-sm border-0">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 small">
+      <thead><tr>
+        <th class="ps-3">Aluno</th>
+        <th>Turma vigente</th>
+        <th>Período</th>
+        <th>Situação</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for v in vinculos %}
+        <tr>
+          <td class="ps-3">
+            <div class="fw-semibold">{{ v.aluno.nome_social or v.aluno.nome }}</div>
+            <div class="text-muted" style="font-size:.72rem">{{ v.aluno.matricula }}</div>
+          </td>
+          <td>{{ v.turma.nome if v.turma else '—' }}</td>
+          <td>
+            {{ v.turma.periodo_letivo.nome
+               if v.turma and v.turma.periodo_letivo else '—' }}
+          </td>
+          <td>
+            {% if v.enturmado_no_periodo %}
+              <span class="badge bg-success-subtle text-success-emphasis">No período</span>
+            {% elif v.turma %}
+              <span class="badge bg-warning-subtle text-warning-emphasis">Fora do período</span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary-emphasis">Sem turma</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-3">
+            <a class="btn btn-outline-primary btn-sm py-0"
+               href="{{ url_for('relatorios.ficha_aluno_view',
+                                aluno_id=v.aluno.id,
+                                turma_id=v.turma.id if v.turma else None) }}">
+              Abrir ficha <i class="bi bi-arrow-right"></i>
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

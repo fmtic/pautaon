@@ -1,0 +1,494 @@
+{% extends "base.html" %}
+{% block title %}Painel Pedagógico{% endblock %}
+
+{% block styles %}
+<style>
+  .pt-label { font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
+              color: var(--bs-secondary-color); font-weight: 600; }
+  .pt-num   { font-variant-numeric: tabular-nums; }
+
+  .conceito-A { background: #1b5e20; color: #fff; }
+  .conceito-B { background: #2e7d32; color: #fff; }
+  .conceito-C { background: #4caf50; color: #000; }
+  .conceito-D { background: #81c784; color: #000; }
+  .conceito-F { background: #d32f2f; color: #fff; }
+  .conceito-J { background: #fbc02d; color: #000; }
+
+  .pt-stack { display: flex; height: .9rem; border-radius: .3rem; overflow: hidden;
+              background: var(--bs-secondary-bg); gap: 2px; }
+  .pt-stack > span { display: block; min-width: 2px; }
+  .pt-stack .hi  { background: var(--bs-success); }
+  .pt-stack .mid { background: var(--bs-warning); }
+  .pt-stack .lo  { background: var(--bs-danger); }
+
+  .pt-chart { position: relative; height: 290px; }
+
+  .pt-rt { border-collapse: separate; border-spacing: 2px; font-size: .78rem; }
+  .pt-rt .pt-c { width: 1.5rem; height: 1.5rem; text-align: center;
+                 border-radius: .25rem; font-weight: 700; font-size: .7rem; }
+  .pt-rt .pt-name { position: sticky; left: 0; background: var(--bs-body-bg);
+                    text-align: left; padding-right: .6rem; min-width: 11rem; }
+  .pt-colmark { outline: 2px solid var(--bs-body-color); outline-offset: -2px; }
+
+  .pt-dot { width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid;
+            place-items: center; flex: 0 0 auto; }
+  .pt-dot.ok   { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+  .pt-dot.warn { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+  .pt-dot.bad  { background: var(--bs-danger-bg-subtle);  color: var(--bs-danger-text-emphasis); }
+  .pt-dot.info { background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); }
+</style>
+{% endblock %}
+
+{% macro kpi_card(label, valor, valor_str=None, extra=None) -%}
+<div class="col-6 col-lg-3">
+  <div class="card shadow-sm border-0 h-100"><div class="card-body">
+    <div class="pt-label mb-1">{{ label }}</div>
+    <div class="fs-2 fw-bold pt-num">{{ valor_str if valor_str is not none else valor }}</div>
+    {% if extra %}<div class="small text-muted mt-1">{{ extra }}</div>{% endif %}
+  </div></div>
+</div>
+{%- endmacro %}
+
+{% macro barra_faixas(larguras, faixas) -%}
+<div class="pt-stack mb-2">
+  <span class="hi"  style="width:{{ larguras.hi }}%"></span>
+  <span class="mid" style="width:{{ larguras.mid }}%"></span>
+  <span class="lo"  style="width:{{ larguras.lo }}%"></span>
+</div>
+<div class="small text-muted pt-num">
+  ≥ 90%: {{ faixas.hi }} · 75–89%: {{ faixas.mid }} · &lt; 75%: {{ faixas.lo }}
+</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+  <div>
+    <h1 class="h3 fw-bold mb-1"><i class="bi bi-diagram-3 text-primary me-2"></i>Painel pedagógico</h1>
+    <p class="text-muted small mb-0">
+      Do período letivo à turma e à ficha do aluno.
+      {% if periodo %}
+        Período {{ periodo.nome }} · {{ periodo.data_inicio.strftime('%d/%m/%Y') if periodo.data_inicio else '—' }} a {{ periodo.data_fim.strftime('%d/%m/%Y') if periodo.data_fim else '—' }}
+      {% endif %}
+    </p>
+  </div>
+
+  {% if periodos %}
+  <form method="get" class="d-flex gap-2 flex-wrap align-items-end">
+    <div>
+      <label class="pt-label d-block" for="filtroPeriodo">Período</label>
+      <select id="filtroPeriodo" name="periodo_letivo_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for p in periodos %}
+          <option value="{{ p.id }}" {% if periodo and p.id == periodo.id %}selected{% endif %}>{{ p.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="pt-label d-block" for="filtroTurma">Turma</label>
+      <select id="filtroTurma" name="turma_id" class="form-select form-select-sm" onchange="this.form.submit()" {% if not periodo %}disabled{% endif %}>
+        <option value="">— Período (todas as turmas) —</option>
+        {% for t in turmas_periodo %}
+          <option value="{{ t.id }}" {% if turma and turma.id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <a href="{{ url_for('relatorios.busca_alunos') }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-search me-1"></i>Buscar aluno (ficha 360°)
+    </a>
+  </form>
+  {% endif %}
+</div>
+
+{% if not periodo %}
+<div class="alert alert-info">Nenhum período letivo cadastrado para esta unidade.</div>
+
+{% elif visao_periodo %}
+  {% set vp = visao_periodo %}
+
+  {# KPIs do período #}
+  <div class="row g-3 mb-3">
+    {{ kpi_card('Alunos enturmados', vp.totais.alunos, extra='%d novos · %d renovados · %d retornantes' | format(vp.totais.novos, vp.totais.renovados, vp.totais.retornantes)) }}
+    {{ kpi_card('Frequência do período', vp.totais.pct_geral_str) }}
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="pt-label mb-1">Alunos por faixa</div>
+        {{ barra_faixas(vp.totais.faixas_largura, vp.totais.faixas) }}
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="pt-label mb-1">Conselho de percurso</div>
+        {% if vp.conselho_total_percurso %}
+          <div class="fs-2 fw-bold pt-num">{{ vp.conselho_percurso_pct|int }}%</div>
+          <div class="small text-muted">{{ vp.conselho_ok_percurso }} de {{ vp.conselho_total_percurso }}</div>
+        {% else %}
+          <div class="text-muted small">Sem conselho registrado.</div>
+        {% endif %}
+      </div></div>
+    </div>
+  </div>
+
+  {# NOVO BLOCO: Sinais de atenção e Entradas/Desativações #}
+  <div class="row g-3 mb-3">
+    
+    {# Coluna Esquerda: Sinais de atenção #}
+    <div class="col-lg-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header fw-bold bg-transparent border-bottom-0 pt-3 pb-1 d-flex align-items-center">
+          <i class="bi bi-exclamation-triangle text-warning fs-5 me-2"></i>
+          <span>Sinais de atenção do período</span>
+        </div>
+        <div class="card-body pt-2">
+          {% if vp.sinais %}
+            <div class="list-group list-group-flush">
+              {% for s in vp.sinais %}
+              <div class="list-group-item px-0 py-3 d-flex gap-3">
+                <div class="pt-dot {{ s.nivel }} flex-shrink-0">
+                  <i class="bi bi-{{ s.icone }}"></i>
+                </div>
+                <div>
+                  <div class="fw-bold small mb-1">{{ s.titulo }}</div>
+                  <div class="text-muted small lh-sm">{{ s.detalhe }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted small py-4">Nenhum sinal de atenção detectado no período.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Coluna Direita: Entradas, Renovação e Saídas #}
+    <div class="col-lg-6">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header fw-bold bg-transparent border-bottom-0 pt-3 pb-1 d-flex align-items-center">
+          <i class="bi bi-arrow-left-right text-primary fs-5 me-2"></i>
+          <span>Entradas, renovação e saídas</span>
+        </div>
+        <div class="card-body pt-2">
+          
+          {# Quem está enturmado #}
+          <div class="pt-label mb-2">Quem está enturmado</div>
+          <div class="progress mb-2" style="height: 1.2rem; border-radius: .25rem;">
+            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ vp.entradas.pct_renovados }}%" title="Renovados"></div>
+            <div class="progress-bar bg-info text-dark" role="progressbar" style="width: {{ vp.entradas.pct_novos }}%" title="Novos"></div>
+            <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ vp.entradas.pct_retornantes }}%" title="Retornantes"></div>
+          </div>
+          <div class="d-flex gap-3 small text-muted mb-4">
+            <span class="d-flex align-items-center gap-1"><span class="d-inline-block bg-primary rounded" style="width: 12px; height: 12px;"></span> Renovados {{ vp.entradas.renovados }}</span>
+            <span class="d-flex align-items-center gap-1"><span class="d-inline-block bg-info rounded" style="width: 12px; height: 12px;"></span> Novos {{ vp.entradas.novos }}</span>
+            <span class="d-flex align-items-center gap-1"><span class="d-inline-block bg-secondary rounded" style="width: 12px; height: 12px;"></span> Retornantes {{ vp.entradas.retornantes }}</span>
+          </div>
+
+          <hr class="text-muted opacity-25">
+
+          {# Renovação #}
+          <div class="pt-label mb-2">Renovação da coorte anterior</div>
+          {% if vp.renovacao %}
+          <div class="d-flex align-items-baseline gap-2 mb-1">
+            <span class="fs-2 fw-bold pt-num">{{ vp.renovacao.pct|int }}%</span>
+            <span class="small text-muted">{{ vp.renovacao.renovados }} renovaram, {{ vp.renovacao.total - vp.renovacao.renovados }} não renovaram</span>
+          </div>
+          <div class="text-muted small mb-4">Janela de renovação encerrada em 18/08.</div>
+          {% else %}
+          <div class="text-muted small mb-4">Sem dados de renovação.</div>
+          {% endif %}
+
+          <hr class="text-muted opacity-25">
+
+          {# Desativações #}
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="pt-label m-0">Desativações no período · {{ vp.total_desativacoes }}</div>
+          </div>
+          
+          {% if vp.desativacoes %}
+            {% set topo = vp.desativacoes[0].qtd %}
+            {% for d in vp.desativacoes %}
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+              <span class="small text-truncate" style="width: 140px;">{{ d.motivo }}</span>
+              <div class="flex-grow-1">
+                <div class="progress" style="height: .4rem; background-color: transparent;">
+                  <div class="progress-bar bg-secondary" style="width: {{ (d.qtd / topo * 100)|round(0) }}%"></div>
+                </div>
+              </div>
+              <span class="small fw-bold pt-num">{{ d.qtd }}</span>
+            </div>
+            {% endfor %}
+            
+            {% if vp.total_desativacoes > 0 %}
+            <div class="mt-3 pt-3 border-top border-secondary-subtle">
+              <div class="small text-muted lh-sm">{{ vp.insight_desativacao }}</div>
+            </div>
+            {% endif %}
+          {% else %}
+            <div class="small text-muted">Nenhuma desativação registrada.</div>
+          {% endif %}
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Frequência por turma e semana (Mantido igual) #}
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-header fw-semibold">
+      <i class="bi bi-calendar3 text-primary me-2"></i>Frequência por turma e semana
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="pt-rt table-sm">
+          <thead>
+            <tr>
+              <th></th>
+              {% for seg in vp.semanas %}
+                <th class="{% if loop.index0 in vp.semanas_queda_comum %}pt-colmark{% endif %} text-center" style="font-size:.62rem">{{ seg.strftime('%d/%m') }}</th>
+              {% endfor %}
+              <th>Período</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in vp.turmas %}
+            <tr>
+              <th class="pt-name">
+                {{ t.nome }}<br>
+                <small class="text-muted">{{ t.turno }} · {{ t.alunos }} alunos</small>
+              </th>
+              {% for c in t.semanais_celulas %}
+                <td class="pt-c text-center{% if not c.classe %} text-muted{% endif %}" {% if c.classe %}style="background:var(--bs-{{ c.classe }}-bg-subtle)"{% endif %}>
+                  {{ c.valor_str }}
+                </td>
+              {% endfor %}
+              <td class="pt-num fw-bold">{{ t.pct_turma_str }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="small text-muted mt-2">
+        <span class="badge bg-success-subtle text-success-emphasis">≥ 90%</span>
+        <span class="badge bg-warning-subtle text-warning-emphasis">75–89%</span>
+        <span class="badge bg-danger-subtle text-danger-emphasis">&lt; 75%</span>
+        · Colunas com contorno: queda comum a 5 turmas ou mais.
+      </div>
+    </div>
+  </div>
+
+  {# Comparativo de turmas (Mantido igual) #}
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-header fw-semibold"><i class="bi bi-diagram-3 text-primary me-2"></i>Comparativo de turmas</div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 small">
+        <thead>
+          <tr>
+            <th class="ps-3">Turma</th><th>Professor</th><th class="text-end">Alunos</th>
+            <th>Frequência</th><th class="text-end">Em risco</th><th class="text-end">Tendência</th>
+            <th class="text-end">Percurso</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in vp.turmas %}
+          <tr>
+            <td class="ps-3">
+              <div class="fw-semibold">{{ t.nome }}</div>
+              <div class="text-muted" style="font-size:.72rem">{{ t.programa }} · {{ t.turno }}</div>
+            </td>
+            <td>{{ t.professor }}</td>
+            <td class="text-end pt-num">{{ t.alunos }}</td>
+            <td>
+              <span class="pt-num fw-semibold">{{ t.pct_turma_str }}</span>
+              <span class="badge bg-{{ t.faixa_meta.classe }}-subtle text-{{ t.faixa_meta.classe }}-emphasis ms-1">{{ t.faixa_meta.label }}</span>
+            </td>
+            <td class="text-end">
+              <span class="badge bg-danger-subtle text-danger-emphasis pt-num">{{ t.em_risco }} · {{ t.em_risco_pct_str }}</span>
+            </td>
+            <td class="text-end pt-num text-{{ t.tendencia_classe }}">{{ t.tendencia_str }}</td>
+            <td class="text-end pt-num">{{ t.conselho_percurso_ok }}/{{ t.conselho_percurso_total }}</td>
+            <td class="pe-3 text-end">
+              <a class="btn btn-outline-primary btn-sm py-0" href="{{ url_for('relatorios.painel_pedagogico', periodo_letivo_id=periodo.id, turma_id=t.id) }}">
+                Abrir <i class="bi bi-arrow-right"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% elif visao_turma %}
+  {# A visão de turma permanece exatamente como você enviou, nada muda aqui #}
+  {% set vt = visao_turma %}
+
+  <nav aria-label="breadcrumb" class="small text-muted mb-2">
+    <a href="{{ url_for('relatorios.painel_pedagogico', periodo_letivo_id=periodo.id) }}">
+      {{ periodo.nome }}
+    </a>
+    <i class="bi bi-chevron-right mx-1"></i> {{ vt.turma.nome }}
+  </nav>
+
+  <div class="card shadow-sm border-0 mb-3"><div class="card-body">
+    <h2 class="h4 fw-bold mb-1">{{ vt.turma.nome }}</h2>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      <span class="badge bg-primary-subtle text-primary-emphasis">{{ vt.turma.programa or '—' }}</span>
+      <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ vt.turma.turno or '—' }}</span>
+    </div>
+    <div class="text-muted small">
+      Período {{ vt.periodo.nome }} · Professor: {{ vt.turma.professor.name if vt.turma.professor else '—' }}
+    </div>
+  </div></div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="pt-label mb-1">Frequência da turma</div>
+      <div class="fs-2 fw-bold pt-num">{{ vt.pct_turma_str }}</div>
+      <span class="badge bg-{{ vt.faixa_meta.classe }}-subtle text-{{ vt.faixa_meta.classe }}-emphasis">{{ vt.faixa_meta.label }}</span>
+      {% if vt.media_periodo is not none %}
+        <div class="small text-muted mt-1">
+          <span class="badge bg-{{ vt.diff_media_classe }}-subtle text-{{ vt.diff_media_classe }}-emphasis pt-num">{{ vt.diff_media_str }}</span>
+          vs período ({{ vt.media_periodo_str }})
+        </div>
+      {% endif %}
+    </div></div></div>
+
+    <div class="col-6 col-lg-3"><div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="pt-label mb-1">Alunos por faixa</div>
+      <div class="fs-2 fw-bold pt-num">{{ vt.faixas.lo }}</div>
+      {{ barra_faixas(vt.faixas_largura, vt.faixas) }}
+    </div></div></div>
+
+    <div class="col-6 col-lg-3"><div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="pt-label mb-1">Faltas</div>
+      <div class="fs-2 fw-bold pt-num">{{ vt.faltas }}</div>
+      <div class="small text-muted">{{ vt.presencas }} presenças em {{ vt.total_aulas }} aulas contábeis.</div>
+    </div></div></div>
+
+    <div class="col-6 col-lg-3"><div class="card shadow-sm border-0 h-100"><div class="card-body">
+      <div class="pt-label mb-1">Tendência</div>
+      <div class="fs-2 fw-bold pt-num text-{{ vt.tendencia_classe }}">{{ vt.tendencia_str }}</div>
+      <div class="small text-muted">Últimas 3 semanas vs anteriores.</div>
+    </div></div></div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4"><div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Sinais de atenção</div>
+      <div class="card-body pt-2 pb-1">{{ lista_sinais(vt.sinais) }}</div>
+    </div></div>
+
+    <div class="col-lg-8"><div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold"><i class="bi bi-graph-up text-primary me-2"></i>Frequência acumulada</div>
+      <div class="card-body">
+        <div class="pt-chart">
+          <canvas id="chFreqTurma" data-labels='{{ vt.semanas|map(attribute="isoformat")|list|tojson }}' data-serie-turma='{{ vt.serie_turma|tojson }}' data-media-periodo="{{ vt.media_periodo or 0 }}"></canvas>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-header fw-semibold"><i class="bi bi-calendar3 text-primary me-2"></i>Quem falta e quando <span class="text-muted fw-normal small">· menor frequência primeiro</span></div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="pt-rt">
+          <thead>
+            <tr>
+              <th></th>
+              {% for d in vt.alunos_por_aula.datas %}<th class="text-center" style="font-size:.62rem">{{ d.label }}</th>{% endfor %}
+              <th>Freq.</th><th>Seq.</th><th class="text-end pe-1">Ficha</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in vt.alunos %}
+            <tr>
+              <th class="pt-name">{{ a.nome_social or a.nome }} <small class="text-muted">{{ a.status }}</small></th>
+              {% for d in vt.alunos_por_aula.datas %}
+                {% set conceito = a.conceitos_por_data.get(d.iso) %}
+                {% if conceito %}<td class="pt-c conceito-{{ conceito }}" title="{{ conceito }}">{{ conceito }}</td>
+                {% else %}<td class="pt-c text-muted">—</td>{% endif %}
+              {% endfor %}
+              <td><span class="badge bg-{{ a.faixa_meta.classe }}-subtle text-{{ a.faixa_meta.classe }}-emphasis pt-num">{{ a.pct_str }}</span></td>
+              <td class="pt-num {% if a.maior_seq_faltas >= 3 %}text-danger fw-bold{% endif %}">{{ a.maior_seq_faltas }}</td>
+              <td class="text-end pe-1">
+                <a class="btn btn-outline-primary btn-sm py-0" href="{{ url_for('relatorios.ficha_aluno_view', aluno_id=a.id, turma_id=vt.turma.id) }}">Abrir <i class="bi bi-arrow-right"></i></a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="small text-muted mt-2">
+        <span class="badge conceito-A">A</span><span class="badge conceito-B">B</span><span class="badge conceito-C">C</span><span class="badge conceito-D">D</span> presença
+        · <span class="badge conceito-F">F</span> falta · <span class="badge conceito-J">J</span> justificada (fora do cálculo)
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4"><div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold"><i class="bi bi-clipboard-check text-primary me-2"></i>Conselho de classe</div>
+      <div class="card-body">
+        <ol class="list-unstyled mb-0">
+          {% for e in vt.conselho_etapas %}
+          <li class="mb-3">
+            <div class="d-flex justify-content-between small"><span class="fw-semibold">{{ e.nome }}</span><span class="pt-num">{{ e.respondidos }} de {{ e.total }}</span></div>
+            <div class="progress" style="height:.5rem"><div class="progress-bar {{ 'bg-success' if e.total and e.respondidos == e.total else '' }}" style="width:{{ (e.respondidos / e.total * 100) if e.total else 0 }}%"></div></div>
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div></div>
+
+    <div class="col-lg-8"><div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold"><i class="bi bi-journal-check text-primary me-2"></i>Respostas do conselho</div>
+      <div class="card-body">
+        {% if vt.conselho_agregado %}
+          {% for p in vt.conselho_agregado %}
+          <div class="mb-3">
+            <div class="small fw-semibold mb-1">{{ p.pergunta }}</div>
+            {% for chave, rotulo in [('inicial','Inicial'), ('percurso','Percurso')] %}
+              {% set dist = p[chave] %}
+              {% if dist %}
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="small text-muted" style="width:4.2rem">{{ rotulo }}</span>
+                <div class="flex-grow-1">
+                  <div class="pt-stack">{% for item in dist %}<span style="width:{{ item.pct }}%; background:var(--bs-secondary)" title="{{ item.rotulo }}: {{ item.qtd }}"></span>{% endfor %}</div>
+                </div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="small text-muted">Sem respostas registradas.</div>
+        {% endif %}
+      </div>
+    </div></div>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if visao_turma %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const el = document.getElementById('chFreqTurma');
+  if (!el || !window.Chart) return;
+  const serieTurma = JSON.parse(el.dataset.serieTurma);
+  const labels     = JSON.parse(el.dataset.labels);
+  const media      = Number(el.dataset.mediaPeriodo || 0);
+  new Chart(el, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'Turma', data: serieTurma, borderColor: '#0d6efd', backgroundColor: '#0d6efd', borderWidth: 2.5, pointRadius: 3, tension: 0.25 },
+      { label: 'Período', data: labels.map(() => media), borderColor: '#8a939b', borderWidth: 2, borderDash: [6,4], pointRadius: 0 },
+      { label: 'Meta 90%', data: labels.map(() => 90), borderColor: '#2e7d32', borderWidth: 1, borderDash: [2,3], pointRadius: 0 },
+      { label: 'Limite 75%', data: labels.map(() => 75), borderColor: '#d32f2f', borderWidth: 1, borderDash: [2,3], pointRadius: 0 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 60, max: 100, ticks: { callback: v => v + '%' } }, x: { title: { display: true, text: 'Semana (início)' } } }, plugins: { legend: { position: 'bottom' } } }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

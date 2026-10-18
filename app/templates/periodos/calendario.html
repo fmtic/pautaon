@@ -1,18 +1,22 @@
-{% extends "base.html" %}
-
-{% block styles %}{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/periodo_letivo_calendario.css') }}">
-{% endblock %}
-
-{% block content %}
+{% extends "base.html" %} {% block styles %}{{ super() }}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/periodo_letivo_calendario.css') }}"
+/>
+{% endblock %} {% block content %}
 <div class="container-fluid mt-4">
-
   {# ── Cabeçalho ── #}
-  <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div
+    class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2"
+  >
     <div>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-1">
-          <li class="breadcrumb-item"><a href="{{ url_for('registros.periodo_letivo') }}">Períodos Letivos</a></li>
+          <li class="breadcrumb-item">
+            <a href="{{ url_for('registros.periodo_letivo') }}"
+              >Períodos Letivos</a
+            >
+          </li>
           <li class="breadcrumb-item active">Calendário</li>
         </ol>
       </nav>
@@ -20,9 +24,9 @@
         <i class="bi bi-calendar-x me-2 text-primary"></i>Dias sem Aula
       </h3>
       <p class="text-muted small mb-0">
-        <strong>{{ periodo.nome_exibicao }}</strong> &nbsp;|&nbsp;
-        {{ periodo.data_inicio.strftime('%d/%m/%Y') }} até {{ periodo.data_fim.strftime('%d/%m/%Y') }}
-        {% if not periodo.ativo %}
+        <strong>{{ periodo.nome_exibicao }}</strong> &nbsp;|&nbsp; {{
+        periodo.data_inicio.strftime('%d/%m/%Y') }} até {{
+        periodo.data_fim.strftime('%d/%m/%Y') }} {% if not periodo.ativo %}
         <span class="badge bg-secondary ms-2">Inativo — somente leitura</span>
         {% endif %}
       </p>
@@ -36,94 +40,212 @@
         <i class="bi bi-eraser me-1"></i>Limpar tudo
       </button>
       {% endif %}
-      <a href="{{ url_for('registros.calendario_exportar', periodo_id=periodo.id) }}" target="_blank"
-        class="btn btn-outline-danger btn-sm">
+      <a
+        href="{{ url_for('registros.calendario_exportar', periodo_id=periodo.id) }}"
+        target="_blank"
+        class="btn btn-outline-danger btn-sm"
+      >
         <i class="bi bi-printer me-1"></i>Imprimir
       </a>
-      <a href="{{ url_for('registros.periodo_letivo') }}" class="btn btn-outline-secondary btn-sm">
+      <a
+        href="{{ url_for('registros.periodo_letivo') }}"
+        class="btn btn-outline-secondary btn-sm"
+      >
         <i class="bi bi-arrow-left me-1"></i>Voltar
       </a>
     </div>
   </div>
 
-  {# ── Legenda / seletor de tipo ── #}
-  {% if periodo.ativo %}
-  <div class="d-flex gap-2 flex-wrap mb-3 p-2 bg-light rounded border">
-    <small class="text-muted fw-bold text-uppercase align-self-center me-1">Tipo:</small>
-    {% for cod, label, cor in [
-    ('FERIADO', 'Feriado', '#dc3545'),
-    ('ATIVIDADE_PEDAGOGICA', 'At. Pedagógica', '#0d6efd'),
-    ('REUNIAO_PAIS', 'Reunião de Pais', '#6f42c1'),
-    ('ATIVIDADE_INTERNA', 'At. Interna', '#fd7e14'),
-    ('MANUTENCAO', 'Manutenção', '#6c757d'),
-    ] %}
-    <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}" style="--tipo-cor:{{ cor }}">
+  {# ── Legenda / filtro de tipo ── #}
+  <div class="d-flex gap-2 flex-wrap mb-3 align-items-center">
+    <small class="text-muted fw-bold text-uppercase me-1">
+      {% if periodo.ativo %}Filtrar:{% else %}Legenda:{% endif %}
+    </small>
+    {% for cod, label, cor in [ ('FERIADO', 'Feriado', '#dc3545'),
+    ('ATIVIDADE_PEDAGOGICA', 'At. Pedagógica', '#0d6efd'), ('REUNIAO_PAIS',
+    'Reunião de Pais', '#6f42c1'), ('ATIVIDADE_INTERNA', 'At. Interna',
+    '#fd7e14'), ('MANUTENCAO', 'Manutenção', '#6c757d'), ] %}
+    <button
+      type="button"
+      class="btn btn-sm tipo-btn border"
+      data-tipo="{{ cod }}"
+      {%
+      if
+      periodo.ativo
+      %}title="Filtrar por {{ label }}"
+      aria-pressed="false"
+      {%
+      else
+      %}disabled
+      aria-disabled="true"
+      {%
+      endif
+      %}
+      style="--tipo-cor:{{ cor }}"
+    >
       <span class="dot me-1" style="background:{{ cor }}"></span>{{ label }}
     </button>
     {% endfor %}
   </div>
-  {% else %}
-  {# Legenda somente leitura #}
-  <div class="d-flex gap-3 flex-wrap mb-3 p-2 bg-light rounded border small">
-    {% for cod, label, cor in [
-    ('FERIADO','Feriado','#dc3545'),('ATIVIDADE_PEDAGOGICA','At. Pedagógica','#0d6efd'),
-    ('REUNIAO_PAIS','Reunião de Pais','#6f42c1'),('ATIVIDADE_INTERNA','At. Interna','#fd7e14'),
-    ('MANUTENCAO','Manutenção','#6c757d'),
-    ] %}
-    <span><span
-        style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ cor }};vertical-align:middle"
-        class="me-1"></span>{{ label }}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
 
-  {# ── Grade de meses ── #}
-  <div class="cal-grid mb-3" id="calGrade"></div>
-
-  {# ── Painel de edição do dia ── #}
-  {% if periodo.ativo %}
-  <div id="panelDia" class="bg-light rounded p-3 d-none mb-3">
-    <div class="d-flex align-items-center gap-3 flex-wrap">
-      <div>
-        <strong id="diaLabel"></strong>
-        <small class="text-muted ms-2" id="diaWeekday"></small>
-      </div>
-      <select id="diaTipoSel" class="form-select form-select-sm" style="max-width:220px">
-        <option value="FERIADO">Feriado</option>
-        <option value="ATIVIDADE_PEDAGOGICA">Atividade Pedagógica</option>
-        <option value="REUNIAO_PAIS">Reunião de Pais</option>
-        <option value="ATIVIDADE_INTERNA">Atividade Interna</option>
-        <option value="MANUTENCAO">Manutenção</option>
-      </select>
-      <input type="text" id="diaDescInput" class="form-control form-control-sm" placeholder="Descrição (opcional)"
-        style="max-width:280px">
-      <button class="btn btn-success btn-sm" id="btnConfirmarDia">
-        <i class="bi bi-check-lg me-1"></i>Confirmar
-      </button>
-      <button class="btn btn-outline-danger btn-sm" id="btnRemoverDia">
-        <i class="bi bi-x-lg me-1"></i>Remover
-      </button>
+  {# ── Aviso de alterações não salvas ── #} {% if periodo.ativo %}
+  <div
+    id="avisoNaoSalvo"
+    class="alert alert-warning d-none d-flex align-items-center justify-content-between gap-3 py-2 mb-3"
+    role="alert"
+  >
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>
+        <strong>Há alterações não salvas.</strong>
+        Elas serão perdidas se você sair desta página sem clicar em
+        <strong>Salvar</strong>.
+      </span>
     </div>
-    <div id="turmasExcecao" class="mt-3 d-none">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div>
-          <strong>Turmas com aula nesta data</strong>
-          <p class="small text-muted mb-0">Mesmo sendo dia bloqueado no período, essas turmas ficarão disponíveis para lançamento de pauta.</p>
+    <button
+      type="button"
+      class="btn btn-sm btn-warning fw-semibold"
+      id="btnSalvarAgora"
+    >
+      <i class="bi bi-save me-1"></i>Salvar agora
+    </button>
+  </div>
+  {% endif %} {# ── Grade de meses + sidebar de datas marcadas ── #}
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-lg-8 col-xl-9">
+      <div class="cal-grid" id="calGrade"></div>
+    </div>
+
+    <div class="col-12 col-lg-4 col-xl-3">
+      <div class="card sticky-lg-top" style="top: 1rem">
+        <div
+          class="card-header d-flex justify-content-between align-items-center"
+        >
+          <span class="fw-semibold">
+            <i class="bi bi-bookmark-check me-1"></i>Datas marcadas
+          </span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary rounded-pill" id="qtdMarcadas"
+              >0</span
+            >
+            <button
+              type="button"
+              class="btn btn-sm btn-link p-0 text-decoration-none d-none"
+              id="btnLimparFiltro"
+              title="Limpar filtro"
+            >
+              <i class="bi bi-x-circle"></i>
+            </button>
+          </div>
         </div>
-        <span id="turmasExcecaoStatus" class="badge bg-secondary">0</span>
+        <div
+          id="filtroAtivo"
+          class="alert alert-info py-1 px-2 small mb-0 d-none border-0 rounded-0"
+        >
+          Mostrando apenas <strong id="filtroAtivoLabel"></strong>.
+        </div>
+        <div
+          id="listaMarcadas"
+          class="list-group list-group-flush"
+          style="max-height: 60vh; overflow-y: auto"
+        >
+          {# preenchido pelo JS #}
+        </div>
+        <div class="card-footer small text-muted" id="listaVazia">
+          Nenhuma data marcada ainda.
+        </div>
       </div>
-      <div id="turmasExcecaoList" class="row gy-2"></div>
+    </div>
+  </div>
+
+  {# ── Modal de edição do dia (substitui o antigo #panelDia) ── #} {% if
+  periodo.ativo %}
+  <div
+    class="modal fade"
+    id="modalDia"
+    tabindex="-1"
+    aria-labelledby="modalDiaTitulo"
+    aria-hidden="true"
+  >
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title mb-0" id="modalDiaTitulo">
+            <i class="bi bi-calendar-event me-1 text-primary"></i>
+            <strong id="diaLabel"></strong>
+            <small class="text-muted ms-2" id="diaWeekday"></small>
+          </h6>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+            aria-label="Fechar"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <label for="diaTipoSel" class="form-label small fw-semibold"
+            >Tipo</label
+          >
+          <select id="diaTipoSel" class="form-select form-select-sm mb-3">
+            <option value="FERIADO">Feriado</option>
+            <option value="ATIVIDADE_PEDAGOGICA">Atividade Pedagógica</option>
+            <option value="REUNIAO_PAIS">Reunião de Pais</option>
+            <option value="ATIVIDADE_INTERNA">Atividade Interna</option>
+            <option value="MANUTENCAO">Manutenção</option>
+          </select>
+
+          <label for="diaDescInput" class="form-label small fw-semibold"
+            >Descrição</label
+          >
+          <input
+            type="text"
+            id="diaDescInput"
+            class="form-control form-control-sm mb-3"
+            placeholder="Opcional — ex.: Feriado municipal"
+          />
+
+          <div id="turmasExcecao" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <strong class="small">Turmas com aula nesta data</strong>
+                <p class="small text-muted mb-0">
+                  Mesmo sendo dia bloqueado no período, essas turmas ficarão
+                  disponíveis para lançamento de pauta.
+                </p>
+              </div>
+              <span id="turmasExcecaoStatus" class="badge bg-secondary">0</span>
+            </div>
+            <div id="turmasExcecaoList" class="row gy-2"></div>
+          </div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button class="btn btn-outline-danger btn-sm" id="btnRemoverDia">
+            <i class="bi bi-trash me-1"></i>Remover marcação
+          </button>
+          <div class="d-flex gap-2">
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              data-bs-dismiss="modal"
+            >
+              Cancelar
+            </button>
+            <button class="btn btn-success btn-sm" id="btnConfirmarDia">
+              <i class="bi bi-check-lg me-1"></i>Confirmar
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   {% endif %}
 
-  <div id="alertContainer" class="position-fixed top-0 start-50 translate-middle-x mt-2"
-    style="z-index: 1050; min-width: 300px;"></div>
-
+  <div
+    id="alertContainer"
+    class="position-fixed top-0 start-50 translate-middle-x mt-2"
+    style="z-index: 1050; min-width: 300px"
+  ></div>
 </div>
-{% endblock %}
-
-{% block scripts %}{{ super() }}
+{% endblock %} {% block scripts %}{{ super() }}
 <script>
   window.calendarioConfig = {
     readonly: {{ 'true' if not periodo.ativo else 'false' }},
@@ -132,7 +254,8 @@
     dataFim: '{{ periodo.data_fim.strftime("%Y-%m-%d") }}',
     dias: {{ dias_json | tojson | safe }},
     turmas: {{ turmas_json | tojson | safe }},
-    excecoes: {{ excecoes_json | tojson | safe }}
+    excecoes: {{ excecoes_json | tojson | safe }},
+    feriadosNacionais: {{ (feriados_json or {}) | tojson | safe }}
   };
 </script>
 <script src="{{ url_for('static', filename='js/periodo_letivo_calendario.js') }}"></script>
