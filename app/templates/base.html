@@ -4,327 +4,289 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
-    <title>
-      {{ informacao_padrao.nome_instituicao or 'PautaOn' }} - PautaON
-    </title>
-    <link
-      rel="shortcut icon"
-      href="{{ informacao_padrao.favicon_url }}"
-      type="image/png"
-    />
-    <link
-      href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}"
-    />
-    <link
-      href="{{ url_for('static', filename='css/style.css') }}"
-      rel="stylesheet"
-    />
+    <title>{{ informacao_padrao.nome_instituicao or 'PautaOn' }} - PautaON</title>
+    <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png" />
+    
+    <!-- Bootstrap e Ícones -->
+    <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}" />
+    
+    <!-- CSS Global da Aplicação -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" />
+    
+    <!-- CSS de Layout (Sidebar e Topbar) -->
+    <link href="{{ url_for('static', filename='css/sidebar.css') }}" rel="stylesheet" />
+
     {% block styles %}{% endblock %}
   </head>
 
-  <body class="d-flex flex-column min-vh-100">
-    <nav class="navbar navbar-dark bg-dark px-3">
-      <div class="d-flex align-items-center">
-        <img
-          src="{{ informacao_padrao.logo_principal_url }}"
-          alt="Logo"
-          class="d-inline-block align-text-top"
-          style="height: 30px"
-        />
-        {# VERSÃO — discreto, ao lado da logo. Mostra "beta" sempre que
-        app_stage não estiver vazio; some sozinho quando a versão sair do beta
-        (ver app/version.py). #}
-        <span
-          class="text-white-50 ms-2 align-self-center"
-          style="font-size: 0.65rem"
-          title="Versão do sistema"
-        >
+  <body>
+    <!-- TOPBAR -->
+    <header class="app-topbar">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn btn-sm btn-outline-light" type="button" id="toggleSidebar">
+          <i class="bi bi-list fs-5"></i>
+        </button>
+        <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo" style="height: 30px" />
+        <span class="text-white-50 d-none d-sm-inline" style="font-size: 0.65rem">
           v{{ app_version }}{% if app_stage %} · {{ app_stage }}{% endif %}
         </span>
       </div>
-      <div class="d-flex align-items-center">
+
+      <div class="d-flex align-items-center gap-3">
         {% if current_user.is_authenticated %}
-        <span class="text-light me-3 small">
+        <span class="text-light small d-none d-md-inline">
           <i class="bi bi-person-circle me-1"></i> {{ current_user.name }}
           <span class="badge bg-secondary ms-1">{{ unidade_contexto }}</span>
         </span>
-
-        {# SELETOR DE UNIDADE PARA ADMIN/GERENCIA #} {% if unidades_lista and
-        current_user.role in ['admin', 'gerencia'] %}
-        <div class="dropdown d-inline-block me-3">
-          <button
-            class="btn btn-sm btn-outline-info dropdown-toggle"
-            type="button"
-            data-bs-toggle="dropdown"
-          >
-            <i class="bi bi-buildings me-1"></i> Unidade
-          </button>
-          <ul class="dropdown-menu dropdown-menu-dark shadow">
-            <li>
-              <a
-                class="dropdown-item"
-                href="{{ url_for('main.trocar_unidade', id=0) }}"
-                >Visão Global</a
-              >
-            </li>
-            <li>
-              <hr class="dropdown-divider" />
-            </li>
-            {% for unit in unidades_lista %}
-            <li>
-              <a
-                class="dropdown-item {% if session.get('unidade_id') == unit.id %}active{% endif %}"
-                href="{{ url_for('main.trocar_unidade', id=unit.id) }}"
-              >
-                {{ unit.nome }}
-              </a>
-            </li>
-            {% endfor %}
-          </ul>
-        </div>
-        {% endif %}
-
-        <a
-          href="{{ url_for('main.painel') }}"
-          class="btn btn-outline-light btn-sm me-2 {% if request.endpoint == 'main.painel' %}active{% endif %}"
-        >
-          Painel Geral
-        </a>
-
-        {# ACESSO RESTRITO: Admin, Pedagógico, Gerência e Secretaria #} {% if
-        current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria',
-        'servico_social'] %}
-        <div class="dropdown d-inline-block me-2">
-          <button
-            class="btn btn-outline-light btn-sm dropdown-toggle"
-            type="button"
-            data-bs-toggle="dropdown"
-          >
-            <i class="bi bi-people me-1"></i> Alunos
-          </button>
-          <ul class="dropdown-menu shadow">
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'registros.gerenciar_alunos' %}active{% endif %}"
-                href="{{ url_for('registros.gerenciar_alunos') }}"
-              >
-                <i class="bi bi-person-lines-fill me-2"></i>Gerenciar Alunos
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'registros.transicao_atendimentos' %}active{% endif %}"
-                href="{{ url_for('registros.transicao_atendimentos') }}"
-              >
-                <i class="bi bi-clipboard2-pulse me-2"></i>Atendimentos
-              </a>
-            </li>
-          </ul>
-        </div>
-        {% endif %} {% if current_user.role in ['admin', 'pedagogico',
-        'gerencia', 'secretaria'] %}
-        <a
-          href="{{ url_for('registros.turma') }}"
-          class="btn btn-outline-warning btn-sm me-2 {% if request.endpoint == 'registros.turma' %}active{% endif %}"
-        >
-          Turmas
-        </a>
-        <a
-          href="{{ url_for('registros.periodo_letivo') }}"
-          class="btn btn-outline-info btn-sm me-2 {% if request.endpoint == 'registros.periodo_letivo' %}active{% endif %}"
-        >
-          Períodos
-        </a>
-        {% if current_user.is_authenticated %}
-        <div class="dropdown d-inline-block me-2">
-          <button
-            class="btn btn-outline-light btn-sm dropdown-toggle"
-            data-bs-toggle="dropdown"
-          >
-            <i class="bi bi-journal-check me-1"></i> Conselho
-          </button>
-          <ul class="dropdown-menu shadow">
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'conselho.informacoes' %}active{% endif %}"
-                href="{{ url_for('conselho.informacoes') }}"
-              >
-                <i class="bi bi-info-circle me-2"></i>Data-Informações
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'conselho.index_conselho' %}active{% endif %}"
-                href="{{ url_for('conselho.index_conselho') }}"
-              >
-                <i class="bi bi-grid-3x3-gap me-2"></i>Painel de Turmas
-              </a>
-            </li>
-            {% if current_user.role in ['pedagogico', 'admin', 'gerencia'] %}
-            <li>
-              <hr class="dropdown-divider" />
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'conselho.gerenciar_perguntas' %}active{% endif %}"
-                href="{{ url_for('conselho.gerenciar_perguntas') }}"
-              >
-                <i class="bi bi-gear-fill me-2"></i>Gerenciar Perguntas
-              </a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
-        {% if current_user.role in ['pedagogico', 'admin', 'gerencia',
-        'secretaria', 'servico_social'] %}
-        <div class="dropdown d-inline-block me-2">
-          <button
-            class="btn btn-outline-warning btn-sm dropdown-toggle"
-            data-bs-toggle="dropdown"
-          >
-            Relatórios
-          </button>
-          <ul class="dropdown-menu shadow">
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'relatorios.relatorio_geral' %}active{% endif %}"
-                href="{{ url_for('relatorios.relatorio_geral') }}"
-              >
-                <i class="bi bi-speedometer2 me-2"></i>Painel de Relatórios
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'relatorios.relatorio_alunos' %}active{% endif %}"
-                href="{{ url_for('relatorios.relatorio_alunos') }}"
-              >
-                <i class="bi bi-people me-2"></i>Exportar Alunos
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'relatorios.bi_dashboard' %}active{% endif %}"
-                href="{{ url_for('relatorios.bi_dashboard') }}"
-              >
-                <i class="bi bi-bar-chart-line me-2"></i>Central de BI
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'relatorios.painel_pedagogico' %}active{% endif %}"
-                href="{{ url_for('relatorios.painel_pedagogico') }}"
-              >
-                <i class="bi bi-diagram-3 me-2"></i>Painel Pedagógico
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'relatorios.resultado_conselho' %}active{% endif %}"
-                href="{{ url_for('relatorios.resultado_conselho') }}"
-              >
-                <i class="bi bi-bar-chart-line me-2"></i>Resultado do Conselho
-              </a>
-            </li>
-          </ul>
-        </div>
-        {% endif %} {% endif %} {% endif %} {# MENU ADMIN #} {% if
-        current_user.is_authenticated and current_user.role == 'admin' %}
-        <div class="dropdown d-inline-block me-2">
-          <button
-            class="btn btn-outline-danger btn-sm dropdown-toggle"
-            data-bs-toggle="dropdown"
-          >
-            Admin
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow">
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'auth.painel_admin' %}active{% endif %}"
-                href="{{ url_for('auth.painel_admin') }}"
-              >
-                <i class="bi bi-person-gear me-2"></i>Gerir Usuários
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'auth.admin_unidades' %}active{% endif %}"
-                href="{{ url_for('auth.admin_unidades') }}"
-              >
-                <i class="bi bi-buildings me-2"></i>Gerir Unidades
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'auth.ver_logs' %}active{% endif %}"
-                href="{{ url_for('auth.ver_logs') }}"
-              >
-                <i class="bi bi-clipboard-data me-2"></i>Auditoria (Logs)
-              </a>
-            </li>
-            <li>
-              <a
-                class="dropdown-item {% if request.endpoint == 'informacao_padrao.painel_informacao_padrao' %}active{% endif %}"
-                href="{{ url_for('informacao_padrao.painel_informacao_padrao') }}"
-              >
-                <i class="bi bi-building-gear me-2"></i>Informações Padrão
-              </a>
-            </li>
-          </ul>
-        </div>
-        {% endif %}
-
-        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm"
-          >Sair</a
-        >
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm">Sair</a>
         {% endif %}
       </div>
-    </nav>
+    </header>
 
-    {# ALERTA GLOBAL PARA UNIDADE INATIVA #} {% if current_user.is_authenticated
-    and current_user.unidade and not current_user.unidade.ativo %}
-    <div class="alert alert-danger rounded-0 text-center mb-0 shadow-sm">
+    <!-- SIDEBAR -->
+    <aside class="app-sidebar" id="appSidebar">
+      <nav class="navbar navbar-dark flex-column align-items-stretch p-0 h-100">
+        {% if current_user.is_authenticated %}
+        <ul class="navbar-nav flex-column w-100">
+          {# SELETOR DE UNIDADE #} 
+          {% if unidades_lista and current_user.role in ['admin', 'gerencia'] %}
+          <li class="sidebar-heading">Unidade</li>
+          <li class="nav-item px-2 pb-2">
+            <div class="dropdown w-100">
+              <button class="btn btn-sm sidebar-dropdown-btn dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-buildings me-2"></i>
+                <span>{{ unidade_contexto or 'Sel.' }}</span>
+              </button>
+              <ul class="dropdown-menu shadow w-100">
+                <li>
+                  <a class="dropdown-item {% if session.get('unidade_id') in (None, 0) %}active{% endif %}" href="{{ url_for('main.trocar_unidade', id=0) }}">Visão Global</a>
+                </li>
+                <li><hr class="dropdown-divider" /></li>
+                {% for unit in unidades_lista %}
+                <li>
+                  <a class="dropdown-item {% if session.get('unidade_id') == unit.id %}active{% endif %}" href="{{ url_for('main.trocar_unidade', id=unit.id) }}">{{ unit.nome }}</a>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </li>
+          {% endif %} 
+          
+          {# GERAL #}
+          <li class="sidebar-heading">Geral</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'main.painel' %}active{% endif %}" href="{{ url_for('main.painel') }}" title="Painel Geral">
+              <i class="bi bi-speedometer2"></i> <span>Painel Geral</span>
+            </a>
+          </li>
+
+          {# ALUNOS #} 
+          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'servico_social'] %}
+          <li class="sidebar-heading">Alunos</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'registros.gerenciar_alunos' %}active{% endif %}" href="{{ url_for('registros.gerenciar_alunos') }}" title="Gerenciar Alunos">
+              <i class="bi bi-person-lines-fill"></i> <span>Gerenciar Alunos</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'registros.transicao_atendimentos' %}active{% endif %}" href="{{ url_for('registros.transicao_atendimentos') }}" title="Atendimentos">
+              <i class="bi bi-clipboard2-pulse"></i> <span>Atendimentos</span>
+            </a>
+          </li>
+          {% endif %} 
+          
+          {# ESTRUTURA #} 
+          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
+          <li class="sidebar-heading">Estrutura</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'registros.turma' %}active{% endif %}" href="{{ url_for('registros.turma') }}" title="Turmas">
+              <i class="bi bi-people-fill"></i> <span>Turmas</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'registros.periodo_letivo' %}active{% endif %}" href="{{ url_for('registros.periodo_letivo') }}" title="Períodos">
+              <i class="bi bi-calendar3"></i> <span>Períodos</span>
+            </a>
+          </li>
+          {% endif %} 
+          
+          {# CONSELHO #} 
+          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
+          <li class="sidebar-heading">Conselho</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'conselho.informacoes' %}active{% endif %}" href="{{ url_for('conselho.informacoes') }}" title="Data-Informações">
+              <i class="bi bi-info-circle"></i> <span>Data-Informações</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'conselho.index_conselho' %}active{% endif %}" href="{{ url_for('conselho.index_conselho') }}" title="Painel de Turmas">
+              <i class="bi bi-grid-3x3-gap"></i> <span>Painel de Turmas</span>
+            </a>
+          </li>
+          {% if current_user.role in ['pedagogico', 'admin', 'gerencia'] %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'conselho.gerenciar_perguntas' %}active{% endif %}" href="{{ url_for('conselho.gerenciar_perguntas') }}" title="Gerenciar Perguntas">
+              <i class="bi bi-gear-fill"></i> <span>Gerenciar Perguntas</span>
+            </a>
+          </li>
+          {% endif %} 
+          {% endif %} 
+          
+          {# RELATÓRIOS #} 
+          {% if current_user.role in ['pedagogico', 'admin', 'gerencia', 'secretaria', 'servico_social'] %}
+          <li class="sidebar-heading">Relatórios</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'relatorios.relatorio_geral' %}active{% endif %}" href="{{ url_for('relatorios.relatorio_geral') }}" title="Painel de Relatórios">
+              <i class="bi bi-speedometer2"></i> <span>Painel de Relatórios</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'relatorios.relatorio_alunos' %}active{% endif %}" href="{{ url_for('relatorios.relatorio_alunos') }}" title="Exportar Alunos">
+              <i class="bi bi-people"></i> <span>Exportar Alunos</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'relatorios.bi_dashboard' %}active{% endif %}" href="{{ url_for('relatorios.bi_dashboard') }}" title="Central de BI">
+              <i class="bi bi-bar-chart-line"></i> <span>Central de BI</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'relatorios.painel_pedagogico' %}active{% endif %}" href="{{ url_for('relatorios.painel_pedagogico') }}" title="Painel Pedagógico">
+              <i class="bi bi-diagram-3"></i> <span>Painel Pedagógico</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'relatorios.resultado_conselho' %}active{% endif %}" href="{{ url_for('relatorios.resultado_conselho') }}" title="Resultado do Conselho">
+              <i class="bi bi-bar-chart-line"></i> <span>Resultado do Conselho</span>
+            </a>
+          </li>
+          {% endif %} 
+          
+          {# ADMINISTRAÇÃO #} 
+          {% if current_user.role == 'admin' %}
+          <li class="sidebar-heading">Administração</li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'auth.painel_admin' %}active{% endif %}" href="{{ url_for('auth.painel_admin') }}" title="Gerir Usuários">
+              <i class="bi bi-person-gear"></i> <span>Gerir Usuários</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'auth.admin_unidades' %}active{% endif %}" href="{{ url_for('auth.admin_unidades') }}" title="Gerir Unidades">
+              <i class="bi bi-buildings"></i> <span>Gerir Unidades</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'auth.ver_logs' %}active{% endif %}" href="{{ url_for('auth.ver_logs') }}" title="Auditoria (Logs)">
+              <i class="bi bi-clipboard-data"></i> <span>Auditoria (Logs)</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'informacao_padrao.painel_informacao_padrao' %}active{% endif %}" href="{{ url_for('informacao_padrao.painel_informacao_padrao') }}" title="Informações Padrão">
+              <i class="bi bi-building-gear"></i> <span>Informações Padrão</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+        {% else %}
+        <div class="p-3 text-muted small">Faça login.</div>
+        {% endif %}
+      </nav>
+    </aside>
+
+    <!-- BACKDROP MOBILE (Fundo escuro) -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- ALERTA UNIDADE INATIVA -->
+    {% if current_user.is_authenticated and current_user.unidade and not current_user.unidade.ativo %}
+    <div class="alert alert-danger rounded-0 text-center mb-0 shadow-sm" style="margin-left: var(--sidebar-width)">
       <i class="bi bi-exclamation-triangle-fill me-2"></i>
-      <strong
-        >Sua unidade ({{ current_user.unidade.nome }}) está inativa no
-        momento.</strong
-      >
-      Algumas funcionalidades podem estar limitadas. Por favor, entre em contato
-      com a gestão.
+      <strong>Sua unidade ({{ current_user.unidade.nome }}) está inativa no momento.</strong>
     </div>
     {% endif %}
 
-    <main class="container mt-4 flex-grow-1">
-      {% with messages = get_flashed_messages(with_categories=true) %} {% if
-      messages %} {% for category, message in messages %}
-      <div
-        class="alert alert-{{ category }} alert-dismissible fade show shadow-sm"
-        role="alert"
-      >
-        {{ message }}
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="alert"
-          aria-label="Close"
-        ></button>
-      </div>
-      {% endfor %} {% endif %} {% endwith %} {% block content %}{% endblock %}
+    <!-- CONTEÚDO -->
+    <main class="app-main flex-grow-1">
+      {% with messages = get_flashed_messages(with_categories=true) %} 
+        {% if messages %} 
+          {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+          {% endfor %} 
+        {% endif %} 
+      {% endwith %} 
+      {% block content %}{% endblock %}
     </main>
 
-    <footer class="text-center text-muted small py-3 mt-4 border-top">
-      {{ informacao_padrao.nome_instituicao or 'pautaON' }} &middot; pautaON v{{
-      app_version }}{% if app_stage %} ({{ app_stage }}){% endif %} &middot;
-      &copy; {{ ano_atual }}
+    <!-- FOOTER -->
+    <footer class="app-footer text-center text-muted small py-3 mt-4 border-top bg-white">
+      {{ informacao_padrao.nome_instituicao or 'pautaON' }} &middot; pautaON v{{ app_version }}{% if app_stage %} ({{ app_stage }}){% endif %} &middot; &copy; {{ ano_atual }}
     </footer>
 
     <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const body = document.body;
+        const toggleBtn = document.getElementById("toggleSidebar");
+        const sidebar = document.getElementById("appSidebar");
+        const backdrop = document.getElementById("sidebarBackdrop");
+        const navLinks = document.querySelectorAll(".app-sidebar .nav-link");
+
+        // 1. Restaura estado no Desktop
+        if (localStorage.getItem("sidebarState") === "collapsed") {
+          body.classList.add("sidebar-collapsed");
+        }
+
+        // Função para fechar no mobile
+        function closeMobileSidebar() {
+          sidebar.classList.remove("show");
+          backdrop.classList.remove("show");
+          body.style.overflow = ""; // Restaura scroll
+        }
+
+        // 2. Ação do botão
+        toggleBtn.addEventListener("click", function () {
+          if (window.innerWidth >= 992) {
+            body.classList.toggle("sidebar-collapsed");
+            localStorage.setItem("sidebarState", 
+              body.classList.contains("sidebar-collapsed") ? "collapsed" : "expanded"
+            );
+          } else {
+            sidebar.classList.toggle("show");
+            backdrop.classList.toggle("show");
+            // Trava scroll do fundo
+            if (sidebar.classList.contains("show")) {
+              body.style.overflow = "hidden";
+            } else {
+              body.style.overflow = "";
+            }
+          }
+        });
+
+        // 3. Clicar no fundo escuro fecha a gaveta
+        backdrop.addEventListener("click", closeMobileSidebar);
+
+        // 4. Clicar em um link no celular fecha a gaveta
+        navLinks.forEach(link => {
+          link.addEventListener("click", function () {
+            if (window.innerWidth < 992) {
+              closeMobileSidebar();
+            }
+          });
+        });
+
+        // 5. Se redimensionar a tela, limpa os estados
+        window.addEventListener("resize", function () {
+          if (window.innerWidth >= 992) {
+            closeMobileSidebar();
+          }
+        });
+      });
+    </script>
     {% block scripts %}{% endblock %}
   </body>
 </html>
