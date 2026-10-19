@@ -29,9 +29,15 @@
      ───────────────────────────────────────────── */
   const TAB_KEY = 'planejamento.activeTab';
   const savedTab = localStorage.getItem(TAB_KEY);
-  if (savedTab) {
+  if (savedTab && window.bootstrap?.Tab) {
     const trigger = document.querySelector(`[data-bs-target="${savedTab}"]`);
-    if (trigger) bootstrap.Tab.getOrCreateInstance(trigger).show();
+    if (trigger) {
+      try {
+        window.bootstrap.Tab.getOrCreateInstance(trigger).show();
+      } catch (error) {
+        console.warn('[planejamento] Não foi possível restaurar a aba salva.', error);
+      }
+    }
   }
   document.querySelectorAll('[data-bs-toggle="pill"]').forEach(el => {
     el.addEventListener('shown.bs.tab', e => {
@@ -81,8 +87,24 @@
 
     function showMsg(msg, tipo = 'danger') {
       if (!formMsg) return;
-      formMsg.innerHTML = `<span class="text-${tipo}">${msg}</span>`;
-      setTimeout(() => (formMsg.innerHTML = ''), 3000);
+      formMsg.className = `mt-2 small text-${tipo}`;
+      formMsg.textContent = msg;
+    }
+
+    async function readJsonResponse(response) {
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+      if (!response.ok) {
+        throw new Error(data?.message || `Não foi possível concluir a operação (HTTP ${response.status}).`);
+      }
+      if (!data || typeof data !== 'object' || data.success === false) {
+        throw new Error(data?.message || 'O servidor retornou uma resposta inválida.');
+      }
+      return data;
     }
 
     function buildRow(c) {
@@ -135,17 +157,17 @@
         const nome = nomeInput.value.trim();
         if (!nome) { showMsg('Informe o nome do curso.'); return; }
 
-        const res = await fetch(URL_NOVO, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
-          body: JSON.stringify({
-            nome,
-            descricao: descInput.value.trim(),
-            carga_horaria: cargaInput.value || null,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
+        try {
+          const res = await fetch(URL_NOVO, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({
+              nome,
+              descricao: descInput.value.trim(),
+              carga_horaria: cargaInput.value || null,
+            }),
+          });
+          const data = await readJsonResponse(res);
           removeVazio();
           tbody.appendChild(buildRow(data));
           sincronizarSelects(data);
@@ -153,14 +175,14 @@
           descInput.value = '';
           cargaInput.value = '';
           showMsg('Curso adicionado!', 'success');
-        } else {
-          showMsg(data.message || 'Erro ao adicionar.');
+        } catch (error) {
+          showMsg(error.message || 'Erro ao adicionar.');
         }
       });
     }
 
     /* ── Editar / Excluir (delegação) ── */
-    tbody.addEventListener('click', e => {
+    tbody.addEventListener('click', async e => {
       const btnEd = e.target.closest('.btn-editar-curso');
       if (btnEd) {
         editId.value    = btnEd.dataset.id;
@@ -177,24 +199,25 @@
 
       if (!confirm(`Excluir o curso "${btnEx.dataset.nome}"?`)) return;
 
-      fetch(URL_EXCLUIR(btnEx.dataset.id), {
-        method: 'POST',
-        headers: csrfHeaders(),
-      })
-        .then(r => r.json())
-        .then(data => {
-          if (!data.success) return;
-          tbody.querySelector(`tr[data-id="${btnEx.dataset.id}"]`)?.remove();
-          sincronizarSelects({ id: btnEx.dataset.id }, true);
-          if (!tbody.querySelector('tr[data-id]')) {
-            tbody.innerHTML = `<tr id="cursoVazio">
-              <td colspan="4" class="text-center text-muted py-4">
-                <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
-                Nenhum curso cadastrado para esta unidade.
-              </td></tr>`;
-          }
-        })
-        .catch(err => console.error('[excluir-curso]', err));
+      try {
+        const response = await fetch(URL_EXCLUIR(btnEx.dataset.id), {
+          method: 'POST',
+          headers: csrfHeaders(),
+        });
+        await readJsonResponse(response);
+        tbody.querySelector(`tr[data-id="${btnEx.dataset.id}"]`)?.remove();
+        sincronizarSelects({ id: btnEx.dataset.id }, true);
+        if (!tbody.querySelector('tr[data-id]')) {
+          tbody.innerHTML = `<tr id="cursoVazio">
+            <td colspan="4" class="text-center text-muted py-4">
+              <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
+              Nenhum curso cadastrado para esta unidade.
+            </td></tr>`;
+        }
+        showMsg('Curso excluído.', 'success');
+      } catch (error) {
+        showMsg(error.message || 'Erro ao excluir curso.');
+      }
     });
 
     /* ── Salvar edição ── */
@@ -203,24 +226,24 @@
         const nome = editNome.value.trim();
         if (!nome) { showMsg('Nome obrigatório.'); return; }
 
-        const res = await fetch(URL_EDITAR(editId.value), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
-          body: JSON.stringify({
-            nome,
-            descricao: editDesc.value.trim(),
-            carga_horaria: editCarga.value || null,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
+        try {
+          const res = await fetch(URL_EDITAR(editId.value), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({
+              nome,
+              descricao: editDesc.value.trim(),
+              carga_horaria: editCarga.value || null,
+            }),
+          });
+          const data = await readJsonResponse(res);
           const tr = tbody.querySelector(`tr[data-id="${data.id}"]`);
           if (tr) tr.replaceWith(buildRow(data));
           sincronizarSelects(data);
           painelEdit.classList.add('d-none');
           showMsg('Curso atualizado!', 'success');
-        } else {
-          showMsg(data.message || 'Erro ao salvar.');
+        } catch (error) {
+          showMsg(error.message || 'Erro ao salvar curso.');
         }
       });
     }

@@ -1,9 +1,10 @@
 import pytest
+from flask_login import login_user
 from werkzeug.exceptions import Forbidden
 
 from app import create_app
 from app.database import db
-from app.models import User, Unidade, Aluno, Turma
+from app.models import User, Unidade, Aluno, Turma, Curso
 from app.registros.shared import assert_unidade_context
 from config import Config
 
@@ -207,3 +208,103 @@ def test_mutating_routes_reject_get_requests(client):
     for route in routes:
         resp = client.get(route)
         assert resp.status_code == 405
+
+
+def _criar_admin_cursos(client, app):
+    with app.app_context():
+        unidade_a = Unidade(nome="Unidade Cursos A", ativo=True)
+        unidade_b = Unidade(nome="Unidade Cursos B", ativo=True)
+        db.session.add_all([unidade_a, unidade_b])
+        db.session.flush()
+
+        admin = User(
+            name="Admin Cursos",
+            email="admin.cursos@example.com",
+            role="admin",
+            first_login=False,
+        )
+        admin.set_password("SenhaLocal!123")
+        db.session.add(admin)
+        db.session.flush()
+
+        with app.test_request_context():
+            login_user(admin)
+            curso_a = Curso(nome="Curso A", unidade_id=unidade_a.id, ativo=True)
+            curso_b = Curso(nome="Curso B", unidade_id=unidade_b.id, ativo=True)
+            db.session.add_all([curso_a, curso_b])
+            db.session.commit()
+        user_id = admin.id
+        unidade_a_id = unidade_a.id
+        curso_a_id = curso_a.id
+        curso_b_id = curso_b.id
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user_id)
+        sess["_fresh"] = True
+        sess["unidade_id"] = unidade_a_id
+
+    return curso_a_id, curso_b_id
+
+
+def test_cursos_exigem_unidade_e_isolam_cursos_de_outra_unidade(client, app):
+    curso_a_id, curso_b_id = _criar_admin_cursos(client, app)
+
+    response = client.get("/cursos")
+    assert response.status_code == 200
+    assert [curso["id"] for curso in response.json] == [curso_a_id]
+
+    response = client.post(
+        f"/cursos/{curso_b_id}/editar",
+        json={"nome": "Alterado", "descricao": "", "carga_horaria": None},
+    )
+    assert response.status_code == 403
+
+    response = client.post(f"/cursos/{curso_b_id}/excluir")
+    assert response.status_code == 403
+
+    with client.session_transaction() as sess:
+        sess.pop("unidade_id", None)
+
+    assert client.get("/cursos").status_code == 403
+    assert client.post("/cursos/novo", json={"nome": "Sem unidade"}).status_code == 400
+    assert client.post(
+        f"/cursos/{curso_a_id}/editar", json={"nome": "Alterado"}
+    ).status_code == 403
+    assert client.post(f"/cursos/{curso_a_id}/excluir").status_code == 403
+
+
+def test_curso_criar_editar_excluir_e_validar_carga_horaria(client, app):
+    curso_a_id, _ = _criar_admin_cursos(client, app)
+
+    response = client.post(
+        "/cursos/novo",
+        json={"nome": "Novo curso", "descricao": "Descrição", "carga_horaria": 40},
+    )
+    assert response.status_code == 200
+    curso_novo_id = response.json["id"]
+
+    response = client.post(
+        "/cursos/novo",
+        json={"nome": "Carga inválida", "carga_horaria": "inválida"},
+    )
+    assert response.status_code == 400
+
+    response = client.post(
+        f"/cursos/{curso_a_id}/editar",
+        json={"nome": "Curso editado", "descricao": "Atualizado", "carga_horaria": 60},
+    )
+    assert response.status_code == 200
+    assert response.json["nome"] == "Curso editado"
+    assert response.json["carga_horaria"] == 60
+
+    response = client.post(f"/cursos/{curso_a_id}/excluir")
+    assert response.status_code == 200
+    assert response.json["success"] is True
+
+    with app.app_context():
+        curso_excluido = db.session.get(Curso, curso_a_id)
+        assert curso_excluido.ativo is False
+
+    response = client.get("/cursos")
+    assert response.status_code == 200
+    assert [curso["id"] for curso in response.json] == [curso_novo_id]

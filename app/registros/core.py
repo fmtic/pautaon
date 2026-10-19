@@ -368,30 +368,49 @@ def frequencia_relatorio():
 @login_required
 def listar_cursos():
     """Retorna JSON com os cursos da unidade — usado pelo modal de planejamento."""
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     unidade_id = get_unidade_id()
-    q = Curso.query.filter_by(ativo=True)
-    if unidade_id:
-        q = q.filter_by(unidade_id=unidade_id)
+    if not unidade_id:
+        abort(403)
+    q = Curso.query.filter_by(ativo=True, unidade_id=unidade_id)
     cursos = q.order_by(Curso.nome).all()
-    return jsonify([{'id': c.id, 'nome': c.nome, 'descricao': c.descricao or ''} for c in cursos])
+    return jsonify([
+        {
+            'id': c.id,
+            'nome': c.nome,
+            'descricao': c.descricao or '',
+            'carga_horaria': c.carga_horaria or '',
+        }
+        for c in cursos
+    ])
 
 
 @bp.route('/cursos/novo', methods=['POST'])
 @login_required
 def novo_curso():
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     unidade_id = get_unidade_id()
     if not unidade_id:
         return jsonify({'success': False, 'message': 'Usuário sem unidade definida.'}), 400
 
-    nome = (request.json or {}).get('nome', '').strip()
-    descricao = (request.json or {}).get('descricao', '').strip()
-    carga_horaria = (request.json or {}).get('carga_horaria')
-    if not nome:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'Dados do curso inválidos.'}), 400
+    nome = data.get('nome')
+    if not isinstance(nome, str) or not nome.strip():
         return jsonify({'success': False, 'message': 'Nome é obrigatório.'}), 400
+    nome = nome.strip()
+    descricao = data.get('descricao')
+    descricao = descricao.strip() if isinstance(descricao, str) else ''
+    carga = data.get('carga_horaria')
+    try:
+        carga_horaria = int(carga) if carga not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Carga horária inválida.'}), 400
+    if carga_horaria is not None and not 1 <= carga_horaria <= 9999:
+        return jsonify({'success': False, 'message': 'Carga horária deve estar entre 1 e 9999 horas.'}), 400
 
     curso = Curso(
         nome=nome,
@@ -402,7 +421,13 @@ def novo_curso():
     try:
         db.session.add(curso)
         db.session.commit()
-        return jsonify({'success': True, 'id': curso.id, 'nome': curso.nome, 'descricao': curso.descricao or ''})
+        return jsonify({
+            'success': True,
+            'id': curso.id,
+            'nome': curso.nome,
+            'descricao': curso.descricao or '',
+            'carga_horaria': curso.carga_horaria or '',
+        })
     except Exception as e:
         db.session.rollback()
         from app.utils.errors import log_error_code
@@ -414,22 +439,32 @@ def novo_curso():
 @bp.route('/cursos/<int:curso_id>/editar', methods=['POST'])
 @login_required
 def editar_curso(curso_id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
-    if unidade_id and curso.unidade_id != unidade_id:
-        abort(403)
+    assert_unidade_context(curso.unidade_id, unidade_id)
 
-    data = request.json or {}
-    nome = data.get('nome', '').strip()
-    if not nome:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'message': 'Dados do curso inválidos.'}), 400
+    nome = data.get('nome')
+    if not isinstance(nome, str) or not nome.strip():
         return jsonify({'success': False, 'message': 'Nome é obrigatório.'}), 400
+    nome = nome.strip()
+    descricao = data.get('descricao')
+    descricao = descricao.strip() if isinstance(descricao, str) else ''
+    carga = data.get('carga_horaria')
+    try:
+        carga_horaria = int(carga) if carga not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Carga horária inválida.'}), 400
+    if carga_horaria is not None and not 1 <= carga_horaria <= 9999:
+        return jsonify({'success': False, 'message': 'Carga horária deve estar entre 1 e 9999 horas.'}), 400
 
     curso.nome = nome
-    curso.descricao = data.get('descricao', '').strip() or None
-    carga = data.get('carga_horaria')
-    curso.carga_horaria = int(carga) if carga else None
+    curso.descricao = descricao or None
+    curso.carga_horaria = carga_horaria
     try:
         db.session.commit()
         return jsonify({
@@ -448,12 +483,11 @@ def editar_curso(curso_id):
 @bp.route('/cursos/<int:curso_id>/excluir', methods=['POST'])
 @login_required
 def excluir_curso(curso_id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
-    if unidade_id and curso.unidade_id != unidade_id:
-        abort(403)
+    assert_unidade_context(curso.unidade_id, unidade_id)
 
     curso.ativo = False
     try:
@@ -474,7 +508,11 @@ def excluir_curso(curso_id):
 @bp.route('/planejamento', methods=['GET', 'POST'])
 @login_required
 def planejamento():
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+
+    unidade_id = get_unidade_id()
+    if current_user.role == UserRole.SECRETARIA and unidade_id is None:
         abort(403)
 
     if request.method == 'POST':
@@ -484,17 +522,25 @@ def planejamento():
             from app.models import Nivel
             nome_nivel = request.form.get('nome_nivel', '').strip()
             if nome_nivel:
-                try:
-                    db.session.add(Nivel(
-                        nome=nome_nivel,
-                        ativo=True,
-                        unidade_id=get_unidade_id()
-                    ))
-                    db.session.commit()
-                    flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
-                except Exception:
-                    db.session.rollback()
-                    flash("Erro ao salvar nível.", 'danger')
+                nivel_unidade_id = get_unidade_id()
+                existente = Nivel.query.filter_by(
+                    nome=nome_nivel,
+                    unidade_id=nivel_unidade_id,
+                ).first()
+                if existente:
+                    flash("Já existe um nível com esse nome nesta unidade.", 'warning')
+                else:
+                    try:
+                        db.session.add(Nivel(
+                            nome=nome_nivel,
+                            ativo=True,
+                            unidade_id=nivel_unidade_id,
+                        ))
+                        db.session.commit()
+                        flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
+                    except Exception:
+                        db.session.rollback()
+                        flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
             return redirect(url_for('registros.planejamento'))
@@ -503,7 +549,9 @@ def planejamento():
         titulo_tema = request.form.get('titulo')
         if curso_id and titulo_tema:
             try:
-                curso = Curso.query.get(int(curso_id))
+                curso = db.get_or_404(Curso, int(curso_id))
+                if current_user.role != UserRole.ADMIN:
+                    assert_unidade_context(curso.unidade_id, unidade_id)
 
                 ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
                     curso_id=int(curso_id)
@@ -532,7 +580,6 @@ def planejamento():
     conf_i = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho').first()
     conf_f = ConfiguracaoSistema.query.filter_by(chave='fim_conselho').first()
 
-    unidade_id = get_unidade_id()
     turmas = Turma.get_ativas()
     if unidade_id:
         turmas = [t for t in turmas if t.unidade_id == unidade_id]
@@ -561,10 +608,11 @@ def planejamento():
     if filtro_curso:
         lista_temas = [t for t in lista_temas if str(t.curso_id) == filtro_curso]
 
-    q_cursos = Curso.query.filter_by(ativo=True)
+    cursos = []
     if unidade_id:
-        q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
-    cursos = q_cursos.order_by(Curso.nome).all()
+        cursos = Curso.query.filter_by(
+            ativo=True, unidade_id=unidade_id
+        ).order_by(Curso.nome).all()
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
@@ -575,6 +623,7 @@ def planejamento():
                            niveis=niveis,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
+                           unidade_id=unidade_id,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
@@ -586,12 +635,15 @@ def planejamento():
 @bp.route('/planejamento/tema/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_tema(id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
-    if unidade_id and tema.unidade_id and tema.unidade_id != unidade_id:
-        abort(403)
+    if current_user.role != UserRole.ADMIN:
+        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
+            abort(403)
+        curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+        assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
 
     novo_titulo = request.form.get('titulo', '').strip()
     nova_ordem = request.form.get('ordem')
@@ -626,12 +678,15 @@ def editar_tema(id):
 @bp.route('/planejamento/tema/inativar/<int:id>', methods=['POST'])
 @login_required
 def inativar_tema(id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
-    if unidade_id and tema.unidade_id and tema.unidade_id != unidade_id:
-        abort(403)
+    if current_user.role != UserRole.ADMIN:
+        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
+            abort(403)
+        curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+        assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     try:
         tema.ativo = not tema.ativo
         db.session.commit()
@@ -650,10 +705,15 @@ def inativar_tema(id):
 @bp.route('/planejamento/nivel/editar/<int:id>', methods=['POST'])
 @login_required
 def editar_nivel(id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
+    if current_user.role != UserRole.ADMIN:
+        unidade_id = get_unidade_id()
+        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
+            abort(403)
+        assert_unidade_context(nivel.unidade_id, unidade_id)
 
     novo_nome = request.form.get('nome_nivel', '').strip()
     if novo_nome:
@@ -672,10 +732,15 @@ def editar_nivel(id):
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
 @login_required
 def inativar_nivel(id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
+    if current_user.role != UserRole.ADMIN:
+        unidade_id = get_unidade_id()
+        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
+            abort(403)
+        assert_unidade_context(nivel.unidade_id, unidade_id)
     try:
         nivel.ativo = not nivel.ativo
         db.session.commit()
@@ -694,11 +759,13 @@ def inativar_nivel(id):
 @bp.route('/planejamento/imprimir-temas')
 @login_required
 def imprimir_temas():
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
 
     filtro_curso = request.args.get('curso_id', '')
     unidade_id = get_unidade_id()
+    if current_user.role == UserRole.SECRETARIA and unidade_id is None:
+        abort(403)
 
     query = TemaAula.query.join(Curso, TemaAula.curso_id == Curso.id).filter(
         TemaAula.curso_id.isnot(None),

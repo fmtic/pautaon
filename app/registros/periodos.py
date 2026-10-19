@@ -30,6 +30,7 @@ from app.utils.logica import get_unidade_id
 from . import bp
 
 _ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
+_ROLES_PERIODO = ["admin", "pedagogico", "secretaria"]
 
 
 def _check_calendario_access(unidade_id):
@@ -281,7 +282,7 @@ def periodo_letivo():
 @login_required
 def periodo_letivo_novo():
     """Cria um novo período letivo associado à unidade do contexto atual."""
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -291,6 +292,11 @@ def periodo_letivo_novo():
             "warning",
         )
         return redirect(url_for("registros.periodo_letivo"))
+
+    if current_user.role != "admin":
+        from .shared import assert_unidade_context
+
+        assert_unidade_context(unidade_id, current_user.unidade_id)
 
     unidade = (
         current_user.unidade
@@ -344,10 +350,14 @@ def periodo_letivo_novo():
 @login_required
 def periodo_letivo_editar(id):
     """Edita os dados de um período letivo existente."""
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
+    from .shared import assert_unidade_context
+
     periodo = db.get_or_404(PeriodoLetivo, id)
+    if current_user.role != "admin":
+        assert_unidade_context(periodo.unidade_id, get_unidade_id())
     unidade = periodo.unidade
 
     if request.method == "POST":
@@ -377,10 +387,9 @@ def periodo_letivo_editar(id):
 @bp.route("/periodo-letivo/inativar/<int:id>", methods=["POST"])
 @login_required
 def periodo_letivo_inativar(id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
-    from app.utils.logica import get_unidade_id
     from .shared import assert_unidade_context
 
     periodo = db.get_or_404(PeriodoLetivo, id)
@@ -394,10 +403,9 @@ def periodo_letivo_inativar(id):
 @bp.route("/periodo-letivo/ativar/<int:id>", methods=["POST"])
 @login_required
 def periodo_letivo_ativar(id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
-    from app.utils.logica import get_unidade_id
     from .shared import assert_unidade_context
 
     periodo = db.get_or_404(PeriodoLetivo, id)
@@ -412,13 +420,15 @@ def periodo_letivo_ativar(id):
 @login_required
 def periodo_letivo_calendario(id):
     """Página dedicada ao calendário de dias bloqueados de um período letivo."""
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
     unidade_id = get_unidade_id()
     periodo = db.get_or_404(PeriodoLetivo, id)
-    if unidade_id and periodo.unidade_id != unidade_id:
-        abort(403)
+    if current_user.role != "admin":
+        from .shared import assert_unidade_context
+
+        assert_unidade_context(periodo.unidade_id, unidade_id)
 
     dias = (
         DiaBloqueado.query.filter_by(periodo_letivo_id=id)
@@ -482,10 +492,15 @@ def periodo_letivo_relatorio_certificado(id):
     """Gera lista de alunos aprovados ou participantes para certificados."""
     from app.models import ConselhoClasse
 
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in _ROLES_PERIODO:
         abort(403)
 
     periodo = db.get_or_404(PeriodoLetivo, id)
+    if current_user.role != "admin":
+        from .shared import assert_unidade_context
+
+        assert_unidade_context(periodo.unidade_id, get_unidade_id())
+
     turmas = Turma.query.filter_by(periodo_letivo_id=id, ativo=True).all()
     alunos_map = defaultdict(lambda: {"aluno": None, "cursos": []})
     situacoes_aprovadas = {"Aprovado", "Participação", "Concluído"}

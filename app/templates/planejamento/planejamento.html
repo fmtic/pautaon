@@ -454,6 +454,12 @@
 
       <div class="modal-body">
 
+        {% if not unidade_id %}
+        <div class="alert alert-warning" role="alert">
+          Selecione uma unidade para gerenciar cursos.
+        </div>
+        {% endif %}
+
         <div class="card border-0 bg-light rounded-3 p-3 mb-4">
           <h6 class="fw-bold text-muted text-uppercase small mb-3">
             <i class="bi bi-plus-circle me-1"></i>Novo Curso

@@ -1,3 +1,21 @@
+### Alterações do dia — 19/10/2026
+
+- Data da intervenção: 19/10/2026
+- Conclusão: concluído
+
+Atualizações realizadas no planejamento pedagógico:
+
+- Acesso liberado para `secretaria` em `/planejamento`, nos CRUDs de cursos, temas e níveis e nas operações de conselho, com validação da unidade nos registros e turmas alvo.
+- Corrigida a resposta dos endpoints de cursos para retornar `carga_horaria` após criação e na listagem, permitindo que a interface exiba o valor gravado.
+- A unicidade de `Nivel.nome` passou a ser por unidade. A migration `c4d5e6f7a8b9_niveis_unicos_por_unidade` remove a restrição global e cria UNIQUE (`nome`, `unidade_id`).
+- Adicionada mensagem específica para tentativa de cadastrar um nível que já existe na mesma unidade.
+- Migration aplicada ao banco configurado; `flask db current` confirmou `c4d5e6f7a8b9 (head)`.
+- Incluída regressão para acesso de secretaria ao conselho na própria unidade e bloqueio de outra unidade. A execução automatizada não foi possível neste ambiente porque `pytest` não está instalado.
+
+Arquivos principais: `app/planejamento.py`, `app/registros/core.py`, `app/models/pedagogico.py`.
+
+---
+
 ### Alterações do dia — 29/09/2026
 
 - Data da intervenção: 29/09/2026

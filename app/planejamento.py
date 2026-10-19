@@ -2,13 +2,17 @@ from flask import Blueprint, request, abort, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app.database import db
 from app.models import ConfiguracaoSistema, Turma
+from app.utils.logica import get_unidade_id
+from app.registros.shared import assert_unidade_context
 
 bp_planejamento = Blueprint("planejamento", __name__)
 
 @bp_planejamento.route("/configurar-conselho", methods=["POST"])
 @login_required
 def salvar_configuracao_conselho():
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+        abort(403)
+    if current_user.role != "admin" and get_unidade_id() is None:
         abort(403)
 
     inicio = request.form.get("inicio_conselho")
@@ -35,11 +39,15 @@ def salvar_configuracao_conselho():
 @bp_planejamento.route("/turma/alternar-conselho/<int:turma_id>", methods=["POST"])
 @login_required
 def alternar_conselho(turma_id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
+    turma = Turma.query.get_or_404(turma_id)
+    unidade_id = get_unidade_id()
+    if current_user.role != "admin":
+        assert_unidade_context(turma.unidade_id, unidade_id)
+
     try:
-        turma = Turma.query.get_or_404(turma_id)
         turma.conselho_concluido = not turma.conselho_concluido
         db.session.commit()
     except Exception as e:

@@ -4,7 +4,7 @@
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
 
-**Última atualização:** 2026-09-27 — Onda 3B-ter: auditoria de edição em `aluno` (`updated_by_id`, `updated_by_name`, `updated_at`) e registro de `LogAcao` em `editar_aluno`.
+**Última atualização:** 2026-10-19 — Planejamento liberado para `secretaria` com escopo por unidade; níveis passam a ter nome único por unidade (`c4d5e6f7a8b9`).
 
 ---
 
@@ -40,6 +40,13 @@ O sistema é um **ERP socioeducativo** multitenant, organizado em torno de
 **Migrations:** Alembic via Flask-Migrate.
 **Fonte de verdade do código:** `app/models/` (pacote).
 **Fonte de verdade do esquema:** este documento.
+
+### Ajustes de arquitetura ativos
+
+- `TenantMixin` e `SoftDeleteMixin` ficam em `app/models/base.py` e são herdados por entidades de negócio, incluindo `PeriodoLetivo`, `Turma` e `TemaAula`.
+- Isso significa que `unidade_id` e `ativo` são atributos compartilhados do mixin e não precisam ser repetidos em cada classe.
+- A auditoria automática é registrada ao iniciar a app em `app/__init__.py`, importando `app.models.auditoria_listener` dentro de `_register_auditoria_listener`.
+- `Turma.professor` usa `foreign_keys=[professor_id]` para evitar colisão com `updated_by_id` herdado de `AuditoriaMixin`.
 
 ---
 
@@ -85,7 +92,12 @@ app/services/
 1. Código **fora** do pacote importa sempre de `app.models`.
 2. Código **dentro** do pacote importa pelo caminho completo (ex.: `from app.models.pessoas import Aluno`).
 3. Dentro de **métodos**, usar import local para evitar ciclos.
-4. Ao ler/escrever dados de perfil do aluno, usar **sempre**`app.services.aluno_perfil` — nunca acessar `aluno.*_json` direto.
+4. Ao ler/escrever dados de perfil do aluno, usar **sempre** `app.services.aluno_perfil` — nunca acessar `aluno.*_json` direto.
+5. Novos modelamentos de tenant/soft-delete devem preferir herdar de `TenantMixin` e `SoftDeleteMixin` em vez de redeclarar campos duplicados.
+
+### Auditoria automática
+
+A auditoria fica centralizada em `app/models/auditoria_mixin.py` e é disparada por `app/models/auditoria_listener.py`, registrado no processo de bootstrap da app. O listener preenche `updated_by_id`, `updated_by_name` e `updated_at` antes do flush e grava um `LogAcao` para cada alteração relevante.
 
 ---
 
@@ -276,9 +288,11 @@ erDiagram
 | Coluna     | Tipo         | Nulo | Default | Descrição         |
 |------------|--------------|------|---------|-------------------|
 | id         | int          | não  | auto    | PK                |
-| nome       | varchar(100) | não  | —       | **UNIQUE** global |
+| nome       | varchar(100) | não  | —       | Único por unidade |
 | ativo      | bool         | não  | true    | Soft delete       |
 | unidade_id | int          | sim  | —       | FK → unidade      |
+
+**UNIQUE:** (`nome`, `unidade_id`) via `uq_nivel_nome_unidade`. Níveis de unidades diferentes podem ter o mesmo nome; níveis legados sem unidade mantêm `unidade_id = NULL`.
 
 ### 7.6 `periodo_letivo`
 
@@ -336,41 +350,41 @@ erDiagram
 
 ### 7.9 `aluno`
 
-| Coluna                    | Tipo         | Nulo | Default | Descrição                         |
-|---------------------------|--------------|------|---------|-----------------------------------|
-| id                        | int          | não  | auto    | PK                                |
-| nome                      | varchar(100) | não  | —       | Nome civil                        |
-| nome_social               | varchar(100) | sim  | —       | Nome social (preferir em UI)      |
-| ativo                     | bool         | não  | true    | Soft delete                       |
-| data_nascimento           | date         | sim  | —       | —                                 |
-| foto_path                 | varchar(255) | sim  | —       | Caminho relativo                  |
-| **documentos_entregues**  | **jsonb**    | sim  | —       | Flags de documentos (Onda 3A-bis) |
-| escolaridade_json         | text         | sim  | —       | **LEGADO** — fallback (Onda 3C)   |
-| identificacao_json        | text         | sim  | —       | **LEGADO** — fallback (Onda 3C)   |
-| socioeconomico_json       | text         | sim  | —       | **LEGADO** — fallback (Onda 3C)   |
-| diversidade_json          | text         | sim  | —       | **LEGADO** — fallback (Onda 3C)   |
-| cpf                       | varchar(20)  | sim  | —       | —                                 |
-| rg                        | varchar(50)  | sim  | —       | —                                 |
-| whatsapp                  | varchar(30)  | sim  | —       | —                                 |
-| email                     | varchar(120) | sim  | —       | —                                 |
-| nivel                     | varchar(20)  | sim  | —       | Básico / Intermediário / Avançado |
-| **orgao_rg**              | varchar(20)  | sim  | —       | Onda 3A                           |
-| **nacionalidade**         | varchar(50)  | sim  | —       | Onda 3A                           |
-| **natural_uf**            | varchar(2)   | sim  | —       | Onda 3A                           |
-| **natural_cidade**        | varchar(100) | sim  | —       | Onda 3A                           |
-| **nome_mae**              | varchar(150) | sim  | —       | Onda 3A                           |
-| **cpf_mae**               | varchar(20)  | sim  | —       | Onda 3A                           |
-| **nome_pai**              | varchar(150) | sim  | —       | Onda 3A                           |
-| **cpf_pai**               | varchar(20)  | sim  | —       | Onda 3A                           |
-| **vai_acompanhado_aulas** | bool         | não  | false   | Onda 3A                           |
-| **acompanhante_aulas**    | varchar(150) | sim  | —       | Onda 3A                           |
-| created_by_id             | int          | sim  | —       | FK → user                         |
-| created_by_name           | varchar(100) | sim  | —       | Snapshot                          |
-| created_at                | timestamp    | sim  | now     | Auditoria                         |
-| **updated_by_id**         | **int**      | sim  | —       | FK → user (Onda 3B-ter)           |
-| **updated_by_name**       | **varchar(100)** | sim | —    | Snapshot (Onda 3B-ter)            |
-| **updated_at**            | **timestamp** | sim | —      | Preenchido na 1ª edição (Onda 3B-ter) |
-| unidade_id                | int          | sim  | —       | FK → unidade                      |
+| Coluna                    | Tipo             | Nulo | Default | Descrição                             |
+|---------------------------|------------------|------|---------|---------------------------------------|
+| id                        | int              | não  | auto    | PK                                    |
+| nome                      | varchar(100)     | não  | —       | Nome civil                            |
+| nome_social               | varchar(100)     | sim  | —       | Nome social (preferir em UI)          |
+| ativo                     | bool             | não  | true    | Soft delete                           |
+| data_nascimento           | date             | sim  | —       | —                                     |
+| foto_path                 | varchar(255)     | sim  | —       | Caminho relativo                      |
+| **documentos_entregues**  | **jsonb**        | sim  | —       | Flags de documentos (Onda 3A-bis)     |
+| escolaridade_json         | text             | sim  | —       | **LEGADO** — fallback (Onda 3C)       |
+| identificacao_json        | text             | sim  | —       | **LEGADO** — fallback (Onda 3C)       |
+| socioeconomico_json       | text             | sim  | —       | **LEGADO** — fallback (Onda 3C)       |
+| diversidade_json          | text             | sim  | —       | **LEGADO** — fallback (Onda 3C)       |
+| cpf                       | varchar(20)      | sim  | —       | —                                     |
+| rg                        | varchar(50)      | sim  | —       | —                                     |
+| whatsapp                  | varchar(30)      | sim  | —       | —                                     |
+| email                     | varchar(120)     | sim  | —       | —                                     |
+| nivel                     | varchar(20)      | sim  | —       | Básico / Intermediário / Avançado     |
+| **orgao_rg**              | varchar(20)      | sim  | —       | Onda 3A                               |
+| **nacionalidade**         | varchar(50)      | sim  | —       | Onda 3A                               |
+| **natural_uf**            | varchar(2)       | sim  | —       | Onda 3A                               |
+| **natural_cidade**        | varchar(100)     | sim  | —       | Onda 3A                               |
+| **nome_mae**              | varchar(150)     | sim  | —       | Onda 3A                               |
+| **cpf_mae**               | varchar(20)      | sim  | —       | Onda 3A                               |
+| **nome_pai**              | varchar(150)     | sim  | —       | Onda 3A                               |
+| **cpf_pai**               | varchar(20)      | sim  | —       | Onda 3A                               |
+| **vai_acompanhado_aulas** | bool             | não  | false   | Onda 3A                               |
+| **acompanhante_aulas**    | varchar(150)     | sim  | —       | Onda 3A                               |
+| created_by_id             | int              | sim  | —       | FK → user                             |
+| created_by_name           | varchar(100)     | sim  | —       | Snapshot                              |
+| created_at                | timestamp        | sim  | now     | Auditoria                             |
+| **updated_by_id**         | **int**          | sim  | —       | FK → user (Onda 3B-ter)               |
+| **updated_by_name**       | **varchar(100)** | sim  | —       | Snapshot (Onda 3B-ter)                |
+| **updated_at**            | **timestamp**    | sim  | —       | Preenchido na 1ª edição (Onda 3B-ter) |
+| unidade_id                | int              | sim  | —       | FK → unidade                          |
 
 **Formato de** `documentos_entregues`**:**
 
@@ -421,37 +435,37 @@ erDiagram
 
 ### 7.12 `responsavel_aluno` (Onda 3A)
 
-| Coluna     | Tipo         | Nulo | Default  | Descrição               |
-|------------|--------------|------|----------|-------------------------|
-| id         | int          | não  | auto     | PK                      |
-| aluno_id   | int          | não  | —        | FK → aluno              |
-| unidade_id | int          | sim  | —        | FK → unidade            |
+| Coluna     | Tipo         | Nulo | Default  | Descrição                |
+|------------|--------------|------|----------|--------------------------|
+| id         | int          | não  | auto     | PK                       |
+| aluno_id   | int          | não  | —        | FK → aluno               |
+| unidade_id | int          | sim  | —        | FK → unidade             |
 | tipo       | varchar(30)  | sim  | —        | Pai / Mãe / Avô/Avó / … |
-| nome       | varchar(150) | sim  | —        | —                       |
-| cpf        | varchar(20)  | sim  | —        | —                       |
-| telefone   | varchar(30)  | sim  | —        | —                       |
-| created_at | timestamp    | sim  | now      | Auditoria               |
-| updated_at | timestamp    | sim  | onupdate | Auditoria               |
+| nome       | varchar(150) | sim  | —        | —                        |
+| cpf        | varchar(20)  | sim  | —        | —                        |
+| telefone   | varchar(30)  | sim  | —        | —                        |
+| created_at | timestamp    | sim  | now      | Auditoria                |
+| updated_at | timestamp    | sim  | onupdate | Auditoria                |
 
 **Relação:** 1:N com `Aluno`. O formulário atual coleta 1; o schema aceita N.
 
 ### 7.13 `perfil_socioeconomico` (Onda 3A)
 
-| Coluna                  | Tipo          | Nulo | Default  | Descrição                                            |
-|-------------------------|---------------|------|----------|------------------------------------------------------|
-| id                      | int           | não  | auto     | PK                                                   |
-| aluno_id                | int           | não  | —        | **UNIQUE** — FK → aluno                              |
-| unidade_id              | int           | sim  | —        | FK → unidade                                         |
-| renda_familiar          | numeric(12,2) | sim  | —        | Renda familiar mensal em reais                       |
-| residente_maior_renda   | varchar(50)   | sim  | —        | Aluno / Pai / Mãe / …                                |
-| pessoas_residencia      | int           | sim  | —        | Nº moradores                                         |
-| ocupacao                | varchar(50)   | sim  | —        | Estudante / CLT / …                                  |
-| beneficio_social_status | varchar(20)   | sim  | —        | Sim / Não                                            |
-| beneficio_social_nome   | text          | sim  | —        | Nomes dos programas, separados internamente por `\|` |
-| meio_transporte         | varchar(30)   | sim  | —        | Ônibus / Bicicleta / …                               |
-| vulnerabilidade_social  | bool          | não  | false    | —                                                    |
-| created_at              | timestamp     | sim  | now      | Auditoria                                            |
-| updated_at              | timestamp     | sim  | onupdate | Auditoria                                            |
+| Coluna                  | Tipo          | Nulo | Default  | Descrição                                             |
+|-------------------------|---------------|------|----------|-------------------------------------------------------|
+| id                      | int           | não  | auto     | PK                                                    |
+| aluno_id                | int           | não  | —        | **UNIQUE** — FK → aluno                               |
+| unidade_id              | int           | sim  | —        | FK → unidade                                          |
+| renda_familiar          | numeric(12,2) | sim  | —        | Renda familiar mensal em reais                        |
+| residente_maior_renda   | varchar(50)   | sim  | —        | Aluno / Pai / Mãe / …                                 |
+| pessoas_residencia      | int           | sim  | —        | Nº moradores                                          |
+| ocupacao                | varchar(50)   | sim  | —        | Estudante / CLT / …                                   |
+| beneficio_social_status | varchar(20)   | sim  | —        | Sim / Não                                             |
+| beneficio_social_nome   | text          | sim  | —        | Nomes dos programas, separados internamente por ` \| ` |
+| meio_transporte         | varchar(30)   | sim  | —        | Ônibus / Bicicleta / …                                |
+| vulnerabilidade_social  | bool          | não  | false    | —                                                     |
+| created_at              | timestamp     | sim  | now      | Auditoria                                             |
+| updated_at              | timestamp     | sim  | onupdate | Auditoria                                             |
 
 **Notas (Etapa VI, 2026-09-22):**
 
@@ -759,6 +773,13 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - As tabelas de perfil herdam `unidade_id` do aluno no momento da criação.
 - Consultas por unidade devem filtrar tanto por `Aluno.unidade_id` quanto pelas tabelas de perfil (embora na prática o vínculo já garanta).
 
+### 8.9 Planejamento pedagógico
+
+- `admin`, `pedagogico` e `secretaria` podem acessar o planejamento e manter cursos, temas, níveis e executar operações de conselho.
+- Cursos, temas, níveis e turmas alvo devem pertencer à unidade efetiva dos perfis não administrativos; `secretaria` sem unidade efetiva é bloqueada.
+- Os parâmetros de data do conselho ficam em `ConfiguracaoSistema` como configuração global e exigem unidade efetiva para `secretaria`.
+- `Curso.carga_horaria` registra as horas previstas e é retornada pelos endpoints de criação e listagem usados pela interface.
+
 ---
 
 ## 9. Convenções de código
@@ -876,6 +897,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `3b7c9d1e4f20` | `29a29fdbc2aa` | **Onda 3B-bis**: renda e deficiência    | ✅      |
 | `4c8e2f7a1b30` | `3b7c9d1e4f20` | **Onda 3B-bis**: programas sociais      | ✅      |
 | `f1a2b3c4d5e6` | `4c8e2f7a1b30` | **Onda 3B-ter**: auditoria de edição    | ✅      |
+| `47ae52f8da90` | `f1a2b3c4d5e6` | Ajustes de auditoria em Turma/TemaAula   | ✅      |
+| `c4d5e6f7a8b9` | `47ae52f8da90` | Níveis únicos por unidade               | ✅      |
 
 > Consulte `flask db history` para confirmar a cadeia em execução. Toda
 > migration deve ter `revision` e `down_revision` preenchidos com hashes
@@ -898,7 +921,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 ### 12.3 Falta de mixins para auditoria
 
 **Onde:** `created_at`, `updated_at`, `ativo`, `unidade_id` repetidos.
-**Status:** Resolvido. `AuditoriaMixin` foi implementado e aplicado. `SoftDeleteMixin` e `TenantMixin` foram criados em `app/models/base.py` e aplicados na maior parte das entidades centrais (`academico`, `pedagogico`, `matriculas`, `conselho` e `aulas`), enxugando as declarações explícitas.
+**Status:** pendente. `AuditoriaMixin`, `SoftDeleteMixin` e `TenantMixin` estão planejados para `app/models/base.py` mas ainda não foram implementados.
 
 ### 12.4 JSONs legados em `Aluno`
 
@@ -925,9 +948,9 @@ tabela estruturada, e não duplicados nesse JSON.
 
 **Plano futuro:** tabela `participante_evento`.
 
-### 12.7 `Nivel.nome` único globalmente
+### 12.7 Unicidade do nome de `Nivel`
 
-**Plano futuro:** UNIQUE composto `(nome, unidade_id)`.
+**Status:** resolvido pela migration `c4d5e6f7a8b9`, que substitui a unicidade global por UNIQUE (`nome`, `unidade_id`).
 
 ### 12.8 `Atendimento.setor` legado
 

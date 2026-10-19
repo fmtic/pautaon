@@ -11,11 +11,11 @@ Ambos são catálogos reutilizáveis escopados por unidade.
 ================================================================================
 """
 
-from app.models.base import db, datetime, get_local_now, SoftDeleteMixin, TenantMixin
-from app.models.auditoria_mixin import AuditoriaMixin
+from app.models.base import db, datetime, get_local_now
+from sqlalchemy import UniqueConstraint
 
 
-class Curso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
+class Curso(db.Model):
     """
     Curso ofertado por uma unidade.
 
@@ -32,13 +32,14 @@ class Curso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     nome: str = db.Column(db.String(150), nullable=False)
     descricao: str = db.Column(db.String(300))
     carga_horaria: int = db.Column(db.Integer)
+    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=False)
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
     unidade = db.relationship('Unidade', backref='cursos')
 
 
-class Nivel(SoftDeleteMixin, TenantMixin, db.Model):
+class Nivel(db.Model):
     """
     Nível pedagógico (ex.: Básico, Intermediário, Avançado).
 
@@ -48,9 +49,12 @@ class Nivel(SoftDeleteMixin, TenantMixin, db.Model):
 
     Notas:
         - `unidade_id` é nullable para compatibilidade com dados legados.
-        - `nome` é único globalmente (não escopado por unidade).
+        - `nome` é único dentro de cada unidade.
     """
     __tablename__ = 'nivel'
+    __table_args__ = (UniqueConstraint('nome', 'unidade_id', name='uq_nivel_nome_unidade'),)
 
     id: int = db.Column(db.Integer, primary_key=True)
-    nome: str = db.Column(db.String(100), unique=True, nullable=False)
+    nome: str = db.Column(db.String(100), nullable=False)
+    ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
+    unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'))
