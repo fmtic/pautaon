@@ -100,13 +100,18 @@
           {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
           <li class="sidebar-heading">Estrutura</li>
           <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'registros.turma' %}active{% endif %}" href="{{ url_for('registros.turma') }}" title="Turmas">
-              <i class="bi bi-people-fill"></i> <span>Turmas</span>
+            <a class="nav-link {% if request.endpoint == 'registros.planejamento' %}active{% endif %}" href="{{ url_for('registros.planejamento') }}" title="Planejamento">
+              <i class="bi bi-people-fill"></i> <span>Planejamento</span>
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'registros.periodo_letivo' %}active{% endif %}" href="{{ url_for('registros.periodo_letivo') }}" title="Períodos">
               <i class="bi bi-calendar3"></i> <span>Períodos</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'registros.turma' %}active{% endif %}" href="{{ url_for('registros.turma') }}" title="Turmas">
+              <i class="bi bi-people-fill"></i> <span>Turmas</span>
             </a>
           </li>
           {% endif %} 
