@@ -4,7 +4,7 @@ from flask import current_app, flash, render_template
 from sqlalchemy import func
 
 from app.database import db
-from app.models import Aluno, Turma, User
+from app.models import Aluno, PeriodoLetivo, Turma, User
 from app.models.enums import UserRole
 from app.utils.logica import get_unidade_id
 
@@ -14,6 +14,9 @@ def render_dashboard_gerencial():
     try:
         unidade_id = get_unidade_id()
         if unidade_id:
+            total_periodos_ativos = PeriodoLetivo.query.filter_by(
+                ativo=True, unidade_id=unidade_id
+            ).count()
             total_turmas = Turma.query.filter_by(
                 ativo=True, unidade_id=unidade_id
             ).count()
@@ -24,6 +27,7 @@ def render_dashboard_gerencial():
                 role=UserRole.PROFESSOR.value, unidade_id=unidade_id
             ).count()
         else:
+            total_periodos_ativos = PeriodoLetivo.query.filter_by(ativo=True).count()
             total_turmas = Turma.query.filter_by(ativo=True).count()
             total_alunos = Aluno.query.filter_by(ativo=True).count()
             total_professores = (
@@ -35,6 +39,7 @@ def render_dashboard_gerencial():
 
         return render_template(
             "dashboard/index.html",
+            total_periodos_ativos=total_periodos_ativos,
             total_turmas=total_turmas,
             total_alunos=total_alunos,
             total_professores=total_professores,
@@ -49,6 +54,7 @@ def render_dashboard_gerencial():
         )
         return render_template(
             "dashboard/index.html",
+            total_periodos_ativos=0,
             total_turmas=0,
             total_alunos=0,
             total_professores=0,
