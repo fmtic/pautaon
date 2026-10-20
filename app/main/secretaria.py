@@ -45,6 +45,7 @@ def painel_secretaria():
     if unidade_id:
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
     periodo_ids_ativos = [p.id for p in q_periodos.all()]
+    total_periodos_ativos = len(periodo_ids_ativos)
 
     # --- Próximos dias sem aula --------------------------------------------
     hoje = date.today()
@@ -92,6 +93,7 @@ def painel_secretaria():
         total_turmas=total_turmas,
         total_pendencias_frequencia=total_pendencias_frequencia,
         total_dias_sem_aula=total_dias_sem_aula,
+        total_periodos_ativos=total_periodos_ativos,
         proximas_datas_vagas=proximas_datas_vagas,
         agendamentos_ss=agendamentos_ss,
         unidade_contexto=unidade_nome,

@@ -7,66 +7,85 @@
 {% block content %}
 <div class="container mt-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="mb-0"><i class="fas fa-chart-line text-primary"></i> Central de Relatórios</h2>
-        <div class="d-print-none">
-            <a href="{{ url_for('relatorios.relatorio_alunos') }}" class="btn btn-primary me-2">
-                <i class="fas fa-list"></i> Exportar Alunos
+    <!-- Cabeçalho -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <h2 class="mb-1 fw-bold">Central de Relatórios</h2>
+            <p class="text-muted small mb-0">Visão consolidada de indicadores e métricas acadêmicas.</p>
+        </div>
+        <div class="d-print-none d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('relatorios.relatorio_alunos') }}" class="btn btn-primary">
+                <i class="bi bi-person-lines-fill me-1"></i> Exportar Alunos
             </a>
-            <button onclick="window.print()" class="btn btn-outline-dark me-2">
-                <i class="fas fa-print"></i> Imprimir
+            <button onclick="window.print()" class="btn btn-outline-secondary">
+                <i class="bi bi-printer me-1"></i> Imprimir
             </button>
             <a href="{{ url_for('relatorios.exportar_relatorio', turma=turma_selecionada) }}" class="btn btn-success">
-                <i class="fas fa-file-excel"></i> Exportar Painel
+                <i class="bi bi-file-earmark-excel me-1"></i> Exportar Painel
             </a>
         </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card bg-primary text-white shadow-sm border-0 h-100">
-                <div class="card-body d-flex flex-column justify-content-center">
-                    <h6 class="small fw-bold opacity-75 mb-3 text-uppercase">Comunidade Ativa</h6>
-                    <div class="row g-0 text-center">
-                        <div class="col-4 border-end border-white border-opacity-25">
-                            <h3 class="mb-0 fw-bold">{{ total_alunos }}</h3>
-                            <small class="opacity-75" style="font-size: 0.7rem;">ALUNOS</small>
+    <!-- Linha 1: Visão Geral e Comunidade -->
+    <div class="row g-4 mb-4">
+        <!-- Comunidade Ativa -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-primary border-4">
+                <div class="card-body p-4 d-flex flex-column justify-content-center">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px">
+                            <i class="bi bi-people-fill fs-5"></i>
                         </div>
-                        <div class="col-4 border-end border-white border-opacity-25">
+                        <h6 class="fw-bold mb-0">Comunidade Ativa</h6>
+                    </div>
+                    
+                    <div class="row g-0 text-center align-items-center mt-2">
+                        <div class="col-4 border-end">
+                            <h3 class="mb-0 fw-bold">{{ total_alunos }}</h3>
+                            <small class="text-muted" style="font-size: 0.7rem;">ALUNOS</small>
+                        </div>
+                        <div class="col-4 border-end">
                             <h3 class="mb-0 fw-bold">{{ total_professores }}</h3>
-                            <small class="opacity-75" style="font-size: 0.7rem;">PROFS</small>
+                            <small class="text-muted" style="font-size: 0.7rem;">PROFS</small>
                         </div>
                         <div class="col-4">
                             <h3 class="mb-0 fw-bold">{{ total_turmas }}</h3>
-                            <small class="opacity-75" style="font-size: 0.7rem;">TURMAS</small>
+                            <small class="text-muted" style="font-size: 0.7rem;">TURMAS</small>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100 bg-dark text-white">
-                <div class="card-body">
-                    <h6 class="small fw-bold opacity-75 mb-3 text-uppercase">Painel do Conselho</h6>
-                    <div class="mb-4">
-                        <div class="d-flex justify-content-between mb-1 small">
-                            <span>Conteúdos Registados</span>
-                            <span class="fw-bold">{{ conselho.progresso_aulas }}%</span>
+        <!-- Painel do Conselho -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-secondary border-4">
+                <div class="card-body p-4 d-flex flex-column justify-content-center">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-secondary bg-opacity-10 text-secondary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px">
+                            <i class="bi bi-clipboard-data-fill fs-5"></i>
                         </div>
-                        <div class="progress" style="height: 6px; background-color: rgba(255,255,255,0.1);">
+                        <h6 class="fw-bold mb-0">Painel do Conselho</h6>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1 small text-muted">
+                            <span>Conteúdos Registrados</span>
+                            <span class="fw-bold text-dark">{{ conselho.progresso_aulas }}%</span>
+                        </div>
+                        <div class="progress" style="height: 6px;">
                             <div class="progress-bar bg-info" style="width: {{ conselho.progresso_aulas }}%"></div>
                         </div>
                     </div>
                     <div>
-                        <div class="d-flex justify-content-between mb-1 small">
+                        <div class="d-flex justify-content-between mb-1 small text-muted">
                             <span>Turmas Avaliadas</span>
-                            <span class="fw-bold">{{ conselho.progresso_reunioes }}%</span>
+                            <span class="fw-bold text-dark">{{ conselho.progresso_reunioes }}%</span>
                         </div>
-                        <div class="progress" style="height: 12px; background-color: rgba(255,255,255,0.1);">
-                            <div class="progress-bar bg-warning progress-bar-striped" style="width: {{ conselho.progresso_reunioes }}%"></div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-warning" style="width: {{ conselho.progresso_reunioes }}%"></div>
                         </div>
-                        <small class="mt-2 d-block opacity-50 text-center">
+                        <small class="mt-2 d-block text-muted text-center" style="font-size: 0.75rem;">
                             {{ conselho.turmas_concluidas }} de {{ conselho.total_turmas }} turmas finalizadas
                         </small>
                     </div>
@@ -74,11 +93,18 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3 text-uppercase">Distribuição por Sexo</h6>
-                    <div class="row g-0 text-center align-items-center h-75">
+        <!-- Distribuição por Sexo -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-danger border-4">
+                <div class="card-body p-4 d-flex flex-column justify-content-center">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-danger bg-opacity-10 text-danger d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px">
+                            <i class="bi bi-pie-chart-fill fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Distribuição por Sexo</h6>
+                    </div>
+                    
+                    <div class="row g-0 text-center align-items-center mt-2">
                         <div class="col-4 border-end">
                             <i class="bi bi-gender-male text-primary fs-4"></i>
                             <h4 class="mb-0 fw-bold mt-1">{{ total_masculino }}</h4>
@@ -100,26 +126,39 @@
         </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100 bg-info text-white">
-                <div class="card-body text-center d-flex flex-column justify-content-center">
-                    <h6 class="small fw-bold opacity-75">MÉDIA DE IDADE GERAL</h6>
-                    <h2 class="display-6 fw-bold mt-2 mb-0">{{ media_geral }}</h2>
-                    <small>anos</small>
+    <!-- Linha 2: Indicadores de Idade -->
+    <div class="row g-4 mb-4">
+        <!-- Média Geral -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-info border-4">
+                <div class="card-body p-4 text-center d-flex flex-column justify-content-center">
+                    <div class="rounded-3 bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center mx-auto mb-3" style="width: 56px; height: 56px">
+                        <i class="bi bi-person-bounding-box fs-3"></i>
+                    </div>
+                    <h6 class="small fw-bold text-muted text-uppercase mb-2">Média de Idade Geral</h6>
+                    <div class="d-flex align-items-baseline justify-content-center gap-1">
+                        <h2 class="display-6 fw-bold mb-0 text-dark">{{ media_geral }}</h2>
+                        <small class="text-muted">anos</small>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3">MÉDIA POR PROGRAMA</h6>
-                    <div class="list-group list-group-flush small">
+        <!-- Média por Programa -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-info border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div class="rounded-3 bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px">
+                            <i class="bi bi-journal-text fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Média por Programa</h6>
+                    </div>
+                    <div class="list-group list-group-flush small mt-3">
                         {% for prog, media in (media_programa or {}).items() %}
-                        <div class="list-group-item d-flex justify-content-between px-0 bg-transparent">
+                        <div class="list-group-item d-flex justify-content-between px-0 bg-transparent text-muted py-2 border-light">
                             <span>{{ prog }}</span>
-                            <span class="fw-bold">{{ media|round(1) }} anos</span>
+                            <span class="fw-bold text-dark">{{ media|round(1) }} anos</span>
                         </div>
                         {% endfor %}
                     </div>
@@ -127,13 +166,19 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3">MÉDIA POR TURMA</h6>
-                    <div style="max-height: 160px; overflow-y: auto;" class="small">
+        <!-- Média por Turma -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-info border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div class="rounded-3 bg-info bg-opacity-10 text-info d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px">
+                            <i class="bi bi-people fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Média por Turma</h6>
+                    </div>
+                    <div style="max-height: 180px; overflow-y: auto;" class="small mt-3 pe-2 custom-scrollbar">
                         {% for t_nome, media in (media_turma or {}).items() %}
-                        <div class="d-flex justify-content-between mb-2 border-bottom pb-1">
+                        <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2 border-light text-muted">
                             <span>{{ t_nome }}</span>
                             <span class="badge bg-light text-dark border">{{ media|round(1) }} anos</span>
                         </div>
@@ -144,18 +189,25 @@
         </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3 text-uppercase">Frequência por Programa</h6>
+    <!-- Linha 3: Indicadores de Frequência -->
+    <div class="row g-4 mb-4">
+        <!-- Frequência por Programa -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-success border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px">
+                            <i class="bi bi-bar-chart-fill fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Frequência por Programa</h6>
+                    </div>
                     {% for prog, perc in (freq_programa or {}).items() %}
                     <div class="mb-3">
-                        <div class="d-flex justify-content-between small mb-1">
+                        <div class="d-flex justify-content-between small text-muted mb-1">
                             <span>{{ prog }}</span>
-                            <span class="fw-bold">{{ perc }}%</span>
+                            <span class="fw-bold text-dark">{{ perc }}%</span>
                         </div>
-                        <div class="progress" style="height: 8px;">
+                        <div class="progress" style="height: 6px;">
                             <div class="progress-bar bg-success" style="width: {{ perc }}%"></div>
                         </div>
                     </div>
@@ -164,15 +216,23 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3 text-uppercase">Desempenho por Professor</h6>
-                    <div style="max-height: 250px; overflow-y: auto;">
+        <!-- Desempenho por Professor -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-warning border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px">
+                            <i class="bi bi-person-workspace fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Desempenho por Professor</h6>
+                    </div>
+                    <div style="max-height: 250px; overflow-y: auto;" class="pe-2 custom-scrollbar">
                         {% for prof, perc in (freq_professor or {}).items() %}
-                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-                            <span class="small">{{ prof }}</span>
-                            <span class="badge {{ 'bg-success' if perc >= 75 else 'bg-warning text-dark' }}">{{ perc }}%</span>
+                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom border-light">
+                            <span class="small text-muted">{{ prof }}</span>
+                            <span class="badge {{ 'bg-success-subtle text-success border border-success-subtle' if perc >= 75 else 'bg-warning-subtle text-dark border border-warning-subtle' }}">
+                                {{ perc }}%
+                            </span>
                         </div>
                         {% endfor %}
                     </div>
@@ -180,18 +240,24 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted mb-3 text-uppercase">Frequência por Turma</h6>
-                    <div style="max-height: 250px; overflow-y: auto;">
+        <!-- Frequência por Turma -->
+        <div class="col-12 col-lg-4">
+            <div class="card h-100 shadow-sm border-0 border-top border-primary border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <div class="rounded-3 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 40px; height: 40px">
+                            <i class="bi bi-ui-checks-grid fs-5"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Frequência por Turma</h6>
+                    </div>
+                    <div style="max-height: 250px; overflow-y: auto;" class="pe-2 custom-scrollbar">
                         {% for t_nome, perc in (freq_turma or {}).items() %}
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between small">
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between small text-muted mb-1">
                                 <span>{{ t_nome }}</span>
-                                <span>{{ perc }}%</span>
+                                <span class="fw-bold text-dark">{{ perc }}%</span>
                             </div>
-                            <div class="progress" style="height: 4px;">
+                            <div class="progress" style="height: 5px;">
                                 <div class="progress-bar bg-primary" style="width: {{ perc }}%"></div>
                             </div>
                         </div>
@@ -203,6 +269,14 @@
     </div>
 
 </div>
+
+<!-- Pequeno estilo inline para suavizar as barras de rolagem nativas nos cards menores -->
+<style>
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+</style>
 {% endblock %}
 
 {% block scripts %}

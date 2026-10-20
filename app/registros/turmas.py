@@ -51,7 +51,7 @@ def turma_listar():
 @bp.route("/turmas/lixeira")
 @login_required
 def turma_lixeira():
-    if current_user.role not in ["admin", "pedagogico", "gerencia"]:
+    if current_user.role not in ["admin", "pedagogico", "gerencia", "secretaria"]:
         abort(403)
     turmas = Turma.query.filter_by(ativo=False).all()
     return render_template("turma_lixeira.html", turmas=turmas)
@@ -60,7 +60,7 @@ def turma_lixeira():
 @bp.route("/turma/nova", methods=["GET", "POST"])
 @login_required
 def nova_turma():
-    if current_user.role not in ["admin", "pedagogico", "gerencia"]:
+    if current_user.role not in ["admin", "pedagogico", "gerencia", "secretaria"]:
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -200,7 +200,7 @@ def ver_turma(id):
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
         flash(
-            "O contexto da turma contém erros e não pode ser gerado. Reporte ao T.I.",
+            "O contexto da turma contém erros e não pode ser gerado. Reporte ao Suporte.",
             "danger",
         )
         return redirect(url_for("registros.turma"))
@@ -235,7 +235,7 @@ def ver_turma(id):
 @bp.route("/turma/enturmar/<int:turma_id>", methods=["POST"])
 @login_required
 def enturmar_alunos(turma_id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -292,7 +292,7 @@ def enturmar_alunos(turma_id):
 @bp.route("/turma/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_turma(id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     turma_obj = db.session.get(Turma, id)
@@ -463,7 +463,7 @@ def editar_turma(id):
 @bp.route("/turma/excluir/<int:id>", methods=["POST"])
 @login_required
 def excluir_turma(id):
-    if current_user.role not in ["admin", "pedagogico"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
 
     turma_obj = db.session.get(Turma, id)

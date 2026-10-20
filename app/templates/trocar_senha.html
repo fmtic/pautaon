@@ -1,93 +1,337 @@
-{% extends "base.html" %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}" />
+    <title>
+      {{ informacao_padrao.nome_instituicao if informacao_padrao is defined and informacao_padrao.nome_instituicao else 'PautaOn' }} - {{ 'Definir Senha' if first_login else 'Alterar Senha' }}
+    </title>
 
-{% block content %}
-<div class="container mt-5">
-  <div class="row justify-content-center">
-    <div class="col-md-5">
-      <div class="card shadow border-0">
+    <!-- Bootstrap e Ícones -->
+    <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}" />
+    
+    <!-- CSS Global da Aplicação -->
+    <link href="{{ url_for('static', filename='css/autenticacao/trocar_senha.css') }}" rel="stylesheet" />
+  </head>
 
-        <div class="card-header {{ 'bg-warning text-dark' if first_login else 'bg-primary text-white' }}">
-          <h5 class="mb-0">
-            <i class="bi bi-shield-lock me-2"></i>
-            {{ 'Defina sua Senha — Primeiro Acesso' if first_login else 'Alterar Senha' }}
-          </h5>
+  <body>
+    <div class="auth-card">
+      <!-- CABEÇALHO DO CARTÃO -->
+      <div class="auth-header {% if first_login %}first-access{% endif %}">
+        <div class="brand-logo-container">
+          {% if informacao_padrao is defined and informacao_padrao.logo_principal_url %}
+            <img src="{{ informacao_padrao.logo_principal_url }}" alt="Logo" style="max-height: 28px; width: auto;" />
+          {% else %}
+            <i class="bi bi-shield-check text-white fs-3"></i>
+          {% endif %}
         </div>
-
-        <div class="card-body p-4">
-
+        <h5 class="fw-bold mb-0">
           {% if first_login %}
-          <div class="alert alert-warning border-0 mb-4">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i>
-            Você está usando a senha padrão do sistema. Defina uma senha pessoal para continuar.
+            Primeiro Acesso
+          {% else %}
+            Alterar Senha
+          {% endif %}
+        </h5>
+        <p class="text-white-50 small mb-0" style="font-size: 0.78rem;">
+          {% if first_login %}
+            Defina uma senha para ativar sua conta
+          {% else %}
+            Atualize suas credenciais do sistema
+          {% endif %}
+        </p>
+      </div>
+
+      <!-- CORPO DO FORMULÁRIO -->
+      <div class="auth-body">
+
+        <!-- MENSAGENS FLASH / ALERTAS -->
+        {% if get_flashed_messages is defined %}
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show p-2 mb-2 style="font-size: 0.8rem;" role="alert">
+                  <i class="bi bi-info-circle-fill me-1"></i> {{ message }}
+                  <button type="button" class="btn-close p-2" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        {% endif %}
+
+        <form action="{{ url_for('auth.trocar_senha') if url_for is defined else '#' }}" method="POST" id="formSenha" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+          {# Exibe senha atual somente se NÃO for primeiro acesso #}
+          {% if not first_login %}
+          <div class="mb-2">
+            <label class="form-label" for="senhaAtual">Senha Atual</label>
+            <div class="input-group">
+              <input 
+                type="password" 
+                name="senha_atual" 
+                id="senhaAtual" 
+                class="form-control"
+                placeholder="Digite sua senha atual" 
+                required 
+                autocomplete="current-password"
+              />
+              <button class="btn btn-toggle toggle-password" type="button" data-target="senhaAtual" aria-label="Exibir senha">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
           </div>
           {% endif %}
 
-          <form action="{{ url_for('auth.trocar_senha') }}" method="POST" id="formSenha">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <!-- NOVA SENHA -->
+          <div class="mb-2">
+            <label class="form-label" for="novaSenha">Nova Senha</label>
+            <div class="input-group">
+              <input 
+                type="password" 
+                name="nova_senha" 
+                id="novaSenha" 
+                class="form-control"
+                placeholder="Informe a nova senha" 
+                required 
+                autocomplete="new-password"
+              />
+              <button class="btn btn-toggle toggle-password" type="button" data-target="novaSenha" aria-label="Exibir senha">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+            <!-- Barra Visual de Força da Senha -->
+            <div class="strength-bar-container">
+              <div class="strength-bar" id="strengthBar"></div>
+            </div>
+          </div>
 
-            {% if not first_login %}
-            <div class="mb-3">
-              <label class="form-label fw-bold">Senha Atual</label>
-              <div class="input-group">
-                <input type="password" name="senha_atual" id="senhaAtual" class="form-control"
-                  placeholder="Digite sua senha atual" required autocomplete="current-password">
-                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="senhaAtual"
-                  aria-label="Exibir senha" aria-pressed="false">
-                  <i class="bi bi-eye" aria-hidden="true"></i>
-                </button>
+          <!-- CONFIRMAÇÃO DE SENHA -->
+          <div class="mb-2">
+            <label class="form-label" for="confirmaSenha">Confirmar Nova Senha</label>
+            <div class="input-group">
+              <input 
+                type="password" 
+                name="confirma_senha" 
+                id="confirmaSenha" 
+                class="form-control"
+                placeholder="Repita a nova senha" 
+                required 
+                autocomplete="new-password"
+              />
+              <button class="btn btn-toggle toggle-password" type="button" data-target="confirmaSenha" aria-label="Exibir senha">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+            <div id="matchMsg" class="form-text mt-1 fw-medium" style="min-height: 16px; font-size: 0.75rem;"></div>
+          </div>
+
+          <!-- REQUISITOS DE SEGURANÇA EM TEMPO REAL -->
+          <div class="requirement-card mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-uppercase text-muted fw-bold" style="font-size: 0.65rem; letter-spacing: 0.5px;">Requisitos</span>
+              <span id="strengthText" class="badge bg-secondary" style="font-size: 0.6rem; padding: 0.25em 0.4em;">Indefinida</span>
+            </div>
+            <div class="req-grid">
+              <div class="req-item invalid" id="req-len">
+                <i class="bi bi-x-circle-fill"></i> Mínimo 8 caracteres
+              </div>
+              <div class="req-item invalid" id="req-upper">
+                <i class="bi bi-x-circle-fill"></i> 1 maiúscula
+              </div>
+              <div class="req-item invalid" id="req-lower">
+                <i class="bi bi-x-circle-fill"></i> 1 minúscula
+              </div>
+              <div class="req-item invalid" id="req-num">
+                <i class="bi bi-x-circle-fill"></i> 1 número
+              </div>
+              <div class="req-item invalid full-width" id="req-spec">
+                <i class="bi bi-x-circle-fill"></i> 1 caractere especial (!@#$%...)
               </div>
             </div>
-            {% endif %}
+          </div>
 
-            <div class="mb-3">
-              <label class="form-label fw-bold">Nova Senha</label>
-              <div class="input-group">
-                <input type="password" name="nova_senha" id="novaSenha" class="form-control"
-                  placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
-                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="novaSenha"
-                  aria-label="Exibir senha" aria-pressed="false">
-                  <i class="bi bi-eye" aria-hidden="true"></i>
-                </button>
-              </div>
-            </div>
+          <!-- BOTÃO DE SUBMISSÃO -->
+          <button 
+            type="submit" 
+            id="btnSalvar"
+            class="btn {% if first_login %}btn-warning text-dark{% else %}btn-primary{% endif %} btn-submit w-100 shadow-sm"
+            disabled
+          >
+            <i class="bi bi-shield-check me-1"></i> Salvar e Continuar
+          </button>
+        </form>
 
-            <div class="mb-3">
-              <label class="form-label fw-bold">Confirmar Nova Senha</label>
-              <div class="input-group">
-                <input type="password" name="confirma_senha" id="confirmaSenha" class="form-control"
-                  placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
-                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="confirmaSenha"
-                  aria-label="Exibir senha" aria-pressed="false">
-                  <i class="bi bi-eye" aria-hidden="true"></i>
-                </button>
-              </div>
-              <div id="matchMsg" class="form-text"></div>
-            </div>
+        <!-- SEGUNDA OPÇÃO DE AÇÃO -->
+        {% if not first_login %}
+        <div class="text-center mt-2">
+          <a href="{{ url_for('main.painel') if url_for is defined else '#' }}" class="text-decoration-none text-muted hover-underline" style="font-size: 0.78rem;">
+            <i class="bi bi-arrow-left me-1"></i> Voltar ao painel
+          </a>
+        </div>
+        {% endif %}
 
-            {# ── Checklist de requisitos ── #}
-            <div class="p-3 bg-light rounded border mb-4">
-              <p class="small fw-bold text-muted text-uppercase mb-2">Requisitos da senha</p>
-              <ul class="list-unstyled mb-0 small" id="requisitos">
-                <li id="req-len"> <i class="bi bi-x-circle-fill text-danger me-1"></i> Mínimo 8 caracteres</li>
-                <li id="req-upper"><i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 letra maiúscula</li>
-                <li id="req-lower"><i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 letra minúscula</li>
-                <li id="req-num"> <i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 número</li>
-                <li id="req-spec"> <i class="bi bi-x-circle-fill text-danger me-1"></i> Ao menos 1 caractere especial
-                  (!@#$%...)</li>
-              </ul>
-            </div>
+      </div>
 
-            <button type="submit" id="btnSalvar"
-              class="btn {{ 'btn-warning' if first_login else 'btn-primary' }} w-100 fw-bold" disabled>
-              <i class="bi bi-check-circle me-1"></i> Salvar e Continuar
-            </button>
-          </form>
-
+      <!-- RODAPÉ DO CARTÃO -->
+      <div class="auth-footer text-muted">
+        <div class="fw-semibold text-dark">
+          {{ informacao_padrao.nome_instituicao if informacao_padrao is defined and informacao_padrao.nome_instituicao else 'PautaON' }}
+        </div>
+        <div>
+          v{{ app_version if app_version is defined else '1.0.0' }} 
+          {% if app_stage is defined and app_stage %} · {{ app_stage }}{% endif %}
+          &middot; &copy; {{ ano_atual if ano_atual is defined else '2026' }}
         </div>
       </div>
     </div>
-  </div>
-</div>
 
-<script src="{{ url_for('static', filename='js/senha_trocaSenha.js') }}"></script>
-{% endblock %}
+    <!-- SCRIPT DE REGRAS E INTERATIVIDADE -->
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        const novaSenha = document.getElementById("novaSenha");
+        const confirmaSenha = document.getElementById("confirmaSenha");
+        const senhaAtual = document.getElementById("senhaAtual");
+        const btnSalvar = document.getElementById("btnSalvar");
+        const matchMsg = document.getElementById("matchMsg");
+        const strengthBar = document.getElementById("strengthBar");
+        const strengthText = document.getElementById("strengthText");
+
+        // Elementos dos Requisitos
+        const reqs = {
+          len: document.getElementById("req-len"),
+          upper: document.getElementById("req-upper"),
+          lower: document.getElementById("req-lower"),
+          num: document.getElementById("req-num"),
+          spec: document.getElementById("req-spec")
+        };
+
+        // 1. Alternar Visibilidade das Senhas (Olho)
+        document.querySelectorAll(".toggle-password").forEach(button => {
+          button.addEventListener("click", function () {
+            const targetId = this.getAttribute("data-target");
+            const input = document.getElementById(targetId);
+            const icon = this.querySelector("i");
+
+            if (input.type === "password") {
+              input.type = "text";
+              icon.classList.remove("bi-eye");
+              icon.classList.add("bi-eye-slash");
+            } else {
+              input.type = "password";
+              icon.classList.remove("bi-eye-slash");
+              icon.classList.add("bi-eye");
+            }
+          });
+        });
+
+        // 2. Validação dos requisitos em tempo real
+        function validarRegras(val) {
+          const checks = {
+            len: val.length >= 8,
+            upper: /[A-Z]/.test(val),
+            lower: /[a-z]/.test(val),
+            num: /[0-9]/.test(val),
+            spec: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(val)
+          };
+
+          let passedCount = 0;
+
+          for (const key in checks) {
+            const isValid = checks[key];
+            const el = reqs[key];
+            const icon = el.querySelector("i");
+
+            if (isValid) {
+              passedCount++;
+              el.classList.remove("invalid");
+              el.classList.add("valid");
+              icon.className = "bi bi-check-circle-fill me-1";
+            } else {
+              el.classList.remove("valid");
+              el.classList.add("invalid");
+              icon.className = "bi bi-x-circle-fill me-1";
+            }
+          }
+
+          // Atualizar barra de força
+          atualizarForca(passedCount, val.length);
+
+          return passedCount === 5;
+        }
+
+        // 3. Atualizar medidor visual de força
+        function atualizarForca(score, length) {
+          if (length === 0) {
+            strengthBar.style.width = "0%";
+            strengthBar.style.backgroundColor = "#e2e8f0";
+            strengthText.textContent = "Indefinida";
+            strengthText.className = "badge bg-secondary";
+            return;
+          }
+
+          let pct = (score / 5) * 100;
+          strengthBar.style.width = pct + "%";
+
+          if (score <= 2) {
+            strengthBar.style.backgroundColor = "#ef4444"; // Fraca (Vermelho)
+            strengthText.textContent = "Fraca";
+            strengthText.className = "badge bg-danger";
+          } else if (score <= 4) {
+            strengthBar.style.backgroundColor = "#f59e0b"; // Média (Laranja)
+            strengthText.textContent = "Média";
+            strengthText.className = "badge bg-warning text-dark";
+          } else {
+            strengthBar.style.backgroundColor = "#22c55e"; // Forte (Verde)
+            strengthText.textContent = "Forte";
+            strengthText.className = "badge bg-success";
+          }
+        }
+
+        // 4. Validar Coincidência e Habilitar Formulário
+        function validarFormulario() {
+          const valNova = novaSenha.value;
+          const valConf = confirmaSenha.value;
+          const regrasOk = validarRegras(valNova);
+          
+          let senhaAtualOk = true;
+          if (senhaAtual) {
+            senhaAtualOk = senhaAtual.value.trim().length > 0;
+          }
+
+          let matchOk = false;
+
+          if (valConf.length > 0) {
+            if (valNova === valConf) {
+              matchMsg.textContent = "✓ As senhas coincidem";
+              matchMsg.className = "form-text mt-1 text-success fade-in";
+              matchOk = true;
+            } else {
+              matchMsg.textContent = "✕ As senhas não coincidem";
+              matchMsg.className = "form-text mt-1 text-danger fade-in";
+              matchOk = false;
+            }
+          } else {
+            matchMsg.textContent = "";
+            matchOk = false;
+          }
+
+          // Habilita o botão somente se tudo estiver correto
+          if (regrasOk && matchOk && senhaAtualOk) {
+            btnSalvar.removeAttribute("disabled");
+          } else {
+            btnSalvar.setAttribute("disabled", "true");
+          }
+        }
+
+        // Event Listeners para validação contínua
+        novaSenha.addEventListener("input", validarFormulario);
+        confirmaSenha.addEventListener("input", validarFormulario);
+        if (senhaAtual) {
+          senhaAtual.addEventListener("input", validarFormulario);
+        }
+      });
+    </script>
+  </body>
+</html>
