@@ -31,8 +31,8 @@ def salvar_informacao_padrao():
     try:
         upsert_informacao_padrao(request.form, request.files)
         db.session.commit()
-        register_security_log("Informacao Padrao", "Administrador atualizou dados institucionais padrao.")
-        flash("Informacoes padrao atualizadas com sucesso.", "success")
+        register_security_log("Informacao Padrao", "Administrador atualizou dados institucionais padrão.")
+        flash("Informações padrão atualizadas com sucesso.", "success")
     except ValueError:
         db.session.rollback()
         current_app.logger.warning("Dados inválidos ao atualizar informações padrão.")
@@ -40,6 +40,6 @@ def salvar_informacao_padrao():
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao atualizar informacoes padrao.")
-        flash("Nao foi possivel salvar as informacoes padrao.", "danger")
+        flash("Nao foi possivel salvar as informações padrão.", "danger")
 
     return redirect(url_for("informacao_padrao.painel_informacao_padrao"))

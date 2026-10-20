@@ -1,41 +1,64 @@
 {% extends "base.html" %}
 
+{% block styles %}
+<style>
+    /* Estilo para indicar que o cabeçalho é clicável */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.2s ease;
+    }
+    .sortable-header:hover {
+        background-color: #e9ecef;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2><i class="bi bi-shield-lock"></i> Painel Administrativo</h2>
-        <span class="badge bg-dark">Gestão de Usuários</span>
+    <!-- Cabeçalho Principal -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <h2 class="fw-bold mb-0"><i class="bi bi-shield-lock-fill text-primary me-2"></i>Painel Administrativo</h2>
+                <span class="badge bg-dark px-2 py-1">Gestão de Usuários</span>
+            </div>
+            <p class="text-muted small mb-0">Cadastre e gerencie os acessos, permissões e perfis do sistema.</p>
+        </div>
     </div>
-    <hr>
 
-    <div class="row">
-        <div class="col-lg-4 mb-4">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0"><i class="bi bi-person-plus-fill"></i> Cadastrar Usuário</h5>
+    <div class="row g-4">
+        <!-- FORMULÁRIO DE CADASTRO -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 border-top border-primary border-4 sticky-top" style="top: 1rem; z-index: 1;">
+                <div class="card-header bg-white p-4 pb-3 border-bottom d-flex align-items-center gap-3">
+                    <div class="rounded-3 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px">
+                        <i class="bi bi-person-plus-fill fs-5"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0">Cadastrar Usuário</h5>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-4 pt-3">
                     <form action="{{ url_for('auth.cadastrar_usuario') }}" method="POST">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Nome Completo</label>
-                            <input type="text" name="nome" class="form-control" required placeholder="Ex: João Silva">
+                            <label class="form-label fw-semibold text-muted small text-uppercase">Nome Completo</label>
+                            <input type="text" name="nome" class="form-control bg-light" required placeholder="Ex: João Silva">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">E-mail</label>
-                            <input type="email" name="email" class="form-control" required placeholder="joao@fmtic.com.br">
+                            <label class="form-label fw-semibold text-muted small text-uppercase">E-mail</label>
+                            <input type="email" name="email" class="form-control bg-light" required placeholder="joao@dominio.com.br">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Senha Temporária</label>
-                            <input type="password" name="password" class="form-control" required placeholder="Senha inicial">
+                            <label class="form-label fw-semibold text-muted small text-uppercase">Senha Temporária</label>
+                            <input type="password" name="password" class="form-control bg-light" required placeholder="Senha inicial">
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Perfil de Acesso</label>
-                            <select name="role" class="form-select" required>
+                            <label class="form-label fw-semibold text-muted small text-uppercase">Perfil de Acesso</label>
+                            <select name="role" class="form-select bg-light" required>
                                 <option value="" selected disabled>Selecione o nível...</option>
                                 <option value="admin">Administrador</option>
                                 <option value="pedagogico">Pedagógico</option>
@@ -47,9 +70,9 @@
                             </select>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Unidade (Opcional)</label>
-                            <select name="unidade_id" class="form-select">
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold text-muted small text-uppercase">Unidade (Opcional)</label>
+                            <select name="unidade_id" class="form-select bg-light">
                                 <option value="" selected>Sem unidade (Global)</option>
                                 {% for uni in unidades %}
                                 <option value="{{ uni.id }}">{{ uni.nome }}</option>
@@ -57,119 +80,136 @@
                             </select>
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100 shadow-sm">
-                            <i class="bi bi-save"></i> Criar Usuário
+                        <button type="submit" class="btn btn-primary w-100 fw-bold shadow-sm py-2">
+                            <i class="bi bi-save me-1"></i> Criar Usuário
                         </button>
                     </form>
                 </div>
             </div>
         </div>
 
+        <!-- LISTAGEM DE USUÁRIOS -->
         <div class="col-lg-8">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0"><i class="bi bi-people-fill"></i> Usuários do Sistema</h5>
+            <div class="card shadow-sm border-0 border-top border-secondary border-4">
+                <div class="card-header bg-white p-4 pb-3 border-bottom d-flex justify-content-between align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-3 bg-secondary bg-opacity-10 text-secondary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px">
+                            <i class="bi bi-people-fill fs-5"></i>
+                        </div>
+                        <h5 class="fw-bold mb-0">Usuários do Sistema</h5>
+                    </div>
+                    <span class="badge bg-light text-dark border">{{ usuarios|length }} Cadastros</span>
                 </div>
+                
                 <div class="card-body p-0">
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
+                        <table class="table table-hover align-middle mb-0" id="tabelaUsuarios">
+                            <thead class="table-light text-muted small text-uppercase">
                                 <tr>
-                                    <th class="ps-3">Nome</th>
-                                    <th>E-mail</th>
-                                    <th>Perfil</th>
-                                    <th>Unidade</th>
-                                    <th class="text-center">Ações</th>
+                                    <!-- Cabeçalho clicável para ordenação -->
+                                    <th class="ps-4 sortable-header rounded-top" style="width: 30%" onclick="ordenarTabela()">
+                                        <div class="d-flex align-items-center">
+                                            Usuário <i id="sortIcon" class="bi bi-arrow-down-up ms-2 text-primary"></i>
+                                        </div>
+                                    </th>
+                                    <th style="width: 20%">Perfil</th>
+                                    <th style="width: 25%">Unidade</th>
+                                    <th class="text-center pe-4" style="width: 25%">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for user in usuarios %}
                                 <tr>
-                                    <td class="ps-3 fw-bold">{{ user.name }}</td>
-                                    <td><small class="text-muted">{{ user.email }}</small></td>
+                                    <td class="ps-4">
+                                        <!-- A classe .nome-usuario é usada pelo JS para extrair o texto para a ordenação -->
+                                        <div class="fw-bold text-dark nome-usuario">{{ user.name }}</div>
+                                        <div class="text-muted small">{{ user.email }}</div>
+                                    </td>
                                     <td>
                                         {% if user.role == "admin" %}
-                                            <span class="badge bg-danger">Administrador</span>
+                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-shield-shaded me-1"></i>Administrador</span>
                                         {% elif user.role == "professor" %}
-                                            <span class="badge bg-success">Professor</span>
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle">Professor</span>
                                         {% elif user.role == "pedagogico" %}
-                                            <span class="badge bg-info text-dark">Pedagógico</span>
+                                            <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Pedagógico</span>
                                         {% elif user.role == "servico_social" %}
-                                            <span class="badge bg-primary">Serviço Social</span>
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Serviço Social</span>
                                         {% elif user.role == "secretaria" %}
-                                            <span class="badge bg-primary">Secretaria</span>
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Secretaria</span>
                                         {% elif user.role == "gerencia" %}
-                                            <span class="badge bg-primary">Gerência</span>
+                                            <span class="badge bg-dark-subtle text-dark border border-dark-subtle">Gerência</span>
                                         {% elif user.role == "aluno" %}
-                                            <span class="badge bg-secondary">Aluno</span>
+                                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Aluno</span>
                                         {% else %}
-                                            <span class="badge bg-primary">{{ user.role|capitalize }}</span>
+                                            <span class="badge bg-light text-dark border">{{ user.role|capitalize }}</span>
                                         {% endif %}
                                     </td>
                                     <td>
                                         {% if user.unidade %}
-                                            <span class="badge outline-success text-success border border-success">{{ user.unidade.nome }}</span>
+                                            <span class="badge bg-light text-dark border"><i class="bi bi-building me-1"></i>{{ user.unidade.nome }}</span>
                                         {% else %}
                                             <span class="text-muted small">Global</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-center">
-                                        <div class="btn-group btn-group-sm">
-                                            <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}">
-                                                <i class="bi bi-pencil"></i>
+                                    <td class="text-center pe-4">
+                                        <div class="d-flex justify-content-center gap-1">
+                                            <button class="btn btn-sm btn-outline-secondary border-0" data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}" title="Editar Usuário">
+                                                <i class="bi bi-pencil-square"></i>
                                             </button>
                                             
                                             <form action="{{ url_for('auth.resetar_senha', id=user.id) }}" method="POST" style="display:inline;">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <button type="submit" class="btn btn-outline-warning" title="Resetar Senha">
-                                                    <i class="bi bi-key"></i>
+                                                <button type="submit" class="btn btn-sm btn-outline-warning border-0 text-dark" title="Resetar Senha" onclick="return confirm('Tem certeza que deseja resetar a senha de {{ user.name }}?')">
+                                                    <i class="bi bi-key-fill"></i>
                                                 </button>
                                             </form>
 
                                             <form action="{{ url_for('auth.excluir_usuario', id=user.id) }}" method="POST" style="display:inline;">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <button type="submit" class="btn btn-outline-danger" 
-                                                        onclick="return confirm('Excluir {{ user.name }}?')"
+                                                <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="Excluir Usuário"
+                                                        onclick="return confirm('Tem certeza que deseja excluir o usuário {{ user.name }}? Esta ação não pode ser desfeita.')"
                                                         {% if user.id == current_user.id %} disabled {% endif %}>
-                                                    <i class="bi bi-trash"></i>
+                                                    <i class="bi bi-trash3"></i>
                                                 </button>
                                             </form>
                                         </div>
                                     </td>
                                 </tr>
 
+                                <!-- Modal de Edição -->
                                 <div class="modal fade" id="editModal{{ user.id }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <div class="modal-header bg-primary text-white">
-                                                <h5 class="modal-title">Editar Usuário: {{ user.name }}</h5>
-                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow">
+                                            <div class="modal-header border-bottom-0 pb-0">
+                                                <h5 class="modal-title fw-bold">Editar Usuário: <span class="text-primary">{{ user.name }}</span></h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                             </div>
                                             <form action="{{ url_for('auth.editar_usuario', id=user.id) }}" method="POST">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <div class="modal-body text-start">
+                                                <div class="modal-body pt-3 text-start">
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-bold">Nome Completo</label>
-                                                        <input type="text" name="nome" class="form-control" value="{{ user.name }}" required>
+                                                        <label class="form-label fw-semibold text-muted small text-uppercase">Nome Completo</label>
+                                                        <input type="text" name="nome" class="form-control bg-light" value="{{ user.name }}" required>
                                                     </div>
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-bold">E-mail</label>
-                                                        <input type="email" name="email" class="form-control" value="{{ user.email }}" required>
+                                                        <label class="form-label fw-semibold text-muted small text-uppercase">E-mail</label>
+                                                        <input type="email" name="email" class="form-control bg-light" value="{{ user.email }}" required>
                                                     </div>
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-bold">Perfil</label>
-                                                        <select name="role" class="form-select" required>
+                                                        <label class="form-label fw-semibold text-muted small text-uppercase">Perfil</label>
+                                                        <select name="role" class="form-select bg-light" required>
                                                             <option value="admin" {% if user.role == "admin" %} selected {% endif %}>Administrador</option>
                                                             <option value="pedagogico" {% if user.role == "pedagogico" %} selected {% endif %}>Pedagógico</option>
                                                             <option value="gerencia" {% if user.role == "gerencia" %} selected {% endif %}>Gerência</option>
                                                             <option value="professor" {% if user.role == "professor" %} selected {% endif %}>Professor</option>
                                                             <option value="secretaria" {% if user.role == "secretaria" %} selected {% endif %}>Secretaria</option>
+                                                            <option value="servico_social" {% if user.role == "servico_social" %} selected {% endif %}>Serviço Social</option>
                                                             <option value="aluno" {% if user.role == "aluno" %} selected {% endif %}>Aluno</option>
                                                         </select>
                                                     </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label fw-bold">Unidade</label>
-                                                        <select name="unidade_id" class="form-select">
+                                                    <div class="mb-2">
+                                                        <label class="form-label fw-semibold text-muted small text-uppercase">Unidade</label>
+                                                        <select name="unidade_id" class="form-select bg-light">
                                                             <option value="" {% if not user.unidade_id %} selected {% endif %}>Global / Sem Unidade</option>
                                                             {% for uni in unidades %}
                                                             <option value="{{ uni.id }}" {% if user.unidade_id == uni.id %} selected {% endif %}>{{ uni.nome }}</option>
@@ -177,26 +217,76 @@
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div class="modal-footer bg-light">
-                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                                                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                                                <div class="modal-footer border-top-0 pt-0">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                    <button type="submit" class="btn btn-primary px-4">Salvar Alterações</button>
                                                 </div>
                                             </form>
                                         </div>
                                     </div>
                                 </div>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-5">
+                                        <div class="d-inline-flex align-items-center justify-content-center bg-light rounded-circle text-muted mb-3" style="width: 64px; height: 64px;">
+                                            <i class="bi bi-people fs-2"></i>
+                                        </div>
+                                        <h6 class="fw-bold mb-1">Nenhum usuário cadastrado</h6>
+                                        <p class="text-muted small mb-0">Utilize o formulário ao lado para adicionar o primeiro usuário.</p>
+                                    </td>
+                                </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            {% if not usuarios %}
-            <div class="alert alert-light border text-center mt-3 shadow-sm">
-                <i class="bi bi-info-circle"></i> Nenhum usuário cadastrado no momento.
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Variável global para controlar a direção da ordenação (ascendente ou descendente)
+    let ordemAscendente = true;
+
+    function ordenarTabela() {
+        const table = document.getElementById("tabelaUsuarios");
+        const tbody = table.querySelector("tbody");
+        // Converte as linhas (NodeList) em um Array para usar a função sort do JavaScript
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        const icon = document.getElementById("sortIcon");
+
+        // Ordena as linhas
+        rows.sort((rowA, rowB) => {
+            // Busca o elemento com a classe .nome-usuario dentro da linha
+            const divNomeA = rowA.querySelector(".nome-usuario");
+            const divNomeB = rowB.querySelector(".nome-usuario");
+
+            // Se a linha não tiver nome (ex: "Nenhum usuário cadastrado"), ignora a ordenação dessa linha
+            if (!divNomeA || !divNomeB) return 0;
+
+            const nomeA = divNomeA.innerText.toLowerCase();
+            const nomeB = divNomeB.innerText.toLowerCase();
+
+            if (nomeA < nomeB) return ordemAscendente ? -1 : 1;
+            if (nomeA > nomeB) return ordemAscendente ? 1 : -1;
+            return 0;
+        });
+
+        // Alterna a direção para o próximo clique
+        ordemAscendente = !ordemAscendente;
+
+        // Atualiza o ícone de acordo com a direção atual
+        if (ordemAscendente) {
+            icon.className = "bi bi-sort-alpha-up ms-2 text-primary";
+        } else {
+            icon.className = "bi bi-sort-alpha-down-alt ms-2 text-primary";
+        }
+
+        // Reanexa as linhas na tabela já ordenadas
+        rows.forEach(row => tbody.appendChild(row));
+    }
+</script>
 {% endblock %}
