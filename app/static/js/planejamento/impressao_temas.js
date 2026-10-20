@@ -1,1 +1,3 @@
-document.getElementById('dataEmissao').textContent = new Date().toLocaleString('pt-BR');
+document.querySelectorAll('.data-emissao').forEach((element) => {
+  element.textContent = new Date().toLocaleString('pt-BR');
+});

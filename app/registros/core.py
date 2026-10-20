@@ -14,7 +14,7 @@ import json
 
 from flask import flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 
@@ -587,13 +587,38 @@ def planejamento():
     prog_filtro = request.args.get('programa', 'Todos')
     programas   = sorted({t.programa for t in turmas if t.programa})
 
+    filtro_curso = request.args.get('curso_id', '').strip()
+    try:
+        curso_id_filtro = int(filtro_curso) if filtro_curso else None
+    except ValueError:
+        curso_id_filtro = None
+        filtro_curso = ''
+    busca_tema = request.args.get('q', '').strip()
+
     q_temas = TemaAula.query.join(Curso, TemaAula.curso_id == Curso.id).filter(
         TemaAula.curso_id.isnot(None)
     )
     if unidade_id:
         q_temas = q_temas.filter(Curso.unidade_id == unidade_id)
-    lista_temas = q_temas.order_by(TemaAula.curso_id).all()
+    if curso_id_filtro:
+        q_temas = q_temas.filter(TemaAula.curso_id == curso_id_filtro)
+    if busca_tema:
+        termo = f'%{busca_tema}%'
+        q_temas = q_temas.filter(or_(
+            TemaAula.titulo.ilike(termo),
+            Curso.nome.ilike(termo),
+            cast(TemaAula.ordem, String).ilike(termo),
+        ))
 
+    pagina_temas = max(1, request.args.get('page', 1, type=int) or 1)
+    paginacao = q_temas.order_by(
+        TemaAula.curso_id, TemaAula.ordem, TemaAula.id
+    ).paginate(page=pagina_temas, per_page=25, error_out=False)
+    if paginacao.pages and pagina_temas > paginacao.pages:
+        pagina_temas = paginacao.pages
+        paginacao = q_temas.order_by(
+            TemaAula.curso_id, TemaAula.ordem, TemaAula.id
+        ).paginate(page=pagina_temas, per_page=25, error_out=False)
     from app.models import Nivel
     niveis = Nivel.query.order_by(Nivel.nome).all()
     if unidade_id:
@@ -604,25 +629,25 @@ def planejamento():
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
     periodos_ativos = q_periodos.order_by(PeriodoLetivo.data_inicio.desc()).all()
 
-    filtro_curso = request.args.get('curso_id', '')
-    if filtro_curso:
-        lista_temas = [t for t in lista_temas if str(t.curso_id) == filtro_curso]
-
     cursos = []
     if unidade_id:
         cursos = Curso.query.filter_by(
             ativo=True, unidade_id=unidade_id
         ).order_by(Curso.nome).all()
+    curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
-                           temas=lista_temas,
+                           temas=paginacao.items,
+                           paginacao=paginacao,
+                           busca_tema=busca_tema,
                            programas=programas,
                            prog_filtro=prog_filtro,
                            filtro_curso=filtro_curso,
                            niveis=niveis,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
+                           curso_cores=curso_cores,
                            unidade_id=unidade_id,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
@@ -762,33 +787,43 @@ def imprimir_temas():
     if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
 
-    filtro_curso = request.args.get('curso_id', '')
+    filtro_curso = request.args.get('curso_id', '').strip()
+    try:
+        curso_id = int(filtro_curso) if filtro_curso else None
+    except ValueError:
+        curso_id = None
+        filtro_curso = ''
+
     unidade_id = get_unidade_id()
     if current_user.role == UserRole.SECRETARIA and unidade_id is None:
         abort(403)
 
-    query = TemaAula.query.join(Curso, TemaAula.curso_id == Curso.id).filter(
-        TemaAula.curso_id.isnot(None),
-        TemaAula.ativo == True
-    )
-    if unidade_id:
-        query = query.filter(Curso.unidade_id == unidade_id)
-    if filtro_curso:
-        query = query.filter(TemaAula.curso_id == int(filtro_curso))
-
-    temas = query.order_by(Curso.nome, TemaAula.id).all()
-
     q_cursos = Curso.query.filter_by(ativo=True)
     if unidade_id:
         q_cursos = q_cursos.filter_by(unidade_id=unidade_id)
-    cursos = q_cursos.order_by(Curso.nome).all()
+    todos_cursos = q_cursos.order_by(Curso.nome).all()
+    cursos = [curso for curso in todos_cursos if not curso_id or curso.id == curso_id]
+    curso_ids = [curso.id for curso in cursos]
+
+    temas = []
+    if curso_ids:
+        temas = TemaAula.query.filter(
+            TemaAula.curso_id.in_(curso_ids),
+            TemaAula.ativo == True,
+        ).order_by(TemaAula.curso_id, TemaAula.ordem, TemaAula.id).all()
+
+    temas_por_curso = {
+        curso.id: [tema for tema in temas if tema.curso_id == curso.id]
+        for curso in cursos
+    }
+    cursos_com_temas = [curso for curso in cursos if temas_por_curso[curso.id]]
 
     return render_template('planejamento/impressao_temas.html',
-                           temas=temas,
-                           cursos=cursos,
+                           cursos=cursos_com_temas,
+                           todos_cursos=todos_cursos,
+                           temas_por_curso=temas_por_curso,
                            filtro_curso=filtro_curso,
                            now=datetime.now())
-
 
 # ---------------------------------------------------------------------------
 # API SERVERSIDE BINDINGS

@@ -77,14 +77,14 @@
     <li class="nav-item" role="presentation">
       <button class="nav-link active fw-semibold" id="pill-temas" data-bs-toggle="pill"
         data-bs-target="#tabTemas" type="button" role="tab">
-        <i class="bi bi-card-checklist me-1"></i>Temas
+        <i class="bi bi-card-checklist me-1"></i>Temas - Aulas
         <span class="badge bg-white text-primary ms-1">{{ temas|length }}</span>
       </button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill"
         data-bs-target="#tabNiveis" type="button" role="tab">
-        <i class="bi bi-bar-chart-fill me-1"></i>Níveis
+        <i class="bi bi-bar-chart-fill me-1"></i>Níveis - Alunos
         <span class="badge bg-white text-secondary ms-1">{{ niveis|length }}</span>
       </button>
     </li>
@@ -164,27 +164,25 @@
                   <i class="bi bi-list-ul text-secondary me-1"></i>Temas Cadastrados
                 </h6>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                  <div class="input-group input-group-sm" style="width:180px;">
-                    <span class="input-group-text bg-white border-end-0">
-                      <i class="bi bi-search text-muted"></i>
-                    </span>
-                    <input type="text" id="temaSearch" class="form-control border-start-0"
-                      placeholder="Buscar tema…">
-                  </div>
-                  <form method="GET" action="{{ url_for('registros.planejamento') }}">
-                    <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()"
-                      style="min-width:130px;">
-                      <option value="">Todos os Cursos</option>
-                      {% for c in cursos %}
-                      <option value="{{ c.id }}" {{ 'selected' if c.id|string == filtro_curso }}>{{ c.nome }}</option>
-                      {% endfor %}
-                    </select>
-                  </form>
-                  <a href="{{ url_for('registros.imprimir_temas', programa=prog_filtro) }}" target="_blank"
-                    class="btn btn-sm btn-outline-primary" title="Imprimir lista de temas">
-                    <i class="bi bi-printer"></i>
-                  </a>
-                </div>
+  <form id="temaFiltroForm" method="GET" action="{{ url_for('registros.planejamento') }}" class="d-flex gap-2 align-items-center flex-wrap">
+    <div class="input-group input-group-sm" style="width:220px;">
+      <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+      <input type="search" id="temaSearch" name="q" value="{{ busca_tema }}"
+        class="form-control border-start-0" placeholder="Buscar tema…" aria-label="Buscar temas">
+    </div>
+    <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:130px;">
+      <option value="">Todos os Cursos</option>
+      {% for c in cursos %}
+      <option value="{{ c.id }}" {{ 'selected' if c.id|string == filtro_curso }}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Buscar</button>
+  </form>
+  <a href="{{ url_for('registros.imprimir_temas', curso_id=filtro_curso) }}" target="_blank"
+    class="btn btn-sm btn-outline-primary" title="Imprimir lista de temas">
+    <i class="bi bi-printer"></i>
+  </a>
+</div>
               </div>
             </div>
             <div class="card-body p-0">
@@ -205,7 +203,7 @@
 
                       {# ─── Coluna Curso ─── #}
                       <td class="ps-4">
-                        {% set curso_hash = (tema.curso.nome|length + tema.curso.id) % 10 if tema.curso else 7 %}
+                        {% set curso_hash = curso_cores.get(tema.curso_id, 7) if tema.curso else 7 %}
                         <span class="badge rounded-pill border curso-badge-{{ curso_hash }}">
                           {{ tema.curso.nome if tema.curso else '—' }}
                         </span>
@@ -317,6 +315,22 @@
                   </tbody>
                 </table>
               </div>
+              {% if paginacao.total %}
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3 border-top">
+                <small class="text-muted">Exibindo {{ (paginacao.page - 1) * paginacao.per_page + 1 }}–{{ [paginacao.page * paginacao.per_page, paginacao.total]|min }} de {{ paginacao.total }} temas</small>
+                <nav aria-label="Paginação dos temas">
+                  <div class="btn-group btn-group-sm">
+                    {% if paginacao.has_prev %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('registros.planejamento', page=paginacao.prev_num, curso_id=filtro_curso, q=busca_tema) }}">Anterior</a>
+                    {% else %}<span class="btn btn-outline-secondary disabled">Anterior</span>{% endif %}
+                    <span class="btn btn-light disabled">Página {{ paginacao.page }} de {{ paginacao.pages }}</span>
+                    {% if paginacao.has_next %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('registros.planejamento', page=paginacao.next_num, curso_id=filtro_curso, q=busca_tema) }}">Próxima</a>
+                    {% else %}<span class="btn btn-outline-secondary disabled">Próxima</span>{% endif %}
+                  </div>
+                </nav>
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -500,7 +514,7 @@
             <tr data-id="{{ c.id }}">
               <td class="ps-3 fw-semibold">{{ c.nome }}</td>
               <td class="text-muted small">{{ c.descricao or '—' }}</td>
-              <td class="text-center small">{{ c.carga_horaria ~ 'h' if c.carga_horaria else '—' }}</td>
+              <td class="text-center small">{% if c.carga_horaria is not none %}{{ c.carga_horaria }}h{% else %}—{% endif %}</td>
               <td class="text-center">
                 <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
                   data-id="{{ c.id }}" data-nome="{{ c.nome }}"
@@ -592,9 +606,6 @@
             </select>
           </div>
           <div class="d-flex gap-2 align-items-end">
-            <button id="btnSalvarCal" class="btn btn-primary btn-sm" disabled>
-              <i class="bi bi-save me-1"></i>Salvar
-            </button>
             <a id="btnExportarCal" href="#" target="_blank" class="btn btn-outline-danger btn-sm d-none">
               <i class="bi bi-printer me-1"></i>Exportar / Imprimir
             </a>
@@ -622,31 +633,6 @@
           <div class="text-center text-muted py-5">
             <i class="bi bi-calendar3 d-block fs-1 opacity-25 mb-2"></i>
             Selecione um período letivo para carregar o calendário.
-          </div>
-        </div>
-
-        <div id="panelDia" class="border-top p-3 d-none bg-light">
-          <div class="d-flex align-items-center gap-3 flex-wrap">
-            <div>
-              <strong id="diaLabel"></strong>
-              <small class="text-muted ms-2" id="diaWeekday"></small>
-            </div>
-            <select id="diaTipoSel" class="form-select form-select-sm" style="max-width:220px">
-              <option value="">Tipo do bloqueio…</option>
-              <option value="FERIADO">Feriado</option>
-              <option value="ATIVIDADE_PEDAGOGICA">Atividade Pedagógica</option>
-              <option value="REUNIAO_PAIS">Reunião de Pais</option>
-              <option value="ATIVIDADE_INTERNA">Atividade Interna</option>
-              <option value="MANUTENCAO">Manutenção</option>
-            </select>
-            <input type="text" id="diaDescInput" class="form-control form-control-sm"
-              placeholder="Descrição (opcional)" style="max-width:280px">
-            <button class="btn btn-success btn-sm" id="btnConfirmarDia">
-              <i class="bi bi-check-lg me-1"></i>Confirmar
-            </button>
-            <button class="btn btn-outline-danger btn-sm" id="btnRemoverDia">
-              <i class="bi bi-x-lg me-1"></i>Remover
-            </button>
           </div>
         </div>
 

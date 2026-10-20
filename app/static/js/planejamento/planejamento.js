@@ -48,17 +48,15 @@
   /* ─────────────────────────────────────────────
      3. Busca client-side na tabela de temas
      ───────────────────────────────────────────── */
+  /* Busca server-side com pequeno atraso para limitar requisições. */
   const temaSearch = document.getElementById('temaSearch');
-  if (temaSearch) {
-    temaSearch.addEventListener('input', e => {
-      const q = e.target.value.toLowerCase().trim();
-      document.querySelectorAll('#temasTbody tr[data-tema]').forEach(tr => {
-        tr.style.display = !q || tr.dataset.tema.includes(q) ? '' : 'none';
-      });
+  if (temaSearch?.form) {
+    let searchTimer;
+    temaSearch.addEventListener('input', () => {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => temaSearch.form.requestSubmit(), 450);
     });
   }
-
-
 
   /* ─────────────────────────────────────────────
      5. Gestão de Cursos (AJAX)
@@ -66,6 +64,7 @@
   (function initCursos() {
     const tbody = document.getElementById('cursosTbody');
     if (!tbody) return;
+    const modal = document.getElementById('modalCursos');
 
     const nomeInput   = document.getElementById('cursoNomeInput');
     const descInput   = document.getElementById('cursoDescInput');
@@ -131,6 +130,28 @@
     function removeVazio() {
       document.getElementById('cursoVazio')?.remove();
     }
+
+    async function carregarCursos() {
+      try {
+        const response = await fetch('/cursos', { headers: { Accept: 'application/json' } });
+        const cursos = await readJsonResponse(response);
+        tbody.replaceChildren();
+        if (!cursos.length) {
+          tbody.innerHTML = `<tr id="cursoVazio">
+            <td colspan="4" class="text-center text-muted py-4">
+              <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
+              Nenhum curso cadastrado para esta unidade.
+            </td></tr>`;
+          return;
+        }
+        cursos.forEach(curso => tbody.appendChild(buildRow(curso)));
+      } catch (error) {
+        console.warn('[planejamento] Não foi possível atualizar a lista de cursos.', error);
+      }
+    }
+
+    modal?.addEventListener('show.bs.modal', carregarCursos);
+
 
     /** Sincroniza os <select name="curso_id"> da página */
     function sincronizarSelects(c, remover = false) {
@@ -254,4 +275,154 @@
     }
   })();
 
+  /* Carrega e exibe os dias sem aula do período selecionado. */
+  (function initCalendarioBloqueados() {
+    const select = document.getElementById('calPeriodoSelect');
+    const grade = document.getElementById('calGrade');
+    const status = document.getElementById('calStatus');
+    const exportar = document.getElementById('btnExportarCal');
+    const modal = document.getElementById('modalCalendario');
+    if (!select || !grade || !modal) return;
+
+    const tipos = {
+      FERIADO: ['Feriado', '#dc3545'],
+      ATIVIDADE_PEDAGOGICA: ['Atividade pedagógica', '#0d6efd'],
+      REUNIAO_PAIS: ['Reunião de pais', '#6f42c1'],
+      ATIVIDADE_INTERNA: ['Atividade interna', '#fd7e14'],
+      MANUTENCAO: ['Manutenção', '#6c757d'],
+    };
+    let requestId = 0;
+    let diasCarregados = [];
+    let tipoAtivo = null;
+    const btnLimpar = document.getElementById('btnLimparSel');
+    const botoesTipo = [...document.querySelectorAll('#modalCalendario .tipo-btn')];
+
+    function showMessage(message) {
+      grade.replaceChildren();
+      const p = document.createElement('p');
+      p.className = 'text-center text-muted py-5 mb-0';
+      p.textContent = message;
+      grade.appendChild(p);
+    }
+
+    function atualizarContagem() {
+      if (!status) return;
+      const count = tipoAtivo
+        ? diasCarregados.filter(day => day.tipo === tipoAtivo).length
+        : diasCarregados.length;
+      status.textContent = `${count} ${count === 1 ? 'dia bloqueado' : 'dias bloqueados'}`;
+    }
+
+    function renderDays(days) {
+      diasCarregados = [...days].sort((a, b) => a.data.localeCompare(b.data));
+      const visiveis = tipoAtivo
+        ? diasCarregados.filter(day => day.tipo === tipoAtivo)
+        : diasCarregados;
+      grade.replaceChildren();
+      if (!diasCarregados.length) {
+        showMessage('Nenhum dia bloqueado cadastrado para este período.');
+        return;
+      }
+      if (!visiveis.length) {
+        showMessage('Nenhum dia bloqueado encontrado nesta legenda.');
+        return;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'list-group list-group-flush';
+      visiveis.forEach(day => {
+        const item = document.createElement('div');
+        item.className = 'list-group-item d-flex align-items-start gap-3 py-3';
+        const date = document.createElement('strong');
+        date.className = 'text-nowrap';
+        date.textContent = new Date(`${day.data}T12:00:00`).toLocaleDateString('pt-BR');
+        const info = document.createElement('div');
+        const badge = document.createElement('span');
+        const [label, color] = tipos[day.tipo] || [day.tipo || 'Dia bloqueado', '#6c757d'];
+        badge.className = 'badge me-2';
+        badge.style.backgroundColor = color;
+        badge.textContent = label;
+        info.appendChild(badge);
+        if (day.descricao) {
+          const description = document.createElement('span');
+          description.textContent = day.descricao;
+          info.appendChild(description);
+        }
+        item.append(date, info);
+        list.appendChild(item);
+      });
+      grade.appendChild(list);
+    }
+
+    async function loadPeriod() {
+      const periodId = select.value;
+      const currentRequest = ++requestId;
+      if (!periodId) {
+        diasCarregados = [];
+        if (exportar) exportar.classList.add('d-none');
+        showMessage('Selecione um período letivo para consultar os dias sem aula.');
+        if (status) status.textContent = '';
+        return;
+      }
+      if (status) status.textContent = 'Carregando calendário…';
+      showMessage('Carregando dias bloqueados…');
+      if (exportar) {
+        exportar.href = `/planejamento/calendario/${encodeURIComponent(periodId)}/exportar`;
+        exportar.classList.remove('d-none');
+      }
+      try {
+        const response = await fetch(`/planejamento/calendario/${encodeURIComponent(periodId)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) throw new Error(`Não foi possível carregar o calendário (HTTP ${response.status}).`);
+        const days = await response.json();
+        if (currentRequest !== requestId) return;
+        if (!Array.isArray(days)) throw new Error('O servidor retornou um calendário inválido.');
+        renderDays(days);
+        atualizarContagem();
+      } catch (error) {
+        if (currentRequest !== requestId) return;
+        diasCarregados = [];
+        showMessage(error.message || 'Erro ao carregar os dias bloqueados.');
+        if (status) status.textContent = 'Falha ao carregar';
+      }
+    }
+
+    botoesTipo.forEach(button => {
+      button.setAttribute('aria-pressed', 'false');
+      button.addEventListener('click', () => {
+        tipoAtivo = tipoAtivo === button.dataset.tipo ? null : button.dataset.tipo;
+        botoesTipo.forEach(item => {
+          const ativo = item.dataset.tipo === tipoAtivo;
+          item.classList.toggle('ativo', ativo);
+          item.setAttribute('aria-pressed', String(ativo));
+        });
+        renderDays(diasCarregados);
+        atualizarContagem();
+      });
+    });
+
+    btnLimpar?.addEventListener('click', () => {
+      tipoAtivo = null;
+      botoesTipo.forEach(button => {
+        button.classList.remove('ativo');
+        button.setAttribute('aria-pressed', 'false');
+      });
+      renderDays(diasCarregados);
+      atualizarContagem();
+    });
+
+    select.addEventListener('change', () => {
+      tipoAtivo = null;
+      botoesTipo.forEach(button => {
+        button.classList.remove('ativo');
+        button.setAttribute('aria-pressed', 'false');
+      });
+      loadPeriod();
+    });
+    modal.addEventListener('show.bs.modal', () => {
+      if (!select.value && select.options.length > 1) select.selectedIndex = 1;
+      loadPeriod();
+    });
+  })();
 })();

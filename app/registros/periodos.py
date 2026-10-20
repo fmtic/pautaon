@@ -53,7 +53,15 @@ def calendario_dias(periodo_id):
     if unidade_id and periodo.unidade_id != unidade_id:
         abort(403)
 
-    dias = DiaBloqueado.query.filter_by(periodo_letivo_id=periodo_id).all()
+    dias = (
+        DiaBloqueado.query.filter_by(periodo_letivo_id=periodo_id)
+        .filter(
+            DiaBloqueado.data >= periodo.data_inicio,
+            DiaBloqueado.data <= periodo.data_fim,
+        )
+        .order_by(DiaBloqueado.data)
+        .all()
+    )
     return jsonify(
         [
             {
@@ -122,7 +130,7 @@ def calendario_salvar():
                 continue
 
             data_obj = parse_date(data_str)
-            if data_obj is None:
+            if data_obj is None or not (periodo.data_inicio <= data_obj <= periodo.data_fim):
                 continue
 
             db.session.add(
@@ -145,7 +153,7 @@ def calendario_salvar():
             # Onda 2A: DiaBloqueadoTurma.data agora é DATE. O strptime anterior
             # era descartado e a string ia direto pra coluna — Postgres recusava.
             data_obj = parse_date(data_str)
-            if data_obj is None:
+            if data_obj is None or not (periodo.data_inicio <= data_obj <= periodo.data_fim):
                 continue
 
             for turma_id in turma_list:
@@ -225,10 +233,13 @@ def calendario_exportar(periodo_id):
 
     dias = (
         DiaBloqueado.query.filter_by(periodo_letivo_id=periodo_id)
+        .filter(
+            DiaBloqueado.data >= periodo.data_inicio,
+            DiaBloqueado.data <= periodo.data_fim,
+        )
         .order_by(DiaBloqueado.data)
         .all()
     )
-
     current_app.logger.info(
         "Exportar dias sem aula: periodo=%s, dias=%d", periodo_id, len(dias)
     )
@@ -432,6 +443,10 @@ def periodo_letivo_calendario(id):
 
     dias = (
         DiaBloqueado.query.filter_by(periodo_letivo_id=id)
+        .filter(
+            DiaBloqueado.data >= periodo.data_inicio,
+            DiaBloqueado.data <= periodo.data_fim,
+        )
         .order_by(DiaBloqueado.data)
         .all()
     )
@@ -466,10 +481,14 @@ def periodo_letivo_calendario(id):
     feriados_json = {}
     if periodo.ativo:
         try:
-            feriados_json = obter_feriados_nacionais(
-                periodo.data_inicio.year,
-                periodo.data_fim.year,
-            )
+            feriados_json = {
+                data_str: nome
+                for data_str, nome in obter_feriados_nacionais(
+                    periodo.data_inicio.year,
+                    periodo.data_fim.year,
+                ).items()
+                if periodo.data_inicio.isoformat() <= data_str <= periodo.data_fim.isoformat()
+            }
         except Exception:
             current_app.logger.exception(
                 "Erro ao carregar feriados nacionais para o período %s.", id

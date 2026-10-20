@@ -1,25 +1,70 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
-    <title>Planejamento de Temas</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/impressao_temas.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temas por curso — {{ informacao_padrao.nome_instituicao or 'PautaON' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/impressao_temas.css') }}">
 </head>
-<body class="bg-white">
-    <!-- conteúdo HTML original, sem o style e script inline -->
-    <div class="d-flex justify-content-between align-items-center print-header pb-3 mb-4">
-        <!-- cabeçalho -->
-    </div>
-    <div class="d-flex gap-2 align-items-center mb-4 no-print">
-        <!-- filtro e botão -->
-    </div>
-    <table class="table table-bordered table-striped">
-        <!-- tabela -->
+<body>
+  <div class="no-print toolbar d-flex justify-content-between align-items-center gap-3 mb-4">
+    <form method="get" action="{{ url_for('registros.imprimir_temas') }}" class="d-flex align-items-end gap-2">
+      <div>
+        <label for="filtroCurso" class="form-label mb-1">Curso</label>
+        <select id="filtroCurso" name="curso_id" class="form-select form-select-sm">
+          <option value="">Todos os cursos</option>
+          {% for curso in todos_cursos %}
+          <option value="{{ curso.id }}" {{ 'selected' if curso.id|string == filtro_curso else '' }}>{{ curso.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" type="submit">Aplicar filtro</button>
+    </form>
+    <button class="btn btn-sm btn-primary" type="button" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Imprimir
+    </button>
+  </div>
+
+  {% for curso in cursos %}
+  <section class="curso-folha">
+    <header class="print-header">
+      {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+      <img class="logo-institucional" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional">
+      {% endif %}
+      <div class="instituicao">{{ informacao_padrao.nome_instituicao or 'Instituição' }}</div>
+      <h1>Planejamento de Temas</h1>
+      <h2>{{ curso.nome }}</h2>
+    </header>
+
+    <table class="table table-bordered table-striped temas-table">
+      <thead>
+        <tr>
+          <th class="ordem">Ordem</th>
+          <th>Tema / Assunto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tema in temas_por_curso[curso.id] %}
+        <tr>
+          <td class="text-center">{{ tema.ordem }}</td>
+          <td>{{ tema.titulo }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
-    <div class="mt-5 pt-3 border-top d-flex justify-content-between text-muted" style="font-size: 0.75rem;">
-        <!-- rodapé -->
-    </div>
-    <script src="{{ url_for('static', filename='js/planejamento/impressao_temas.js') }}"></script>
+
+    <footer class="print-footer">
+      <span>{{ curso.nome }}</span>
+      <span>{{ current_user.name }}</span>
+      <span>Emitido em <span class="data-emissao"></span></span>
+    </footer>
+  </section>
+  {% else %}
+  <div class="alert alert-info">Nenhum tema cadastrado para o filtro selecionado.</div>
+  {% endfor %}
+
+  <script src="{{ url_for('static', filename='js/planejamento/impressao_temas.js') }}"></script>
 </body>
 </html>

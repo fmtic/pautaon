@@ -134,7 +134,7 @@
   let feriadosAdicionados = 0;
   if (!READONLY) {
     Object.entries(FERIADOS_NACIONAIS).forEach(([ds, nome]) => {
-      if (!diasData[ds]) {
+      if (ds >= PERIODO_INICIO && ds <= PERIODO_FIM && !diasData[ds]) {
         diasData[ds] = {
           tipo: "FERIADO",
           descricao: nome,
