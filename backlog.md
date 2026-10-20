@@ -1,3 +1,38 @@
+### Alterações do dia — 20/10/2026
+
+- Data da intervenção: 20/10/2026
+- Conclusão: concluído
+- Commits: `76dcece` (00:36), `cc83ff0` (00:59), `6bc7571` (10:43), `c75bf49` (10:50), `f944adf` (11:43), `5e0a4ec` (14:49) e `b31f0f4` (15:07)
+
+Refatoração visual da interface, ajustes no planejamento pedagógico e criação das páginas de Termos de Serviço e Política de Privacidade.
+
+### Identidade visual e UX (`76dcece` e `cc83ff0`)
+
+- Refatoração abrangente da interface para garantir consistência visual, responsividade e UX em múltiplos módulos: Painel (`dashboard/index`, `professor`, `secretaria`), Relatórios (`geral`, `relatorio_alunos`), Conselho (`perguntas` + `conselho.js`) e transições de atendimento.
+- Removido o backup obsoleto `dashboard/indexOLD.html`.
+- Ajustes de suporte em `app/main/secretaria.py` e `app/registros/turmas.py`.
+- Painel de administração de usuários (`admin/painel_admin.html`) alinhado à nova identidade visual, com melhoria na usabilidade da listagem; ajustes em `informacao_padrao` (rota e template).
+
+### Planejamento pedagógico (`6bc7571`, `c75bf49` e `f944adf`)
+
+- Paginação criada para as listas de cursos e temas.
+- Corrigida a exibição da `carga_horaria` no modal de Cursos.
+- Reformulado o modal de Dias Bloqueados e concluída a impressão de temas com o novo template `impressao_temas.html` (+ CSS/JS dedicados).
+- Visualização e exportação de dias sem aula agora consideram apenas os dias dentro do intervalo do período letivo correspondente (`registros/core.py` e `registros/periodos.py`).
+
+### Termos de Serviço e Política de Privacidade (`5e0a4ec` e `b31f0f4`)
+
+- Criadas as rotas `/termos_servico` e `/politica_privacidade` em `app/main/home.py`, com conversor simples de Markdown para HTML (`_simple_markdown_to_html`, sem dependências externas).
+- Novos templates `app/templates/termos/termos_servico.html` e `app/templates/termos/politica_privacidade.html`, com card de documento, caixas de aviso/contato e bloqueio de cópia/print/F12.
+- `login.html` atualizado para expor os links de Termos de Serviço e Política de Privacidade.
+- Política de Privacidade formatada no mesmo padrão dos Termos, com o texto da política incorporado diretamente ao template (fonte: `app/static/uploads/politica_de_privacidade_pautaon.md`).
+
+### Arquivos principais
+
+`app/main/home.py`, `app/templates/termos/termos_servico.html`, `app/templates/termos/politica_privacidade.html`, `app/templates/login.html`, `app/templates/admin/painel_admin.html`, `app/templates/dashboard/{index,professor,secretaria}.html`, `app/templates/relatorios/{geral,relatorio_alunos}.html`, `app/templates/conselho/perguntas.html`, `app/planejamento` (templates/JS/CSS de planejamento e impressão de temas), `app/registros/core.py` e `app/registros/periodos.py`.
+
+---
+
 ### Alterações do dia — 19/10/2026
 
 - Data da intervenção: 19/10/2026
@@ -12,7 +47,7 @@ Atualizações realizadas no planejamento pedagógico:
 - Migration aplicada ao banco configurado; `flask db current` confirmou `c4d5e6f7a8b9 (head)`.
 - Incluída regressão para acesso de secretaria ao conselho na própria unidade e bloqueio de outra unidade. A execução automatizada não foi possível neste ambiente porque `pytest` não está instalado.
 
-Arquivos principais: `app/planejamento.py`, `app/registros/core.py`, `app/models/pedagogico.py`.
+Arquivos principais: `app/planejamento.py`, `app/registros/core.py`, `app/models/pedagogico.py`, `migrations/versions/c4d5e6f7a8b9_niveis_unicos_por_unidade.py` e `tests/test_security_regressions.py`.
 
 ---
 
@@ -609,60 +644,3 @@ Esta atualização inclui:
 - Criação e estruturação dos mixins pendentes: `SoftDeleteMixin` (para a coluna `ativo`) e `TenantMixin` (para a coluna `unidade_id`) inseridos no arquivo `app/models/base.py`. Estes mixins foram aplicados de forma bem-sucedida, simplificando os modelos de `academico.py`, `pedagogico.py`, `matriculas.py`, `conselho.py` e `aulas.py`.
 - Adicionada configuração `alembic.ini` e migração de banco `a9f3c8e2d1b7` que insere as colunas nas tabelas supracitadas.
 - Atualização do arquivo `docs/wiki.md` e `app/models/MER.md` refletindo essas modernizações (resolvendo o item 12.3 da dívida técnica).
-
-### Alterações do dia — 18/10/2026
-
-- Data da intervenção: 18/10/2026
-
-Escopo: Refatoração do Painel Pedagógico, criação da Ficha 360° do Aluno, buscas individualizadas e correção do registro de rotas no Flask.
-
-Esta atualização consolida o módulo pedagógico, aproximando a interface de produção ao protótipo aprovado e adicionando funcionalidades críticas de consulta individual (Ficha 360°). O trabalho dividiu-se em melhorias visuais, criação de serviços de backend, novas rotas e correções de infraestrutura de importação.
-
-1. Refatoração da Interface do Painel Pedagógico
-Atualização do template painel_pedagogico.html para incluir o novo bloco "Entradas, renovação e saídas", substituindo a tabela estática de desativações.
-
-Implementação de barra de proporção (stacked bar) visualizando a divisão de alunos entre Novos, Renovados e Retornantes.
-
-Criação do "Insight de Desativação" dinâmico (ex: "Transporte e trabalho respondem por X de Y (Z%)"), calculado a partir dos motivos de desligamento no período.
-
-Alinhamento visual dos "Sinais de atenção do período" aos ícones e textos exatos do protótipo (ex: contagem de turmas abaixo de 75%, alunos em risco no turno da noite, conselhos pendentes).
-
-Adição da coluna "Ficha" na listagem de alunos da visão por turma, permitindo acesso rápido ao prontuário individual.
-
-2. Criação da Ficha 360° do Aluno
-Criação do serviço app/relatorios/painel_pedagogico/ficha_aluno.py, responsável por agregar dados de frequência, conselho de classe, atendimentos e perfis (socioeconômico/diversidade).
-
-Implementação do cálculo de KPIs individuais (frequência do aluno vs. média da turma, maior sequência de faltas, justificativas).
-
-Geração automática de "Sinais de atenção" individuais (ex: faltas seguidas, discrepância de frequência em relação à turma, faixa de risco).
-
-Implementação de heatmap de presença ("Aula a aula") no template, dividindo a grade em dias da semana (Ter/Qui) e colunas semanais.
-
-Adição de gráfico de linha (Chart.js) para evolução da frequência acumulada (Aluno vs. Turma) e linha do tempo cronológica de eventos (faltas, conselhos, atendimentos).
-
-Criação do template ficha_aluno.html, incluindo seção restrita (accordion) para dados socioeconômicos, respeitando as regras de visibilidade de perfil.
-
-3. Busca Global e Rotas
-Criação da rota relatorios.busca_alunos (/relatorios/painel/busca), permitindo localizar qualquer aluno da unidade, independentemente de estar ou não enturmado no período letivo vigente.
-
-Criação da rota relatorios.ficha_aluno_view (/relatorios/alunos/<id>/ficha), que suporta a visualização de alunos em períodos passados (histórico).
-
-Criação do template busca_alunos.html com indicadores visuais de status de enturmação ("No período", "Fora do período", "Sem turma").
-
-4. Correções de Infraestrutura e Imports (Bugfix)
-Correção do erro BuildError no Flask: as rotas busca_alunos e ficha_aluno_view foram registradas no blueprint bp_relatorios dentro de rota.py e devidamente importadas.
-
-Correção da cadeia de imports no pacote painel_pedagogico para evitar conflitos entre imports relativos (from . vs from ..), garantindo que o app inicialize sem erros de SyntaxError (posicionamento de from __future__) ou ImportError (módulos não encontrados).
-
-Ajuste da função _identidade em ficha_aluno.py para consumir corretamente os tipos do StatusAluno e evitar quebra de renderização ao buscar o status derivado da Inscricao.
-
-Arquivos alterados nesta parte
-Arquivo	Natureza da mudança
-app/relatorios/painel_pedagogico/rota.py	Novas rotas (busca_alunos, ficha_aluno_view) e correção de imports.
-app/relatorios/painel_pedagogico/ficha_aluno.py	Novo serviço (agregação, cálculos de KPIs e sinais).
-app/relatorios/painel_pedagogico/periodo.py	Inclusão do cálculo de entradas e insight_desativacao.
-app/templates/relatorios/painel_pedagogico.html	Novo layout de Entradas/Renovação e coluna Ficha.
-app/templates/relatorios/ficha_aluno.html	Novo template (Ficha 360°).
-app/templates/relatorios/busca_alunos.html	Novo template (Busca global).
-Estado ao final da sessão
-A interface do Painel Pedagógico e a Ficha 360° estão visualmente fiéis ao protótipo, dinâmicas e integradas ao banco de dados. O erro de inicialização (BuildError) foi sanado, e a navegação entre turma → aluno (ficha) → busca está funcional. O código foi limpo para seguir os padrões de Conventional Commits para o próximo push.
