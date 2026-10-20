@@ -32,7 +32,37 @@ from .sinais import sinais_turma
 def montar(turma: Turma, unidade_id: int | None) -> dict:
     periodo = turma.periodo_letivo
     if not periodo:
-        return {"turma": turma, "vazia": True}
+        return {
+            "turma": turma,
+            "vazia": True,
+            "pct_turma_str": "—",
+            "faixas": {"hi": 0, "mid": 0, "lo": 0, "total": 0},
+            "faixas_largura": {"hi": 0, "mid": 0, "lo": 0},
+            "sinais": [],
+            "semanas": [],
+            "semanas_iso": [],
+            "serie_turma": [],
+            "alunos": [],
+            "alunos_por_aula": {"datas": [], "semanas_padding": []},
+            "faixa_turma": "lo",
+            "faixa_meta": {"label": "—", "classe": "secondary"},
+            "faltas": 0,
+            "presencas": 0,
+            "total_aulas": 0,
+            "media_periodo": None,
+            "media_periodo_str": "—",
+            "diff_media": None,
+            "diff_media_str": "—",
+            "diff_media_classe": "secondary",
+            "semanais": {},
+            "semanais_celulas": [],
+            "tendencia": 0,
+            "tendencia_str": "—",
+            "tendencia_classe": "secondary",
+            "conselho": {},
+            "conselho_etapas": [],
+            "conselho_agregado": {},
+        }
 
     semanas = semanas_do_periodo(periodo)
     freq = frequencia.agregar_por_turma([turma.id]).get(

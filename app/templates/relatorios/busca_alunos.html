@@ -29,10 +29,12 @@
   </button>
 </form>
 
-{% if not vinculos %}
+{% if erro %}
+  <div class="alert alert-danger small">{{ erro }}</div>
+{% elif not vinculos %}
   <div class="alert alert-info small">
     {% if q %}
-      Nenhum aluno encontrado para “{{ q }}”.
+      Nenhum aluno encontrado para "{{ q }}".
     {% else %}
       Digite um nome para buscar.
     {% endif %}

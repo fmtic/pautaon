@@ -57,7 +57,6 @@ endblock %} {% block styles %}
     display: grid;
     gap: 0.25rem;
     align-items: center;
-    grid-template-columns: 2rem repeat(11, minmax(1.9rem, 1fr));
     min-width: 24rem;
   }
   .pt-h {
@@ -395,28 +394,24 @@ endblock %} {% block styles %}
             class="pt-heat"
             role="group"
             aria-label="Conceito de cada aula, por semana"
+            style="grid-template-columns: 2rem repeat({{ f.labels|length }}, minmax(1.9rem, 1fr))"
           >
             <span class="pt-h"></span>
             {% for l in f.labels %}
             <span class="pt-h">{{ l }}</span>
-            {% endfor %} {# Linha Terça #}
-            <span class="pt-rowlab">Ter</span>
-            {% for item in mapa if item.dia_semana == 1 %}
+            {% endfor %}
+            {% set dias_unicos = f.mapa|map(attribute='dia_semana')|unique|sort|list %}
+            {% set nomes_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sáb', 6: 'Dom'} %}
+            {% for dia in dias_unicos %}
+            <span class="pt-rowlab">{{ nomes_dias.get(dia, '—') }}</span>
+            {% for item in f.mapa if item.dia_semana == dia %}
             <span
               class="pt-tile conceito-{{ item.conceito or 'X' }}"
               title="{{ item.data.strftime('%d/%m') }} · {{ item.conceito or '—' }}"
             >
               {{ item.conceito or '—' }}
             </span>
-            {% endfor %} {# Linha Quinta #}
-            <span class="pt-rowlab">Qui</span>
-            {% for item in mapa if item.dia_semana == 3 %}
-            <span
-              class="pt-tile conceito-{{ item.conceito or 'X' }}"
-              title="{{ item.data.strftime('%d/%m') }} · {{ item.conceito or '—' }}"
-            >
-              {{ item.conceito or '—' }}
-            </span>
+            {% endfor %}
             {% endfor %}
           </div>
         </div>
@@ -445,9 +440,9 @@ endblock %} {% block styles %}
         <div class="pt-chart">
           <canvas
             id="chFreqFicha"
-            data-labels="{{ f.labels|tojson }}"
-            data-aluno="{{ f.serie_aluno|tojson }}"
-            data-turma="{{ f.serie_turma|tojson }}"
+            data-labels='{{ f.labels|tojson }}'
+            data-aluno='{{ f.serie_aluno|tojson }}'
+            data-turma='{{ f.serie_turma|tojson }}'
           ></canvas>
         </div>
       </div>

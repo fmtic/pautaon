@@ -18,9 +18,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import joinedload
 
 from app import db
@@ -139,8 +139,6 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
     por_data: dict[date, ConceitoFrequencia] = {}
     serie_aluno: list[float] = []
     serie_turma: list[float] = []
-    pres_acum = 0
-    falt_acum = 0
     labels: list[str] = []
 
     # Agregado da turma por data (uma única query)
@@ -200,8 +198,10 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
             continue
 
         seg = _segunda_da(f.data)
-        por_semana_aluno[seg][0] += pres_acum
-        por_semana_aluno[seg][1] += pres_acum + falt_acum
+        if f.conceito in (ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D):
+            por_semana_aluno[seg][0] += 1
+        elif f.conceito == ConceitoFrequencia.F:
+            por_semana_aluno[seg][1] += 1
 
     # Conta turma por semana (uma passada)
     for d, n_pres in turma_data.items():
@@ -255,9 +255,7 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
 
 
 def _segunda_da(d: date) -> date:
-    return date(d.year, d.month, d.day) - __import__("datetime").timedelta(
-        days=d.weekday()
-    )
+    return date(d.year, d.month, d.day) - timedelta(days=d.weekday())
 
 
 def _maior_sequencia_faltas(rows: list) -> int:
@@ -508,6 +506,21 @@ def _push_falta(ev: list, ini: date, fim: date | None) -> None:
 # Percurso (turmas anteriores)
 # =============================================================================
 def _percurso(aluno_id: int, turma_atual_id: int) -> list[dict]:
+    # Query única agregada por turma para evitar N+1
+    freq_agg = (
+        db.session.query(
+            Turma.id,
+            func.count(Frequencia.id).label('total'),
+            func.sum(case((Frequencia.conceito.in_([ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D]), 1), else_=0)).label('presencas'),
+            func.sum(case((Frequencia.conceito.in_([ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D, ConceitoFrequencia.F]), 1), else_=0)).label('contaveis'),
+        )
+        .join(Frequencia, Frequencia.turma_id == Turma.id)
+        .filter(Frequencia.aluno_id == aluno_id, Turma.id != turma_atual_id)
+        .group_by(Turma.id)
+        .all()
+    )
+    freq_dict = {row.id: row for row in freq_agg}
+
     rows = (
         db.session.query(Inscricao, Turma)
         .join(Turma, Turma.id == Inscricao.turma_id)
@@ -518,33 +531,13 @@ def _percurso(aluno_id: int, turma_atual_id: int) -> list[dict]:
     )
     out = []
     for insc, t in rows:
-        # Recalcula pct simples
-        tot = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=t.id).count()
-        pres = Frequencia.query.filter(
-            Frequencia.aluno_id == aluno_id,
-            Frequencia.turma_id == t.id,
-            Frequencia.conceito.in_(
-                [
-                    ConceitoFrequencia.A,
-                    ConceitoFrequencia.B,
-                    ConceitoFrequencia.C,
-                    ConceitoFrequencia.D,
-                ]
-            ),
-        ).count()
-        cont = Frequencia.query.filter(
-            Frequencia.aluno_id == aluno_id,
-            Frequencia.turma_id == t.id,
-            Frequencia.conceito.in_(
-                [
-                    ConceitoFrequencia.A,
-                    ConceitoFrequencia.B,
-                    ConceitoFrequencia.C,
-                    ConceitoFrequencia.D,
-                    ConceitoFrequencia.F,
-                ]
-            ),
-        ).count()
+        freq = freq_dict.get(t.id)
+        if freq:
+            tot = freq.total or 0
+            pres = freq.presencas or 0
+            cont = freq.contaveis or 0
+        else:
+            tot = pres = cont = 0
         p = pct(pres, cont)
         situacao = _situacao_por_turma(aluno_id, t.id)
         out.append(

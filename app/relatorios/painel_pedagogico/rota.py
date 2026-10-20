@@ -120,6 +120,15 @@ def busca_alunos():
     q = (request.args.get("q") or "").strip()
     periodo_id = request.args.get("periodo_letivo_id", type=int)
 
+    if unidade_id is None:
+        return render_template(
+            "relatorios/busca_alunos.html",
+            q=q,
+            periodo=None,
+            vinculos=[],
+            erro="Unidade não identificada",
+        )
+
     periodo = None
     if periodo_id:
         periodo = PeriodoLetivo.query.filter_by(
@@ -185,12 +194,14 @@ def ficha_aluno_view(aluno_id):
 
     turma_id = request.args.get("turma_id", type=int)
     if turma_id:
-        turma = Turma.query.get_or_404(turma_id)
+        turma = Turma.query.filter_by(id=turma_id, unidade_id=unidade_id).first_or_404()
         insc = Inscricao.query.filter_by(
             aluno_id=aluno.id,
             turma_id=turma.id,
             ativo=True,
         ).first()
+        if not insc:
+            abort(404, "Aluno não inscrito nesta turma.")
     else:
         insc = (
             Inscricao.query.filter_by(aluno_id=aluno.id, ativo=True)
@@ -211,6 +222,8 @@ def ficha_aluno_view(aluno_id):
         "admin",
         "pedagogico",
         "servico_social",
+        "secretaria",
+        "gerencia",
     }
 
     return render_template("relatorios/ficha_aluno.html", **ctx)

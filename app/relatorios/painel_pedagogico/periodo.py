@@ -103,19 +103,22 @@ def _gerar_sinais_e_entradas(acum: _Acumulado, turmas_dados: list, semanas_queda
         })
 
     # 1.3 Alunos em risco noite
-    if acum.risco_noite > 0:
+    if acum.risco_noite > 0 and acum.noite_total > 0:
+        pct_noite = (acum.risco_noite / acum.noite_total * 100)
         sinais.append({
             "nivel": "warn", "icone": "person-x",
             "titulo": f'{acum.risco_noite} dos {acum.faixas["lo"]} alunos em risco estão no turno da noite',
-            "detalhe": "As turmas noturnas têm 27% dos alunos enturmados." # Exemplo estático do protótipo
+            "detalhe": f"As turmas noturnas têm {pct_noite:.0f}% dos alunos enturmados."
         })
 
     # 1.4 Conselho Pendente
     if acum.conselho_pendentes > 0:
+        # Nota: Data de abertura da etapa final não está disponível no contexto atual
+        # Removendo texto hardcoded de protótipo
         sinais.append({
             "nivel": "warn", "icone": "clipboard-check",
             "titulo": f'Conselho de percurso: {acum.conselho_pendentes} alunos pendentes',
-            "detalhe": "A etapa final abre em 19/10." # Você pode calcular isso via banco
+            "detalhe": "Verifique o conselho de percurso para garantir acompanhamento adequado."
         })
 
     # 2. Entradas (Quem está enturmado)
