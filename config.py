@@ -89,3 +89,13 @@ class Config:
     ]
     GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED = get_bool("GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True)
 
+    # Envio de e-mail
+    # Configurações do Flask-Mail / SMTP Google Workspace
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+    MAIL_USE_TLS = get_bool("MAIL_USE_TLS", True)
+    MAIL_USE_SSL = get_bool("MAIL_USE_SSL", False)
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", os.getenv("MAIL_USERNAME"))
+

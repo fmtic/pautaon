@@ -8,13 +8,7 @@ Cobre:
     - Rotas administrativas (painel, cadastro de usuário, unidades)
     - Auditoria (logs)
     - Troca de senha do próprio usuário
-
-NOTA ONDA 2B
-    Comparações de `current_user.role` usam `UserRole` do `app.models.enums`
-    em vez de strings soltas. Isso dá autocomplete e evita erro de digitação.
-    Valores de role vindos de formulário (dinâmicos) são deixados como string
-    — o CHECK constraint do banco valida.
-================================================================================
+    - Disparo de e-mail para novo usuário e reset de senha
 """
 
 from flask import Blueprint, current_app, render_template, request, redirect, flash, url_for, abort, session
@@ -28,6 +22,7 @@ import hashlib
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.models.enums import UserRole
 from app.database import db
+from app.utils.disparo_email import send_email
 from app.services.auth_service import (
     _build_ldap_bind_user,
     authenticate_against_ldap,
@@ -541,6 +536,22 @@ def cadastrar_usuario():
         db.session.add(novo)
         db.session.commit()
         register_security_log("Cadastro Local", f"Admin gerou conta manual: {email}")
+        # --- DISPARO DE E-MAIL ASSÍNCRONO ---
+        # 1. Renderiza o HTML passando os dados dinâmicos para o Jinja2
+        html_content = render_template(
+            "emails/novo_usuario.html",
+            nome=nome,
+            email=email,
+            senha=senha
+        )
+
+        # 2. Dispara o e-mail assíncrono com o HTML renderizado
+        send_email(
+            subject="[pautaON] Sua conta foi criada com sucesso",
+            recipients=[email],
+            body_html=html_content
+        )
+        # -------------------------------------
         flash(f"Conta para {nome} criada com sucesso!", "success")
     except Exception:
         db.session.rollback()
@@ -597,6 +608,19 @@ def resetar_senha(id):
             usuario.first_login = True
             db.session.commit()
             register_security_log("Reset de Senha", f"Senha de {usuario.email} resetada pelo admin.")
+            # --- DISPARO DE E-MAIL ASSÍNCRONO ---
+            html_content = render_template(
+                "emails/senha_redefinida.html",
+                nome=usuario.name,
+                nova_senha=default_password
+            )
+
+            send_email(
+                subject="[pautaON] Sua senha foi redefinida pelo administrador",
+                recipients=[usuario.email],
+                body_html=html_content
+            )
+            # -------------------------------------
             flash(f"Senha de {usuario.name} resetada. Troca obrigatória no próximo login.", "info")
         except Exception:
             db.session.rollback()

@@ -5,7 +5,7 @@ from flask_login import current_user
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
-from app.extensions import csrf, db, login_manager
+from app.extensions import csrf, db, login_manager, mail
 from app.models import auditoria_listener  # noqa: F401
 import logging
 from logging.handlers import RotatingFileHandler
@@ -60,6 +60,7 @@ def _configure_extensions(app: Flask) -> None:
     migrate = Migrate(app, db)
     csrf.init_app(app)
     login_manager.init_app(app)
+    mail.init_app(app)
 
 
 def _register_template_filters(app: Flask) -> None:

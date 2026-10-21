@@ -1,0 +1,16 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+    <h2 style="color: #0056b3; margin-top: 0;">👋 Bem-vindo ao pautaON!</h2>
+    <p>Olá, <strong>{{ nome }}</strong>!</p>
+    <p>Sua conta no sistema pautaON foi criada com sucesso 🎉.</p>
+    
+    <div class="card-info">
+        <p style="margin: 5px 0;"><strong>E-mail institucional:</strong> {{ email }}</p>
+        <p style="margin: 5px 0;"><strong>Senha temporária:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">{{ senha }}</code></p>
+    </div>
+
+    <p style="color: #c53030; font-size: 14px;">
+        <strong>Atenção:</strong> No seu primeiro acesso, o sistema exigirá obrigatoriamente a troca desta senha temporária por uma senha pessoal.
+    </p>
+{% endblock %}

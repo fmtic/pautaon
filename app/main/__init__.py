@@ -10,4 +10,5 @@ from flask import Blueprint
 bp = Blueprint("main", __name__)
 
 # Importa os módulos após a criação do blueprint para registrar as rotas.
-from . import home, dashboard, secretaria, unidade  # noqa: E402,F401
+from . import home, dashboard, secretaria, unidade
+from app.main import rota_disparo_email

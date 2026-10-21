@@ -1,0 +1,15 @@
+{% extends "emails/base_email.html" %}
+
+{% block content %}
+    <h2 style="color: #0056b3; margin-top: 0;">✅ Sua senha foi redefinida</h2>
+    <p>Olá, <strong>{{ nome }}</strong>!</p>
+    <p>O administrador do sistema redefiniu a sua senha de acesso ao <strong>pautaON</strong>.</p>
+    
+    <div class="card-info">
+        <p style="margin: 5px 0;"><strong>Nova senha temporária:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">{{ nova_senha }}</code></p>
+    </div>
+
+    <p style="color: #c53030; font-size: 14px;">
+        <strong>Atenção:</strong> Utilize esta senha para realizar o login. O sistema solicitará a troca por uma senha pessoal assim que você entrar.
+    </p>
+{% endblock %}

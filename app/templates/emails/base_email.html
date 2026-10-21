@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default("pautaON") }}</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: #f4f6f9;
+            color: #333333;
+            margin: 0;
+            padding: 20px;
+        }
+        .email-wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .email-header {
+            background-color: #1a202c;
+            color: #ffffff;
+            padding: 20px 30px;
+            border-bottom: 4px solid #0056b3;
+        }
+        .email-header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .email-body {
+            padding: 30px;
+            line-height: 1.6;
+        }
+        .card-info {
+            background-color: #f8fafc;
+            border-left: 4px solid #0056b3;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .email-footer {
+            background-color: #f1f5f9;
+            padding: 15px 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <!-- CABEÇALHO COM LOGO -->
+        <div class="email-header" style="text-align: center; background-color: #1a202c; padding: 20px;">
+            {% if informacao_padrao and informacao_padrao.logo_principal_url %}
+                <img src="{{ request.url_root.rstrip('/') }}{{ informacao_padrao.logo_principal_url }}" 
+                     alt="{{ informacao_padrao.nome_instituicao | default('pautaON') }}" 
+                     style="max-height: 60px; max-width: 100%; display: block; margin: 0 auto;">
+            {% else %}
+                <h1 style="margin: 0; font-size: 22px; font-weight: bold; color: #ffffff;">pautaON</h1>
+            {% endif %}
+        </div>
+        
+        <div class="email-body">
+            {% block content %}{% endblock %}
+        </div>
+        
+        <div class="email-footer">
+            <p style="margin: 0 0 5px 0;"><strong>pautaON</strong> &mdash; IMPACTO.EDUCAÇÃO.GESTÃO</p>
+            <p style="margin: 0;">Este é um disparo automático do sistema local. Por favor, não responda a esta mensagem.</p>
+        </div>
+    </div>
+</body>
+</html>
