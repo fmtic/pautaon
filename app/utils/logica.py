@@ -257,6 +257,45 @@ def gerar_datas(
         return datas
     return datas[::-1]  # Mais atual -> mais antigo
 
+# =============================================================================
+# CARGA HORÁRIA
+# =============================================================================
+
+def calcular_dias_aula_turma(turma: Turma) -> int:
+    """
+    Quantidade de dias de aula de uma turma no período letivo.
+
+    Usa o mesmo calendário da pauta (dias da semana da turma entre
+    data_inicio e data_fim), EXCLUINDO os dias sem aula do período
+    (`DiaBloqueado`), com as exceções por turma (`DiaBloqueadoTurma`)
+    já descontadas.
+    """
+    if not turma or not turma.data_inicio or not turma.data_fim:
+        return 0
+    blocked = _blocked_dates_str(turma)
+    return len(gerar_datas(turma, incluir_futuro=True, blocked_dates=blocked))
+
+
+def calcular_carga_horaria_curso(curso) -> Dict[str, Any]:
+    """
+    Calcula a C.H. Total de um curso.
+
+    Regra de negócio:
+        - `curso.carga_horaria` é a carga horária de AULA (horas por dia).
+        - C.H. Total = C.H. Aula x dias de aula das turmas ativas do curso
+          no período letivo, já sem os dias sem aula.
+        - Sem C.H. Aula ou sem turmas com calendário, `carga_total` é None.
+    """
+    dias_aula = sum(
+        calcular_dias_aula_turma(turma)
+        for turma in curso.turmas
+        if turma.ativo
+    )
+    carga_aula = curso.carga_horaria or 0
+    return {
+        'dias_aula': dias_aula,
+        'carga_total': carga_aula * dias_aula if carga_aula else None,
+    }
 
 # =============================================================================
 # CONTEXTO DE TURMA PARA TEMPLATES

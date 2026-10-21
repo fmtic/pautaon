@@ -19,12 +19,15 @@ class Curso(db.Model):
     """
     Curso ofertado por uma unidade.
 
-    Um Curso é o "guarda-chuva" pedagógico: agrupa turmas e temas de aula.
+    Um Curso é o "guarda-chuva" pedagógico: agrupa temas de aula.
     Cada unidade mantém seu próprio catálogo.
 
     Regras:
         - Curso inativo não deve ser associado a novas turmas.
-        - `carga_horaria` é a carga total prevista (em horas), não a executada.
+        - `carga_horaria` é a C.H. de AULA (horas por dia de aula).
+        - A C.H. Total é calculada: carga_horaria x dias de aula das turmas
+          ativas do curso no período letivo, excluindo os dias sem aula
+          (`DiaBloqueado`, com exceções de `DiaBloqueadoTurma`).
     """
     __tablename__ = 'curso'
 

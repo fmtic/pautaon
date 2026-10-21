@@ -36,6 +36,7 @@ from app.models import (
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import (
+    calcular_carga_horaria_curso,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
     carregar_frequencias,
@@ -381,6 +382,7 @@ def listar_cursos():
             'nome': c.nome,
             'descricao': c.descricao or '',
             'carga_horaria': c.carga_horaria or '',
+            **calcular_carga_horaria_curso(c),
         }
         for c in cursos
     ])
@@ -427,6 +429,7 @@ def novo_curso():
             'nome': curso.nome,
             'descricao': curso.descricao or '',
             'carga_horaria': curso.carga_horaria or '',
+            **calcular_carga_horaria_curso(curso),
         })
     except Exception as e:
         db.session.rollback()
@@ -470,7 +473,8 @@ def editar_curso(curso_id):
         return jsonify({
             'success': True, 'id': curso.id, 'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'carga_horaria': curso.carga_horaria or ''
+            'carga_horaria': curso.carga_horaria or '',
+            **calcular_carga_horaria_curso(curso),
         })
     except Exception as e:
         db.session.rollback()
@@ -635,6 +639,7 @@ def planejamento():
             ativo=True, unidade_id=unidade_id
         ).order_by(Curso.nome).all()
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
+    cargas_curso = {curso.id: calcular_carga_horaria_curso(curso) for curso in cursos}
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
@@ -648,6 +653,7 @@ def planejamento():
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
+                           cargas_curso=cargas_curso,
                            unidade_id=unidade_id,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')

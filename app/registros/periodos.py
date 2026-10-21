@@ -26,7 +26,7 @@ from app.models import (
 from app.services.auth_service import register_security_log
 from app.services.feriados import obter_feriados_nacionais
 from app.utils.datetime_parse import parse_date
-from app.utils.logica import get_unidade_id
+from app.utils.logica import calcular_dias_aula_turma, get_unidade_id
 from . import bp
 
 _ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
@@ -549,6 +549,16 @@ def periodo_letivo_relatorio_certificado(id):
             ).first()
             nivel_turma = inscricao.nivel if inscricao and inscricao.nivel else None
 
+            # Carga horária TOTAL cursada pelo aluno nesta turma do período:
+            #   C.H. por aula (curso) x dias de aula da turma, já descontando
+            #   os dias sem aula (DiaBloqueado) com exceções por turma.
+            # É o valor que deve constar no certificado, e não a C.H. por aula.
+            curso_turma = turma.curso
+            if curso_turma and curso_turma.carga_horaria:
+                carga_total = curso_turma.carga_horaria * calcular_dias_aula_turma(turma)
+            else:
+                carga_total = None
+
             alunos_map[aluno.id]["aluno"] = aluno
             alunos_map[aluno.id]["cursos"].append(
                 {
@@ -558,6 +568,7 @@ def periodo_letivo_relatorio_certificado(id):
                     "situacao": situacao or "—",
                     "aprovado": aprovado,
                     "concluido": turma.conselho_concluido,
+                    "carga_total": carga_total,
                 }
             )
 

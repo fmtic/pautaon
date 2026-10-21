@@ -113,6 +113,7 @@
         <td class="ps-3 fw-semibold">${c.nome}</td>
         <td class="text-muted small">${c.descricao || '—'}</td>
         <td class="text-center small">${c.carga_horaria ? c.carga_horaria + 'h' : '—'}</td>
+        <td class="text-center small" title="${c.dias_aula || 0} dias de aula no período">${c.carga_total ? c.carga_total + 'h' : '—'}</td>
         <td class="text-center">
           <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
             data-id="${c.id}" data-nome="${c.nome}" data-desc="${c.descricao || ''}"
@@ -138,7 +139,7 @@
         tbody.replaceChildren();
         if (!cursos.length) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="4" class="text-center text-muted py-4">
+            <td colspan="5" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
               Nenhum curso cadastrado para esta unidade.
             </td></tr>`;
@@ -230,7 +231,7 @@
         sincronizarSelects({ id: btnEx.dataset.id }, true);
         if (!tbody.querySelector('tr[data-id]')) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="4" class="text-center text-muted py-4">
+            <td colspan="5" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
               Nenhum curso cadastrado para esta unidade.
             </td></tr>`;

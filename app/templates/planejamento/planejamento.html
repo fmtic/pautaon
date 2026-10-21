@@ -489,7 +489,7 @@
             </div>
             <div class="col-md-2">
               <input type="number" id="cursoCargaInput" class="form-control form-control-sm"
-                placeholder="Carga (h)" min="1" max="9999">
+                placeholder="C.H. Aula (h)" min="1" max="9999">
             </div>
             <div class="col-md-2">
               <button class="btn btn-success btn-sm w-100" id="btnNovoCurso">
@@ -505,16 +505,21 @@
             <tr>
               <th class="ps-3">Curso</th>
               <th>Descrição</th>
-              <th class="text-center" style="width:60px">C.H.</th>
+              <th class="text-center" style="width:80px">C.H. Aula</th>
+              <th class="text-center" style="width:90px">C.H. Total</th>
               <th class="text-center" style="width:100px">Ações</th>
             </tr>
           </thead>
           <tbody id="cursosTbody">
             {% for c in cursos %}
+            {% set carga = cargas_curso.get(c.id) %}
             <tr data-id="{{ c.id }}">
               <td class="ps-3 fw-semibold">{{ c.nome }}</td>
               <td class="text-muted small">{{ c.descricao or '—' }}</td>
               <td class="text-center small">{% if c.carga_horaria is not none %}{{ c.carga_horaria }}h{% else %}—{% endif %}</td>
+              <td class="text-center small" title="{{ carga.dias_aula }} dias de aula no período">
+                {% if carga and carga.carga_total is not none %}{{ carga.carga_total }}h{% else %}—{% endif %}
+              </td>
               <td class="text-center">
                 <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
                   data-id="{{ c.id }}" data-nome="{{ c.nome }}"
@@ -531,7 +536,7 @@
             </tr>
             {% else %}
             <tr id="cursoVazio">
-              <td colspan="4" class="text-center text-muted py-4">
+              <td colspan="5" class="text-center text-muted py-4">
                 <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
                 Nenhum curso cadastrado para esta unidade.
               </td>
@@ -556,7 +561,7 @@
             </div>
             <div class="col-md-2">
               <input type="number" id="editCursoCarga" class="form-control form-control-sm"
-                placeholder="Carga (h)" min="1" max="9999">
+                placeholder="C.H. Aula (h)" min="1" max="9999">
             </div>
             <div class="col-md-2 d-flex gap-1">
               <button class="btn btn-warning btn-sm flex-fill" id="btnSalvarEditCurso">
