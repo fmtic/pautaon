@@ -28,20 +28,20 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
-          <label for="filtroPeriodo" class="form-label">Período Letivo</label>
-          <select id="filtroPeriodo" class="form-select">
-            <option value="">Todos</option>
-            {% for p in periodos %}
-            <option value="{{ p.id }}">{{ p.nome_exibicao }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-4">
           <label for="filtroUnidade" class="form-label">Unidade</label>
           <select id="filtroUnidade" class="form-select">
             <option value="">Todas</option>
             {% for u in unidades %}
             <option value="{{ u.id }}">{{ u.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="filtroPeriodo" class="form-label">Período Letivo</label>
+          <select id="filtroPeriodo" class="form-select">
+            <option value="">Todos</option>
+            {% for p in periodos %}
+            <option value="{{ p.id }}" data-unidade="{{ p.unidade_id }}">{{ p.nome_exibicao }}</option>
             {% endfor %}
           </select>
         </div>
@@ -239,6 +239,57 @@
     let graficoAtual = null;
     let dadosGrafico = null;
     let codigoAtual  = null;  // código do indicador exibido
+
+    // ---------------------------------------------------------------- //
+    // Encadeia Unidade -> Período: o seletor de período exibe apenas os
+    // períodos da unidade escolhida. Com "Todas", exibe todos. O "Todos"
+    // do período passa a significar "todos os períodos desta unidade".
+    // ---------------------------------------------------------------- //
+    const filtroUnidadeEl = document.getElementById("filtroUnidade");
+    const filtroPeriodoEl = document.getElementById("filtroPeriodo");
+
+    // Lista mestre de períodos (id, unidade, rótulo), lida uma única vez.
+    const periodosMestre = Array.from(filtroPeriodoEl.options)
+      .filter(opt => opt.value !== "")
+      .map(opt => ({
+        value: opt.value,
+        unidade: opt.dataset.unidade || "",
+        label: opt.textContent.trim(),
+      }));
+
+    function repopularPeriodos() {
+      const unidadeSel = filtroUnidadeEl.value;
+      const valorAtual = filtroPeriodoEl.value;
+      const disponiveis = unidadeSel
+        ? periodosMestre.filter(p => p.unidade === unidadeSel)
+        : periodosMestre;
+
+      filtroPeriodoEl.innerHTML = "";
+
+      const optTodos = document.createElement("option");
+      optTodos.value = "";
+      optTodos.textContent = unidadeSel
+        ? "Todos os períodos desta unidade"
+        : "Todos";
+      filtroPeriodoEl.appendChild(optTodos);
+
+      disponiveis.forEach(p => {
+        const o = document.createElement("option");
+        o.value = p.value;
+        o.textContent = p.label;
+        filtroPeriodoEl.appendChild(o);
+      });
+
+      // Mantém a seleção anterior se ainda for válida; senão volta para "Todos".
+      if (valorAtual && disponiveis.some(p => p.value === valorAtual)) {
+        filtroPeriodoEl.value = valorAtual;
+      } else {
+        filtroPeriodoEl.value = "";
+      }
+    }
+
+    filtroUnidadeEl.addEventListener("change", repopularPeriodos);
+    repopularPeriodos();
 
     const formatarNumero = (valor) =>
       new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(

@@ -10,17 +10,27 @@ from flask_login import current_user, login_required
 from app.models import Unidade, PeriodoLetivo
 
 from . import bp_relatorios
-from .bi import INDICADORES_STATUS_ALUNO, executar_indicador
+from .bi import executar_indicador
 from .catalogo import DIMENSOES, listar_indicadores
 from .shared import ROLES_RELATORIOS
 from app.utils.logica import get_unidade_id
 
 
-def _escopar_unidade_status(codigo, filtros):
-    if codigo not in INDICADORES_STATUS_ALUNO:
-        return filtros
+# Papéis com visão global (multiunidade) no BI. Os demais papéis autorizados
+# (pedagógico, secretaria) ficam restritos à própria unidade.
+_ROLES_GLOBAIS_BI = ("admin", "gerencia")
 
-    if current_user.role in ("admin", "gerencia"):
+
+def _escopar_unidade(filtros):
+    """Impõe o contexto de unidade a todos os indicadores do BI.
+
+    `admin`/`gerencia` preservam a visão global (ou o contexto de sessão).
+    Os demais papéis só enxergam a própria unidade: se pedirem outra unidade,
+    a requisição é negada (403); se não pedirem nenhuma (ex.: 'Todas'), o
+    escopo é forçado para a unidade efetiva do usuário. Sem unidade
+    vinculada, nega-se o acesso em vez de liberar a visão global.
+    """
+    if current_user.role in _ROLES_GLOBAIS_BI:
         return filtros
 
     unidade_efetiva = get_unidade_id()
@@ -150,7 +160,7 @@ def bi_exportar_xlsx():
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str) or None,
     }
-    filtros = _escopar_unidade_status(codigo, filtros)
+    filtros = _escopar_unidade(filtros)
     filtros_limpos = {k: v for k, v in filtros.items() if v is not None}
 
     try:
@@ -279,7 +289,7 @@ def bi_indicador(codigo):
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str),
     }
-    filtros = _escopar_unidade_status(codigo, filtros)
+    filtros = _escopar_unidade(filtros)
 
     filtros_limpos = {k: v for k, v in filtros.items() if v}
 
