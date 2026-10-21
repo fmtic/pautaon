@@ -127,15 +127,39 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="mb-3 col-md-3">
-                                <label class="form-label fw-bold">Data de Início</label>
-                                <input type="date" name="data_inicio" class="form-control"
-                                    value="{{ periodo_ativo.data_inicio if periodo_ativo else '' }}">
-                            </div>
-                            <div class="mb-3 col-md-3">
-                                <label class="form-label fw-bold">Data de Término</label>
-                                <input type="date" name="data_fim" class="form-control"
-                                    value="{{ periodo_ativo.data_fim if periodo_ativo else '' }}">
+                            {#
+                                Datas do curso: por padrão são herdadas do período letivo
+                                (basta escolher os dias da semana). O toggle abaixo libera
+                                a edição manual quando o curso não ocupa todo o período.
+                            #}
+                            <div class="mb-3 col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="toggle_datas_curso"
+                                        name="datas_personalizadas" value="1">
+                                    <label class="form-check-label fw-bold small" for="toggle_datas_curso">
+                                        Definir datas específicas para este curso
+                                    </label>
+                                </div>
+                                <div id="datas_periodo_info" class="alert alert-info py-2 px-3 small mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    As aulas ocorrerão entre <strong id="periodo_data_inicio">—</strong>
+                                    e <strong id="periodo_data_fim">—</strong>, nos dias selecionados.
+                                </div>
+                                <div id="datas_custom_area" class="row g-2 mt-2 d-none">
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold small">Início do Curso</label>
+                                        <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-bold small">Término do Curso</label>
+                                        <input type="date" name="data_fim" id="data_fim_custom" class="form-control">
+                                    </div>
+                                    <div class="col-12">
+                                        <small class="text-muted" id="datas_custom_help">
+                                            Selecione datas dentro dos limites do período letivo escolhido.
+                                        </small>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="mb-3 col-md-3">
@@ -171,6 +195,7 @@
 {% block scripts %}
 <script>
     window.periodosCentros = {{ periodos_centros | default ({}) | tojson }};
+    window.periodosDatas = {{ periodos_datas | default ({}) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>
 {% endblock %}

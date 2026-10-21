@@ -41,9 +41,9 @@
             <p class="mb-1">
                 <strong>Período:</strong>
                 {% if turma.data_inicio %}
-                {{ turma.data_inicio[8:10] }}/{{ turma.data_inicio[5:7] }}/{{ turma.data_inicio[0:4] }}
+                {{ turma.data_inicio.strftime('%d/%m/%Y') }}
                 até
-                {{ turma.data_fim[8:10] }}/{{ turma.data_fim[5:7] }}/{{ turma.data_fim[0:4] }}
+                {{ turma.data_fim.strftime('%d/%m/%Y') if turma.data_fim else '--'}}
                 {% else %}
                 <span class="text-muted small">Datas não cadastradas</span>
                 {% endif %}

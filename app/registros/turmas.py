@@ -91,6 +91,7 @@ def nova_turma():
         )
         turno = request.form.get("turno")
         centro_custo = request.form.get("centro_custo") or None
+        periodo_obj = None
 
         if periodo_letivo_id:
             periodo_obj = db.session.get(PeriodoLetivo, periodo_letivo_id)
@@ -124,6 +125,29 @@ def nova_turma():
                 flash("Centro de custo inválido para o período selecionado.", "warning")
                 return redirect(url_for("registros.nova_turma"))
 
+        # Datas do curso: quando não há datas específicas, o intervalo é
+        # herdado do período letivo. Se houver, validamos para que nenhuma
+        # data ultrapasse os limites do período ao qual a turma é vinculada.
+        datas_personalizadas = request.form.get("datas_personalizadas") == "1"
+        if datas_personalizadas:
+            data_inicio = parse_date(request.form.get("data_inicio"))
+            data_fim = parse_date(request.form.get("data_fim"))
+            if data_inicio and periodo_obj and data_inicio < periodo_obj.data_inicio:
+                flash(
+                    "A data de início não pode ser anterior ao início do período letivo.",
+                    "warning",
+                )
+                return redirect(url_for("registros.nova_turma"))
+            if data_fim and periodo_obj and data_fim > periodo_obj.data_fim:
+                flash(
+                    "A data de término não pode ser posterior ao fim do período letivo.",
+                    "warning",
+                )
+                return redirect(url_for("registros.nova_turma"))
+        else:
+            data_inicio = periodo_obj.data_inicio if periodo_obj else None
+            data_fim = periodo_obj.data_fim if periodo_obj else None
+
         nova = Turma(
             nome=nome_turma,
             programa=request.form.get("programa"),
@@ -131,8 +155,8 @@ def nova_turma():
             centro_custo=centro_custo,
             professor_id=professor_id,
             # Onda 2A: colunas são DATE/TIME. Parse explícito.
-            data_inicio=parse_date(request.form.get("data_inicio")),
-            data_fim=parse_date(request.form.get("data_fim")),
+            data_inicio=data_inicio,
+            data_fim=data_fim,
             hora_inicio=parse_time(request.form.get("hora_inicio")),
             hora_fim=parse_time(request.form.get("hora_fim")),
             dias_semana=dias_string,
@@ -182,6 +206,15 @@ def nova_turma():
         )
         for p in periodos
     }
+    # Intervalo de datas de cada período, usado pelo front para exibir o range
+    # herdado e restringir as datas específicas do curso.
+    periodos_datas = {
+        str(p.id): {
+            "inicio": p.data_inicio.isoformat() if p.data_inicio else None,
+            "fim": p.data_fim.isoformat() if p.data_fim else None,
+        }
+        for p in periodos
+    }
     return render_template(
         "turmas/nova.html",
         professores=professores,
@@ -189,6 +222,7 @@ def nova_turma():
         periodo_ativo=None,
         cursos=cursos,
         periodos_centros=periodos_centros,
+        periodos_datas=periodos_datas,
     )
 
 

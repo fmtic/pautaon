@@ -80,9 +80,9 @@
             {{ h.periodo }}<br>
             <small>
               {% if h.data_inicio != '—' %}
-                {{ h.data_inicio[8:10] }}/{{ h.data_inicio[5:7] }}/{{ h.data_inicio[0:4] }}
+                {{ h.data_inicio }}
                 a
-                {{ h.data_fim[8:10] }}/{{ h.data_fim[5:7] }}/{{ h.data_fim[0:4] }}
+                {{ h.data_fim }}
               {% else %}—{% endif %}
             </small>
           </td>

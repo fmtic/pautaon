@@ -73,7 +73,7 @@
 
                         <td class="text-center small">
                             <i class="bi bi-clock me-1"></i>
-                            {{ turma.hora_inicio or 'None' }} - {{ turma.hora_fim or 'None' }}
+                            {{ turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--' }} - {{ turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--' }}
                         </td>
 
                         <td class="text-end pe-4">
