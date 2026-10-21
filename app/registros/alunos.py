@@ -11,31 +11,6 @@ Cobre:
     - Desenturmação (remoção de vínculo)
     - Busca de instituições (autocomplete)
     - Impressão da ficha
-
-ONDA 2A
-    Datas/horas agora são tipos nativos (`date`/`time`). Parse feito via
-    `parse_date`; formatação via `.strftime()`.
-
-ONDA 2B
-    Comparações de `current_user.role` usam `UserRole`.
-
-ONDA 3B
-    - Cadastro e edição gravam nas tabelas estruturadas (`EnderecoAluno`,
-      `ResponsavelAluno`, `PerfilSocioeconomico`, `PerfilDiversidade`) e nas
-      colunas novas de `Aluno` (nome_mae, orgao_rg, etc.).
-    - Documentos entregues vão para `Aluno.documentos_entregues` (JSONB).
-    - Os JSONs legados (`_identificacao_json`, etc.) NÃO são mais escritos
-      pelo código novo; continuam existindo como fallback de leitura.
-    - `editar_aluno` e `imprimir_aluno` passam `perfil=get_perfil_completo()`
-      para o template.
-
-ONDA 3B-TER
-    - `editar_aluno` grava `Aluno.updated_by_id` e `Aluno.updated_by_name`
-      com os dados do usuário logado a cada POST bem-sucedido.
-    - Um registro `LogAcao` com `acao='Editar aluno'` é inserido na mesma
-      transação, permitindo rastrear o histórico de edições via
-      `log_acao` mesmo após sobrescrita dos campos de auditoria.
-================================================================================
 """
 
 from datetime import date, datetime, timedelta

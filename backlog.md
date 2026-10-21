@@ -31,6 +31,56 @@ Refatoração visual da interface, ajustes no planejamento pedagógico e criaç�
 
 `app/main/home.py`, `app/templates/termos/termos_servico.html`, `app/templates/termos/politica_privacidade.html`, `app/templates/login.html`, `app/templates/admin/painel_admin.html`, `app/templates/dashboard/{index,professor,secretaria}.html`, `app/templates/relatorios/{geral,relatorio_alunos}.html`, `app/templates/conselho/perguntas.html`, `app/planejamento` (templates/JS/CSS de planejamento e impressão de temas), `app/registros/core.py` e `app/registros/periodos.py`.
 
+### Injeção do backup de produção no ambiente local (operação)
+
+- Restaurado o dump `backup_20261020_204018.sql` (pg_dump 17.2) no PostgreSQL local (servidor 18.6), banco `pautaon`.
+- Como o dump não traz `DROP`/`CREATE DATABASE`, o banco foi recriado vazio antes do import (`DROP`/`CREATE DATABASE pautaon`), executado com `ON_ERROR_STOP=1` e seguido de `ANALYZE`.
+- Backup de segurança do estado local gerado antes da operação em `instance/backups/local_antes_do_inject_20261020.sql`.
+- Verificação pós-import: `alembic_version=c4d5e6f7a8b9`; usuarios=18, cursos=11, turmas=1, alunos=1154. Observação: o dump contém apenas o banco — `instance/uploads/` (fotos/documentos) precisa ser copiado à parte.
+
+### BI — análise da Central de Indicadores (análise)
+
+- Mapeado o fluxo UI → rotas (`bi_routes.py`) → executor (`bi.py`) → funções (`bi_alunos.py`). Constatado que a UI expõe só 3 filtros (Período, Unidade, Turno), enquanto as funções aceitam 7.
+- Filtro `turno` é funcional apenas nos indicadores baseados em status; nos demais é descartado silenciosamente por `inspect.signature` (filtro decorativo). `curso_id`/`turma_id`/`professor_id`/`data_*` são parâmetros mortos (a UI não os envia).
+- Semântica divergente de "Todos"/período vigente entre indicadores de status e de query; `INS-006`/`INS-007` constam no catálogo mas não são implementados, gerando erro 400 com mensagem enganosa.
+- Identificada **falha crítica de restrição por unidade**: `_escopar_unidade_status` só impunha escopo ao subconjunto `INDICADORES_STATUS_ALUNO`; os demais ~50 indicadores confiavam no `unidade_id` vindo da querystring, permitindo leitura entre unidades (IDOR) e visão global ao selecionar "Todas".
+
+### BI — correção de restrição por unidade (`app/relatorios/bi_routes.py`)
+
+- Guardião único `_escopar_unidade(filtros)` passa a impor `unidade_id = get_unidade_id()` a **todos** os indicadores. Unidade alheia ou ausente sem vínculo → `403`; "Todas"/`None` é forçado para a própria unidade do usuário.
+- Preservado o bypass global de `admin`/`gerencia` via constante `_ROLES_GLOBAIS_BI`. Removido o import órfão de `INDICADORES_STATUS_ALUNO`; atualizados os 2 pontos de chamada.
+- Mudança contida na camada de rota: `get_unidade_id` (uso global) e as funções de `bi_alunos.py`/`executar_indicador` ficaram intocados. Confirmado que as funções filtram de fato por `unidade_id`, então a correção não é no-op.
+- Sem regressão: os testes de BI já falhavam antes pelo listener de auditoria (`flush` de ORM sem `current_user` no setup), não pela alteração. Lógica validada com 8 cenários sob mock. Verificado no banco que nenhum papel restrito (2 pedagógico, 5 secretaria) tem `unidade_id` nulo — risco de lockout nulo.
+
+### BI — encadeamento dos filtros Unidade → Período (`app/templates/relatorios/bi.html`)
+
+- Filtros reordenados para **Unidade → Período Letivo → Turno**.
+- Cada `<option>` de período agora carrega `data-unidade`; um listener `change` na unidade repopula o seletor de período exibindo apenas os períodos daquela unidade.
+- "Todos" do período passa a significar "Todos os períodos desta unidade"; com Unidade="Todas" a lista volta a ser completa. Trocar de unidade reseta automaticamente um período incompatível — elimina combinações inválidas (corretamente, já que o backend protegia mas devolvia 400/vazio).
+- Mesmos `id`s preservados, então as leituras em `btnExecutar` e `btnExportarXlsx` seguem funcionando. Sintaxe Jinja2 validada (`JINJA_OK`).
+
+### Análises complementares (sem alteração de código)
+
+- Estudo de impacto para permitir C.H. de aula em horas + minutos (incrementos de 15 min) e o reflexo no cálculo da C.H. Total e na exposição do certificado. Recomendação: armazenar minutos como inteiro (Opção A) para preservar exatidão, com formatador único, migração `horas × 60` e ajustes em rotas/UI/certificado.
+
+### Notificações por e-mail (criação de usuário e reset de senha)
+
+- Novo módulo `app/utils/disparo_email.py` com `send_email()`/`send_async_email()`: dispara e-mails em uma `Thread` em background (assíncrono, sem travar a requisição), usando `Flask-Mail` (nova extensão `mail` registrada em `app/extensions.py` e inicializada em `app/__init__.py`).
+- `config.py` ganhou as chaves SMTP (`MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`/`MAIL_USE_SSL`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_DEFAULT_SENDER`) lidas de `.env` (`smtp.gmail.com:587`, TLS, conta Google Workspace).
+- `auth.cadastrar_usuario` (POST `/admin/cadastrar`) agora renderiza `emails/novo_usuario.html` (nome, e-mail e senha temporária) e chama `send_email()` logo após o `commit()`/`register_security_log("Cadastro Local", ...)`.
+- `auth.resetar_senha` agora renderiza `emails/senha_redefinida.html` (nome e nova senha temporária) e chama `send_email()` logo após o `register_security_log("Reset de Senha", ...)`.
+- Templates criados em `app/templates/emails/`: `base_email.html` (layout compartilhado), `novo_usuario.html` e `senha_redefinida.html` — todos avisando que a troca de senha é obrigatória no primeiro acesso.
+- Falha de envio de e-mail: `send_async_email()` captura a exceção, grava `app.logger.error(...)` e registra um `LogAcao` com `acao="Erro E-mail"` (via `_gravar_log_background()`, seguro dentro da thread com `app.app_context()`), além de disparar automaticamente um e-mail de alerta para `ADMIN_EMAIL` (novo, em `config.py`/`.env`) através de `_notificar_admin_sobre_falha()` — sem recursão infinita, controlado pelo flag `is_alert_email`.
+- Sucesso no envio também é registrado em `LogAcao` com `acao="Disparo de E-mail"`.
+- Rota de teste criada: `GET /main/teste-email?para=...` (`app/main/rota_disparo_email.py`) para validar a integração SMTP fora do fluxo de cadastro/reset, respondendo em JSON.
+- O contexto do usuário atual (`id`/`nome`/`unidade_id`/IP) é capturado ANTES de abrir a thread (dentro do request ativo), pois `current_user`/`request` não existem fora do contexto de requisição — evita repetir o mesmo tipo de erro já documentado no listener de auditoria.
+- Pendência de deploy: `Flask-Mail==0.10.0` está instalado no `.venv` local, mas ainda não foi adicionado ao `requirements.txt` — precisa entrar antes de um novo deploy em produção, senão o `import flask_mail` falhará no servidor.
+- Status: ainda não commitado (working tree) — `app/utils/disparo_email.py`, `app/main/rota_disparo_email.py` e `app/templates/emails/` constam como não rastreados no `git status`; `app/auth.py`, `config.py`, `app/extensions.py`, `app/__init__.py` e `app/main/__init__.py` estão modificados aguardando commit.
+
+### Arquivos principais (neste acréscimo)
+
+`app/relatorios/bi_routes.py`, `app/templates/relatorios/bi.html`, `app/utils/disparo_email.py`, `app/main/rota_disparo_email.py`, `app/templates/emails/{base_email,novo_usuario,senha_redefinida}.html`, `app/auth.py`, `app/extensions.py`, `app/__init__.py`, `app/main/__init__.py` e `config.py`. Alterações ainda não commitadas (working tree).
+
 ---
 
 ### Alterações do dia — 19/10/2026
