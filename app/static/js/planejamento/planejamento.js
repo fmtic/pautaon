@@ -63,6 +63,7 @@
      ───────────────────────────────────────────── */
   (function initCursos() {
     const tbody = document.getElementById('cursosTbody');
+    const tbodyInativos = document.getElementById('cursosInativosTbody');
     if (!tbody) return;
     const modal = document.getElementById('modalCursos');
 
@@ -79,8 +80,10 @@
 
     // URLs do backend
     const URL_NOVO    = '/cursos/novo';
+    const URL_INATIVOS = '/cursos/inativos';
     const URL_EDITAR  = (id) => `/cursos/${encodeURIComponent(id)}/editar`;
-    const URL_EXCLUIR = (id) => `/cursos/${encodeURIComponent(id)}/excluir`;
+    const URL_INATIVAR = (id) => `/cursos/${encodeURIComponent(id)}/inativar`;
+    const URL_REATIVAR = (id) => `/cursos/${encodeURIComponent(id)}/reativar`;
 
     function showMsg(msg, tipo = 'danger') {
       if (!formMsg) return;
@@ -107,22 +110,66 @@
     function buildRow(c) {
       const tr = document.createElement('tr');
       tr.dataset.id = c.id;
-      tr.innerHTML = `
-        <td class="ps-3 fw-semibold">${c.nome}</td>
-        <td class="text-muted small">${c.descricao || '—'}</td>
-        <td class="text-center small" title="${c.dias_aula || 0} dias de aula no período">${c.carga_total_fmt || '—'}</td>
-        <td class="text-center">
-          <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
-            data-id="${c.id}" data-nome="${c.nome}" data-desc="${c.descricao || ''}"
-            title="Editar">
-            <i class="bi bi-pencil"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-danger border-0 btn-excluir-curso"
-            data-id="${c.id}" data-nome="${c.nome}" title="Excluir">
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>`;
+      const nome = document.createElement('td');
+      nome.className = 'ps-3 fw-semibold';
+      nome.textContent = c.nome;
+      const descricao = document.createElement('td');
+      descricao.className = 'text-muted small';
+      descricao.textContent = c.descricao || '—';
+      const status = document.createElement('td');
+      status.className = 'text-center';
+      const badge = document.createElement('span');
+      badge.className = 'badge bg-success-subtle text-success-emphasis';
+      badge.textContent = 'Ativo';
+      status.appendChild(badge);
+      const acoes = document.createElement('td');
+      acoes.className = 'text-center';
+      acoes.append(
+        buildButton('btn-outline-primary', 'btn-editar-curso', 'Editar curso', 'pencil', c),
+        buildButton('btn-outline-secondary', 'btn-inativar-curso', 'Inativar curso', 'archive', c),
+      );
+      tr.append(nome, descricao, status, acoes);
       return tr;
+    }
+
+    function buildInactiveRow(c) {
+      const tr = document.createElement('tr');
+      tr.dataset.id = c.id;
+      const nome = document.createElement('td');
+      nome.className = 'ps-3 fw-semibold';
+      nome.textContent = c.nome;
+      const descricao = document.createElement('td');
+      descricao.className = 'text-muted small';
+      descricao.textContent = c.descricao || '—';
+      const status = document.createElement('td');
+      status.className = 'text-center';
+      const badge = document.createElement('span');
+      badge.className = 'badge bg-secondary-subtle text-secondary-emphasis';
+      badge.textContent = 'Inativo';
+      status.appendChild(badge);
+      const acoes = document.createElement('td');
+      acoes.className = 'text-center';
+      acoes.appendChild(
+        buildButton('btn-outline-success', 'btn-reativar-curso', 'Reativar curso', 'arrow-counterclockwise', c),
+      );
+      tr.append(nome, descricao, status, acoes);
+      return tr;
+    }
+
+    function buildButton(style, action, title, icon, curso) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `btn btn-sm ${style} border-0 ${action}`;
+      button.title = title;
+      button.dataset.id = curso.id;
+      button.dataset.nome = curso.nome;
+      if (action === 'btn-editar-curso') {
+        button.dataset.desc = curso.descricao || '';
+      }
+      const iconElement = document.createElement('i');
+      iconElement.className = `bi bi-${icon}`;
+      button.appendChild(iconElement);
+      return button;
     }
 
     function removeVazio() {
@@ -131,20 +178,37 @@
 
     async function carregarCursos() {
       try {
-        const response = await fetch('/cursos', { headers: { Accept: 'application/json' } });
-        const cursos = await readJsonResponse(response);
+        const [ativosResponse, inativosResponse] = await Promise.all([
+          fetch('/cursos', { headers: { Accept: 'application/json' } }),
+          fetch(URL_INATIVOS, { headers: { Accept: 'application/json' } }),
+        ]);
+        const [cursos, cursosInativos] = await Promise.all([
+          readJsonResponse(ativosResponse),
+          readJsonResponse(inativosResponse),
+        ]);
         tbody.replaceChildren();
         if (!cursos.length) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="5" class="text-center text-muted py-4">
+            <td colspan="4" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
-              Nenhum curso cadastrado para esta unidade.
+              Nenhum curso ativo para esta unidade.
             </td></tr>`;
-          return;
+        } else {
+          cursos.forEach(curso => tbody.appendChild(buildRow(curso)));
         }
-        cursos.forEach(curso => tbody.appendChild(buildRow(curso)));
+        if (tbodyInativos) {
+          tbodyInativos.replaceChildren();
+          if (!cursosInativos.length) {
+            tbodyInativos.innerHTML = `<tr id="cursosInativosVazio">
+              <td colspan="4" class="text-center text-muted py-3">Nenhum curso inativo.</td>
+            </tr>`;
+          } else {
+            cursosInativos.forEach(curso => tbodyInativos.appendChild(buildInactiveRow(curso)));
+          }
+        }
       } catch (error) {
         console.warn('[planejamento] Não foi possível atualizar a lista de cursos.', error);
+        showMsg(error.message || 'Não foi possível carregar os cursos.');
       }
     }
 
@@ -198,41 +262,80 @@
       });
     }
 
-    /* ── Editar / Excluir (delegação) ── */
+    /* ── Editar / Inativar (delegação) ── */
     tbody.addEventListener('click', async e => {
       const btnEd = e.target.closest('.btn-editar-curso');
       if (btnEd) {
         editId.value    = btnEd.dataset.id;
         editNome.value  = btnEd.dataset.nome;
+        editNome.dataset.nomeOriginal = btnEd.dataset.nome;
         editDesc.value  = btnEd.dataset.desc;
         painelEdit.classList.remove('d-none');
         editNome.focus();
         return;
       }
 
-      const btnEx = e.target.closest('.btn-excluir-curso');
-      if (!btnEx) return;
+      const btnInativar = e.target.closest('.btn-inativar-curso');
+      if (!btnInativar) return;
 
-      if (!confirm(`Excluir o curso "${btnEx.dataset.nome}"?`)) return;
+      if (!confirm(
+        `Inativar o curso "${btnInativar.dataset.nome}"?\n\n` +
+        'Ele deixará de aparecer para novos planejamentos e turmas. ' +
+        'Os temas e o histórico existente serão preservados.'
+      )) return;
 
       try {
-        const response = await fetch(URL_EXCLUIR(btnEx.dataset.id), {
+        const response = await fetch(URL_INATIVAR(btnInativar.dataset.id), {
           method: 'POST',
           headers: csrfHeaders(),
         });
-        await readJsonResponse(response);
-        tbody.querySelector(`tr[data-id="${btnEx.dataset.id}"]`)?.remove();
-        sincronizarSelects({ id: btnEx.dataset.id }, true);
+        const data = await readJsonResponse(response);
+        const row = tbody.querySelector(`tr[data-id="${btnInativar.dataset.id}"]`);
+        row?.remove();
+        tbodyInativos?.appendChild(buildInactiveRow({
+          id: btnInativar.dataset.id,
+          nome: btnInativar.dataset.nome,
+          descricao: row?.children[1]?.textContent === '—' ? '' : row?.children[1]?.textContent || '',
+        }));
+        sincronizarSelects({ id: btnInativar.dataset.id }, true);
         if (!tbody.querySelector('tr[data-id]')) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="5" class="text-center text-muted py-4">
+            <td colspan="4" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
-              Nenhum curso cadastrado para esta unidade.
+              Nenhum curso ativo para esta unidade.
             </td></tr>`;
         }
-        showMsg('Curso excluído.', 'success');
+        document.getElementById('cursosInativosVazio')?.remove();
+        showMsg(data.message || 'Curso inativado. Temas e histórico preservados.', 'success');
       } catch (error) {
-        showMsg(error.message || 'Erro ao excluir curso.');
+        showMsg(error.message || 'Erro ao inativar curso.');
+      }
+    });
+
+    tbodyInativos?.addEventListener('click', async e => {
+      const btnReativar = e.target.closest('.btn-reativar-curso');
+      if (!btnReativar) return;
+      if (!confirm(`Reativar o curso "${btnReativar.dataset.nome}" e disponibilizá-lo para novos planejamentos e turmas?`)) return;
+
+      try {
+        const response = await fetch(URL_REATIVAR(btnReativar.dataset.id), {
+          method: 'POST',
+          headers: csrfHeaders(),
+        });
+        const curso = await readJsonResponse(response);
+        btnReativar.closest('tr')?.remove();
+        document.getElementById('cursosInativosVazio')?.remove();
+        removeVazio();
+        tbody.appendChild(buildRow(curso));
+        sincronizarSelects(curso);
+        if (!tbodyInativos.querySelector('tr[data-id]')) {
+          tbodyInativos.innerHTML = `<tr id="cursosInativosVazio">
+            <td colspan="4" class="text-center text-muted py-3">Nenhum curso inativo.</td>
+          </tr>`;
+        }
+        showMsg('Curso reativado. Os temas preservados voltaram a ficar disponíveis.', 'success');
+      } catch (error) {
+        showMsg(error.message || 'Erro ao reativar curso.');
       }
     });
 
@@ -241,6 +344,13 @@
       btnSalvarEd.addEventListener('click', async () => {
         const nome = editNome.value.trim();
         if (!nome) { showMsg('Nome obrigatório.'); return; }
+        if (
+          nome !== editNome.dataset.nomeOriginal &&
+          !confirm(
+            'Alterar o nome do curso atualizará sua exibição em todas as turmas vinculadas, ' +
+            'inclusive nas de períodos encerrados e em futuras emissões de certificados. Deseja continuar?'
+          )
+        ) return;
 
         try {
           const res = await fetch(URL_EDITAR(editId.value), {

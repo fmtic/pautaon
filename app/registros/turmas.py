@@ -232,6 +232,27 @@ def nova_turma():
             data_inicio = periodo_obj.data_inicio if periodo_obj else None
             data_fim = periodo_obj.data_fim if periodo_obj else None
 
+        curso_id_raw = request.form.get("curso_id")
+        curso_id = _parse_int_arg(curso_id_raw)
+        if curso_id_raw and curso_id is None:
+            flash("Curso inválido.", "warning")
+            return redirect(url_for("registros.nova_turma"))
+        if curso_id is not None:
+            unidade_curso_id = unidade_id or (
+                periodo_obj.unidade_id if periodo_obj else None
+            )
+            curso = Curso.query.filter_by(
+                id=curso_id,
+                unidade_id=unidade_curso_id,
+                ativo=True,
+            ).first()
+            if curso is None:
+                flash(
+                    "Selecione um curso ativo da unidade para criar a turma.",
+                    "warning",
+                )
+                return redirect(url_for("registros.nova_turma"))
+
         nova = Turma(
             nome=nome_turma,
             programa=request.form.get("programa"),
@@ -247,11 +268,7 @@ def nova_turma():
             periodo_letivo_id=periodo_letivo_id,
             unidade_id=unidade_id,
             ordenacao=obter_proximo_ordenacao(periodo_letivo_id),
-            curso_id=(
-                int(request.form.get("curso_id"))
-                if request.form.get("curso_id")
-                else None
-            ),
+            curso_id=curso_id,
             ativo=True,
         )
 
@@ -538,7 +555,24 @@ def editar_turma(id):
                 )
 
             curso_id = request.form.get("curso_id")
-            turma_obj.curso_id = int(curso_id) if curso_id else None
+            novo_curso_id = _parse_int_arg(curso_id)
+            if curso_id and novo_curso_id is None:
+                flash("Curso inválido.", "warning")
+                return redirect(url_for("registros.editar_turma", id=id))
+            if novo_curso_id is not None:
+                curso = db.get_or_404(Curso, novo_curso_id)
+                mesma_unidade = curso.unidade_id == turma_obj.unidade_id
+                curso_atual_inativo = (
+                    novo_curso_id == turma_obj.curso_id and not curso.ativo
+                )
+                if not mesma_unidade or (not curso.ativo and not curso_atual_inativo):
+                    flash(
+                        "Selecione um curso ativo da unidade. O curso inativo só pode "
+                        "ser mantido na turma que já possui esse vínculo.",
+                        "warning",
+                    )
+                    return redirect(url_for("registros.editar_turma", id=id))
+            turma_obj.curso_id = novo_curso_id
 
             db.session.commit()
 
@@ -590,6 +624,9 @@ def editar_turma(id):
         .order_by(Curso.nome)
         .all()
     )
+    if turma_obj.curso and not turma_obj.curso.ativo:
+        cursos.append(turma_obj.curso)
+        cursos.sort(key=lambda curso: curso.nome.casefold())
     periodos_centros_edit = {
         str(p.id): (
             [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []

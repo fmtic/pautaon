@@ -1,3 +1,64 @@
+### Alterações do dia — 22/10/2026
+
+- Data da intervenção: 22/10/2026
+- Conclusão: implementado e validado; alterações de ciclo de vida dos cursos ainda não commitadas.
+
+### Carga horária por turma e catálogo de cursos
+
+- Removida a carga horária própria do curso; o cálculo passa a ser derivado por turma, a partir de horários, datas, dias da semana e bloqueios do calendário.
+- Criado `app/utils/formatters.py` com `formatar_ch()` para apresentar minutos em formato legível.
+- `app/models/academico.py` e `app/models/pedagogico.py`: ajustados os modelos e relacionamentos para calcular/exibir a carga horária por turma; a carga horária não é mais um atributo editável do curso.
+- Criada a migration `d1e2f3a4b5c6_onda3c_drop_curso_carga_horaria.py` para remover a coluna legada de carga horária do curso.
+- `app/registros/turmas.py`: adicionados cálculos de carga horária, filtros e dados do catálogo, com separação entre turmas de períodos vigentes e concluídos e suporte ao escopo de unidade.
+- `app/templates/turmas/nova.html`, `editar.html` e `app/static/js/turmas/nova.js`, `editar.js`: incluída estimativa da carga horária durante o preenchimento; na edição, alterações de datas, dias ou horários são sinalizadas, e inconsistências são comunicadas.
+- `app/templates/turmas/listar.html`: incluídas colunas de carga horária por aula e total.
+- `app/registros/periodos.py` e `app/templates/periodos/certificado.html`: certificados passam a exibir a carga horária total formatada em vez dos minutos brutos.
+- `app/templates/turmas/carga_horaria_curso.html` e `app/static/css/turmas/carga_horaria_curso.css`: criado o catálogo com filtros, temas, dados de professores/conclusão e apresentação para impressão.
+- `app/templates/planejamento/planejamento.html`: links para consultar turmas e carga horária a partir dos cursos e temas.
+- Criados testes para formatador, cálculos de carga horária, filtros e catálogo: `tests/test_carga_horaria.py`, `tests/test_carga_horaria_curso.py` e `tests/test_filtros_turmas.py`.
+- Criado `docs/Plano_Acao_Carga_Horaria.md` com o escopo e as etapas de implementação.
+
+### Modo de manutenção do sistema
+
+- `app/services/maintenance.py`: centralizado o estado global persistido em `ConfiguracaoSistema` sob a chave `manutencao_ativa`.
+- `app/auth.py`: adicionada rota POST administrativa para ativar/desativar a manutenção e disponibilizar seu estado na tela de auditoria.
+- `app/templates/admin/logs.html`: adicionado painel de status e controle com proteção CSRF.
+- `app/__init__.py`: durante a manutenção, usuários não administradores recebem `sistema_indisponivel.html` com HTTP 503; administradores mantêm acesso para poder desativá-la.
+- `tests/test_maintenance.py`: cobertura de ativação, desativação, bloqueio de usuários e autorização administrativa.
+
+### Ciclo de vida de cursos e preservação do histórico
+
+- No modal de cursos, substituída a ação ambígua “Excluir” por “Inativar”. A operação continua sendo lógica: o registro do curso e os vínculos de turmas/temas permanecem no banco.
+- Cursos inativos deixam de aparecer no planejamento operacional, nos filtros de temas e nas opções de novas turmas. A criação de temas vinculados a cursos inativos é rejeitada no servidor.
+- Temas não são inativados em cascata: seu estado e conteúdo são preservados. Ao reativar o curso, seus temas ativos voltam a ficar disponíveis.
+- O modal apresenta cursos ativos e inativos em listas separadas; cursos inativos podem ser reativados. A lista geral de cursos continua retornando apenas ativos.
+- Na edição de turma, o vínculo existente a um curso já inativo pode ser mantido, sem permitir vinculá-lo a uma turma diferente. Cursos inativos não podem ser escolhidos para novas turmas.
+- Ao mudar o nome do curso, o modal pede confirmação e informa que a alteração repercute nas turmas vinculadas, inclusive em períodos encerrados e em futuras emissões de certificados.
+- Atualizados `app/registros/core.py`, `app/registros/turmas.py`, `app/static/js/planejamento/planejamento.js`, `app/templates/planejamento/planejamento.html` e `app/templates/turmas/editar.html`.
+- `tests/test_security_regressions.py`: adicionados testes para preservação/reativação dos temas e rejeição de novos vínculos com cursos inativos.
+
+### Ajustes adicionais no commit do dia
+
+- `app/__init__.py`: registrado o filtro Jinja `formatar_ch`.
+- `app/models/MER.md` e modelos relacionados atualizados para refletir a estrutura e os campos acadêmicos revisados.
+- Ajustados formulários/templates de login, troca de senha, termos, certificado e telas de turmas/planejamento.
+- Removidos arquivos JavaScript legados de alunos e um backup de banco obsoleto versionado; removida a configuração `.continue/mcpServers/new-mcp-server.yaml`.
+- `backlog.md` recebeu o registro da entrega de carga horária no commit do dia; esta entrada documenta a consolidação em `backlog_desenvolvimento.md`.
+
+### Testes e verificações
+
+- Testes de manutenção: **4 aprovados**.
+- Testes focados do ciclo de vida do curso e dos temas: **3 aprovados**.
+- Teste do catálogo/carga horária: **1 aprovado**.
+- `node --check` para `app/static/js/planejamento/planejamento.js`, `compileall` dos módulos Python alterados e `git diff --check`: aprovados.
+- Na suíte completa `tests/test_security_regressions.py`, permaneceram 2 falhas em assertions preexistentes relacionadas a isolamento entre unidades e carga horária, já observadas antes das alterações de 22/10.
+
+### Arquivos principais
+
+`app/services/maintenance.py`, `app/auth.py`, `app/__init__.py`, `app/registros/core.py`, `app/registros/turmas.py`, `app/registros/periodos.py`, `app/models/academico.py`, `app/models/pedagogico.py`, `app/utils/formatters.py`, `app/static/js/planejamento/planejamento.js`, `app/static/js/turmas/nova.js`, `app/static/js/turmas/editar.js`, `app/templates/admin/logs.html`, `app/templates/planejamento/planejamento.html`, `app/templates/turmas/nova.html`, `app/templates/turmas/editar.html`, `app/templates/turmas/listar.html`, `app/templates/turmas/carga_horaria_curso.html`, `app/templates/periodos/certificado.html`, `migrations/versions/d1e2f3a4b5c6_onda3c_drop_curso_carga_horaria.py`, `tests/test_maintenance.py`, `tests/test_carga_horaria.py`, `tests/test_carga_horaria_curso.py`, `tests/test_filtros_turmas.py` e `tests/test_security_regressions.py`.
+
+---
+
 ### Alterações do dia — 21/10/2026
 
 - Data da intervenção: 21/10/2026

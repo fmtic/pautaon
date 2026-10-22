@@ -61,7 +61,9 @@
                 <select name="curso_id" class="form-select">
                     <option value="">-- Sem curso vinculado --</option>
                     {% for c in cursos %}
-                    <option value="{{ c.id }}" {% if turma.curso_id == c.id %}selected{% endif %}>{{ c.nome }}</option>
+                    <option value="{{ c.id }}" {% if turma.curso_id == c.id %}selected{% endif %}>
+                        {{ c.nome }}{% if not c.ativo %} — inativo (vínculo atual){% endif %}
+                    </option>
                     {% endfor %}
                 </select>
                 {% if turma.curso %}

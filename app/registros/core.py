@@ -386,6 +386,28 @@ def listar_cursos():
     ])
 
 
+@bp.route('/cursos/inativos', methods=['GET'])
+@login_required
+def listar_cursos_inativos():
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    unidade_id = get_unidade_id()
+    if not unidade_id:
+        abort(403)
+    cursos = Curso.query.filter_by(
+        ativo=False,
+        unidade_id=unidade_id,
+    ).order_by(Curso.nome).all()
+    return jsonify([
+        {
+            'id': curso.id,
+            'nome': curso.nome,
+            'descricao': curso.descricao or '',
+        }
+        for curso in cursos
+    ])
+
+
 @bp.route('/cursos/novo', methods=['POST'])
 @login_required
 def novo_curso():
@@ -439,6 +461,11 @@ def editar_curso(curso_id):
     curso = db.get_or_404(Curso, curso_id)
     if current_user.role not in (UserRole.ADMIN, UserRole.GERENCIA):
         assert_unidade_context(curso.unidade_id, unidade_id)
+    if not curso.ativo:
+        return jsonify({
+            'success': False,
+            'message': 'Reative o curso antes de editá-lo.',
+        }), 409
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -475,24 +502,67 @@ def editar_curso(curso_id):
         return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
 
 
-@bp.route('/cursos/<int:curso_id>/excluir', methods=['POST'])
+@bp.route('/cursos/<int:curso_id>/inativar', methods=['POST'])
 @login_required
-def excluir_curso(curso_id):
+def inativar_curso(curso_id):
     if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
     assert_unidade_context(curso.unidade_id, unidade_id)
 
+    if not curso.ativo:
+        return jsonify({
+            'success': False,
+            'message': 'Este curso já está inativo.',
+        }), 409
+
     curso.ativo = False
     try:
         db.session.commit()
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'message': 'Curso inativado. Os temas e o histórico foram preservados.',
+        })
     except Exception as e:
         db.session.rollback()
         from app.utils.errors import log_error_code
 
-        code = log_error_code(e, location='registros.excluir_curso', hint='db')
+        code = log_error_code(e, location='registros.inativar_curso', hint='db')
+        return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
+
+
+@bp.route('/cursos/<int:curso_id>/reativar', methods=['POST'])
+@login_required
+def reativar_curso(curso_id):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    unidade_id = get_unidade_id()
+    curso = db.get_or_404(Curso, curso_id)
+    assert_unidade_context(curso.unidade_id, unidade_id)
+
+    if curso.ativo:
+        return jsonify({
+            'success': False,
+            'message': 'Este curso já está ativo.',
+        }), 409
+
+    curso.ativo = True
+    try:
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'id': curso.id,
+            'nome': curso.nome,
+            'descricao': curso.descricao or '',
+            'dias_aula': 0,
+            'carga_total_fmt': '—',
+        })
+    except Exception as e:
+        db.session.rollback()
+        from app.utils.errors import log_error_code
+
+        code = log_error_code(e, location='registros.reativar_curso', hint='db')
         return jsonify({'success': False, 'message': 'Erro interno. Contate o suporte.', 'code': code}), 500
 
 
@@ -547,6 +617,12 @@ def planejamento():
                 curso = db.get_or_404(Curso, int(curso_id))
                 if current_user.role != UserRole.ADMIN:
                     assert_unidade_context(curso.unidade_id, unidade_id)
+                if not curso.ativo:
+                    flash(
+                        "Não é possível adicionar temas a um curso inativo. Reative-o primeiro.",
+                        "warning",
+                    )
+                    return redirect(url_for('registros.planejamento'))
 
                 ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
                     curso_id=int(curso_id)
@@ -591,7 +667,8 @@ def planejamento():
     busca_tema = request.args.get('q', '').strip()
 
     q_temas = TemaAula.query.join(Curso, TemaAula.curso_id == Curso.id).filter(
-        TemaAula.curso_id.isnot(None)
+        TemaAula.curso_id.isnot(None),
+        Curso.ativo.is_(True),
     )
     if unidade_id:
         q_temas = q_temas.filter(Curso.unidade_id == unidade_id)
@@ -659,10 +736,13 @@ def editar_tema(id):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
+    curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+    if curso and not curso.ativo:
+        flash("Reative o curso antes de editar seus temas.", "warning")
+        return redirect(url_for('registros.planejamento'))
     if current_user.role != UserRole.ADMIN:
         if current_user.role == UserRole.SECRETARIA and unidade_id is None:
             abort(403)
-        curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
         assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
 
     novo_titulo = request.form.get('titulo', '').strip()
@@ -702,10 +782,13 @@ def inativar_tema(id):
         abort(403)
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
+    curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+    if curso and not curso.ativo:
+        flash("Reative o curso antes de alterar o status de seus temas.", "warning")
+        return redirect(url_for('registros.planejamento'))
     if current_user.role != UserRole.ADMIN:
         if current_user.role == UserRole.SECRETARIA and unidade_id is None:
             abort(403)
-        curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
         assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     try:
         tema.ativo = not tema.ativo

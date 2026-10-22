@@ -4,7 +4,7 @@ from werkzeug.exceptions import Forbidden
 
 from app import create_app
 from app.database import db
-from app.models import User, Unidade, Aluno, Turma, Curso
+from app.models import User, Unidade, Aluno, Turma, Curso, TemaAula
 from app.registros.shared import assert_unidade_context
 from config import Config
 
@@ -259,7 +259,7 @@ def test_cursos_exigem_unidade_e_isolam_cursos_de_outra_unidade(client, app):
     )
     assert response.status_code == 403
 
-    response = client.post(f"/cursos/{curso_b_id}/excluir")
+    response = client.post(f"/cursos/{curso_b_id}/inativar")
     assert response.status_code == 403
 
     with client.session_transaction() as sess:
@@ -270,10 +270,10 @@ def test_cursos_exigem_unidade_e_isolam_cursos_de_outra_unidade(client, app):
     assert client.post(
         f"/cursos/{curso_a_id}/editar", json={"nome": "Alterado"}
     ).status_code == 403
-    assert client.post(f"/cursos/{curso_a_id}/excluir").status_code == 403
+    assert client.post(f"/cursos/{curso_a_id}/inativar").status_code == 403
 
 
-def test_curso_criar_editar_excluir_e_validar_carga_horaria(client, app):
+def test_curso_criar_editar_inativar_e_validar_carga_horaria(client, app):
     curso_a_id, _ = _criar_admin_cursos(client, app)
 
     response = client.post(
@@ -297,7 +297,7 @@ def test_curso_criar_editar_excluir_e_validar_carga_horaria(client, app):
     assert response.json["nome"] == "Curso editado"
     assert response.json["carga_horaria"] == 60
 
-    response = client.post(f"/cursos/{curso_a_id}/excluir")
+    response = client.post(f"/cursos/{curso_a_id}/inativar")
     assert response.status_code == 200
     assert response.json["success"] is True
 
@@ -308,3 +308,80 @@ def test_curso_criar_editar_excluir_e_validar_carga_horaria(client, app):
     response = client.get("/cursos")
     assert response.status_code == 200
     assert [curso["id"] for curso in response.json] == [curso_novo_id]
+
+
+def test_inativar_curso_preserva_temas_e_permite_reativacao(client, app):
+    curso_id, _ = _criar_admin_cursos(client, app)
+    with app.app_context():
+        curso = db.session.get(Curso, curso_id)
+        tema = TemaAula(
+            curso_id=curso.id,
+            unidade_id=curso.unidade_id,
+            titulo="Tema histórico preservado",
+            ordem=1,
+            ativo=True,
+        )
+        db.session.add(tema)
+        db.session.commit()
+        tema_id = tema.id
+
+    response = client.post(f"/cursos/{curso_id}/inativar")
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    assert "preservados" in response.json["message"]
+    assert client.get("/cursos").json == []
+    assert [curso["id"] for curso in client.get("/cursos/inativos").json] == [curso_id]
+
+    response = client.get("/planejamento")
+    assert response.status_code == 200
+    assert b"Tema hist" not in response.data
+
+    response = client.post(f"/cursos/{curso_id}/reativar")
+    assert response.status_code == 200
+    assert [curso["id"] for curso in client.get("/cursos").json] == [curso_id]
+
+    response = client.get("/planejamento")
+    assert "Tema histórico preservado".encode() in response.data
+
+    with app.app_context():
+        curso = db.session.get(Curso, curso_id)
+        tema = db.session.get(TemaAula, tema_id)
+        assert curso.ativo is True
+        assert tema.ativo is True
+        assert tema.titulo == "Tema histórico preservado"
+
+
+def test_nao_permite_criar_tema_em_curso_inativo(client, app):
+    curso_id, _ = _criar_admin_cursos(client, app)
+    client.post(f"/cursos/{curso_id}/inativar")
+
+    response = client.post(
+        "/planejamento",
+        data={"curso_id": str(curso_id), "titulo": "Tema não permitido"},
+    )
+    assert response.status_code == 302
+
+    with app.app_context():
+        assert TemaAula.query.filter_by(
+            curso_id=curso_id,
+            titulo="Tema não permitido",
+        ).first() is None
+
+
+def test_nao_permite_vincular_curso_inativo_a_nova_turma(client, app):
+    curso_id, _ = _criar_admin_cursos(client, app)
+    client.post(f"/cursos/{curso_id}/inativar")
+
+    response = client.post(
+        "/turma/nova",
+        data={
+            "turma": "Turma sem curso inativo",
+            "dias_semana": ["Segunda"],
+            "curso_id": str(curso_id),
+            "turno": "Manhã",
+        },
+    )
+    assert response.status_code == 302
+
+    with app.app_context():
+        assert Turma.query.filter_by(nome="Turma sem curso inativo").first() is None
