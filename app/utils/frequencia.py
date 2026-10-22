@@ -58,7 +58,7 @@ def frequencias_lancadas(
     comparar com `date` permite que o índice `ix_frequencia_turma_data` seja
     aproveitado pela query.
 
-    Considera "lançado" quando o conceito não é NULL nem string vazia.
+    Considera "lançado" quando o conceito não é NULL (campo é ENUM nativo do PG).
     """
     aluno_ids = list(aluno_ids)
     if not aluno_ids:
@@ -68,7 +68,6 @@ def frequencias_lancadas(
         Frequencia.data == data_alvo,
         Frequencia.aluno_id.in_(aluno_ids),
         Frequencia.conceito.isnot(None),
-        Frequencia.conceito != '',
     ).count()
 
 

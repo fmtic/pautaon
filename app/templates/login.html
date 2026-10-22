@@ -5,8 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login | {{ informacao_padrao.nome_instituicao or 'pautaON' }}</title>
-  <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet" />
+  <link href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}" rel="stylesheet" />
   <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png" />
   <style>
     body {
@@ -94,7 +94,7 @@
             <div class="mb-3">
               <label class="form-label small fw-bold">Usuário</label>
               <div class="input-group">
-                <span class="input-group-text text-muted"><i class="fas fa-user"></i></span>
+                <span class="input-group-text text-muted"><i class="bi bi-person-fill"></i></span>
                 <input name="email" type="text" class="form-control" placeholder="usuário e senha do computador"
                   required />
               </div>
@@ -104,11 +104,11 @@
               <!-- A senha é validada contra o banco local ou contra o domínio, conforme o fluxo implementado. -->
               <label class="form-label small fw-bold">Senha</label>
               <div class="input-group">
-                <span class="input-group-text text-muted"><i class="fas fa-lock"></i></span>
+                <span class="input-group-text text-muted"><i class="bi bi-lock-fill"></i></span>
                 <input name="password" id="password" type="password" class="form-control" placeholder="••••••••"
                   required />
                 <button type="button" class="btn btn-outline-secondary" id="togglePassword" style="border-left: none">
-                  <i class="fas fa-eye" id="toggleIcon"></i>
+                  <i class="bi bi-eye" id="toggleIcon"></i>
                 </button>
               </div>
             </div>
@@ -119,10 +119,12 @@
           </form>
           <!-- Termos -->
           <div class="text-center mt-3">
-            <a href="/politica_privacidade" class="text-white text-decoration-none me-3" style="font-size: 0.85rem; color: #6b3131 !important;">
+            <a href="/politica_privacidade" class="text-white text-decoration-none me-3"
+              style="font-size: 0.85rem; color: #6b3131 !important;">
               Política de Privacidade
             </a>
-            <a href="/termos_servico" class="text-white text-decoration-none" style="font-size: 0.85rem; color: #6b3131 !important;">
+            <a href="/termos_servico" class="text-white text-decoration-none"
+              style="font-size: 0.85rem; color: #6b3131 !important;">
               Termos de Serviço
             </a>
           </div>

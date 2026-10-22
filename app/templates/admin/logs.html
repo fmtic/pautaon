@@ -15,6 +15,45 @@
         </button>
     </form>
 
+    {# ── Painel de Manutenção ───────────────────────────────────────────────── #}
+    {% set em_manutencao = manutencao_ativa %}
+    <div class="card mb-4 border-0 shadow-sm {% if em_manutencao %}border-warning{% endif %}">
+        <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-3">
+                {% if em_manutencao %}
+                    <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+                        <i class="bi bi-tools me-1"></i> MANUTENÇÃO ATIVA
+                    </span>
+                    <div>
+                        <div class="fw-semibold text-warning">Sistema indisponível para usuários</div>
+                        <div class="text-muted small">Todos os acessos estão sendo redirecionados para a página de manutenção.</div>
+                    </div>
+                {% else %}
+                    <span class="badge bg-success fs-6 px-3 py-2">
+                        <i class="bi bi-check-circle me-1"></i> SISTEMA ONLINE
+                    </span>
+                    <div>
+                        <div class="fw-semibold">Sistema disponível normalmente</div>
+                        <div class="text-muted small">Ative a manutenção para bloquear o acesso durante atualizações.</div>
+                    </div>
+                {% endif %}
+            </div>
+            <form action="{{ url_for('auth.manutencao_toggle') }}" method="POST"
+                  onsubmit="return confirm('{{ 'Desativar o modo manutenção e liberar o sistema?' if em_manutencao else 'Ativar modo manutenção? Os usuários serão bloqueados imediatamente.' }}')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if em_manutencao %}
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-toggle-on me-1"></i> Desativar manutenção
+                    </button>
+                {% else %}
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-toggle-off me-1"></i> Ativar manutenção
+                    </button>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
     <div class="card mb-4 shadow-sm border-0 bg-light">
         <div class="card-body">
             <form method="GET" class="row g-2">

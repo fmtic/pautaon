@@ -1,0 +1,217 @@
+/* =============================================================================
+   static/css/turmas/carga_horaria_curso.css
+   Estilos de impressão para o Catálogo de Cursos & Temas.
+   Aplica EXCLUSIVAMENTE ao imprimir (via @media print).
+   A visualização em tela preserva integralmente o estilo limpo do Bootstrap.
+============================================================================= */
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 1.2cm 1.5cm;
+  }
+
+  body {
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+    color: #212529;
+    background: #fff;
+    padding: 0;
+  }
+
+  /* Ocultar elementos de tela */
+  .no-print,
+  header, nav, .navbar, .sidebar,
+  .modal, .modal-backdrop,
+  footer {
+    display: none !important;
+  }
+
+  .container-fluid {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* ── Cabeçalho institucional da folha impressa ──────────────────────────── */
+  .catalogo-print-header {
+    display: flex !important;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+    border-bottom: 2px solid #343a40;
+    page-break-inside: avoid;
+  }
+
+  .catalogo-print-header .logo-institucional {
+    max-width: 150px;
+    max-height: 60px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .catalogo-print-header .header-texto {
+    flex: 1;
+  }
+
+  .catalogo-print-header .header-texto .instituicao {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #212529;
+    line-height: 1.2;
+  }
+
+  .catalogo-print-header .header-texto h1 {
+    font-size: 13pt;
+    font-weight: 800;
+    margin: 2px 0 0;
+    color: #212529;
+  }
+
+  .catalogo-print-header .header-texto .subtitulo {
+    font-size: 8pt;
+    color: #6c757d;
+    margin-top: 2px;
+  }
+
+  .catalogo-print-header .header-meta {
+    text-align: right;
+    font-size: 8pt;
+    color: #6c757d;
+    flex-shrink: 0;
+  }
+
+  /* ── Tabela de catálogo na impressão (estilo limpo e legível) ────────────── */
+  .catalogo-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+    table-layout: fixed;
+  }
+
+  .catalogo-table thead {
+    display: table-header-group;
+  }
+
+  /* Cabeçalho claro e legível, sem fundo escuro */
+  .catalogo-table thead th {
+    background-color: #f1f3f5 !important;
+    color: #212529 !important;
+    font-weight: 700;
+    font-size: 8pt;
+    padding: 6px 8px;
+    border: 1px solid #adb5bd !important;
+    border-bottom: 2px solid #343a40 !important;
+    vertical-align: middle;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .catalogo-table thead th .text-dark,
+  .catalogo-table thead th .text-secondary {
+    color: #212529 !important;
+  }
+
+  .catalogo-table thead th .text-muted {
+    color: #6c757d !important;
+  }
+
+  .catalogo-table tbody td {
+    border: 1px solid #adb5bd !important;
+    padding: 6px 8px;
+    vertical-align: top;
+    word-wrap: break-word;
+  }
+
+  .catalogo-table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .catalogo-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Larguras das colunas no papel */
+  .catalogo-table .col-curso      { width: 17%; }
+  .catalogo-table .col-ch         { width: 8%;  text-align: center; }
+  .catalogo-table .col-descricao  { width: 22%; }
+  .catalogo-table .col-temas      { width: 27%; }
+  .catalogo-table .col-professor  { width: 15%; }
+  .catalogo-table .col-presenca   { width: 11%; text-align: center; }
+
+  .catalogo-table .nome-curso {
+    font-weight: 700;
+    color: #212529;
+    font-size: 8.5pt;
+  }
+
+  .catalogo-table .badge-ch {
+    display: inline-block;
+    font-size: 9pt;
+    font-weight: 800;
+    color: #212529;
+  }
+
+  .catalogo-table .turmas-count {
+    display: block;
+    font-size: 7pt;
+    color: #6c757d;
+  }
+
+  .catalogo-table ol.temas-lista {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 7.5pt;
+  }
+
+  .catalogo-table ol.temas-lista li {
+    margin-bottom: 2px;
+    line-height: 1.3;
+  }
+
+  .catalogo-table .badge-prof {
+    display: inline-block;
+    font-size: 7.5pt;
+    margin-bottom: 2px;
+    line-height: 1.4;
+  }
+
+  .catalogo-table .pct-valor {
+    font-size: 10pt;
+    font-weight: 800;
+  }
+
+  .catalogo-table .pct-detalhe {
+    font-size: 7pt;
+    color: #6c757d;
+    display: block;
+  }
+
+  /* Expandir todos os temas na impressão */
+  .collapse {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Remover sombras e bordas decorativas na impressão */
+  .card, .shadow-sm {
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* ── Rodapé da folha impressa ──────────────────────────────────────────── */
+  .catalogo-print-footer {
+    display: flex !important;
+    justify-content: space-between;
+    padding-top: 6px;
+    margin-top: 16px;
+    border-top: 1px solid #adb5bd;
+    font-size: 7.5pt;
+    color: #6c757d;
+  }
+}

@@ -1,0 +1,623 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/turmas/carga_horaria_curso.css') }}" media="print">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+    <!-- CABEÇALHO DE IMPRESSÃO (oculto na tela, visível só ao imprimir) -->
+    <div class="catalogo-print-header no-screen" aria-hidden="true">
+        {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+        <img class="logo-institucional"
+             src="{{ informacao_padrao.logo_secundaria_url }}"
+             alt="Logo institucional">
+        {% endif %}
+        <div class="header-texto">
+            <div class="instituicao">{{ informacao_padrao.nome_instituicao or 'PautaON' }}</div>
+            <h1>Catálogo de Cursos &amp; Temas</h1>
+            <div class="subtitulo">
+                {% if status_view == 'vigente' %}
+                    Períodos Letivos Vigentes (Em andamento)
+                {% else %}
+                    Períodos Letivos Concluídos (Histórico)
+                {% endif %}
+                {% if periodo_id %}&nbsp;·&nbsp;Período específico filtrado{% endif %}
+            </div>
+        </div>
+        <div class="header-meta">
+            Emitido por: <strong>{{ current_user.name }}</strong><br>
+            <span class="data-emissao-header"></span>
+        </div>
+    </div>
+
+    <!-- Cabeçalho da Página -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1 text-secondary">
+                <i class="bi bi-journal-bookmark-fill me-2 text-primary"></i>
+                {% if curso_id and cursos %}
+                    {% set curso_atual = cursos | selectattr('id', 'equalto', curso_id) | first %}
+                    {% if curso_atual %}
+                        Curso: <span class="text-dark fw-bold">{{ curso_atual.nome }}</span>
+                    {% else %}
+                        Catálogo de Cursos & Temas
+                    {% endif %}
+                {% else %}
+                    Catálogo de Cursos & Temas
+                {% endif %}
+            </h4>
+            <p class="text-muted small mb-0">
+                Visão consolidada do catálogo pedagógico, temas programáticos, professores associados e presença do curso nas turmas.
+            </p>
+        </div>
+        <div class="d-flex gap-2 no-print">
+            <a href="{{ url_for('registros.planejamento') }}" class="btn btn-outline-primary btn-sm shadow-sm">
+                <i class="bi bi-mortarboard me-1"></i> Planejamento Pedagógico
+            </a>
+            <button class="btn btn-primary btn-sm shadow-sm" onclick="window.print()" title="Imprimir listagem completa">
+                <i class="bi bi-printer me-1"></i> Imprimir
+            </button>
+        </div>
+    </div>
+
+    <!-- SELETOR DE MODALIDADE EXCLUSIVA: VIGENTES OU CONCLUÍDOS -->
+    <div class="card shadow-sm border-0 mb-3 no-print">
+        <div class="card-body p-2 bg-white">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="btn-group shadow-sm" role="group" aria-label="Alternar modalidade de períodos">
+                    <a href="{{ url_for('registros.carga_horaria_turmas', status_periodo='vigente', unidade_id=unidade_id_filtro) }}"
+                       class="btn btn-sm {% if status_view == 'vigente' %}btn-success fw-bold text-white{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-play-circle-fill me-1"></i> Períodos Vigentes (Em andamento)
+                    </a>
+                    <a href="{{ url_for('registros.carga_horaria_turmas', status_periodo='concluido', unidade_id=unidade_id_filtro) }}"
+                       class="btn btn-sm {% if status_view == 'concluido' %}btn-secondary fw-bold text-white{% else %}btn-outline-secondary{% endif %}">
+                        <i class="bi bi-check-circle-fill me-1"></i> Períodos Concluídos (Histórico)
+                    </a>
+                </div>
+
+                <div class="small text-muted">
+                    {% if status_view == 'vigente' %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">
+                            <i class="bi bi-check2 me-1"></i>Exibindo turmas em períodos letivos ainda vigentes
+                        </span>
+                    {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                            <i class="bi bi-clock-history me-1"></i>Exibindo turmas em períodos letivos já concluídos
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CARD DE FILTROS ADICIONAIS -->
+    <div class="card shadow-sm border-0 mb-4 no-print">
+        <div class="card-header bg-white border-bottom pt-3 pb-2">
+            <h6 class="mb-0 text-muted"><i class="bi bi-funnel me-1"></i> Filtros de Busca</h6>
+        </div>
+        <div class="card-body bg-light">
+            <form method="GET" action="{{ request.path }}" class="row g-3 align-items-end">
+                <input type="hidden" name="status_periodo" value="{{ status_view }}">
+
+                <!-- Filtro: Unidade (apenas para admin/gerência) -->
+                {% if current_user.role in ['admin', 'gerencia'] %}
+                <div class="col-12 col-md-3">
+                    <label for="filtroUnidade" class="form-label small fw-bold text-secondary">Unidade</label>
+                    <select class="form-select form-select-sm shadow-sm" id="filtroUnidade" name="unidade_id">
+                        <option value="">Todas as Unidades</option>
+                        {% for unidade in unidades %}
+                        <option value="{{ unidade.id }}" {% if unidade_id_filtro == unidade.id %}selected{% endif %}>
+                            {{ unidade.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+                <!-- Filtro: Período Letivo -->
+                <div class="col-12 col-md-3">
+                    <label for="filtroPeriodo" class="form-label small fw-bold text-secondary">Período Letivo Específico</label>
+                    <select class="form-select form-select-sm shadow-sm" id="filtroPeriodo" name="periodo_id">
+                        <option value="">Todos os Períodos ({% if status_view == 'vigente' %}Vigentes{% else %}Concluídos{% endif %})</option>
+                        {% for periodo in periodos %}
+                        <option value="{{ periodo.id }}" {% if periodo_id == periodo.id %}selected{% endif %}>
+                            {{ periodo.nome_exibicao }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Filtro: Professor -->
+                <div class="col-12 col-md-3">
+                    <label for="filtroProfessor" class="form-label small fw-bold text-secondary">Professor</label>
+                    <select class="form-select form-select-sm shadow-sm" id="filtroProfessor" name="professor_id">
+                        <option value="">Todos os Professores</option>
+                        {% for professor in professores %}
+                        <option value="{{ professor.id }}" {% if professor_id == professor.id %}selected{% endif %}>
+                            {{ professor.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Filtro: Curso -->
+                <div class="col-12 col-md-3">
+                    <label for="filtroCurso" class="form-label small fw-bold text-secondary">Curso</label>
+                    <select class="form-select form-select-sm shadow-sm" id="filtroCurso" name="curso_id">
+                        <option value="">Todos os Cursos</option>
+                        {% for c in cursos %}
+                        <option value="{{ c.id }}" {% if curso_id == c.id %}selected{% endif %}>
+                            {{ c.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Botões de Ação do Filtro -->
+                <div class="col-12 d-flex justify-content-end align-items-center gap-2 pt-2 border-top mt-2">
+                    <a href="{{ url_for('registros.carga_horaria_turmas', status_periodo=status_view, unidade_id=unidade_id_filtro if current_user.role in ['admin', 'gerencia'] else None) }}"
+                       class="btn btn-outline-secondary btn-sm shadow-sm px-3"
+                       title="Limpar todos os campos deste filtro">
+                        <i class="bi bi-eraser-fill me-1"></i> Limpar Filtros
+                    </a>
+                    <button type="submit" class="btn btn-primary btn-sm px-4 shadow-sm fw-semibold" title="Aplicar filtros selecionados">
+                        <i class="bi bi-funnel-fill me-1"></i> Filtrar
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <!-- TABELA DE RESULTADOS: EXCLUSIVA E ALTERNADA -->
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 catalogo-table">
+                    <thead class="table-light border-bottom">
+                        <tr>
+                            <!-- 1. Curso -->
+                            <th scope="col" class="ps-3 text-secondary small py-3" style="width: 19%;">
+                                Curso
+                            </th>
+
+                            <!-- 2. C.H. Total -->
+                            <th scope="col" class="text-secondary small py-3 text-center" style="width: 9%;">
+                                <div class="fw-bold text-dark">C.H. Total</div>
+                                <div class="text-muted fw-normal" style="font-size: 0.73rem;">soma das turmas</div>
+                            </th>
+
+                            <!-- 3. Descrição -->
+                            <th scope="col" class="text-secondary small py-3" style="width: 22%;">
+                                Descrição
+                            </th>
+
+                            <!-- 4. Temas Associados -->
+                            <th scope="col" class="text-secondary small py-3" style="width: 22%;">
+                                Temas Associados
+                            </th>
+
+                            <!-- 5. Lecionado por -->
+                            <th scope="col" class="text-secondary small py-3" style="width: 16%;">
+                                <div class="fw-bold text-dark">
+                                    {% if status_view == 'vigente' %}Atualmente lecionado por{% else %}Foram lecionadas por{% endif %}
+                                </div>
+                                <div class="text-muted fw-normal" style="font-size: 0.73rem;">
+                                    {% if status_view == 'vigente' %}(turmas em períodos letivos ainda vigentes){% else %}(turmas em períodos letivos já concluídos){% endif %}
+                                </div>
+                            </th>
+
+                            <!-- 6. (%) Presença -->
+                            <th scope="col" class="text-secondary small py-3 text-center" style="width: 12%;">
+                                <div class="fw-bold text-dark">
+                                    {% if status_view == 'vigente' %}(%) Atualmente presente em{% else %}(%) Foi presente em{% endif %}
+                                </div>
+                                <div class="text-muted fw-normal" style="font-size: 0.73rem;">
+                                    {% if status_view == 'vigente' %}turmas vigentes{% else %}turmas concluídas{% endif %}
+                                </div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if cursos_dados %}
+                            {% for item in cursos_dados %}
+                            <tr id="linha-curso-{{ item.curso.id }}">
+                                <!-- 1. Curso (Clicável para editar via modal) -->
+                                <td class="ps-3 align-top py-3">
+                                    <div>
+                                        <a href="javascript:void(0)"
+                                           class="fw-bold text-primary text-decoration-none btn-abrir-edit-curso link-edit-hover"
+                                           data-id="{{ item.curso.id }}"
+                                           data-nome="{{ item.curso.nome }}"
+                                           data-descricao="{{ item.curso.descricao or '' }}"
+                                           title="Clique para editar as informações deste curso">
+                                            <span id="curso-nome-{{ item.curso.id }}">{{ item.curso.nome }}</span>
+                                            <i class="bi bi-pencil-square ms-1 small opacity-50 no-print"></i>
+                                        </a>
+                                    </div>
+                                    <div class="d-flex gap-1 mt-1 flex-wrap">
+                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small">
+                                            ID #{{ item.curso.id }}
+                                        </span>
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">
+                                            {{ item.temas | length }} tema(s)
+                                        </span>
+                                    </div>
+                                </td>
+
+                                <!-- 2. C.H. Total -->
+                                <td class="align-top py-3 text-center">
+                                    {% if item.ch_total_minutos %}
+                                        <div class="fw-bold fs-6 {% if status_view == 'vigente' %}text-success{% else %}text-secondary{% endif %}">
+                                            {{ item.ch_total_minutos | formatar_ch }}
+                                        </div>
+                                        {% if item.total_turmas > 1 %}
+                                        <div class="mt-1">
+                                            <span class="badge bg-light text-muted border small" title="Soma de {{ item.total_turmas }} turmas">
+                                                {{ item.total_turmas }} turmas
+                                            </span>
+                                        </div>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted small fst-italic" title="Nenhuma turma com horário configurado">&mdash;</span>
+                                    {% endif %}
+                                </td>
+
+                                <!-- 3. Descrição -->
+                                <td class="align-top py-3">
+                                    {% if item.curso.descricao %}
+                                        <div class="text-secondary small curso-descricao-texto" id="curso-desc-{{ item.curso.id }}" style="line-height: 1.45;">
+                                            {{ item.curso.descricao }}
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted small fst-italic curso-descricao-texto" id="curso-desc-{{ item.curso.id }}">
+                                            Sem descrição cadastrada.
+                                        </span>
+                                    {% endif %}
+                                </td>
+
+                                <!-- 3. Temas Associados -->
+                                <td class="align-top py-3">
+                                    {% if item.temas %}
+                                        <div class="accordion accordion-flush" id="accordionTemas{{ item.curso.id }}">
+                                            <div class="accordion-item bg-transparent">
+                                                <div class="small fw-semibold text-muted mb-1 d-flex justify-content-between align-items-center">
+                                                    <span>Conteúdo Programático</span>
+                                                    {% if item.temas | length > 3 %}
+                                                    <a class="text-decoration-none small text-primary no-print" data-bs-toggle="collapse" href="#collapseTemas{{ item.curso.id }}" role="button" aria-expanded="false">
+                                                        Ver todos ({{ item.temas | length }})
+                                                    </a>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Primeiros 3 temas visíveis diretamente -->
+                                                <ol class="list-unstyled mb-0 small">
+                                                    {% for tema in item.temas[:3] %}
+                                                    <li class="mb-1 text-truncate" title="{{ tema.titulo }}">
+                                                        <span class="badge bg-light text-dark border me-1">{{ tema.ordem or loop.index }}</span>
+                                                        {{ tema.titulo }}
+                                                    </li>
+                                                    {% endfor %}
+                                                </ol>
+
+                                                <!-- Demais temas em collapse se houver mais de 3 -->
+                                                {% if item.temas | length > 3 %}
+                                                <div class="collapse" id="collapseTemas{{ item.curso.id }}">
+                                                    <ol class="list-unstyled mb-0 small pt-1 border-top mt-1">
+                                                        {% for tema in item.temas[3:] %}
+                                                        <li class="mb-1 text-truncate" title="{{ tema.titulo }}">
+                                                            <span class="badge bg-light text-dark border me-1">{{ tema.ordem or (loop.index + 3) }}</span>
+                                                            {{ tema.titulo }}
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ol>
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <span class="badge bg-light text-muted border">Nenhum tema cadastrado</span>
+                                    {% endif %}
+                                </td>
+
+                                <!-- 4. Professores: Modalidade Exclusiva -->
+                                <td class="align-top py-3">
+                                    {% if item.professores %}
+                                        <div class="d-flex flex-column gap-1">
+                                            {% for prof in item.professores %}
+                                            <div>
+                                                {% if status_view == 'vigente' %}
+                                                    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle small fw-normal py-1 px-2">
+                                                        <i class="bi bi-person-check-fill me-1"></i>{{ prof.name }}
+                                                    </span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle small fw-normal py-1 px-2">
+                                                        <i class="bi bi-person-check me-1"></i>{{ prof.name }}
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted small fst-italic">
+                                            <i class="bi bi-info-circle me-1"></i>
+                                            {% if status_view == 'vigente' %}
+                                                Nenhum professor com turma vigente.
+                                            {% else %}
+                                                Nenhum professor com período concluído.
+                                            {% endif %}
+                                        </span>
+                                    {% endif %}
+                                </td>
+
+                                <!-- 5. (%) Presença: Modalidade Exclusiva -->
+                                <td class="align-top py-3 text-center">
+                                    <div class="d-flex flex-column align-items-center">
+                                        <div class="fw-bold fs-5 {% if status_view == 'vigente' %}text-success{% else %}text-secondary{% endif %}">
+                                            {{ item.percentual_presenca }}%
+                                        </div>
+                                        <div class="progress w-100 my-1 shadow-sm" style="height: 6px;">
+                                            <div class="progress-bar {% if status_view == 'vigente' %}bg-success{% else %}bg-secondary{% endif %}" role="progressbar"
+                                                 style="width: {{ item.percentual_presenca }}%;"
+                                                 aria-valuenow="{{ item.percentual_presenca }}"
+                                                 aria-valuemin="0" aria-valuemax="100">
+                                            </div>
+                                        </div>
+                                        <small class="text-muted" style="font-size: 0.74rem;">
+                                            {{ item.total_turmas }} de {{ total_geral_turmas }} turmas {% if status_view == 'vigente' %}vigentes{% else %}concluídas{% endif %}
+                                        </small>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5 text-muted">
+                                    <i class="bi bi-journal-x fs-1 d-block mb-2 text-black-50"></i>
+                                    <h6 class="fw-semibold">Nenhum curso encontrado para este filtro</h6>
+                                    <p class="small mb-0">Tente alternar para {% if status_view == 'vigente' %}Períodos Concluídos{% else %}Períodos Vigentes{% endif %} ou ajustar os filtros de busca.</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- RODAPÉ DE IMPRESSÃO (oculto na tela, visível só ao imprimir) -->
+    <div class="catalogo-print-footer no-screen" aria-hidden="true">
+        <span>
+            {{ informacao_padrao.nome_instituicao or 'PautaON' }}&nbsp;&mdash;&nbsp;Catálogo de Cursos &amp; Temas
+        </span>
+        <span>Emitido por: {{ current_user.name }}</span>
+        <span>Data: <span class="data-emissao-footer"></span></span>
+    </div>
+
+</div>
+
+<!-- MODAL: EDITAR INFORMAÇÕES DO CURSO -->
+<div class="modal fade no-print" id="modalEditarCurso" tabindex="-1" aria-labelledby="modalEditarCursoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title h6 fw-bold text-dark" id="modalEditarCursoLabel">
+                    <i class="bi bi-pencil-square me-2 text-primary"></i>Editar Informações do Curso
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="formEditarCursoModal" onsubmit="return false;">
+                    <input type="hidden" id="editCursoId">
+
+                    <div class="mb-3">
+                        <label for="editCursoNome" class="form-label small fw-bold text-secondary">
+                            Nome do Curso <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="editCursoNome" required maxlength="150" placeholder="Ex: Informática Básica">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="editCursoDescricao" class="form-label small fw-bold text-secondary">
+                            Descrição
+                        </label>
+                        <textarea class="form-control form-control-sm" id="editCursoDescricao" rows="4" maxlength="300" placeholder="Breve ementa ou tópicos principais do curso"></textarea>
+                        <div class="form-text small text-end text-muted">
+                            <span id="editCursoDescCount">0</span>/300 caracteres
+                        </div>
+                    </div>
+
+                    <div id="editCursoAlert" class="alert d-none small py-2 mb-0" role="alert"></div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnSalvarCursoModal">
+                    <i class="bi bi-check-lg me-1"></i>Salvar Alterações
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ESTILOS INLINE COMPLEMENTARES -->
+<style>
+/* Apenas estilos de tela não cobertos pelo Bootstrap */
+.link-edit-hover {
+    transition: color 0.15s ease-in-out;
+    cursor: pointer;
+}
+.link-edit-hover:hover {
+    text-decoration: underline !important;
+}
+
+/* O header/footer de impressão fica oculto na tela */
+.no-screen {
+    display: none;
+}
+
+/* Mostrar no print (o CSS externo já gerencia o @media print) */
+@media print {
+    .no-screen {
+        display: flex !important;
+    }
+    /* Ocultar elementos de interface */
+    .no-print,
+    header, nav, .navbar, .sidebar,
+    .btn-group, .modal, .modal-backdrop, footer {
+        display: none !important;
+    }
+    /* Remover ícone de edição inline */
+    .bi-pencil-square { display: none !important; }
+    /* Links: sem sublinhado colorido no print */
+    a { color: inherit !important; text-decoration: none !important; }
+    /* Progress bar: ocultar na impressão (só exibir o texto) */
+    .progress { display: none !important; }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('modalEditarCurso');
+    if (!modalEl) return;
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    const inputId = document.getElementById('editCursoId');
+    const inputNome = document.getElementById('editCursoNome');
+    const inputDesc = document.getElementById('editCursoDescricao');
+    const descCount = document.getElementById('editCursoDescCount');
+    const btnSalvar = document.getElementById('btnSalvarCursoModal');
+    const alertBox = document.getElementById('editCursoAlert');
+
+    function updateCount() {
+        if (descCount && inputDesc) {
+            descCount.textContent = inputDesc.value.length;
+        }
+    }
+
+    if (inputDesc) {
+        inputDesc.addEventListener('input', updateCount);
+    }
+
+    // Abertura do modal ao clicar no nome do curso
+    document.querySelectorAll('.btn-abrir-edit-curso').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            const id = this.dataset.id;
+            const nome = this.dataset.nome || '';
+            const desc = this.dataset.descricao || '';
+
+            inputId.value = id;
+            inputNome.value = nome;
+            inputDesc.value = desc;
+            updateCount();
+
+            alertBox.className = 'alert d-none small py-2 mb-0';
+            alertBox.textContent = '';
+            btnSalvar.disabled = false;
+            btnSalvar.innerHTML = '<i class="bi bi-check-lg me-1"></i>Salvar Alterações';
+
+            bsModal.show();
+            setTimeout(() => inputNome.focus(), 300);
+        });
+    });
+
+    // Salvar alterações via AJAX para /cursos/<id>/editar
+    btnSalvar.addEventListener('click', async function () {
+        const id = inputId.value;
+        const nome = inputNome.value.trim();
+        const descricao = inputDesc.value.trim();
+
+        if (!nome) {
+            alertBox.className = 'alert alert-danger small py-2 mb-0';
+            alertBox.textContent = 'O nome do curso é obrigatório.';
+            alertBox.classList.remove('d-none');
+            inputNome.focus();
+            return;
+        }
+
+        btnSalvar.disabled = true;
+        btnSalvar.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Salvando...';
+        alertBox.classList.add('d-none');
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        try {
+            const resp = await fetch(`/cursos/${encodeURIComponent(id)}/editar`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ nome: nome, descricao: descricao }),
+            });
+
+            let data;
+            try {
+                data = await resp.json();
+            } catch (err) {
+                data = null;
+            }
+
+            if (!resp.ok || !data || !data.success) {
+                throw new Error((data && data.message) ? data.message : 'Erro ao salvar alterações no curso.');
+            }
+
+            // Atualiza dinamicamente a linha da tabela
+            const nomeEl = document.getElementById(`curso-nome-${id}`);
+            if (nomeEl) nomeEl.textContent = data.nome;
+
+            const descEl = document.getElementById(`curso-desc-${id}`);
+            if (descEl) {
+                if (data.descricao) {
+                    descEl.textContent = data.descricao;
+                    descEl.className = 'text-secondary small curso-descricao-texto';
+                } else {
+                    descEl.textContent = 'Sem descrição cadastrada.';
+                    descEl.className = 'text-muted small fst-italic curso-descricao-texto';
+                }
+            }
+
+            // Atualiza dataset dos botões de edição do mesmo curso
+            document.querySelectorAll(`.btn-abrir-edit-curso[data-id="${id}"]`).forEach(btn => {
+                btn.dataset.nome = data.nome;
+                btn.dataset.descricao = data.descricao || '';
+            });
+
+            alertBox.className = 'alert alert-success small py-2 mb-0';
+            alertBox.textContent = 'Curso atualizado com sucesso!';
+            alertBox.classList.remove('d-none');
+
+            setTimeout(() => {
+                bsModal.hide();
+            }, 800);
+        } catch (err) {
+            alertBox.className = 'alert alert-danger small py-2 mb-0';
+            alertBox.textContent = err.message || 'Erro de comunicação ao salvar.';
+            alertBox.classList.remove('d-none');
+            btnSalvar.disabled = false;
+            btnSalvar.innerHTML = '<i class="bi bi-check-lg me-1"></i>Salvar Alterações';
+        }
+    });
+});
+</script>
+
+{% block scripts %}
+<script>
+// Preenche a data/hora de emissão nos elementos do cabeçalho e rodapé de impressão
+(function () {
+    const agora = new Date();
+    const fmt = agora.toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+    document.querySelectorAll('.data-emissao-header, .data-emissao-footer').forEach(function (el) {
+        el.textContent = fmt;
+    });
+})();
+</script>
+{% endblock %}
+{% endblock %}

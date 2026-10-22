@@ -204,9 +204,15 @@
                       {# ─── Coluna Curso ─── #}
                       <td class="ps-4">
                         {% set curso_hash = curso_cores.get(tema.curso_id, 7) if tema.curso else 7 %}
-                        <span class="badge rounded-pill border curso-badge-{{ curso_hash }}">
-                          {{ tema.curso.nome if tema.curso else '—' }}
-                        </span>
+                        {% if tema.curso %}
+                        <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=tema.curso_id) }}"
+                           class="badge rounded-pill border curso-badge-{{ curso_hash }} text-decoration-none"
+                           title="Ver turmas do curso {{ tema.curso.nome }}">
+                          {{ tema.curso.nome }}
+                        </a>
+                        {% else %}
+                        <span class="badge rounded-pill border curso-badge-7">—</span>
+                        {% endif %}
                       </td>
 
                       {# ─── Coluna Tema (número + título) ─── #}
@@ -479,17 +485,13 @@
             <i class="bi bi-plus-circle me-1"></i>Novo Curso
           </h6>
           <div class="row g-2">
-            <div class="col-md-4">
+            <div class="col-md-5">
               <input type="text" id="cursoNomeInput" class="form-control form-control-sm"
                 placeholder="Nome do curso *" maxlength="150">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-5">
               <input type="text" id="cursoDescInput" class="form-control form-control-sm"
                 placeholder="Descrição (opcional)" maxlength="300">
-            </div>
-            <div class="col-md-2">
-              <input type="number" id="cursoCargaInput" class="form-control form-control-sm"
-                placeholder="C.H. Aula (h)" min="1" max="9999">
             </div>
             <div class="col-md-2">
               <button class="btn btn-success btn-sm w-100" id="btnNovoCurso">
@@ -505,26 +507,27 @@
             <tr>
               <th class="ps-3">Curso</th>
               <th>Descrição</th>
-              <th class="text-center" style="width:80px">C.H. Aula</th>
-              <th class="text-center" style="width:90px">C.H. Total</th>
+              <th class="text-center" style="width:100px">Aulas no Período</th>
               <th class="text-center" style="width:100px">Ações</th>
             </tr>
           </thead>
           <tbody id="cursosTbody">
             {% for c in cursos %}
-            {% set carga = cargas_curso.get(c.id) %}
             <tr data-id="{{ c.id }}">
-              <td class="ps-3 fw-semibold">{{ c.nome }}</td>
-              <td class="text-muted small">{{ c.descricao or '—' }}</td>
-              <td class="text-center small">{% if c.carga_horaria is not none %}{{ c.carga_horaria }}h{% else %}—{% endif %}</td>
-              <td class="text-center small" title="{{ carga.dias_aula }} dias de aula no período">
-                {% if carga and carga.carga_total is not none %}{{ carga.carga_total }}h{% else %}—{% endif %}
+              <td class="ps-3 fw-semibold">
+                <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=c.id) }}"
+                   class="text-decoration-none text-dark link-primary-hover"
+                   title="Ver turmas e carga horária de {{ c.nome }}"
+                   target="_blank">
+                  {{ c.nome }}
+                  <i class="bi bi-box-arrow-up-right ms-1 small opacity-50"></i>
+                </a>
               </td>
+              <td class="text-muted small">{{ c.descricao or '—' }}</td>
               <td class="text-center">
                 <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
                   data-id="{{ c.id }}" data-nome="{{ c.nome }}"
                   data-desc="{{ c.descricao or '' }}"
-                  data-carga="{{ c.carga_horaria or '' }}"
                   title="Editar">
                   <i class="bi bi-pencil"></i>
                 </button>
@@ -536,7 +539,7 @@
             </tr>
             {% else %}
             <tr id="cursoVazio">
-              <td colspan="5" class="text-center text-muted py-4">
+              <td colspan="4" class="text-center text-muted py-4">
                 <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
                 Nenhum curso cadastrado para esta unidade.
               </td>
@@ -551,17 +554,13 @@
           </h6>
           <div class="row g-2">
             <input type="hidden" id="editCursoId">
-            <div class="col-md-4">
+            <div class="col-md-5">
               <input type="text" id="editCursoNome" class="form-control form-control-sm"
                 placeholder="Nome *" maxlength="150">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-5">
               <input type="text" id="editCursoDesc" class="form-control form-control-sm"
                 placeholder="Descrição" maxlength="300">
-            </div>
-            <div class="col-md-2">
-              <input type="number" id="editCursoCarga" class="form-control form-control-sm"
-                placeholder="C.H. Aula (h)" min="1" max="9999">
             </div>
             <div class="col-md-2 d-flex gap-1">
               <button class="btn btn-warning btn-sm flex-fill" id="btnSalvarEditCurso">

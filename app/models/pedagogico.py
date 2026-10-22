@@ -8,6 +8,12 @@ Contém:
     - Nivel : nível pedagógico (Básico, Intermediário, Avançado).
 
 Ambos são catálogos reutilizáveis escopados por unidade.
+
+NOTAS DE ONDAS
+    - Onda 3C: `Curso.carga_horaria` removido. A C.H. é calculada diretamente
+      em cada `Turma` via `carga_horaria_aula` (minutos/aula) e
+      `carga_horaria_total` (minutos totais). Use `formatar_ch()` de
+      `app.utils.formatters` para exibição legível.
 ================================================================================
 """
 
@@ -24,17 +30,14 @@ class Curso(db.Model):
 
     Regras:
         - Curso inativo não deve ser associado a novas turmas.
-        - `carga_horaria` é a C.H. de AULA (horas por dia de aula).
-        - A C.H. Total é calculada: carga_horaria x dias de aula das turmas
-          ativas do curso no período letivo, excluindo os dias sem aula
-          (`DiaBloqueado`, com exceções de `DiaBloqueadoTurma`).
+        - A C.H. de aula e a C.H. Total são calculadas em cada Turma vinculada
+          via `Turma.carga_horaria_aula` e `Turma.carga_horaria_total`.
     """
     __tablename__ = 'curso'
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(150), nullable=False)
     descricao: str = db.Column(db.String(300))
-    carga_horaria: int = db.Column(db.Integer)
     ativo: bool = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id: int = db.Column(db.Integer, db.ForeignKey('unidade.id'), nullable=False)
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)

@@ -1,6 +1,6 @@
 # puataon/app/__init__.py
 
-from flask import Flask, current_app, request, redirect, url_for
+from flask import Flask, current_app, render_template, request, redirect, url_for
 from flask_login import current_user
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -65,6 +65,9 @@ def _configure_extensions(app: Flask) -> None:
 
 def _register_template_filters(app: Flask) -> None:
     import re
+    from app.utils.formatters import formatar_ch
+
+    app.jinja_env.filters["formatar_ch"] = formatar_ch
 
     @app.template_filter("format_cpf")
     def format_cpf_filter(cpf) -> str:
@@ -81,6 +84,7 @@ def _register_template_filters(app: Flask) -> None:
 
 def _register_security_hooks(app: Flask) -> None:
     from app.models.enums import UserRole
+    from app.services.maintenance import is_maintenance_enabled
 
     @app.before_request
     def enforce_user_access_state():
@@ -88,6 +92,13 @@ def _register_security_hooks(app: Flask) -> None:
             return None
         if request.endpoint.startswith("static"):
             return None
+
+        if is_maintenance_enabled():
+            if current_user.is_authenticated and current_user.role == UserRole.ADMIN:
+                return None
+            if request.endpoint not in {"auth.login", "auth.logout"}:
+                return render_template("sistema_indisponivel.html"), 503
+
         if not current_user.is_authenticated:
             return None
 

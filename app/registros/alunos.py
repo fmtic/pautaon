@@ -748,7 +748,6 @@ def desenturmar_alunos(id):
             Frequencia.aluno_id == aluno.id,
             Frequencia.turma_id == turma.id,
             Frequencia.conceito.isnot(None),
-            Frequencia.conceito != "",
         ).first()
         try:
             if frequencia_existente:

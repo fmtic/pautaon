@@ -10,6 +10,7 @@ from app.models import (
     Curso,
     Frequencia,
     Inscricao,
+    Nivel,
     PeriodoLetivo,
     PerguntaConselho,
     RegistroAula,
@@ -17,10 +18,91 @@ from app.models import (
     User,
 )
 from app.utils.datetime_parse import parse_date, parse_time
+from app.utils.formatters import formatar_ch
 from app.utils.logica import carregar_contexto_turma, get_unidade_id
 from . import bp
 from .shared import assert_unidade_context, obter_proximo_ordenacao
 from app.models.enums import UserRole
+
+
+def _parse_int_arg(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_float_arg(value):
+    if value is None:
+        return None
+    s = str(value).strip().replace(",", ".")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def aplicar_filtros_turmas(stmt, args):
+    """Aplica filtros persistidos (SQL) sobre o select de Turma."""
+    nome = (args.get("nome") or "").strip()
+    if nome:
+        stmt = stmt.where(Turma.nome.ilike(f"%{nome}%"))
+
+    professor = (args.get("professor") or "").strip()
+    if professor:
+        stmt = stmt.join(User, Turma.professor_id == User.id).where(
+            User.name.ilike(f"%{professor}%")
+        )
+
+    turno = (args.get("turno") or "").strip()
+    if turno:
+        stmt = stmt.where(Turma.turno == turno)
+
+    programa = (args.get("programa") or "").strip()
+    if programa:
+        stmt = stmt.where(Turma.programa == programa)
+
+    dia = (args.get("dia") or "").strip()
+    if dia:
+        stmt = stmt.where(Turma.dias_semana.ilike(f"%{dia}%"))
+
+    horario = parse_time(args.get("horario_inicio"))
+    if horario:
+        stmt = stmt.where(Turma.hora_inicio == horario)
+
+    return stmt
+
+
+def pos_filtrar_turmas(turmas, args):
+    """Filtra em memória critérios calculados (alunos, frequência, C.H.)."""
+    min_alunos = _parse_int_arg(args.get("min_alunos"))
+    min_freq = _parse_float_arg(args.get("min_freq"))
+    min_ch_aula = _parse_float_arg(args.get("min_ch_aula"))
+    min_ch_total = _parse_float_arg(args.get("min_ch_total"))
+
+    resultado = []
+    for turma_item in turmas:
+        if min_alunos is not None and turma_item.alunos_ativos_count < min_alunos:
+            continue
+        if min_freq is not None and turma_item.freq_geral < min_freq:
+            continue
+        if min_ch_aula is not None:
+            ch_aula = turma_item.carga_horaria_aula
+            if ch_aula is None or ch_aula < min_ch_aula * 60:
+                continue
+        if min_ch_total is not None:
+            ch_total = turma_item.carga_horaria_total
+            if ch_total is None or ch_total < min_ch_total * 60:
+                continue
+        resultado.append(turma_item)
+    return resultado
 
 
 @bp.route("/turma")
@@ -36,10 +118,12 @@ def turma():
     if unidade_id:
         stmt = stmt.where(Turma.unidade_id == unidade_id)
 
+    stmt = aplicar_filtros_turmas(stmt, request.args)
     turmas = (
         db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
     )
-    return render_template("turmas/listar.html", turmas=turmas)
+    turmas = pos_filtrar_turmas(turmas, request.args)
+    return render_template("turmas/listar.html", turmas=turmas, formatar_ch=formatar_ch)
 
 
 @bp.route("/turmas/lista")
@@ -257,11 +341,23 @@ def ver_turma(id):
         .distinct()
         .count()
     )
+    # Busca os níveis cadastrados pela unidade para o modal de enturmação.
+    # Inclui níveis legados sem unidade (unidade_id IS NULL) para compatibilidade.
+    niveis_cadastrados = (
+        Nivel.query
+        .filter(
+            (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
+            Nivel.ativo == True,
+        )
+        .order_by(Nivel.nome)
+        .all()
+    )
     return render_template(
         "turmas/detalhe.html",
         perguntas=perguntas,
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
+        niveis_cadastrados=niveis_cadastrados,
         **ctx,
     )
 
@@ -346,10 +442,15 @@ def editar_turma(id):
             novo_data_inicio_date = parse_date(novo_data_inicio_raw)
             novo_data_fim_date = parse_date(novo_data_fim_raw)
 
+            novo_hora_inicio = parse_time(request.form.get("hora_inicio"))
+            novo_hora_fim = parse_time(request.form.get("hora_fim"))
+
             dados_de_lancamento_alterados = (
                 novo_dias_semana != (turma_obj.dias_semana or "")
                 or novo_data_inicio_date != turma_obj.data_inicio
                 or novo_data_fim_date != turma_obj.data_fim
+                or novo_hora_inicio != turma_obj.hora_inicio
+                or novo_hora_fim != turma_obj.hora_fim
             )
 
             if dados_de_lancamento_alterados:
@@ -369,8 +470,8 @@ def editar_turma(id):
             turma_obj.turno = request.form.get("turno")
             turma_obj.data_inicio = novo_data_inicio_date
             turma_obj.data_fim = novo_data_fim_date
-            turma_obj.hora_inicio = parse_time(request.form.get("hora_inicio"))
-            turma_obj.hora_fim = parse_time(request.form.get("hora_fim"))
+            turma_obj.hora_inicio = novo_hora_inicio
+            turma_obj.hora_fim = novo_hora_fim
             turma_obj.professor_id = request.form.get("professor_id") or None
 
             turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
@@ -440,6 +541,25 @@ def editar_turma(id):
             turma_obj.curso_id = int(curso_id) if curso_id else None
 
             db.session.commit()
+
+            # Verificar inconsistências após salvar
+            ch_total = turma_obj.carga_horaria_total
+            dias_efetivos = turma_obj.dias_aula_efetivos()
+
+            if turma_obj.dias_semana and ch_total is None:
+                flash(
+                    "Aviso: C.H. não pôde ser calculada — verifique os horários de início e fim.",
+                    "warning"
+                )
+                return redirect(url_for("registros.editar_turma", id=id))
+
+            if turma_obj.dias_semana and turma_obj.data_inicio and turma_obj.data_fim and dias_efetivos == 0:
+                flash(
+                    "Aviso: 0 dias de aula encontrados — verifique os dias da semana e o período letivo (todos os dias podem estar bloqueados).",
+                    "warning"
+                )
+                return redirect(url_for("registros.editar_turma", id=id))
+
             flash(f"Alterações da turma '{turma_obj.nome}' foram salvas!", "success")
             return redirect(url_for("registros.turma"))
         except Exception:
@@ -518,6 +638,278 @@ def excluir_turma(id):
             flash("Falha ao inativar ligações.", "danger")
 
     return redirect(url_for("registros.turma"))
+
+
+@bp.route("/turmas/carga-horaria")
+@login_required
+def carga_horaria_turmas():
+    """
+    Exibe a listagem de cursos com descrição, temas associados,
+    professores que já foram associados ao curso (que seguiram associados
+    até o fim do período letivo da turma) e percentual de presença
+    do curso nas turmas de qualquer período até seu encerramento.
+    Mantém filtros de Unidade, Período Letivo, Professor e Curso.
+    """
+    if current_user.role not in ["admin", "pedagogico", "gerencia", "secretaria"]:
+        abort(403)
+
+    from app.models import TemaAula
+
+    hoje = date.today()
+    unidade_id = get_unidade_id()
+    unidade_id_filtro = request.args.get("unidade_id", type=int)
+    periodo_id = request.args.get("periodo_id", type=int)
+    professor_id = request.args.get("professor_id", type=int)
+    curso_id = request.args.get("curso_id", type=int)
+    status_periodo = request.args.get("status_periodo", type=str)
+
+    # Para usuários globais, usa o filtro de unidade; para locais, usa fixo
+    unidade_efetiva = unidade_id_filtro if current_user.role in ["admin", "gerencia"] else unidade_id
+
+    # Determina o status da visualização de forma estrita e alternada: 'vigente' ou 'concluido'
+    periodo_selecionado = db.session.get(PeriodoLetivo, periodo_id) if periodo_id else None
+    if periodo_selecionado:
+        status_view = "vigente" if periodo_selecionado.data_fim >= hoje else "concluido"
+    elif status_periodo == "concluido":
+        status_view = "concluido"
+    else:
+        # Padrão: períodos vigentes (em andamento)
+        status_view = "vigente"
+
+    # Condições de vigência de turmas baseadas no período letivo ou datas próprias
+    cond_vigente = db.or_(
+        Turma.periodo_letivo_id.in_(
+            select(PeriodoLetivo.id).where(PeriodoLetivo.data_fim >= hoje)
+        ),
+        db.and_(Turma.periodo_letivo_id.is_(None), db.or_(Turma.data_fim >= hoje, Turma.data_fim.is_(None))),
+    )
+    cond_concluido = db.or_(
+        Turma.periodo_letivo_id.in_(
+            select(PeriodoLetivo.id).where(PeriodoLetivo.data_fim < hoje)
+        ),
+        db.and_(Turma.periodo_letivo_id.is_(None), Turma.data_fim < hoje),
+    )
+
+    # Condição da modalidade ativa
+    cond_status = cond_vigente if status_view == "vigente" else cond_concluido
+
+    # Total geral de turmas da modalidade ativa no escopo (denominador do percentual)
+    stmt_geral = select(db.func.count(Turma.id)).where(
+        Turma.ativo == True,
+        cond_status,
+    )
+    if unidade_efetiva:
+        stmt_geral = stmt_geral.where(Turma.unidade_id == unidade_efetiva)
+    if periodo_id:
+        stmt_geral = stmt_geral.where(Turma.periodo_letivo_id == periodo_id)
+    total_geral_turmas = db.session.execute(stmt_geral).scalar() or 0
+
+    # Consulta dos Cursos disponíveis
+    stmt_cursos = select(Curso).where(Curso.ativo == True)
+    if unidade_efetiva:
+        stmt_cursos = stmt_cursos.where(Curso.unidade_id == unidade_efetiva)
+    if curso_id:
+        stmt_cursos = stmt_cursos.where(Curso.id == curso_id)
+
+    # Restringe aos cursos ofertados no período ou na modalidade ativa
+    if periodo_id:
+        stmt_cursos = stmt_cursos.where(
+            Curso.id.in_(
+                select(Turma.curso_id).where(
+                    Turma.ativo == True,
+                    Turma.periodo_letivo_id == periodo_id,
+                )
+            )
+        )
+    else:
+        stmt_cursos = stmt_cursos.where(
+            Curso.id.in_(
+                select(Turma.curso_id).where(
+                    Turma.ativo == True,
+                    cond_status,
+                )
+            )
+        )
+
+    if professor_id:
+        stmt_cursos = stmt_cursos.where(
+            Curso.id.in_(
+                select(Turma.curso_id).where(
+                    Turma.ativo == True,
+                    Turma.professor_id == professor_id,
+                )
+            )
+        )
+
+    cursos_base = db.session.execute(stmt_cursos.order_by(Curso.nome)).scalars().all()
+
+    cursos_dados = []
+    for c in cursos_base:
+        # 1. Temas associados ao curso
+        temas = (
+            TemaAula.query.filter_by(curso_id=c.id, ativo=True)
+            .order_by(TemaAula.ordem, TemaAula.id)
+            .all()
+        )
+
+        # 2. Professores da modalidade ativa (vigente ou concluído)
+        stmt_prof = (
+            select(User)
+            .join(Turma, Turma.professor_id == User.id)
+            .where(
+                Turma.curso_id == c.id,
+                Turma.ativo == True,
+                cond_status,
+            )
+        )
+        if unidade_efetiva:
+            stmt_prof = stmt_prof.where(Turma.unidade_id == unidade_efetiva)
+        if periodo_id:
+            stmt_prof = stmt_prof.where(Turma.periodo_letivo_id == periodo_id)
+        if professor_id:
+            stmt_prof = stmt_prof.where(Turma.professor_id == professor_id)
+
+        profs_ativos = (
+            db.session.execute(stmt_prof.distinct().order_by(User.name))
+            .scalars()
+            .all()
+        )
+
+        # 3. Turmas deste curso na modalidade ativa
+        stmt_turmas_c = select(db.func.count(Turma.id)).where(
+            Turma.curso_id == c.id,
+            Turma.ativo == True,
+            cond_status,
+        )
+        if unidade_efetiva:
+            stmt_turmas_c = stmt_turmas_c.where(Turma.unidade_id == unidade_efetiva)
+        if periodo_id:
+            stmt_turmas_c = stmt_turmas_c.where(Turma.periodo_letivo_id == periodo_id)
+        if professor_id:
+            stmt_turmas_c = stmt_turmas_c.where(Turma.professor_id == professor_id)
+
+        total_turmas_c = db.session.execute(stmt_turmas_c).scalar() or 0
+        percentual = (
+            round((total_turmas_c / total_geral_turmas) * 100, 1)
+            if total_geral_turmas > 0
+            else 0.0
+        )
+
+        # 4. C.H. Total: soma de carga_horaria_total de todas as turmas do curso
+        #    no filtro ativo. Carrega apenas turmas com hora configurada.
+        stmt_turmas_ch = select(Turma).where(
+            Turma.curso_id == c.id,
+            Turma.ativo == True,
+            cond_status,
+            Turma.hora_inicio.isnot(None),
+            Turma.hora_fim.isnot(None),
+        )
+        if unidade_efetiva:
+            stmt_turmas_ch = stmt_turmas_ch.where(Turma.unidade_id == unidade_efetiva)
+        if periodo_id:
+            stmt_turmas_ch = stmt_turmas_ch.where(Turma.periodo_letivo_id == periodo_id)
+        if professor_id:
+            stmt_turmas_ch = stmt_turmas_ch.where(Turma.professor_id == professor_id)
+
+        turmas_ch = db.session.execute(stmt_turmas_ch).scalars().all()
+        ch_total_minutos = sum(
+            (t.carga_horaria_total or 0) for t in turmas_ch
+        ) or None  # None → "—" no template via formatar_ch
+
+        cursos_dados.append({
+            "curso": c,
+            "temas": temas,
+            "professores": profs_ativos,
+            "total_turmas": total_turmas_c,
+            "percentual_presenca": percentual,
+            "ch_total_minutos": ch_total_minutos,
+        })
+
+    # ── DROPDOWNS DE FILTROS CASCATEADOS PELO FILTRO-MESTRE DE VIGÊNCIA ──
+    # 1. Unidades (apenas para papéis globais)
+    if current_user.role in ["admin", "gerencia"]:
+        from app.models import Unidade
+        unidades = Unidade.query.order_by(Unidade.nome).all()
+    else:
+        unidades = []
+
+    # 2. Períodos Letivos: filtrados estritamente pela modalidade ativa (vigente ou concluído)
+    stmt_periodos = select(PeriodoLetivo).where(PeriodoLetivo.ativo == True)
+    if unidade_efetiva:
+        stmt_periodos = stmt_periodos.where(PeriodoLetivo.unidade_id == unidade_efetiva)
+
+    if status_view == "vigente":
+        stmt_periodos = stmt_periodos.where(PeriodoLetivo.data_fim >= hoje).order_by(
+            PeriodoLetivo.data_inicio.asc(), PeriodoLetivo.nome.asc()
+        )
+    else:
+        stmt_periodos = stmt_periodos.where(PeriodoLetivo.data_fim < hoje).order_by(
+            PeriodoLetivo.data_fim.desc(), PeriodoLetivo.nome.asc()
+        )
+
+    periodos = db.session.execute(stmt_periodos).scalars().all()
+
+    # 3. Professores: apenas professores da unidade escolhida (ou todas se global "Todas")
+    # que possuam turmas na modalidade ativa (e no período selecionado, se houver)
+    stmt_turmas_prof_filtro = select(Turma.professor_id).where(
+        Turma.ativo == True,
+        cond_status,
+        Turma.professor_id.isnot(None),
+    )
+    if unidade_efetiva:
+        stmt_turmas_prof_filtro = stmt_turmas_prof_filtro.where(Turma.unidade_id == unidade_efetiva)
+    if periodo_id:
+        stmt_turmas_prof_filtro = stmt_turmas_prof_filtro.where(Turma.periodo_letivo_id == periodo_id)
+
+    stmt_profs = select(User).where(
+        User.role == "professor",
+        User.id.in_(stmt_turmas_prof_filtro),
+    )
+    if unidade_efetiva:
+        stmt_profs = stmt_profs.where(User.unidade_id == unidade_efetiva)
+
+    professores = db.session.execute(stmt_profs.order_by(User.name)).scalars().all()
+
+    # 4. Cursos: apenas cursos da unidade escolhida (ou todas se global "Todas")
+    # que possuam turmas na modalidade ativa + período + professor selecionados
+    stmt_turmas_curso_filtro = select(Turma.curso_id).where(
+        Turma.ativo == True,
+        cond_status,
+        Turma.curso_id.isnot(None),
+    )
+    if unidade_efetiva:
+        stmt_turmas_curso_filtro = stmt_turmas_curso_filtro.where(Turma.unidade_id == unidade_efetiva)
+    if periodo_id:
+        stmt_turmas_curso_filtro = stmt_turmas_curso_filtro.where(Turma.periodo_letivo_id == periodo_id)
+    if professor_id:
+        stmt_turmas_curso_filtro = stmt_turmas_curso_filtro.where(Turma.professor_id == professor_id)
+
+    stmt_cursos_dropdown = select(Curso).where(
+        Curso.ativo == True,
+        Curso.id.in_(stmt_turmas_curso_filtro),
+    )
+    if unidade_efetiva:
+        stmt_cursos_dropdown = stmt_cursos_dropdown.where(Curso.unidade_id == unidade_efetiva)
+
+    cursos = db.session.execute(stmt_cursos_dropdown.order_by(Curso.nome)).scalars().all()
+
+    return render_template(
+        "turmas/carga_horaria_curso.html",
+        cursos_dados=cursos_dados,
+        status_view=status_view,
+        status_periodo=status_periodo,
+        total_geral_turmas=total_geral_turmas,
+        unidades=unidades,
+        periodos=periodos,
+        professores=professores,
+        cursos=cursos,
+        unidade_id_filtro=unidade_id_filtro,
+        periodo_id=periodo_id,
+        professor_id=professor_id,
+        curso_id=curso_id,
+        formatar_ch=formatar_ch,
+        hoje=hoje,
+    )
 
 
 @bp.route("/turma/<int:turma_id>/observacoes")

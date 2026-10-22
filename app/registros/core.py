@@ -35,8 +35,9 @@ from app.models import (
 )
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
+from app.utils.formatters import formatar_ch
 from app.utils.logica import (
-    calcular_carga_horaria_curso,
+    calcular_dias_aula_turma,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
     carregar_frequencias,
@@ -374,15 +375,12 @@ def listar_cursos():
     unidade_id = get_unidade_id()
     if not unidade_id:
         abort(403)
-    q = Curso.query.filter_by(ativo=True, unidade_id=unidade_id)
-    cursos = q.order_by(Curso.nome).all()
+    cursos = Curso.query.filter_by(ativo=True, unidade_id=unidade_id).order_by(Curso.nome).all()
     return jsonify([
         {
             'id': c.id,
             'nome': c.nome,
             'descricao': c.descricao or '',
-            'carga_horaria': c.carga_horaria or '',
-            **calcular_carga_horaria_curso(c),
         }
         for c in cursos
     ])
@@ -406,18 +404,10 @@ def novo_curso():
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
-    carga = data.get('carga_horaria')
-    try:
-        carga_horaria = int(carga) if carga not in (None, '') else None
-    except (TypeError, ValueError):
-        return jsonify({'success': False, 'message': 'Carga horária inválida.'}), 400
-    if carga_horaria is not None and not 1 <= carga_horaria <= 9999:
-        return jsonify({'success': False, 'message': 'Carga horária deve estar entre 1 e 9999 horas.'}), 400
 
     curso = Curso(
         nome=nome,
         descricao=descricao or None,
-        carga_horaria=int(carga_horaria) if carga_horaria else None,
         unidade_id=unidade_id
     )
     try:
@@ -428,8 +418,9 @@ def novo_curso():
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'carga_horaria': curso.carga_horaria or '',
-            **calcular_carga_horaria_curso(curso),
+            'dias_aula': 0,
+            # Curso recém-criado não tem turmas ainda.
+            'carga_total_fmt': '—',
         })
     except Exception as e:
         db.session.rollback()
@@ -442,11 +433,12 @@ def novo_curso():
 @bp.route('/cursos/<int:curso_id>/editar', methods=['POST'])
 @login_required
 def editar_curso(curso_id):
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA, UserRole.GERENCIA):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
-    assert_unidade_context(curso.unidade_id, unidade_id)
+    if current_user.role not in (UserRole.ADMIN, UserRole.GERENCIA):
+        assert_unidade_context(curso.unidade_id, unidade_id)
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -457,24 +449,23 @@ def editar_curso(curso_id):
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
-    carga = data.get('carga_horaria')
-    try:
-        carga_horaria = int(carga) if carga not in (None, '') else None
-    except (TypeError, ValueError):
-        return jsonify({'success': False, 'message': 'Carga horária inválida.'}), 400
-    if carga_horaria is not None and not 1 <= carga_horaria <= 9999:
-        return jsonify({'success': False, 'message': 'Carga horária deve estar entre 1 e 9999 horas.'}), 400
 
     curso.nome = nome
     curso.descricao = descricao or None
-    curso.carga_horaria = carga_horaria
     try:
         db.session.commit()
+        dias = sum(calcular_dias_aula_turma(t) for t in curso.turmas if t.ativo)
+        carga_fmt = formatar_ch(
+            next(
+                (t.carga_horaria_total for t in curso.turmas if t.ativo and t.carga_horaria_total),
+                None,
+            )
+        )
         return jsonify({
             'success': True, 'id': curso.id, 'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'carga_horaria': curso.carga_horaria or '',
-            **calcular_carga_horaria_curso(curso),
+            'dias_aula': dias,
+            'carga_total_fmt': carga_fmt,
         })
     except Exception as e:
         db.session.rollback()
@@ -639,7 +630,6 @@ def planejamento():
             ativo=True, unidade_id=unidade_id
         ).order_by(Curso.nome).all()
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
-    cargas_curso = {curso.id: calcular_carga_horaria_curso(curso) for curso in cursos}
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
@@ -653,7 +643,6 @@ def planejamento():
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
-                           cargas_curso=cargas_curso,
                            unidade_id=unidade_id,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')

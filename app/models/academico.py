@@ -11,11 +11,14 @@ Contém:
 Turma é a entidade mais conectada do sistema: liga unidade, período letivo,
 curso, professor (User) e alunos (N:N via Inscricao).
 
-NOTAS DE ON DAS
+NOTAS DE ONDAS
     - Onda 2A: `data_inicio`, `data_fim`, `hora_inicio`, `hora_fim` e
       `TemaAula.data` agora são DATE/TIME nativos.
     - Onda 2B (limpeza): a property `freq_geral` usa `CONCEITOS_PRESENCA` e
       `CONCEITOS_CONTABEIS` do `app.models.enums` em vez de strings soltas.
+    - Onda 3C: `carga_horaria_aula` (minutos/aula) e `carga_horaria_total`
+      (minutos totais) são properties calculadas em `Turma`. `Curso.carga_horaria`
+      foi removido. Use `formatar_ch()` de `app.utils.formatters` para exibição.
 ================================================================================
 """
 
@@ -90,6 +93,8 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     Regras:
         - `dias_semana` é uma string CSV (ex.: "Segunda,Quarta,Sexta").
         - `conselho_concluido` é o flag que libera o encerramento da turma.
+        - `carga_horaria_aula` e `carga_horaria_total` são inteiros em MINUTOS.
+          Use `formatar_ch()` de `app.utils.formatters` para exibição legível.
     """
     __tablename__ = 'turma'
 
@@ -159,6 +164,47 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         """Total de alunos com `ativo=True` vinculados a esta turma."""
         from app.models.pessoas import Aluno
         return self.alunos.filter(Aluno.ativo == True).count()
+
+    def dias_aula_efetivos(self) -> int:
+        """
+        Quantidade de dias de aula desta turma no período letivo.
+
+        Usa o mesmo calendário da pauta: dias da semana entre data_inicio e
+        data_fim, excluindo DiaBloqueado do período (com exceções de
+        DiaBloqueadoTurma já descontadas).
+        """
+        from app.utils.logica import calcular_dias_aula_turma
+        return calcular_dias_aula_turma(self)
+
+    @property
+    def carga_horaria_aula(self) -> int | None:
+        """
+        Duração de uma aula em MINUTOS (hora_fim - hora_inicio).
+
+        Retorna None se hora_inicio ou hora_fim não estiverem definidas ou se
+        hora_fim <= hora_inicio.
+        """
+        if not self.hora_inicio or not self.hora_fim:
+            return None
+        delta = (
+            self.hora_fim.hour * 60 + self.hora_fim.minute
+            - self.hora_inicio.hour * 60 - self.hora_inicio.minute
+        )
+        return delta if delta > 0 else None
+
+    @property
+    def carga_horaria_total(self) -> int | None:
+        """
+        C.H. Total em MINUTOS = carga_horaria_aula × dias_aula_efetivos().
+
+        Retorna None se carga_horaria_aula for None ou se não houver dias de
+        aula calculáveis (sem data_inicio/data_fim/dias_semana).
+        """
+        ch_aula = self.carga_horaria_aula
+        if ch_aula is None:
+            return None
+        dias = self.dias_aula_efetivos()
+        return ch_aula * dias if dias else None
 
     @classmethod
     def get_ativas(cls) -> List['Turma']:

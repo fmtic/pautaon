@@ -68,14 +68,12 @@
 
     const nomeInput   = document.getElementById('cursoNomeInput');
     const descInput   = document.getElementById('cursoDescInput');
-    const cargaInput  = document.getElementById('cursoCargaInput');
     const btnNovo     = document.getElementById('btnNovoCurso');
     const formMsg     = document.getElementById('cursoFormMsg');
     const painelEdit  = document.getElementById('painelEditCurso');
     const editId      = document.getElementById('editCursoId');
     const editNome    = document.getElementById('editCursoNome');
     const editDesc    = document.getElementById('editCursoDesc');
-    const editCarga   = document.getElementById('editCursoCarga');
     const btnSalvarEd = document.getElementById('btnSalvarEditCurso');
     const btnCancelar = document.getElementById('btnCancelarEditCurso');
 
@@ -112,12 +110,11 @@
       tr.innerHTML = `
         <td class="ps-3 fw-semibold">${c.nome}</td>
         <td class="text-muted small">${c.descricao || '—'}</td>
-        <td class="text-center small">${c.carga_horaria ? c.carga_horaria + 'h' : '—'}</td>
-        <td class="text-center small" title="${c.dias_aula || 0} dias de aula no período">${c.carga_total ? c.carga_total + 'h' : '—'}</td>
+        <td class="text-center small" title="${c.dias_aula || 0} dias de aula no período">${c.carga_total_fmt || '—'}</td>
         <td class="text-center">
           <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
             data-id="${c.id}" data-nome="${c.nome}" data-desc="${c.descricao || ''}"
-            data-carga="${c.carga_horaria || ''}" title="Editar">
+            title="Editar">
             <i class="bi bi-pencil"></i>
           </button>
           <button class="btn btn-sm btn-outline-danger border-0 btn-excluir-curso"
@@ -186,7 +183,6 @@
             body: JSON.stringify({
               nome,
               descricao: descInput.value.trim(),
-              carga_horaria: cargaInput.value || null,
             }),
           });
           const data = await readJsonResponse(res);
@@ -195,7 +191,6 @@
           sincronizarSelects(data);
           nomeInput.value = '';
           descInput.value = '';
-          cargaInput.value = '';
           showMsg('Curso adicionado!', 'success');
         } catch (error) {
           showMsg(error.message || 'Erro ao adicionar.');
@@ -210,7 +205,6 @@
         editId.value    = btnEd.dataset.id;
         editNome.value  = btnEd.dataset.nome;
         editDesc.value  = btnEd.dataset.desc;
-        editCarga.value = btnEd.dataset.carga;
         painelEdit.classList.remove('d-none');
         editNome.focus();
         return;
@@ -255,7 +249,6 @@
             body: JSON.stringify({
               nome,
               descricao: editDesc.value.trim(),
-              carga_horaria: editCarga.value || null,
             }),
           });
           const data = await readJsonResponse(res);

@@ -127,7 +127,8 @@
 
         <div class="alert alert-warning">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>
-            Se alterar os dias ou as datas de início/fim, os lançamentos existentes de presença/falta e as porcentagens poderão ficar incompatíveis.
+            Se alterar os dias, as datas de início/fim ou os horários, os lançamentos existentes de presença/falta
+            poderão ficar incompatíveis e a <strong>carga horária aula e total serão recalculadas</strong>.
             Será solicitado confirmar a limpeza dos lançamentos para que a nova agenda seja recriada corretamente.
         </div>
 
@@ -143,13 +144,30 @@
 
             <div class="mb-3 col-md-3">
                 <label class="form-label fw-bold">Hora Início</label>
-                <input type="time" name="hora_inicio" class="form-control" value="{{ turma.hora_inicio }}">
+                <input type="time" name="hora_inicio" id="hora_inicio" class="form-control" value="{{ turma.hora_inicio }}">
             </div>
             <div class="mb-3 col-md-3">
                 <label class="form-label fw-bold">Hora Fim</label>
-                <input type="time" name="hora_fim" class="form-control" value="{{ turma.hora_fim }}">
+                <input type="time" name="hora_fim" id="hora_fim" class="form-control" value="{{ turma.hora_fim }}">
+            </div>
+
+        {# Bloco de exibição de C.H. calculada em tempo real via JS. #}
+        <div class="col-12 mb-3" id="bloco_ch">
+            <div class="alert alert-info py-2 px-3 mb-0 d-flex flex-wrap gap-3 align-items-center">
+                <span class="small">
+                    <i class="bi bi-clock me-1"></i>
+                    <strong>C.H. por Aula:</strong>
+                    <span id="ch_aula_display">—</span>
+                </span>
+                <span class="small">
+                    <i class="bi bi-calendar-check me-1"></i>
+                    <strong>C.H. Total Estimada:</strong>
+                    <span id="ch_total_display">—</span>
+                    <span class="text-muted ms-1">(dias bloqueados não descontados aqui)</span>
+                </span>
             </div>
         </div>
+    </div>
 
         <div class="mt-4">
             <button type="submit" class="btn btn-success px-4">

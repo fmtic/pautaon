@@ -1,3 +1,107 @@
+### Alterações do dia — 21/10/2026
+
+- Data da intervenção: 21/10/2026
+- Conclusão: concluído
+
+Implementação completa da exibição de carga horária calculada em tempo real em formulários, listagens e certificados, com correção de bugs no template de relatório de carga horária.
+
+### Etapa 1 — Limpeza do modal de Cursos
+
+- Confirmado que o modal de cursos em `planejamento.html` não possui campo de carga horária (somente exibição calculada).
+- A coluna "C.H. Total" na tabela do modal usa `cargas_curso.get(c.id)` como informação calculada somente leitura.
+- Nenhuma alteração necessária em `pedagogico.py` ou `core.py` (sem referências residuais a `carga_horaria` como campo de entrada).
+
+### Etapa 2 — Exibição de C.H. calculada no formulário de Turma
+
+- `nova.html`: Bloco informativo já implementado com exibição de C.H. por Aula e C.H. Total Estimada em tempo real.
+- `nova.js`: Lógica de cálculo já implementada com listeners nos campos de horário, dias e datas.
+- `editar.html`: Bloco informativo adicionado (linhas 154-169) com estilo `alert-info`.
+- `editar.js`: Expandido para incluir lógica de recálculo de C.H. (funções `horaParaMinutos`, `formatarCH`, `contarDiasAula`, `recalcularCH`) e detecção de mudança de horário na confirmação (`handleSubmit`).
+- Mensagem de confirmação atualizada para incluir recálculo de carga horária.
+
+### Etapa 3 — C.H. Aula e Total na listagem de Turmas
+
+- `listar.html`: Adicionadas duas colunas na tabela: "C.H./Aula" e "C.H. Total" (após coluna "Horário").
+- `turmas.py` (função `turma`): `formatar_ch` adicionado ao contexto do template.
+
+### Etapa 4 — Certificado com C.H. formatada corretamente
+
+- `periodos.py`: Import `formatar_ch` adicionado.
+- `periodos.py` (`periodo_letivo_relatorio_certificado`): `carga_total` convertido para string formatada via `formatar_ch(turma.carga_horaria_total)` antes de passar ao template.
+- `certificado.html`: Ajustado para exibir `{{ item.carga_total }}` (já formatado) em vez de `{{ item.carga_total ~ 'h' }}`.
+
+### Etapa 5 — Correção e completude do template carga_horaria_curso.html
+
+- `turmas.py` (`carga_horaria_turmas`): Adicionado suporte ao filtro `unidade_id` para usuários globais (admin/gerência). Usuários locais continuam com filtro fixo via `get_unidade_id()`.
+- `turmas.py`: Lista de todas as unidades, períodos, professores e cursos passada ao template para usuários globais.
+- `carga_horaria_curso.html`: Reescrito completamente:
+  - Cabeçalho atualizado com título "Carga Horária por Curso/Turma" e botão "Ir para CRUD de Cursos".
+  - Filtros corrigidos: Unidade (somente para admin/gerência), Período Letivo, Professor, Curso.
+  - Tabela com colunas: #, Turma, Curso, Professor, Período, Dias/Semana, Horário, C.H. Aula, C.H. Total.
+  - Botão de impressão (`window.print()`) com CSS para ocultar filtros e botões na impressão.
+
+### Etapa 6 — Aviso de inconsistência na edição de turma
+
+- `editar.js`: Mensagem de confirmação expandida para incluir horário na detecção de alterações.
+- `turmas.py` (`editar_turma`): Após commit bem-sucedido, verificação de inconsistências:
+  - Se `dias_semana` definido mas `carga_horaria_total` é `None` → flash de aviso sobre horário ausente.
+  - Se `dias_semana` definido, datas definidas, mas `dias_aula_efetivos()` retorna 0 → flash de aviso sobre 0 dias de aula.
+  - Em caso de inconsistência, redireciona de volta para a tela de edição em vez da listagem.
+
+### Etapa 7 — Testes, documentação e backlog
+
+- `test_carga_horaria.py` (novo): Testes unitários para:
+  - `formatar_ch()`: 60 min → "1h", 90 min → "1h30min", 1800 min → "30h", None → "—", 0 → "—".
+  - `Turma.carga_horaria_aula`: com e sem horários, hora_fim ≤ hora_inicio.
+  - `Turma.carga_horaria_total`: com dias_semana, datas e horários válidos/inválidos.
+  - `calcular_dias_aula_turma()`: turma sem datas, turma com todos os dias bloqueados.
+- Docstrings revisadas em `turmas.py` (função `carga_horaria_turmas`) e `academico.py` (properties já existem).
+- `backlog.md`: Entrada adicionada documentando as mudanças desta implementação.
+
+### Arquivos principais
+
+`app/templates/turmas/nova.html`, `app/templates/turmas/editar.html`, `app/static/js/turmas/nova.js`, `app/static/js/turmas/editar.js`, `app/templates/turmas/listar.html`, `app/registros/turmas.py`, `app/registros/periodos.py`, `app/templates/periodos/certificado.html`, `app/templates/turmas/carga_horaria_curso.html`, `tests/test_carga_horaria.py` e `backlog.md`.
+
+### Reformulação de `carga_horaria_curso.html` — Catálogo de Cursos, Corpo Docente Concluído e Presença em Turmas
+
+- **Motivação:** Em vez de uma listagem operacional de turmas individuais, a tela passou a focar no catálogo de Cursos, agregando dados pedagógicos (descrição, temas), histórico de professores que concluíram o período letivo e métrica percentual de frequência do curso nas turmas encerradas.
+- **`app/registros/turmas.py` (`carga_horaria_turmas`):**
+  - Mantidos os filtros de Unidade (para usuários com papéis globais `admin`/`gerencia`), Período Letivo, Professor e Curso.
+  - Quando os filtros de período letivo ou professor são informados, a busca filtra diretamente os cursos com turmas ativas vinculadas a esses critérios.
+  - Consulta os temas associados de cada curso (`TemaAula` ativos ordenados por `ordem`).
+  - Lista os professores associados às turmas ativas do curso/período.
+  - Calcula o percentual de turmas do curso sobre o total de turmas no escopo dos filtros ($\frac{\text{turmas do curso}}{\text{total de turmas}} \times 100$).
+- **`app/templates/turmas/carga_horaria_curso.html`:**
+  - Reformulada a tabela para uma apresentação limpa por Curso (Nome, badges com ID e total de temas).
+  - Coluna de temas com lista expansível (*accordion*) que exibe os primeiros 3 temas e oculta os excedentes para leitura ágil.
+  - Badges verdes com ícone de professor para docentes que concluíram períodos letivos.
+  - Indicador visual em barra de progresso com porcentagem e contadores de turmas concluídas.
+- **Arquivos alterados:** `app/registros/turmas.py`, `app/templates/turmas/carga_horaria_curso.html`.
+
+---
+
+### Links de curso em `planejamento.html` → `carga_horaria_curso.html`
+
+- **Motivação:** O nome do curso na página de planejamento não levava a lugar nenhum; o relatório de carga horária por curso existia mas só era acessível via menu lateral.
+- **`planejamento.html` — tabela de Temas:** O badge da coluna "Curso" passou a ser uma âncora `<a>` com `href="{{ url_for('registros.carga_horaria_turmas', curso_id=tema.curso_id) }}"`. O estilo visual (badge colorido) foi preservado; o `<span>` foi convertido para `<a>` mantendo as mesmas classes CSS.
+- **`planejamento.html` — modal Cursos da Unidade:** A célula com o nome do curso na tabela `#tabelaCursos` passou a ser um link com `target="_blank"` e ícone `bi-box-arrow-up-right`, indicando visualmente que abre em nova aba sem fechar o modal.
+- **`carga_horaria_curso.html` — cabeçalho contextual:** Quando a página recebe `?curso_id=N`, o título passa a exibir "Turmas do Curso: **<nome>**" em vez do genérico "Carga Horária por Curso/Turma". Um subtítulo com "Filtrado por curso — ver todos" permite voltar à visão completa. O lookup do nome é feito via `cursos | selectattr('id', 'equalto', curso_id) | first` (Jinja2 3.x, sem dependências extras).
+- **Sem nova rota:** A rota existente `GET /turmas/carga-horaria` já aceitava `?curso_id=` como filtro — bastou gerar o link com o parâmetro correto via `url_for`. Nenhum código Python foi alterado.
+- **Arquivos alterados:** `app/templates/planejamento/planejamento.html`, `app/templates/turmas/carga_horaria_curso.html`.
+
+### Correção de bug — Colunas de auditoria ausentes em `inscricoes`, `curso` e `conselho_classe`
+
+- **Sintoma:** `sqlalchemy.exc.ProgrammingError: coluna inscricoes.updated_by_id não existe` ao tentar enturmar um aluno.
+- **Causa raiz:** A migration `a9f3c8e2d1b7` (`add_audit_columns_core_tables`) nunca foi executada contra o banco de dados restaurado do dump de produção. O registro em `alembic_version` apontava para `c4d5e6f7a8b9` (filho de `a9f3c8e2d1b7`), fazendo o Alembic acreditar que a migration já estava aplicada — mas as colunas não existiam de fato.
+- **Diagnóstico:** Inspecionadas as colunas reais da tabela `inscricoes` via `SQLAlchemy.inspect`; confirmado que `updated_by_id`, `updated_by_name` e `updated_at` estavam ausentes. Mesma situação detectada em `curso` e `conselho_classe`; `turma`, `tema_aula` e `registro_aula` já estavam corretas.
+- **Correção aplicada:** Script pontual executou `ALTER TABLE … ADD COLUMN` diretamente no banco para as três tabelas afetadas, replicando exatamente o DDL da migration:
+  - `updated_by_id INTEGER REFERENCES "user"(id) ON DELETE SET NULL`
+  - `updated_by_name VARCHAR(100)`
+  - `updated_at TIMESTAMP`
+- **Impacto:** Nenhuma alteração de código — apenas ajuste de schema. O `alembic_version` permanece em `c4d5e6f7a8b9` (consistente com o estado esperado). A funcionalidade de enturmar alunos voltou a operar normalmente.
+
+---
+
 ### Alterações do dia — 20/10/2026
 
 - Data da intervenção: 20/10/2026

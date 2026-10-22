@@ -117,10 +117,11 @@
                             <input type="hidden" name="turma_id" value="{{ turma.id }}" />
                             <select name="nivel" class="form-select form-select-sm shadow-sm"
                                 onchange="this.form.submit()">
-                                {% set niveis = ['Básico', 'Intermediário', 'Avançado', 'Não se aplica'] %}
-                                {% for nv in niveis %}
-                                <option value="{{ nv }}" {% if aluno.nivel==nv or (not aluno.nivel and
-                                    nv=='Não se aplica' ) %}selected{% endif %}>{{ nv }}</option>
+                                {# "Não se aplica" é sempre fixo e pré-selecionado quando o aluno não tem nível #}
+                                <option value="Não se aplica" {% if not aluno.nivel or aluno.nivel == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
+                                {# Níveis cadastrados pelo usuário em Planejamento #}
+                                {% for nv in niveis_cadastrados %}
+                                <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>{{ nv.nome }}</option>
                                 {% endfor %}
                             </select>
                         </form>
@@ -187,9 +188,11 @@
                                 <td class="small">{{ a.nome }}</td>
                                 <td class="small">
                                     <select name="nivel_{{ a.id }}" class="form-select form-select-sm">
-                                        {% for nivel in ['Básico', 'Intermediário', 'Avançado', 'Não se aplica'] %}
-                                        <option value="{{ nivel }}" {% if (a.nivel or 'Não se aplica' )==nivel
-                                            %}selected{% endif %}>{{ nivel }}</option>
+                                        {# "Não se aplica" é sempre o primeiro item e selecionado por padrão #}
+                                        <option value="Não se aplica" selected>Não se aplica</option>
+                                        {# Níveis cadastrados pelo usuário em Planejamento #}
+                                        {% for nivel in niveis_cadastrados %}
+                                        <option value="{{ nivel.nome }}">{{ nivel.nome }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>

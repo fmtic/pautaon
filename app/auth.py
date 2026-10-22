@@ -22,6 +22,7 @@ import hashlib
 from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.models.enums import UserRole
 from app.database import db
+from app.services.maintenance import MANUTENCAO_CONFIG_KEY, is_maintenance_enabled
 from app.utils.disparo_email import send_email
 from app.services.auth_service import (
     _build_ldap_bind_user,
@@ -775,7 +776,45 @@ def ver_logs():
             if termo_normalizado in unidecode(log.acao).lower()
         ]
 
-    return render_template('admin/logs.html', logs=pagination.items, pagination=pagination)
+    return render_template(
+        'admin/logs.html',
+        logs=pagination.items,
+        pagination=pagination,
+        manutencao_ativa=is_maintenance_enabled(),
+    )
+
+
+@bp.route('/admin/manutencao/toggle', methods=['POST'])
+@login_required
+def manutencao_toggle():
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+
+    manutencao_ativa = not is_maintenance_enabled()
+    configuracao = ConfiguracaoSistema.query.filter_by(
+        chave=MANUTENCAO_CONFIG_KEY,
+        unidade_id=None,
+    ).first()
+    if configuracao is None:
+        configuracao = ConfiguracaoSistema(
+            chave=MANUTENCAO_CONFIG_KEY,
+            descricao="Indica se o sistema está em modo de manutenção",
+        )
+        db.session.add(configuracao)
+
+    configuracao.valor = "true" if manutencao_ativa else "false"
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao alternar o modo de manutenção.")
+        flash("Não foi possível alterar o modo de manutenção.", "danger")
+    else:
+        status = "ativado" if manutencao_ativa else "desativado"
+        current_app.logger.info("Modo de manutenção %s por %s.", status, current_user.id)
+        flash(f"Modo de manutenção {status} com sucesso.", "success")
+
+    return redirect(url_for('auth.ver_logs'))
 
 
 def _executar_limpar_logs(automatico=False):

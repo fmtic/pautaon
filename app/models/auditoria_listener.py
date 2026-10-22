@@ -43,9 +43,11 @@ def before_flush(session, flush_context, instances):
 
     audit_objects = [obj for obj in list(session.new) + list(session.dirty) if hasattr(obj, "updated_by_id")]
 
+    from flask import has_request_context
+
     for obj in audit_objects:
         # Preenche colunas de auditoria
-        if current_user.is_authenticated:
+        if getattr(current_user, "is_authenticated", False):
             obj.updated_by_id = getattr(current_user, "id", None)
             obj.updated_by_name = getattr(current_user, "name", None)
         else:
@@ -67,7 +69,7 @@ def before_flush(session, flush_context, instances):
             usuario_nome=getattr(current_user, "name", None),
             acao=acao,
             detalhes=repr(obj),
-            ip=request.remote_addr if request else None,
+            ip=request.remote_addr if has_request_context() else None,
             unidade_id=getattr(current_user, "unidade_id", None),
         )
         session.add(log)

@@ -1,14 +1,155 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container mt-4 mb-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Listagem de Turmas</h2>
-        <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success">
-            <i class="bi bi-plus-lg"></i> Nova Turma
+        <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success shadow-sm">
+            <i class="bi bi-plus-lg me-1"></i> Nova Turma
         </a>
     </div>
 
+    <!-- Seção de Filtros -->
+    <div class="accordion mb-4 shadow-sm" id="accordionFiltros">
+        <div class="accordion-item border-0 rounded-3">
+            <h2 class="accordion-header" id="headingFiltros">
+                <button class="accordion-button {% if not request.args %}collapsed{% endif %} bg-light fw-semibold rounded-3" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#collapseFiltros"
+                    aria-expanded="{{ 'true' if request.args else 'false' }}"
+                    aria-controls="collapseFiltros">
+                    <i class="bi bi-funnel-fill me-2 text-primary"></i> Filtros de Busca
+                </button>
+            </h2>
+            <div id="collapseFiltros" class="accordion-collapse collapse {% if request.args %}show{% endif %}" aria-labelledby="headingFiltros"
+                data-bs-parent="#accordionFiltros">
+                <div class="accordion-body border border-top-0 rounded-bottom">
+                    <form method="GET" action="{{ url_for('registros.turma') }}">
+                        <div class="row g-3">
+                            <!-- Nome da Turma -->
+                            <div class="col-md-4">
+                                <label for="filtro_nome" class="form-label small fw-bold text-muted">Nome da
+                                    Turma</label>
+                                <input type="text" class="form-control form-control-sm" id="filtro_nome" name="nome"
+                                    placeholder="Ex: Informática" value="{{ request.args.get('nome', '') }}">
+                            </div>
+
+                            <!-- Professor -->
+                            <div class="col-md-4">
+                                <label for="filtro_professor"
+                                    class="form-label small fw-bold text-muted">Professor</label>
+                                <input type="text" class="form-control form-control-sm" id="filtro_professor"
+                                    name="professor" placeholder="Nome do professor"
+                                    value="{{ request.args.get('professor', '') }}">
+                            </div>
+
+                            <!-- Turno -->
+                            <div class="col-md-2">
+                                <label for="filtro_turno" class="form-label small fw-bold text-muted">Turno</label>
+                                <select class="form-select form-select-sm" id="filtro_turno" name="turno">
+                                    <option value="">Todos</option>
+                                    <option value="Manhã" {% if request.args.get('turno')=='Manhã' %}selected{% endif
+                                        %}>Manhã</option>
+                                    <option value="Tarde" {% if request.args.get('turno')=='Tarde' %}selected{% endif
+                                        %}>Tarde</option>
+                                    <option value="Noite" {% if request.args.get('turno')=='Noite' %}selected{% endif
+                                        %}>Noite</option>
+                                </select>
+                            </div>
+
+                            <!-- Programa -->
+                            <div class="col-md-2">
+                                <label for="filtro_programa"
+                                    class="form-label small fw-bold text-muted">Programa</label>
+                                <select class="form-select form-select-sm" id="filtro_programa" name="programa">
+                                    <option value="">Todos</option>
+                                    <option value="Profissionalizante" {% if
+                                        request.args.get('programa')=='Profissionalizante' %}selected{% endif %}>
+                                        Profissionalizante</option>
+                                    <option value="Esporte" {% if request.args.get('programa')=='Esporte' %}selected{%
+                                        endif %}>Esporte</option>
+                                    <option value="Meio Ambiente" {% if request.args.get('programa')=='Meio Ambiente'
+                                        %}selected{% endif %}>Meio Ambiente</option>
+                                    <option value="Outros" {% if request.args.get('programa')=='Outros' %}selected{%
+                                        endif %}>Outros</option>
+                                </select>
+                            </div>
+
+                            <!-- Alunos (Quantidade Mínima) -->
+                            <div class="col-md-2">
+                                <label for="filtro_alunos" class="form-label small fw-bold text-muted">Mín.
+                                    Alunos</label>
+                                <input type="number" class="form-control form-control-sm" id="filtro_alunos"
+                                    name="min_alunos" min="0" value="{{ request.args.get('min_alunos', '') }}">
+                            </div>
+
+                            <!-- Frequência (Mínima) -->
+                            <div class="col-md-2">
+                                <label for="filtro_freq" class="form-label small fw-bold text-muted">Freq. Mínima
+                                    (%)</label>
+                                <input type="number" class="form-control form-control-sm" id="filtro_freq"
+                                    name="min_freq" min="0" max="100" placeholder="Ex: 75"
+                                    value="{{ request.args.get('min_freq', '') }}">
+                            </div>
+
+                            <!-- Dias da Semana -->
+                            <div class="col-md-2">
+                                <label for="filtro_dias" class="form-label small fw-bold text-muted">Dia da
+                                    Semana</label>
+                                <select class="form-select form-select-sm" id="filtro_dias" name="dia">
+                                    <option value="">Todos</option>
+                                    <option value="Segunda" {% if request.args.get('dia')=='Segunda' %}selected{% endif
+                                        %}>Segunda</option>
+                                    <option value="Terça" {% if request.args.get('dia')=='Terça' %}selected{% endif %}>
+                                        Terça</option>
+                                    <option value="Quarta" {% if request.args.get('dia')=='Quarta' %}selected{% endif
+                                        %}>Quarta</option>
+                                    <option value="Quinta" {% if request.args.get('dia')=='Quinta' %}selected{% endif
+                                        %}>Quinta</option>
+                                    <option value="Sexta" {% if request.args.get('dia')=='Sexta' %}selected{% endif %}>
+                                        Sexta</option>
+                                    <option value="Sábado" {% if request.args.get('dia')=='Sábado' %}selected{% endif
+                                        %}>Sábado</option>
+                                </select>
+                            </div>
+
+                            <!-- Horário -->
+                            <div class="col-md-2">
+                                <label for="filtro_horario" class="form-label small fw-bold text-muted">Horário
+                                    Inicial</label>
+                                <input type="time" class="form-control form-control-sm" id="filtro_horario"
+                                    name="horario_inicio" value="{{ request.args.get('horario_inicio', '') }}">
+                            </div>
+
+                            <!-- C.H./Aula -->
+                            <div class="col-md-2">
+                                <label for="filtro_ch_aula" class="form-label small fw-bold text-muted">C.H./Aula
+                                    (Mín)</label>
+                                <input type="number" step="0.5" class="form-control form-control-sm" id="filtro_ch_aula"
+                                    name="min_ch_aula" value="{{ request.args.get('min_ch_aula', '') }}">
+                            </div>
+
+                            <!-- C.H. Total -->
+                            <div class="col-md-2">
+                                <label for="filtro_ch_total" class="form-label small fw-bold text-muted">C.H. Total
+                                    (Mín)</label>
+                                <input type="number" step="1" class="form-control form-control-sm" id="filtro_ch_total"
+                                    name="min_ch_total" value="{{ request.args.get('min_ch_total', '') }}">
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-3 gap-2">
+                            <a href="{{ url_for('registros.turma') }}" class="btn btn-sm btn-outline-secondary">Limpar
+                                Filtros</a>
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search me-1"></i>
+                                Filtrar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Listagem -->
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -22,6 +163,8 @@
                         <th class="text-center">Programa</th>
                         <th class="text-center">Dias</th>
                         <th class="text-center">Horário</th>
+                        <th class="text-center">C.H./Aula</th>
+                        <th class="text-center">C.H. Total</th>
                         <th class="text-end pe-4">Ações</th>
                     </tr>
                 </thead>
@@ -47,12 +190,14 @@
 
                         <td class="text-center">
                             <span class="badge rounded-pill bg-primary px-3">
-                                {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else turma.alunos|length }}
+                                {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
+                                turma.alunos|length }}
                             </span>
                         </td>
 
                         <td class="text-center">
-                            <span class="badge {% if turma.freq_geral >= 75 %}bg-success{% elif turma.freq_geral >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
+                            <span
+                                class="badge {% if turma.freq_geral >= 75 %}bg-success{% elif turma.freq_geral >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
                                 {{ turma.freq_geral }}%
                             </span>
                         </td>
@@ -72,25 +217,45 @@
                         </td>
 
                         <td class="text-center small">
-                            <i class="bi bi-clock me-1"></i>
-                            {{ turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--' }} - {{ turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--' }}
+                            <i class="bi bi-clock me-1 text-muted"></i>
+                            {{ turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--' }} - {{
+                            turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--' }}
+                        </td>
+
+                        <td class="text-center small fw-semibold">
+                            {{ formatar_ch(turma.carga_horaria_aula) }}
+                        </td>
+
+                        <td class="text-center small fw-semibold">
+                            {{ formatar_ch(turma.carga_horaria_total) }}
                         </td>
 
                         <td class="text-end pe-4">
                             <div class="btn-group">
-                                <a href="{{ url_for('registros.ver_turma', id=turma.id) }}" class="btn btn-sm btn-outline-info">
+                                <a href="{{ url_for('registros.ver_turma', id=turma.id) }}"
+                                    class="btn btn-sm btn-outline-info" title="Visualizar">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                <a href="{{ url_for('registros.editar_turma', id=turma.id) }}" class="btn btn-sm btn-outline-primary">
+                                <a href="{{ url_for('registros.editar_turma', id=turma.id) }}"
+                                    class="btn btn-sm btn-outline-primary" title="Editar">
                                     <i class="bi bi-pencil"></i>
                                 </a>
-                                <form action="{{ url_for('registros.excluir_turma', id=turma.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Excluir turma?')">
+                                <form action="{{ url_for('registros.excluir_turma', id=turma.id) }}" method="POST"
+                                    class="d-inline"
+                                    onsubmit="return confirm('Tem certeza que deseja excluir esta turma?')">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
                             </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="11" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            Nenhuma turma encontrada com os filtros aplicados.
                         </td>
                     </tr>
                     {% endfor %}
