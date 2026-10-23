@@ -18,7 +18,9 @@ Depois de `flask db upgrade` (head e7f3a1b9c4d5), confere:
     6. Nenhuma linha com turma_curso_id apontando para oferta de outra turma;
     7. Nenhuma turma com 2+ ofertas ativas sem principal;
     8. Inscrições ativas sem curso em turma com 2+ ofertas (AVISO);
-    9. Nenhuma oferta com data_inicio > data_fim.
+    9. Nenhuma oferta com data_inicio > data_fim;
+   10. Turma ativa com curso_id e sem oferta (AVISO; lacuna que a criação
+       automática de oferta inicial passou a cobrir).
 """
 from __future__ import annotations
 
@@ -196,6 +198,25 @@ def main() -> int:
                 falhas += _linha("FALHA", f"{vig_bad} oferta(s) com data_inicio > data_fim")
             else:
                 _linha("OK", "nenhuma oferta com data_inicio > data_fim")
+
+            # 10. turma ativa com curso_id e sem oferta (AVISO)
+            turma_sem_oferta = conn.execute(
+                text(
+                    "SELECT count(*) FROM turma t "
+                    "WHERE t.ativo AND t.curso_id IS NOT NULL "
+                    "  AND NOT EXISTS ("
+                    "      SELECT 1 FROM turma_curso tc WHERE tc.turma_id = t.id"
+                    "  )"
+                )
+            ).scalar() or 0
+            if turma_sem_oferta:
+                _linha(
+                    "AVISO",
+                    f"{turma_sem_oferta} turma(s) ativa(s) com curso_id e sem oferta "
+                    "(criação automática de oferta inicial não foi aplicada; não é falha)",
+                )
+            else:
+                _linha("OK", "nenhuma turma ativa com curso_id e sem oferta")
 
     if falhas:
         print(f"\n{falhas} checagem(ens) com FALHA.")

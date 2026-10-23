@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-header bg-primary text-white py-3">
+            <h4 class="mb-0 fw-semibold"><i class="bi bi-plus-circle me-2"></i>Cadastrar Nova Turma</h4>
+        </div>
+        <div class="card-body p-4">
+
+            {# Alerta se não houver unidade ou períodos ativos #}
+            {% if not unidade_contexto or unidade_contexto == 'Administração Global' %}
+            <div class="alert alert-warning d-flex align-items-center rounded-3 shadow-sm" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-3 fs-4"></i>
+                <div>
+                    <strong>Nenhuma unidade selecionada.</strong><br>
+                    Selecione uma unidade no menu superior antes de cadastrar turmas.
+                </div>
+            </div>
+            {% elif not periodos %}
+            <div class="alert alert-danger d-flex align-items-center rounded-3 shadow-sm" role="alert">
+                <i class="bi bi-exclamation-octagon-fill me-3 fs-4"></i>
+                <div>
+                    <strong>Nenhum período letivo ativo na unidade {{ unidade_contexto }}!</strong><br>
+                    É necessário <a href="{{ url_for('registros.periodo_letivo_novo') }}" class="alert-link">cadastrar
+                        um período</a> antes de abrir novas turmas.
+                </div>
+            </div>
+            {% endif %}
+
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <fieldset {% if not periodos %}disabled{% endif %}>
+
+                    <!-- Linha 1: Nome e Período -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-8">
+                            <label for="turma_nome" class="form-label fw-bold">Nome da Turma</label>
+                            <input type="text" id="turma_nome" name="turma" class="form-control form-control-lg"
+                                placeholder="Ex: 01 - Informática Básica A" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="periodo_letivo_id" class="form-label fw-bold text-primary">Vincular ao Período
+                                Letivo</label>
+                            <select id="periodo_letivo_id" name="periodo_letivo_id"
+                                class="form-select form-select-lg border-primary shadow-sm" required>
+                                <option value="">-- Selecione o Período --</option>
+                                {% for p in periodos %}
+                                <option value="{{ p.id }}">{{ p.nome_exibicao }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text"><i class="bi bi-info-circle me-1"></i>Apenas períodos ativos na
+                                unidade {{ unidade_contexto }}.</div>
+                        </div>
+                    </div>
+
+                    <!-- Linha 3: Centro de Custo -->
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-6">
+                            <label for="centro_custo_select" class="form-label fw-bold small">Centro de Custo</label>
+                            <select name="centro_custo" id="centro_custo_select" class="form-select" disabled required>
+                                <option value="">-- Selecione um período primeiro --</option>
+                            </select>
+                            <div id="centro_custo_help" class="form-text">Os centros listados dependem do período letivo
+                                escolhido.</div>
+                        </div>
+                    </div>
+
+                    {# Referências ocultas utilizadas pelo JS para atualização do período #}
+                    <div class="d-none">
+                        <strong id="periodo_data_inicio">—</strong>
+                        <strong id="periodo_data_fim">—</strong>
+                    </div>
+
+                    <hr class="my-4 text-muted">
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('registros.turma') }}" class="btn btn-outline-secondary px-4 py-2">
+                            <i class="bi bi-arrow-left me-2"></i>Voltar
+                        </a>
+                        {% if periodos %}
+                        <button type="submit" class="btn btn-success px-5 py-2 shadow-sm fw-bold">
+                            <i class="bi bi-check-lg me-2"></i>Salvar Turma
+                        </button>
+                        {% endif %}
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.periodosCentros = {{ periodos_centros | default ({}) | tojson }};
+    window.periodosDatas = {{ periodos_datas | default ({}) | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>
+{% endblock %}
