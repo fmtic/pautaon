@@ -144,8 +144,27 @@ tr.opacity-50 .tema-numero {
 }
 
 /* Coluna de tema com respiro */
-.tabela-temas td:nth-child(2) {
+.tabela-temas td.col-tema {
   line-height: 1.4;
+}
+
+/* Cabeçalho do grupo de curso (expansível) */
+.curso-group-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.curso-group-header:hover {
+  background-color: #f1f3f5 !important;
+}
+
+.curso-group-chevron {
+  transition: transform .2s ease;
+  font-size: .85rem;
+}
+
+.curso-group-header[aria-expanded="true"] .curso-group-chevron {
+  transform: rotate(90deg);
 }
 
 /* ═══════════════════════════════════════════════════════════════

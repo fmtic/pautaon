@@ -1,0 +1,21 @@
+<div class="modal fade" id="modalAgendamento" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-calendar-plus me-2"></i>Novo Agendamento Social</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('servico_social.agendar_entrevista') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body p-4">
+                    {% include "partials/_campos_agendamento.html" %}
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-2"></i>Sincronizar e
+                        Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
