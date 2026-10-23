@@ -47,6 +47,7 @@ from app.models.enums import (
 )
 from app.utils.datetime_parse import parse_date
 from app.utils.timezone import get_local_now
+from app.services.turma_curso import resolver_oferta_lancamento
 
 
 NAME_LOWER_EXCEPTIONS = {
@@ -369,12 +370,17 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
 def carregar_frequencias(
     turma_id: int,
     data: str | date,
+    turma_curso_id: Optional[int] = None,
 ) -> Tuple[Dict[int, str], Optional[int], str]:
     """
-    Carrega os conceitos lançados para uma turma em uma data.
+    Carrega os conceitos lançados para uma turma (ou oferta) em uma data.
 
     Onda 2A: `Frequencia.data` e `RegistroAula.data` agora são `date`.
     A função aceita string ou date e normaliza via `parse_date`.
+
+    Onda 4 (Fase 4, D1): com `turma_curso_id` informado, Frequência e Diário
+    são lidos por oferta (`turma_curso_id`, `data`); com None, mantém o
+    comportamento legado (filtro somente por `turma_id`, `data`).
 
     :return: (dict{aluno_id: conceito}, tema_selecionado_id | None, observacoes)
     """
@@ -386,14 +392,22 @@ def carregar_frequencias(
     if not turma_id or not data_alvo:
         return frequencias, tema_selecionado, obs_salva
 
-    registros = Frequencia.query.filter_by(
-        turma_id=turma_id, data=data_alvo
-    ).all()
+    if turma_curso_id is not None:
+        registros = Frequencia.query.filter_by(
+            turma_curso_id=turma_curso_id, data=data_alvo
+        ).all()
+        diario = RegistroAula.query.filter_by(
+            turma_curso_id=turma_curso_id, data=data_alvo
+        ).first()
+    else:
+        registros = Frequencia.query.filter_by(
+            turma_id=turma_id, data=data_alvo
+        ).all()
+        diario = RegistroAula.query.filter_by(
+            turma_id=turma_id, data=data_alvo
+        ).first()
     frequencias = {f.aluno_id: f.conceito for f in registros}
 
-    diario = RegistroAula.query.filter_by(
-        turma_id=turma_id, data=data_alvo
-    ).first()
     if diario:
         tema_selecionado = diario.tema_id
         obs_salva = diario.observacoes or ""
@@ -408,6 +422,14 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
     Onda 2A: `data` do formulário chega como string; convertida via `parse_date`
     antes de qualquer consulta/gravação.
 
+    Onda 4 (Fase 4, D1): resolve a oferta de lançamento via
+    `resolver_oferta_lancamento` (campo opcional `turma_curso` no formulário).
+    Haverendo oferta, a busca do RegistroAula e da Frequencia existentes é
+    feita por (turma_curso_id, data) — nunca por (turma_id, data), sob pena
+    de o diário de uma segunda oferta sobrescrever o da primeira. Sem oferta
+    (turma sem oferta ativa), cai no caminho legado por turma_id. `turma_id`
+    continua sendo gravado em ambas as tabelas.
+
     :return: (turma_id, data_str) em caso de sucesso; (0, None) em caso de erro.
     """
     try:
@@ -421,13 +443,32 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         tema_id = int(tema_id_raw) if tema_id_raw and tema_id_raw.isdigit() else None
         texto_observacoes = form.get('observacoes', '').strip() or None
 
+        turma_curso_raw = form.get('turma_curso', '').strip()
+        turma_curso_id = (
+            int(turma_curso_raw) if turma_curso_raw and turma_curso_raw.isdigit() else None
+        )
+
         if not data_alvo or turma_id == 0:
             return turma_id, None
 
+        # --- Oferta de lançamento (Onda 4) ---
+        # ValueError (2+ cursos sem escolha, oferta inválida etc.) é capturado
+        # pelo except genérico abaixo → (0, None); na D2 a rota passará a
+        # exibir a mensagem específica via flash.
+        oferta = resolver_oferta_lancamento(
+            turma_id, data_alvo, turma_curso_id=turma_curso_id, tema_id=tema_id,
+        )
+        oferta_id = oferta.id if oferta else None
+
         # --- Registro de aula (diário do educador) ---
-        registro = RegistroAula.query.filter_by(
-            turma_id=turma_id, data=data_alvo
-        ).first()
+        if oferta_id is not None:
+            registro = RegistroAula.query.filter_by(
+                turma_curso_id=oferta_id, data=data_alvo
+            ).first()
+        else:
+            registro = RegistroAula.query.filter_by(
+                turma_id=turma_id, data=data_alvo
+            ).first()
         if registro:
             registro.observacoes = texto_observacoes
             registro.tema_id = tema_id
@@ -435,6 +476,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         else:
             db.session.add(RegistroAula(
                 turma_id=turma_id,
+                turma_curso_id=oferta_id,
                 data=data_alvo,
                 tema_id=tema_id,
                 observacoes=texto_observacoes,
@@ -457,9 +499,14 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             if not conceito:
                 continue
 
-            freq = Frequencia.query.filter_by(
-                aluno_id=aluno.id, turma_id=turma_id, data=data_alvo
-            ).first()
+            if oferta_id is not None:
+                freq = Frequencia.query.filter_by(
+                    aluno_id=aluno.id, turma_curso_id=oferta_id, data=data_alvo
+                ).first()
+            else:
+                freq = Frequencia.query.filter_by(
+                    aluno_id=aluno.id, turma_id=turma_id, data=data_alvo
+                ).first()
 
             if freq:
                 freq.conceito = conceito
@@ -467,6 +514,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 db.session.add(Frequencia(
                     aluno_id=aluno.id,
                     turma_id=turma_id,
+                    turma_curso_id=oferta_id,
                     data=data_alvo,
                     conceito=conceito,
                 ))

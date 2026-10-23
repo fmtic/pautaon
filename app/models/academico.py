@@ -6,6 +6,7 @@ ACADEMICO.PY - Estrutura acadêmica
 Contém:
     - PeriodoLetivo : semestre/módulo/ciclo de uma unidade.
     - Turma         : agrupamento operacional de alunos.
+    - TurmaCurso    : oferta concreta de um curso dentro de uma turma.
     - TemaAula      : tópico macro do planejamento pedagógico.
 
 Turma é a entidade mais conectada do sistema: liga unidade, período letivo,
@@ -19,6 +20,9 @@ NOTAS DE ONDAS
     - Onda 3C: `carga_horaria_aula` (minutos/aula) e `carga_horaria_total`
       (minutos totais) são properties calculadas em `Turma`. `Curso.carga_horaria`
       foi removido. Use `formatar_ch()` de `app.utils.formatters` para exibição.
+    - Onda 4 (Fase 1, múltiplos cursos por turma): `TurmaCurso` é a unidade
+      acadêmica concreta; os atributos de horário/professor/turno replicam-se
+      na oferta e as colunas legadas de `Turma` permanecem até o contrato final.
 ================================================================================
 """
 
@@ -212,6 +216,84 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         return db.session.execute(
             select(cls).where(cls.ativo == True).order_by(cls.nome)
         ).scalars().all()
+
+
+class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
+    """
+    Oferta concreta de um Curso dentro de uma Turma (Onda 4 — Fase 1).
+
+    A Turma é o agrupador lógico; o vínculo acadêmico efetivo do aluno é a
+    matrícula em uma oferta (TurmaCurso). Frequência, diário, conselho e
+    transferências passam a apontar para a oferta nas fases seguintes.
+
+    Regras:
+        - `UNIQUE(turma_id, curso_id)`: cada curso é ofertado no máximo uma
+          vez na mesma turma, independentemente de professor/turno/horário.
+          O mesmo curso pode ser ofertado em turmas diferentes.
+        - `principal` pertence ao vínculo turma↔curso (nunca ao aluno nem ao
+          curso globalmente). No máximo um por turma: garantido por índice
+          único parcial. A obrigatoriedade de exatamente um quando houver
+          2+ ofertas ativas é validada pela camada de serviço/UI (Fase 2).
+        - `centro_custo` NULL ⇒ herda o valor compartilhado da turma
+          (modalidades compartilhado/individual — Fase 3).
+        - Atributos próprios da oferta (professor, turno, dias, horários,
+          datas) foram replicados de `Turma`; durante a transição a camada
+          de compatibilidade mantém as colunas legadas da turma para turmas
+          com oferta única (não-remove sem migrar leitores).
+    """
+    __tablename__ = 'turma_curso'
+    __table_args__ = (
+        db.UniqueConstraint('turma_id', 'curso_id', name='uix_turma_curso_oferta'),
+        # No máximo um curso principal por turma ativa (índice único parcial).
+        db.Index(
+            'uix_turma_curso_principal',
+            'turma_id',
+            unique=True,
+            postgresql_where=db.text('principal AND ativo'),
+            sqlite_where=db.text('principal = 1 AND ativo = 1'),
+        ),
+        db.Index('ix_turma_curso_curso_id', 'curso_id'),
+        db.Index('ix_turma_curso_professor_id', 'professor_id'),
+    )
+
+    id: int = db.Column(db.Integer, primary_key=True)
+
+    turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
+    curso_id: int = db.Column(db.Integer, db.ForeignKey('curso.id'), nullable=False)
+
+    principal: bool = db.Column(
+        db.Boolean, default=False, nullable=False,
+        comment='Curso principal da turma (vínculo, não atributo do aluno/curso)',
+    )
+
+    # Atributos da oferta (legado: ficavam em Turma; migrados fase a fase).
+    professor_id: int = db.Column(
+        db.Integer, db.ForeignKey('user.id'), nullable=True,
+        comment='Professor responsável pela oferta do curso na turma',
+    )
+    turno: str = db.Column(db.String(20))
+    dias_semana: str = db.Column(db.String(20))
+    hora_inicio: time = db.Column(db.Time)
+    hora_fim: time = db.Column(db.Time)
+    data_inicio: date = db.Column(db.Date)
+    data_fim: date = db.Column(db.Date)
+    centro_custo: str = db.Column(
+        db.String(150),
+        comment='Centro de custo individual; NULL = usa o compartilhado da turma',
+    )
+
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+
+    turma = db.relationship(
+        'Turma',
+        backref=db.backref('ofertas_curso', cascade='all, delete-orphan'),
+    )
+    curso = db.relationship('Curso', backref='ofertas_turma')
+    # foreign_keys explícito: o modelo tem duas FKs para user.id
+    # (professor_id + updated_by_id do AuditoriaMixin). Convenção do MER §1.
+    professor = db.relationship(
+        'User', foreign_keys=[professor_id], backref='ofertas_como_responsavel'
+    )
 
 
 class TemaAula(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):

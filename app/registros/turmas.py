@@ -11,18 +11,27 @@ from app.models import (
     Frequencia,
     Inscricao,
     Nivel,
-    PeriodoLetivo,
     PerguntaConselho,
+    PeriodoLetivo,
     RegistroAula,
     Turma,
+    TurmaCurso,
     User,
+)
+from app.models.enums import UserRole
+from app.services.turma_curso import (
+    adicionar_oferta,
+    definir_principal,
+    desativar_oferta,
+    editar_oferta,
+    ofertas_ativas,
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.formatters import formatar_ch
 from app.utils.logica import carregar_contexto_turma, get_unidade_id
+
 from . import bp
 from .shared import assert_unidade_context, obter_proximo_ordenacao
-from app.models.enums import UserRole
 
 
 def _parse_int_arg(value):
@@ -331,6 +340,14 @@ def nova_turma():
 @login_required
 def ver_turma(id):
     unidade_id = get_unidade_id()
+    turma_obj = Turma.query.get_or_404(id)
+    assert_unidade_context(turma_obj.unidade_id, unidade_id)
+    if (
+        current_user.role == UserRole.PROFESSOR
+        and turma_obj.professor_id != current_user.id
+    ):
+        abort(403)
+
     try:
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
@@ -340,8 +357,6 @@ def ver_turma(id):
         )
         return redirect(url_for("registros.turma"))
 
-    turma_obj = ctx.get("turma")
-    assert_unidade_context(turma_obj.unidade_id, unidade_id)
     alunos_disponiveis = Aluno.query.filter(
         Aluno.ativo == True,
         ~Aluno.inscricoes.any((Inscricao.turma_id == id) & (Inscricao.ativo == True)),
@@ -382,7 +397,12 @@ def ver_turma(id):
 @bp.route("/turma/enturmar/<int:turma_id>", methods=["POST"])
 @login_required
 def enturmar_alunos(turma_id):
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+    ):
         abort(403)
 
     unidade_id = get_unidade_id()
@@ -649,6 +669,177 @@ def editar_turma(id):
         cursos=cursos,
         tem_lancamentos=tem_lancamentos,
     )
+
+
+# ---------------------------------------------------------------------------
+# Onda 4 — Fase 2: ofertas de curso na turma (TurmaCurso), cadastro incremental
+# e regra do curso principal. As colunas legadas de Turma seguem intocadas
+# aqui; o espelhamento controlado vive em app/services/turma_curso.py.
+# ---------------------------------------------------------------------------
+
+
+def _turma_para_ofertas(id):
+    """Carrega a turma validando papel e unidade (padrão das rotas de turmas)."""
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+        abort(403)
+    turma_obj = db.session.get(Turma, id)
+    if turma_obj is None:
+        abort(404)
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+    return turma_obj
+
+
+def _dados_oferta_form(form, turma_obj):
+    """Extrai os campos de oferta do POST usando os mesmos parseadores do
+    cadastro de turma (dias em CSV, datas/horas nativas — Onda 2A)."""
+    dias = ", ".join([d for d in form.getlist("dias_semana") if d]) or None
+    periodo_obj = turma_obj.periodo_letivo
+    data_inicio = parse_date(form.get("data_inicio"))
+    data_fim = parse_date(form.get("data_fim"))
+    if periodo_obj:
+        if data_inicio and data_inicio < periodo_obj.data_inicio:
+            raise ValueError(
+                "A data de início não pode ser anterior ao início do período letivo."
+            )
+        if data_fim and data_fim > periodo_obj.data_fim:
+            raise ValueError(
+                "A data de término não pode ser posterior ao fim do período letivo."
+            )
+    centro_custo = form.get("centro_custo") or None
+    if centro_custo and periodo_obj and periodo_obj.centro_custo:
+        centros_disponiveis = [
+            c.strip() for c in periodo_obj.centro_custo.split(",")
+        ]
+        if centros_disponiveis and centro_custo not in centros_disponiveis:
+            raise ValueError("Centro de custo inválido para o período selecionado.")
+    return {
+        "curso_id": _parse_int_arg(form.get("curso_id")),
+        "principal": form.get("principal") == "on",
+        "professor_id": _parse_int_arg(form.get("professor_id")),
+        "turno": form.get("turno") or None,
+        "dias_semana": dias,
+        "hora_inicio": parse_time(form.get("hora_inicio")),
+        "hora_fim": parse_time(form.get("hora_fim")),
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "centro_custo": centro_custo,
+    }
+
+
+@bp.route("/turma/<int:id>/ofertas")
+@login_required
+def turma_ofertas(id):
+    """Tela de cursos da turma: lista de ofertas + formulário incremental."""
+    turma_obj = _turma_para_ofertas(id)
+    unidade_id = turma_obj.unidade_id
+
+    professores = (
+        User.query.filter_by(role=UserRole.PROFESSOR.value, unidade_id=unidade_id)
+        .order_by(User.name)
+        .all()
+    )
+    ids_ofertados = {o.curso_id for o in ofertas_ativas(turma_obj.id)}
+    cursosDisponiveis = [
+        c for c in Curso.query.filter_by(ativo=True, unidade_id=unidade_id)
+        .order_by(Curso.nome).all()
+        if c.id not in ids_ofertados
+    ]
+    centros = (
+        [c.strip() for c in turma_obj.periodo_letivo.centro_custo.split(",")]
+        if turma_obj.periodo_letivo and turma_obj.periodo_letivo.centro_custo
+        else []
+    )
+    return render_template(
+        "turmas/ofertas.html",
+        turma=turma_obj,
+        ofertas=TurmaCurso.query.filter_by(turma_id=id)
+        .order_by(TurmaCurso.ativo.desc(), TurmaCurso.id)
+        .all(),
+        professores=professores,
+        cursosDisponiveis=cursosDisponiveis,
+        centros=centros,
+        dias_semana=["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"],
+    )
+
+
+@bp.route("/turma/<int:id>/ofertas/nova", methods=["POST"])
+@login_required
+def turma_oferta_nova(id):
+    """Adiciona uma oferta de curso à turma (cadastro incremental, sem limite)."""
+    turma_obj = _turma_para_ofertas(id)
+    try:
+        dados = _dados_oferta_form(request.form, turma_obj)
+        if dados["curso_id"] is None:
+            raise ValueError("Selecione um curso para adicionar à turma.")
+        nome_curso = db.session.get(Curso, dados["curso_id"]).nome
+        adicionar_oferta(turma_obj, **dados)
+    except ValueError as erro:
+        flash(str(erro), "warning")
+        return redirect(url_for("registros.turma_ofertas", id=id))
+
+    flash(
+        f"Curso '{nome_curso}' adicionado à turma. "
+        "Deseja adicionar outro curso?",
+        "success",
+    )
+    return redirect(url_for("registros.turma_ofertas", id=id))
+
+
+@bp.route("/turma/oferta/<int:oferta_id>/editar", methods=["POST"])
+@login_required
+def turma_oferta_editar(oferta_id):
+    """Edita os atributos próprios da oferta (professor, horários, vigência)."""
+    oferta = db.session.get(TurmaCurso, oferta_id)
+    if oferta is None:
+        abort(404)
+    turma_obj = _turma_para_ofertas(oferta.turma_id)
+    try:
+        dados = _dados_oferta_form(request.form, turma_obj)
+        dados.pop("principal", None)
+        if dados["curso_id"] is None:
+            raise ValueError("A oferta precisa estar vinculada a um curso.")
+        editar_oferta(oferta, **dados)
+    except ValueError as erro:
+        flash(str(erro), "warning")
+        return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+    flash(f"Oferta '{oferta.curso.nome}' atualizada na turma.", "success")
+    return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+
+
+@bp.route("/turma/oferta/<int:oferta_id>/principal", methods=["POST"])
+@login_required
+def turma_oferta_principal(oferta_id):
+    """Define o curso principal da turma em troca atômica."""
+    oferta = db.session.get(TurmaCurso, oferta_id)
+    if oferta is None:
+        abort(404)
+    turma_obj = _turma_para_ofertas(oferta.turma_id)
+    try:
+        definir_principal(oferta)
+    except ValueError as erro:
+        flash(str(erro), "warning")
+        return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+    flash(
+        f"'{oferta.curso.nome}' agora é o curso principal da turma.", "success"
+    )
+    return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+
+
+@bp.route("/turma/oferta/<int:oferta_id>/desativar", methods=["POST"])
+@login_required
+def turma_oferta_desativar(oferta_id):
+    """Remove o curso da turma (soft delete); histórico de inscrições preservado."""
+    oferta = db.session.get(TurmaCurso, oferta_id)
+    if oferta is None:
+        abort(404)
+    turma_obj = _turma_para_ofertas(oferta.turma_id)
+    try:
+        desativar_oferta(oferta)
+    except ValueError as erro:
+        flash(str(erro), "warning")
+        return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+    flash(f"O curso '{oferta.curso.nome}' foi removido da turma.", "success")
+    return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
 
 
 @bp.route("/turma/excluir/<int:id>", methods=["POST"])
@@ -980,11 +1171,12 @@ def imprimir_pauta(id):
         if current_user.role != "professor":
             abort(403)
 
+    turma = Turma.query.get_or_404(id)
+    assert_unidade_context(turma.unidade_id, get_unidade_id())
+    if current_user.role == "professor" and turma.professor_id != current_user.id:
+        abort(403)
+
     try:
-        turma = Turma.query.get_or_404(id)
-        if current_user.role == "professor" and turma.professor_id != current_user.id:
-            abort(403)
-        assert_unidade_context(turma.unidade_id, get_unidade_id())
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
         flash(

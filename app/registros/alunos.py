@@ -724,7 +724,12 @@ def inativar_aluno(id):
 @bp.route("/turma/desenturmar/<int:id>", methods=["POST"])
 @login_required
 def desenturmar_alunos(id):
-    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN):
+    if current_user.role not in (
+        UserRole.PEDAGOGICO,
+        UserRole.ADMIN,
+        UserRole.SECRETARIA,
+        UserRole.GERENCIA,
+    ):
         abort(403)
 
     aluno = db.get_or_404(Aluno, id)

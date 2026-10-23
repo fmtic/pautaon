@@ -3,6 +3,7 @@
 from datetime import date, datetime, time, timedelta
 
 import pytest
+
 from app import create_app, db
 from app.models import (
     Aluno,
@@ -15,6 +16,7 @@ from app.models import (
     User,
 )
 from app.relatorios.bi import executar_indicador
+from app.relatorios.bi_alunos import turmas_por_professor
 from app.services.aluno_status import status_alunos_para_bi
 from config import Config
 
@@ -56,6 +58,38 @@ def test_indicadores_sociais_e_operacionais(app):
         # ATD-001: Total de atendimentos (retorna inteiro)
         res_atd1 = executar_indicador("ATD-001")
         assert isinstance(res_atd1, int)
+
+
+def test_indicador_de_turmas_por_professor_usa_responsavel_direto(app):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade da Natação", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        professor = User(
+            name="Professor da Natação",
+            email="bi.natacao@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(
+            nome="1 - Natação",
+            ativo=True,
+            unidade_id=unidade.id,
+            professor=professor,
+        )
+        db.session.add_all([professor, turma])
+        db.session.flush()
+
+        resultado = turmas_por_professor(
+            unidade_id=unidade.id,
+            professor_id=professor.id,
+        )
+
+        assert resultado == [
+            {"id": professor.id, "nome": professor.name, "valor": 1}
+        ]
 
 
 def test_indicadores_cruzados(app):

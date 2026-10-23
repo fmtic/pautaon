@@ -58,10 +58,17 @@
             <h5 class="fw-bold mb-0">Alunos da Turma</h5>
             <small class="text-muted">Alunos ativos: {{ alunos_ativos_count }}</small>
         </div>
+        {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
+        <a href="{{ url_for('registros.turma_ofertas', id=turma.id) }}" class="btn btn-outline-primary btn-sm fw-bold">
+            <i class="bi bi-mortarboard me-1"></i> CURSOS DA TURMA
+        </a>
+        {% endif %}
+        {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
         <button type="button" class="btn btn-primary btn-sm fw-bold" data-bs-toggle="modal"
             data-bs-target="#modalEnturmar">
             <i class="bi bi-person-plus me-1"></i> ENTURMAR ALUNOS
         </button>
+        {% endif %}
         <div class="btn-group">
             <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
                 <i class="bi bi-printer"></i> Imprimir Pauta
@@ -135,6 +142,7 @@
                             onclick="return confirm('Transferir este aluno da turma {{ turma.nome }} para outra turma?');">
                             <i class="bi bi-arrow-left-right"></i>
                         </a>
+                        {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
                         <form action="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id) }}" method="POST" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-outline-danger" title="Remover da Turma"
@@ -142,6 +150,7 @@
                                 <i class="bi bi-person-dash"></i>
                             </button>
                         </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -153,6 +162,7 @@
     {% endif %}
 </div>
 
+{% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
 <!-- Modal Enturmar -->
 <div class="modal fade" id="modalEnturmar" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -217,6 +227,7 @@
         </form>
     </div>
 </div>
+{% endif %}
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {

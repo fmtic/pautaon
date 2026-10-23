@@ -1,7 +1,7 @@
 ### Alterações do dia — 22/10/2026
 
 - Data da intervenção: 22/10/2026
-- Conclusão: implementado e validado; alterações de ciclo de vida dos cursos ainda não commitadas.
+- Conclusão: implementado e validado; alterações de ciclo de vida dos cursos e da Onda 4 (Fases 0–2) ainda não commitadas.
 
 ### Carga horária por turma e catálogo de cursos
 
@@ -53,9 +53,34 @@
 - `node --check` para `app/static/js/planejamento/planejamento.js`, `compileall` dos módulos Python alterados e `git diff --check`: aprovados.
 - Na suíte completa `tests/test_security_regressions.py`, permaneceram 2 falhas em assertions preexistentes relacionadas a isolamento entre unidades e carga horária, já observadas antes das alterações de 22/10.
 
+### Onda 4 — Múltiplos cursos por turma: Fases 0–3
+
+- Escopo aprovado pelo responsável: especificação de 390 linhas (turma como agrupador lógico, oferta `TurmaCurso`, plano de 9 fases). Fase 0 (higiene de migrations) e Fase 1 (modelo + migration com backfill) executadas nesta data; demais fases seguem o plano.
+- **Fase 0 — heads unificadas:** existiam dois heads Alembic (`b7c1d2e3f4a5` e `d1e2f3a4b5c6`), que faziam `flask db upgrade` falhar. Criada a revision de merge `b02f2051bc1e` e aplicado upgrade completo no PostgreSQL local.
+- **Fase 0 — drift de banco:** o banco local (restaurado de dump sem stamp) tinha o ramo `5a676f37b9a3` parcialmente aplicado (colunas já em DATE/TIME e sequência existente, mas ENUMs ainda em VARCHAR). A revision foi tornada **idempotente** com guards por `pg_attribute` (`_tipo_atual`/`_alterar_tipo`) antes de cada conversão; valores ENUM/CAST verificados como seguros antes da execução.
+- **Fase 1 — modelo:** criado `TurmaCurso` em `app/models/academico.py` (tabela `turma_curso`): `UNIQUE(turma_id, curso_id)`, índice único parcial do `principal` (máximo um curso principal por turma ativa; `postgresql_where` + `sqlite_where`), atributos próprios de professor/turno/dias/horários/datas/centro de custo (NULL = compartilhado da turma). `Inscricao` ganhou `turma_curso_id` (nullable na transição) com relacionamento `turma_curso` — backref `inscricoes_oferta` **sem cascade** para proteger histórico de matrícula. Export em `app/models/__init__.py`.
+- **Fase 1 — migration:** `311d554dfd6e` (down_revision `b02f2051bc1e`) cria tabela/índices, adiciona a coluna em `inscricoes` e executa **backfill portável em SQL puro**: uma oferta por turma legada com curso (atributos copiados da turma, `principal=false`) e vínculo das inscrições à oferta; reforço idempotente da sequência `turma_curso_id_seq` (lição de `inscricoes.id`). O autogenerate propôs DROP das colunas de auditoria de `curso` e ~10 alter comments (drift pré-existente) — removidos manualmente da revision e registrados como dívida para uma sincronia dedicada.
+- **Fase 1 — verificação:** criado `scripts/verificar_onda4_fase1.py` (padrão `verificar_sec01.py`), executado no PG local: 3 turmas com curso → 3 ofertas, 0 inscrições órfãs, 0 duplicatas, no máximo 1 principal por turma, 0 divergências com o legado — exit 0.
+- **Fase 1 — testes:** criados `tests/test_turma_curso.py` (7 cenários: oferta única, repetição bloqueada pelo UNIQUE, mesmo curso em turmas distintas, principal por turma via índice parcial, inscrição↔oferta). Corrigidos fixture obsoleto de `tests/test_carga_horaria.py` (agora usa `SQLiteTestConfig` como os demais testes) e `formatar_ch` para valores negativos (retorna "—", conforme docstring). Também atualizado `test_calcular_dias_com_bloqueios` para a API pós-Onda 2B de `DiaBloqueado` (`tipo`/`descricao`/`periodo_letivo_id`).
+- Suíte completa após as fases: **97 aprovados**, restando apenas as 2 falhas preexistentes de `/cursos` já listadas acima (existem em HEAD, fora do escopo da Onda 4).
+- **Fase 2 — serviço de regras:** criado `app/services/turma_curso.py` com cadastro incremental (`adicionar_oferta`), edição (`editar_oferta`), `definir_principal` em swap atômico, `desativar_oferta` com guarda (impede ficar 2+ ativas sem principal) e validação do `UNIQUE` pleno — o banco também bloqueia reofertar curso cuja oferta foi desativada (histórico); o serviço antecipa a regra com mensagem clara. Principal obrigatório ao passar a ter 2+ ofertas; opcional na oferta única. Espelhamento legado apenas em turma sem curso legado com oferta única — sem dual-write nas turmas do backfill.
+- **Fase 2 — rotas/UI:** novas rotas em `app/registros/turmas.py` (`/turma/<id>/ofertas`, `…/ofertas/nova`, `/turma/oferta/<id>/editar|principal|desativar`, perfis admin/pedagógico/secretaria com isolamento por unidade) e a tela `app/templates/turmas/ofertas.html` (lista de ofertas com principal/professor/turno/horários/vigência/centro de custo, edição inline, formulário incremental com o aviso "Deseja adicionar outro curso?" após salvar). Botão "CURSOS DA TURMA" adicionado à ficha em `detalhe.html`.
+- **Fase 2 — testes:** `tests/test_turma_curso_fase2.py` (14 cenários: serviço + rotas). Suíte completa: **111 aprovados**, apenas as 2 falhas preexistentes de `/cursos` permanecem.
+- Documentação: `app/models/MER.md` sincronizado (§7.32 nova tabela, §8.10 regras da Onda 4, §10 histórico, §11/§11.1 cadeia e ressalva 1 resolvida, §12.12 dívida parcial).
+- **Fix de migration (PG):** `8c4e1f9a7d32` adiciona as três colunas do `AuditoriaMixin` (`updated_by_id`/`updated_by_name`/`updated_at`) que faltavam em `turma_curso` no PostgreSQL (a revision original `311d554dfd6e` omitiu-os da `create_table`). Guards idempotentes por `sa.inspect(bind)`; FK `ON DELETE SET NULL` no PG.
+- **Fase 3 — concomitância de horários (§5):** implementada em `_validar_horario_concomitante` (`app/services/turma_curso.py`). Detecção por tripla condição: dias em comum (CSV parseado e normalizado) + sobreposição estrita de horário (adjacência permitida) + vigências interceptam (NULL = aberto). Chamada por `adicionar_oferta` e `editar_oferta` (esta última com `exclude_oferta_id` para ignorar a própria). `ValueError` com mensagem indicando o curso conflitante.
+- **Fase 3 — testes:** `tests/test_turma_curso_fase3.py` (20 cenários: unitários de `_parse_dias`/`_sobreposicao_horario`/`_sobreposicao_vigencia`, serviço sobreposição total/parcial/dias distintos/vigência disjunta/adjacência/sem dados, edição cria/remove conflito, rota POST com conflito → flash). Suíte completa: **131 aprovados**, 2 falhas preexistentes.
+- **Pendências da Onda 4:** Fases 4–9 — migração de frequência/diário/avaliações para a oferta (§7), autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), **D5 conselho — aguardando decisão**, certificados/indicadores (§12), NOT NULL final em `inscricoes.turma_curso_id` (Fase 9). Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
+
 ### Arquivos principais
 
 `app/services/maintenance.py`, `app/auth.py`, `app/__init__.py`, `app/registros/core.py`, `app/registros/turmas.py`, `app/registros/periodos.py`, `app/models/academico.py`, `app/models/pedagogico.py`, `app/utils/formatters.py`, `app/static/js/planejamento/planejamento.js`, `app/static/js/turmas/nova.js`, `app/static/js/turmas/editar.js`, `app/templates/admin/logs.html`, `app/templates/planejamento/planejamento.html`, `app/templates/turmas/nova.html`, `app/templates/turmas/editar.html`, `app/templates/turmas/listar.html`, `app/templates/turmas/carga_horaria_curso.html`, `app/templates/periodos/certificado.html`, `migrations/versions/d1e2f3a4b5c6_onda3c_drop_curso_carga_horaria.py`, `tests/test_maintenance.py`, `tests/test_carga_horaria.py`, `tests/test_carga_horaria_curso.py`, `tests/test_filtros_turmas.py` e `tests/test_security_regressions.py`.
+
+Onda 4 (Fases 0 e 1): `app/models/academico.py`, `app/models/matriculas.py`, `app/models/__init__.py`, `app/utils/formatters.py`, `migrations/versions/5a676f37b9a3_...py` (idempotência), `migrations/versions/b02f2051bc1e_merge_heads_onda3c_inscricoes_seq.py`, `migrations/versions/311d554dfd6e_onda4_fase1_turmacurso_inscricao_turma_.py`, `scripts/verificar_onda4_fase1.py`, `tests/test_turma_curso.py`, `tests/test_carga_horaria.py` e `app/models/MER.md`.
+
+Onda 4 (Fase 2): `app/services/turma_curso.py`, `app/registros/turmas.py`, `app/templates/turmas/ofertas.html`, `app/templates/turmas/detalhe.html` e `tests/test_turma_curso_fase2.py`.
+
+Onda 4 (Fix PG + Fase 3): `migrations/versions/8c4e1f9a7d32_onda4_fase1_fix_turma_curso_updated_by_id.py`, `app/services/turma_curso.py` e `tests/test_turma_curso_fase3.py`.
 
 ---
 

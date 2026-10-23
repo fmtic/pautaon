@@ -24,7 +24,7 @@ def formatar_ch(minutos: int | None) -> str:
         formatar_ch(None) → "—"
         formatar_ch(0)    → "—"
     """
-    if not minutos:
+    if not minutos or minutos < 0:
         return "—"
     h = minutos // 60
     m = minutos % 60

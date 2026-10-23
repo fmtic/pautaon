@@ -4,7 +4,7 @@ from werkzeug.exceptions import Forbidden
 
 from app import create_app
 from app.database import db
-from app.models import User, Unidade, Aluno, Turma, Curso, TemaAula
+from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, Unidade, User
 from app.registros.shared import assert_unidade_context
 from config import Config
 
@@ -135,6 +135,190 @@ def test_change_password_requires_current_password(client, app):
 def test_assert_unidade_context_rejects_missing_local_unidade():
     with pytest.raises(Forbidden):
         assert_unidade_context(10, None)
+
+
+@pytest.mark.parametrize(
+    "role", ["admin", "pedagogico", "secretaria", "gerencia"]
+)
+def test_perfis_autorizados_podem_desenturmar_na_propria_unidade(client, app, role):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade da Turma", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        user = User(
+            name=f"Usuário {role}",
+            email=f"{role}@example.com",
+            role=role,
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        aluno = Aluno(
+            nome="Aluno da turma",
+            nome_social="Aluno",
+            ativo=True,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(nome="1 - Natação", ativo=True, unidade_id=unidade.id)
+        db.session.add_all([user, aluno, turma])
+        db.session.flush()
+
+        inscricao = Inscricao(aluno_id=aluno.id, turma_id=turma.id, ativo=True)
+        db.session.add(inscricao)
+        db.session.commit()
+        user_id = user.id
+        aluno_id = aluno.id
+        turma_id = turma.id
+        unidade_id = unidade.id
+        inscricao_id = inscricao.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+        session["unidade_id"] = unidade_id
+
+    response = client.post(
+        f"/turma/desenturmar/{aluno_id}?turma_id={turma_id}",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        assert db.session.get(Inscricao, inscricao_id) is None
+
+
+def test_professor_nao_pode_desenturmar_na_propria_unidade(client, app):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade do professor", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        professor = User(
+            name="Professor",
+            email="professor.unidade@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        aluno = Aluno(
+            nome="Aluno",
+            nome_social="Aluno",
+            ativo=True,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(nome="Turma do professor", ativo=True, unidade_id=unidade.id)
+        db.session.add_all([professor, aluno, turma])
+        db.session.flush()
+
+        inscricao = Inscricao(aluno_id=aluno.id, turma_id=turma.id, ativo=True)
+        db.session.add(inscricao)
+        db.session.commit()
+        professor_id = professor.id
+        aluno_id = aluno.id
+        turma_id = turma.id
+        inscricao_id = inscricao.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(professor_id)
+        session["_fresh"] = True
+
+    response = client.post(
+        f"/turma/desenturmar/{aluno_id}?turma_id={turma_id}",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert db.session.get(Inscricao, inscricao_id) is not None
+
+
+@pytest.mark.parametrize("role", ["admin", "pedagogico", "secretaria", "gerencia"])
+def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade da Turma", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        user = User(
+            name=f"Usuário {role}",
+            email=f"enturma-{role}@example.com",
+            role=role,
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        aluno = Aluno(
+            nome="Aluno disponível",
+            nome_social="Aluno",
+            ativo=True,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(nome="1 - Natação", ativo=True, unidade_id=unidade.id)
+        db.session.add_all([user, aluno, turma])
+        db.session.commit()
+        user_id = user.id
+        aluno_id = aluno.id
+        turma_id = turma.id
+        unidade_id = unidade.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+        session["unidade_id"] = unidade_id
+
+    response = client.post(
+        f"/turma/enturmar/{turma_id}",
+        data={"aluno_ids[]": str(aluno_id)},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        assert Inscricao.query.filter_by(
+            aluno_id=aluno_id, turma_id=turma_id, ativo=True
+        ).first() is not None
+
+
+def test_professor_nao_pode_enturmar(client, app):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade da Turma", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        professor = User(
+            name="Professor",
+            email="professor-enturma@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        aluno = Aluno(
+            nome="Aluno disponível",
+            nome_social="Aluno",
+            ativo=True,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(nome="1 - Natação", ativo=True, unidade_id=unidade.id)
+        db.session.add_all([professor, aluno, turma])
+        db.session.commit()
+        professor_id = professor.id
+        aluno_id = aluno.id
+        turma_id = turma.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(professor_id)
+        session["_fresh"] = True
+
+    response = client.post(
+        f"/turma/enturmar/{turma_id}",
+        data={"aluno_ids[]": str(aluno_id)},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    with app.app_context():
+        assert Inscricao.query.filter_by(
+            aluno_id=aluno_id, turma_id=turma_id, ativo=True
+        ).first() is None
 
 
 def test_historico_aluno_rejects_unrelated_professor(client, app):

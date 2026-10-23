@@ -18,7 +18,7 @@ MAPA DE MÓDULOS
     organizacao      -> Unidade, ConfiguracaoSistema
     usuarios         -> User
     pedagogico       -> Curso, Nivel
-    academico        -> PeriodoLetivo, Turma, TemaAula
+    academico        -> PeriodoLetivo, Turma, TurmaCurso, TemaAula
     pessoas          -> Aluno, SituacaoEscolar
     perfis           -> EnderecoAluno, ResponsavelAluno,
                         PerfilSocioeconomico, PerfilDiversidade  (Onda 3A)
@@ -38,7 +38,7 @@ MAPA DE MÓDULOS
 from app.models.organizacao import Unidade, ConfiguracaoSistema
 from app.models.usuarios import User
 from app.models.pedagogico import Curso, Nivel
-from app.models.academico import PeriodoLetivo, Turma, TemaAula
+from app.models.academico import PeriodoLetivo, Turma, TurmaCurso, TemaAula
 from app.models.pessoas import Aluno, SituacaoEscolar
 from app.models.perfis import (
     EnderecoAluno,
@@ -70,7 +70,7 @@ __all__ = [
     # Pedagógico
     'Curso', 'Nivel',
     # Acadêmico
-    'PeriodoLetivo', 'Turma', 'TemaAula',
+    'PeriodoLetivo', 'Turma', 'TurmaCurso', 'TemaAula',
     # Pessoas
     'Aluno', 'SituacaoEscolar',
     # Perfis (Onda 3A)

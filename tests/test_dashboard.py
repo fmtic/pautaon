@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from app import create_app, db
-from app.models import PeriodoLetivo, Unidade, User
+from app.models import PeriodoLetivo, Turma, Unidade, User
 from config import Config
 
 
@@ -116,3 +116,36 @@ def test_dashboard_filtra_periodos_ativos_pela_unidade_selecionada(app, client):
 
     assert response.status_code == 200
     assert _periodos_ativos_exibidos(response) == 1
+
+
+def test_dashboard_professor_exibe_turma_com_responsavel_direto(app, client):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade da Natação", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+
+        professor = User(
+            name="Professor da Natação",
+            email="natacao@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        turma = Turma(
+            nome="1 - Natação",
+            ativo=True,
+            unidade_id=unidade.id,
+            professor=professor,
+        )
+        db.session.add_all([professor, turma])
+        db.session.commit()
+        professor_id = professor.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(professor_id)
+        session["_fresh"] = True
+
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "1 - Natação" in response.get_data(as_text=True)

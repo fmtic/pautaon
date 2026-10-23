@@ -14,6 +14,13 @@ from app.utils.formatters import formatar_ch
 from app.models import Turma, PeriodoLetivo, Curso, Unidade, User
 from app.database import db
 from app.utils.logica import calcular_dias_aula_turma
+from config import Config
+
+
+class SQLiteTestConfig(Config):
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    TESTING = True
+    WTF_CSRF_ENABLED = False
 
 
 class TestFormatarCH:
@@ -198,12 +205,24 @@ class TestCalcularDiasAulaTurma:
         """Com dias bloqueados, deve descontar os dias especificados."""
         with app.app_context():
             from app.models import DiaBloqueado
+            from app.models.enums import TipoDiaBloqueado
+
+            periodo = PeriodoLetivo(
+                nome="2024-1",
+                data_inicio=date(2024, 1, 1),
+                data_fim=date(2024, 12, 20),
+                unidade_id=1,
+                ativo=True,
+            )
+            db.session.add(periodo)
+            db.session.flush()
 
             turma = Turma(
                 nome="Teste",
                 data_inicio=date(2024, 1, 1),
                 data_fim=date(2024, 1, 7),
                 dias_semana="Segunda, Quarta, Sexta",
+                periodo_letivo_id=periodo.id,
                 unidade_id=1,
                 ativo=True
             )
@@ -211,7 +230,9 @@ class TestCalcularDiasAulaTurma:
             # Bloquear a segunda (01/01/2024)
             bloqueio = DiaBloqueado(
                 data=date(2024, 1, 1),
-                motivo="Feriado",
+                tipo=TipoDiaBloqueado.FERIADO,
+                descricao="Feriado",
+                periodo_letivo_id=periodo.id,
                 unidade_id=1
             )
             db.session.add(bloqueio)
@@ -254,7 +275,7 @@ class TestCalcularDiasAulaTurma:
 def app():
     """Fixture para criar a aplicação Flask para testes."""
     from app import create_app
-    app = create_app('testing')
+    app = create_app(SQLiteTestConfig)
     app.config['TESTING'] = True
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     app.config['WTF_CSRF_ENABLED'] = False

@@ -4,7 +4,7 @@ AULAS.PY - Frequência e diário de aula
 ================================================================================
 
 Contém:
-    - Frequencia   : pauta (presença/falta por aluno/dia/turma).
+    - Frequencia   : pauta (presença/falta por aluno/dia/turma/oferta).
     - RegistroAula : diário do professor (o que foi dado no dia).
 
 São a base operacional da rotina pedagógica.
@@ -17,6 +17,13 @@ NOTAS ONDA 2B
     `Frequencia.conceito` agora é ENUM nativo do Postgres
     (`conceito_frequencia_enum`), restrito a A/B/C/D/F/J.
     A property híbrida `presente` foi ajustada para comparar com o enum.
+
+NOTAS ONDA 4 — FASE 4
+    `turma_curso_id` adicionado a ambas as tabelas (FK → turma_curso, nullable
+    durante transição). Frequencia: o antigo UNIQUE (aluno_id, turma_id, data)
+    é substituído por dois índices únicos parciais:
+      - WHERE turma_curso_id IS NULL     → preserva legado.
+      - WHERE turma_curso_id IS NOT NULL → permite lançamentos por oferta.
 ================================================================================
 """
 
@@ -27,7 +34,8 @@ from app.models.enums import ConceitoFrequencia
 
 class Frequencia(TenantMixin, db.Model):
     """
-    Registro unitário de presença/falta de um aluno em uma turma em um dia.
+    Registro unitário de presença/falta de um aluno em uma oferta (ou turma
+    legada) em um dia.
 
     Conceitos (`conceito`), definidos em `app.models.enums.ConceitoFrequencia`:
         A, B, C, D -> presença (com gradações qualitativas)
@@ -37,25 +45,43 @@ class Frequencia(TenantMixin, db.Model):
     A property `presente` é híbrida: pode ser usada em Python e em queries
     SQL (`.filter(Frequencia.presente.is_(True))`).
 
-    Constraints:
-        - UNIQUE (aluno_id, turma_id, data): evita duplicidade de lançamento
-          para o mesmo aluno/turma/dia.
+    Constraints/índices únicos (Onda 4 Fase 4):
+        - uix_freq_legado: UNIQUE (aluno_id, turma_id, data) WHERE turma_curso_id IS NULL
+        - uix_freq_oferta: UNIQUE (aluno_id, turma_curso_id, data) WHERE turma_curso_id IS NOT NULL
 
     Índices:
         - (turma_id, data): "pauta da turma X no período Y".
         - (aluno_id, data): "faltas do aluno X no período Y".
+        - (turma_curso_id, data): "pauta da oferta X no período Y".
     """
     __tablename__ = 'frequencia'
     __table_args__ = (
-        db.UniqueConstraint('aluno_id', 'turma_id', 'data',
-                            name='uix_frequencia_aluno_turma_data'),
+        db.Index(
+            'uix_freq_legado',
+            'aluno_id', 'turma_id', 'data',
+            unique=True,
+            postgresql_where=db.text('turma_curso_id IS NULL'),
+            sqlite_where=db.text('turma_curso_id IS NULL'),
+        ),
+        db.Index(
+            'uix_freq_oferta',
+            'aluno_id', 'turma_curso_id', 'data',
+            unique=True,
+            postgresql_where=db.text('turma_curso_id IS NOT NULL'),
+            sqlite_where=db.text('turma_curso_id IS NOT NULL'),
+        ),
         db.Index('ix_frequencia_turma_data', 'turma_id', 'data'),
         db.Index('ix_frequencia_aluno_data', 'aluno_id', 'data'),
+        db.Index('ix_frequencia_turma_curso_data', 'turma_curso_id', 'data'),
     )
 
     id: int = db.Column(db.Integer, primary_key=True)
     aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False)
     turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
+    turma_curso_id: int = db.Column(
+        db.Integer, db.ForeignKey('turma_curso.id'), nullable=True,
+        comment='FK → turma_curso (Onda 4 Fase 4; NULL = registro legado)',
+    )
     data: date = db.Column(db.Date, nullable=False)
 
     # Onda 2B: ENUM nativo. `create_constraint=False` porque o tipo ENUM
@@ -71,6 +97,7 @@ class Frequencia(TenantMixin, db.Model):
     )
 
     unidade = db.relationship('Unidade', backref='frequencias')
+    turma_curso = db.relationship('TurmaCurso', backref='frequencias')
 
     @hybrid_property
     def presente(self) -> bool:
@@ -95,7 +122,7 @@ class Frequencia(TenantMixin, db.Model):
 
 class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     """
-    Diário de aula: o que o professor registrou em uma turma em um dia.
+    Diário de aula: o que o professor registrou em uma turma/oferta em um dia.
 
     Guarda o tema trabalhado (`tema_id`), observações livres, e o instrutor
     responsável. É a base para o acompanhamento pedagógico.
@@ -104,11 +131,19 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
         - `data` é DATE nativo (Onda 2A).
         - `turma_rel` é o nome do relacionamento com Turma; o backref `diarios`
           está no lado da Turma.
+        - `turma_curso_id` (Onda 4 Fase 4, nullable na transição).
     """
     __tablename__ = 'registro_aula'
+    __table_args__ = (
+        db.Index('ix_registro_aula_turma_curso_data', 'turma_curso_id', 'data'),
+    )
 
     id: int = db.Column(db.Integer, primary_key=True)
     turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
+    turma_curso_id: int = db.Column(
+        db.Integer, db.ForeignKey('turma_curso.id'), nullable=True,
+        comment='FK → turma_curso (Onda 4 Fase 4; NULL = registro legado)',
+    )
     data: date = db.Column(db.Date, nullable=False)
     tema_id: int = db.Column(db.Integer, db.ForeignKey('tema_aula.id'), nullable=True)
     observacoes: str = db.Column(db.Text)
@@ -117,5 +152,6 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
 
     unidade = db.relationship('Unidade', backref='diarios_unidade')
     turma_rel = db.relationship('Turma', backref='diarios')
+    turma_curso = db.relationship('TurmaCurso', backref='diarios_oferta')
     tema = db.relationship('TemaAula', foreign_keys=[tema_id])
     instrutor = db.relationship('User', foreign_keys=[instrutor_id])

@@ -4,7 +4,7 @@
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
 
-**Última atualização:** 2026-10-21 — Sincronizado com `app/models/` (19 arquivos) e `migrations/versions/` (18 revisões): cadeia de migrations (§11) corrigida e ressalvas registradas (§11.1) — dois heads, `47ae52f8da90` inexistente, `tipo_deficiencia` sem migration ativa, `documentos_entregues` como JSON; mixins `SoftDeleteMixin`/`TenantMixin`/`AuditoriaMixin`; `curso.carga_horaria` removida (`d1e2f3a4b5c6`); `periodo_letivo.unidade_id` nullable (TenantMixin); enumerações (§7.31).
+**Última atualização:** 2026-10-22 — Sincronizado com `app/models/` (19 arquivos) e `migrations/versions/` (21 revisões): **Onda 4 — Fases 0–3**: `turma_curso` (§7.32, §8.10), cadastro incremental e regra de principal (Fase 2), concomitância de horários (Fase 3). Heads unificadas em `b02f2051bc1e`; fix `8c4e1f9a7d32` adiciona colunas de auditoria à tabela. Demais ressalvas de §11.1 permanecem.
 
 ---
 
@@ -48,13 +48,13 @@ O sistema é um **ERP socioeducativo** multitenant, organizado em torno de
 
 | Mixin             | Modelos que o herdam                                                                                                                                             |
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `SoftDeleteMixin` | `PeriodoLetivo`, `Turma`, `TemaAula`, `Inscricao`, `PerguntaConselho`, `OpcaoProximaTurma`                                                                       |
-| `TenantMixin`     | `PeriodoLetivo`, `Turma`, `TemaAula`, `Transferencia` (redeclara `unidade_id` como NOT NULL), `Frequencia`, `RegistroAula`, `ConselhoClasse`, `ConselhoResposta` |
-| `AuditoriaMixin`  | `Turma`, `TemaAula`, `Inscricao`, `RegistroAula`, `ConselhoClasse`                                                                                               |
+| `SoftDeleteMixin` | `PeriodoLetivo`, `Turma`, `TurmaCurso`, `TemaAula`, `Inscricao`, `PerguntaConselho`, `OpcaoProximaTurma`                                                    |
+| `TenantMixin`     | `PeriodoLetivo`, `Turma`, `TurmaCurso`, `TemaAula`, `Transferencia` (redeclara `unidade_id` como NOT NULL), `Frequencia`, `RegistroAula`, `ConselhoClasse`, `ConselhoResposta` |
+| `AuditoriaMixin`  | `Turma`, `TurmaCurso`, `TemaAula`, `Inscricao`, `RegistroAula`, `ConselhoClasse`                                                                                              |
 
 - `Aluno` **não** usa mixins: declara manualmente `ativo`, `unidade_id` e as colunas de auditoria de criação e edição (Onda 3B-ter).
 - A auditoria automática é registrada ao iniciar a app em `app/__init__.py`, importando `app.models.auditoria_listener` dentro de `_register_auditoria_listener`.
-- `Turma.professor` usa `foreign_keys=[professor_id]` para evitar colisão com `updated_by_id` herdado de `AuditoriaMixin`; `RegistroAula.instrutor` também declara `foreign_keys` pelo mesmo motivo.
+- `Turma.professor` usa `foreign_keys=[professor_id]` para evitar colisão com `updated_by_id` herdado de `AuditoriaMixin`; `RegistroAula.instrutor` e `TurmaCurso.professor` também declaram `foreign_keys` pelo mesmo motivo.
 
 ---
 
@@ -72,7 +72,7 @@ app/models/
 ├── organizacao.py         # Unidade, ConfiguracaoSistema
 ├── usuarios.py            # User
 ├── pedagogico.py          # Curso, Nivel
-├── academico.py           # PeriodoLetivo, Turma, TemaAula
+├── academico.py           # PeriodoLetivo, Turma, TurmaCurso, TemaAula
 ├── pessoas.py             # Aluno, SituacaoEscolar
 ├── perfis.py              # EnderecoAluno, ResponsavelAluno,
 │                          # PerfilSocioeconomico, PerfilDiversidade
@@ -129,8 +129,9 @@ Comportamento do listener (conforme o código):
 | Termo                    | Significado                                                                                                                                                 |
 |--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Unidade**              | Tenant do sistema. Fronteira de isolamento de dados.                                                                                                        |
-| **Turma**                | Agrupamento operacional de alunos em um curso/período.                                                                                                      |
-| **Inscrição**            | Vínculo N:N entre Aluno e Turma, com histórico.                                                                                                             |
+| **Turma**                | Agrupador lógico de alunos; a oferta acadêmica efetiva fica em `TurmaCurso` (Onda 4).                                                                           |
+| **Oferta (TurmaCurso)**  | Vínculo concreto curso↔turma (`turma_curso`): atribui um curso a uma turma, com professor, turno, horários e vigência próprios.                                  |
+| **Inscrição**            | Vínculo N:N entre Aluno e Turma, com histórico; na transição da Onda 4 aponta também para a oferta (`inscricoes.turma_curso_id`).                                 |
 | **Conceito**             | Código de presença/falta: A/B/C/D (presente), F (falta), J (justificada).                                                                                   |
 | **Conselho de Classe**   | Reunião colegiada que avalia aluno/turma por etapa.                                                                                                         |
 | **Etapa**                | Momento do conselho: INICIAL, PERCURSO, FINAL.                                                                                                              |
@@ -168,7 +169,7 @@ Regras:
 | `base`               | Mixins de modelo           | `SoftDeleteMixin`, `TenantMixin`                                                                 |
 | `usuarios`           | Usuários e Autenticação    | `User`                                                                                           |
 | `pedagogico`         | Cadastros Pedagógicos      | `Curso`, `Nivel`                                                                                 |
-| `academico`          | Estrutura Acadêmica        | `PeriodoLetivo`, `Turma`, `TemaAula`                                                             |
+| `academico`          | Estrutura Acadêmica        | `PeriodoLetivo`, `Turma`, `TurmaCurso`, `TemaAula`                                               |
 | `pessoas`            | Pessoas                    | `Aluno`, `SituacaoEscolar`                                                                       |
 | `perfis`             | Perfis do Aluno            | `EnderecoAluno`, `ResponsavelAluno`, `PerfilSocioeconomico`, `PerfilDiversidade`                 |
 | `matriculas`         | Matrículas e Movimentações | `Inscricao`, `Transferencia`                                                                     |
@@ -204,7 +205,9 @@ erDiagram
 ```mermaid
 erDiagram
     PERIODO_LETIVO ||--o{ TURMA : contem
-    CURSO          ||--o{ TURMA : oferta
+    CURSO          ||--o{ TURMA_CURSO : ofertado_em
+    TURMA          ||--o{ TURMA_CURSO : contem
+    USER           |o--o{ TURMA_CURSO : responsabiliza_se
     CURSO          ||--o{ TEMA_AULA : planeja
     USER           ||--o{ TURMA : leciona
     TURMA          ||--o{ REGISTRO_AULA : registra
@@ -218,6 +221,7 @@ erDiagram
     ALUNO ||--o| SITUACAO_ESCOLAR : detalha
     ALUNO ||--o{ INSCRICAO : possui
     TURMA ||--o{ INSCRICAO : recebe
+    TURMA_CURSO |o--o{ INSCRICAO : oferta
     ALUNO ||--o{ FREQUENCIA : registra
     TURMA ||--o{ FREQUENCIA : pauta
     ALUNO ||--o{ TRANSFERENCIA : movimenta
@@ -264,6 +268,7 @@ erDiagram
     USER |o--o{ TURMA : "updated_by"
     USER |o--o{ TEMA_AULA : "updated_by"
     USER |o--o{ INSCRICAO : "updated_by"
+    USER |o--o{ TURMA_CURSO : "updated_by"
     USER |o--o{ REGISTRO_AULA : "updated_by"
     USER |o--o{ CONSELHO_CLASSE : "updated_by"
     USER |o--o{ ALUNO : "created_by / updated_by"
@@ -383,7 +388,7 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 | ordenacao           | int              | sim  | —            | Ordem de exibição                                |
 | unidade_id          | int              | sim  | —            | FK → unidade                                     |
 | periodo_letivo_id   | int              | sim  | —            | FK → periodo_letivo                              |
-| curso_id            | int              | sim  | —            | FK → curso                                       |
+| curso_id            | int              | sim  | —            | LEGADO — FK → curso (convive com `turma_curso` até as fases finais da Onda 4) |
 | professor_id        | int              | sim  | —            | FK → user                                        |
 | avaliacao_inicial   | text             | sim  | —            | Parecer                                          |
 | avaliacao_percurso  | text             | sim  | —            | Parecer                                          |
@@ -577,6 +582,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | id                  | int              | não  | auto         | PK                                               |
 | aluno_id            | int              | não  | —            | FK → aluno                                       |
 | turma_id            | int              | não  | —            | FK → turma                                       |
+| turma_curso_id      | int              | sim  | —            | FK → turma_curso (Onda 4; nullable na transição) |
 | nivel               | varchar(30)      | sim  | —            | Nível na turma                                   |
 | ativo               | bool             | não  | true         | Vínculo atual                                    |
 | data_inicio         | date             | não  | now          | Início                                           |
@@ -588,6 +594,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 > Múltiplas linhas com o mesmo (aluno, turma) são permitidas por design —
 > histórico de ativação/desativação.
+
+> A matriz de enturmação continua `(aluno, turma)`. `turma_curso_id` é
+> preenchido no backfill e nas novas matrículas para vincular a inscrição à
+> oferta concreta; a exigência de vínculo por oferta (NOT NULL) pertence à
+> Fase 9 da Onda 4 (§8.10).
 
 ### 7.16 `transferencia`
 
@@ -808,7 +819,36 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | criado_em   | timestamp    | sim  | now     | —                   |
 | unidade_id  | int          | sim  | —       | FK → unidade        |
 
-### 7.31 Enumerações e constantes (`app/models/enums.py`)
+### 7.32 `turma_curso` (Onda 4 — Fase 1)
+
+**Mixins:** `SoftDeleteMixin`, `TenantMixin` (`unidade_id` nullable), `AuditoriaMixin`.
+
+**Constraints/índices:** `uix_turma_curso_oferta` = UNIQUE (`turma_id`, `curso_id`); `uix_turma_curso_principal` = índice **único parcial** em `turma_id` (`principal AND ativo`) — no máximo um principal por turma; `ix_turma_curso_curso_id`; `ix_turma_curso_professor_id`. FKs sem `ondelete` no modelo (`SET NULL` apenas nas FKs do `AuditoriaMixin`).
+
+| Coluna              | Tipo             | Nulo | Default      | Descrição                                        |
+|---------------------|------------------|------|--------------|--------------------------------------------------|
+| id                  | int (serial)     | não  | auto         | PK                                               |
+| turma_id            | int              | não  | —            | FK → turma                                       |
+| curso_id            | int              | não  | —            | FK → curso                                       |
+| principal           | bool             | não  | false        | Curso principal da **turma** (é marca do vínculo, não do curso nem do aluno) |
+| professor_id        | int              | sim  | —            | FK → user; professor responsável pela oferta     |
+| turno               | varchar(20)      | sim  | —            | Manhã, Tarde, Noite (por oferta)                 |
+| dias_semana         | varchar(20)      | sim  | —            | CSV (legado: era de `turma`)                     |
+| hora_inicio         | time             | sim  | —            | Início do horário da oferta                      |
+| hora_fim            | time             | sim  | —            | Fim do horário da oferta                         |
+| data_inicio         | date             | sim  | —            | Início da vigência da oferta                     |
+| data_fim            | date             | sim  | —            | Fim da vigência da oferta                        |
+| centro_custo        | varchar(150)     | sim  | —            | Individual; NULL = usa o compartilhado da turma  |
+| created_at          | timestamp        | sim  | now          | —                                                |
+| **updated_by_id**   | **int**          | sim  | —            | FK → user, `ON DELETE SET NULL` (AuditoriaMixin) |
+| **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
+| **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
+
+**Relacionamentos:** `turma` (backref `ofertas_curso`, cascade `all, delete-orphan` — apagar a turma remove as ofertas), `curso` (backref `ofertas_turma`), `professor` (`foreign_keys=[professor_id]`, backref `ofertas_como_responsavel`), backref `inscricoes_oferta` a partir de `Inscricao.turma_curso` (**sem** cascade, para proteger histórico de matrícula).
+
+**Migration:** `311d554dfd6e` cria a tabela, os índices, `inscricoes.turma_curso_id` e executa o backfill (uma oferta por turma legada com `curso_id`, copiando professor/turno/dias/horários/datas/centro de custo da turma; `principal=false`; vincula as inscrições à oferta da turma). Verificação pós-deploy: `scripts/verificar_onda4_fase1.py`.
+
+### 7.33 Enumerações e constantes (`app/models/enums.py`)
 
 | Enum                 | Persistência                                       | Valores                                                                                    |
 |----------------------|----------------------------------------------------|--------------------------------------------------------------------------------------------|
@@ -891,6 +931,17 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Cursos, temas, níveis e turmas alvo devem pertencer à unidade efetiva dos perfis não administrativos; `secretaria` sem unidade efetiva é bloqueada.
 - Os parâmetros de data do conselho ficam em `ConfiguracaoSistema` como configuração global e exigem unidade efetiva para `secretaria`.
 - `Curso` **não possui** carga horária. A C.H. é calculada por turma, em minutos (`Turma.carga_horaria_aula` e `Turma.carga_horaria_total`); para exibição usar `formatar_ch()` de `app.utils.formatters`.
+
+### 8.10 Turma, ofertas de curso e múltiplos cursos (Onda 4)
+
+- **Turma é agrupador lógico**; o vínculo acadêmico concreto é a oferta `TurmaCurso` (curso + turma), com professor, turno, dias, horários e vigência próprios.
+- Uma turma pode ofertar **vários cursos distintos** (sem limite fixo; cadastro incremental). Cada curso entra **no máximo uma vez** na mesma turma — `UNIQUE(turma_id, curso_id)`; o mesmo curso pode existir em turmas diferentes.
+- `principal` pertence ao **vínculo turma↔curso**: sem marcação quando há oferta única; com 2+ ofertas ativas deve haver exatamente um. Máximo garantido por índice único parcial (`uix_turma_curso_principal`); obrigatoriedade e troca (swap atômico) validadas em `app/services/turma_curso.py` (Fase 2, rotas `/turma/<id>/ofertas*`).
+- **Proibido** horário concomitante entre cursos da **mesma turma** (adjacência permitida; vigência considerada). Validação implementada na Fase 3 em `_validar_horario_concomitante` (`app/services/turma_curso.py`); chamada por `adicionar_oferta` e `editar_oferta`. Conflito entre turmas diferentes **não** bloqueia matrícula (regra aprovada; sem mecanismo de checagem).
+- A matrícula é por aluno↔turma e convive com o vínculo à oferta (`inscricoes.turma_curso_id`); a exigência NOT NULL por oferta pertence à **Fase 9**. Aluno disponível para enturmação não é excluído por já estar em outro curso da mesma turma.
+- **Compatibilidade legada (§14 da especificação):** as colunas de `Turma` (`curso_id`, `professor_id`, `turno`, `dias_semana`, horários, datas, centro de custo) continuam existindo; o backfill criou uma oferta por turma com curso. Dual-write descontrolado é proibido; remover colunas exige migrar todos os leitores (fases finais).
+- Frequência, diário, conselho e transferências ainda apontam para a turma; a refatoração por oferta ocorre nas fases seguintes. **D5 (conselho por oferta) permanece pendente** de decisão do usuário.
+- `TurmaCurso` **não** é excluído em cascata por desativação; apagar a **turma** fisicamente remove suas ofertas (cascade do relacionamento `turma`); apagar oferta **não** apaga inscrições (histórico protegido).
 
 ---
 
@@ -1001,6 +1052,18 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Remover blocos `# FALLBACK` em `aluno_perfil.py`.
 - Atualizar este MER.
 
+### Onda 4 — Múltiplos cursos por turma (Fases 0–3 — 22/10/2026)
+
+- **Fase 0:** unificados os dois heads históricos (`b7c1d2e3f4a5` e `d1e2f3a4b5c6`) via revision de merge `b02f2051bc1e`; `flask db upgrade` voltou a funcionar. `5a676f37b9a3` tornou-se **idempotente** no PostgreSQL (guards por inspeção de `pg_attribute` antes de cada `ALTER COLUMN TYPE`), tolerando bancos restaurados de dump com o schema parcialmente aplicado.
+- **Fase 1:** criado `TurmaCurso` (`turma_curso`, §7.32) com `UNIQUE(turma_id, curso_id)` e índice único parcial do principal; adicionado `inscricoes.turma_curso_id` (nullable na transição) com relacionamento `turma_curso` (backref `inscricoes_oferta`, sem cascade).
+- Migration `311d554dfd6e` com backfill portável em SQL puro: uma oferta por turma legada com curso (atributos de horário/professor/turno/datas/centro de custo copiados da turma, `principal=false`) e vínculo das inscrições à oferta; reforço idempotente da sequência `turma_curso_id_seq` (lição de `b7c1d2e3f4a5`).
+- Reescrita manual da migration gerada por autogenerate: as propostas destrutivas (DROP das colunas de auditoria de `curso` e ~10 alter comments de drift pré-existente) foram removidas e registradas em §11.1/§12.12.
+- Testes: `tests/test_turma_curso.py` (7 cenários: unicidade da oferta, principal por turma via índice parcial, inscrições↔oferta). Fixados fixtures obsoletos de `tests/test_carga_horaria.py` e `formatar_ch` para valores negativos.
+- Verificação pós-deploy: `scripts/verificar_onda4_fase1.py` (estrutura, backfill, órfãs, duplicatas, principal, divergência com legado).
+- **Fase 2:** criado `app/services/turma_curso.py` (regras de aplicação: cadastro incremental, principal obrigatório com 2+ ofertas — máximo já garantido pelo índice parcial —, swap atômico de principal, soft delete com guarda, `UNIQUE` pleno inclusive para ofertas desativadas) e rotas `/turma/<id>/ofertas*` em `app/registros/turmas.py` com a tela `turmas/ofertas.html`; acesso por novo botão na ficha da turma. Espelhamento legado apenas em turma sem curso legado com oferta única (situação nova); turmas do backfill mantêm as colunas congeladas.
+- **Fase 3:** validação de concomitância de horários (`_validar_horario_concomitante`): sobreposição proibida entre ofertas ativas da mesma turma quando compartilham dia + intersecção estrita de horário + vigências interceptam; adjacência permitida. Chamada em `adicionar_oferta` e `editar_oferta`. Migration corretiva `8c4e1f9a7d32` adiciona as colunas de auditoria (`updated_by_id`/`name`/`at`) que faltavam em `turma_curso` no PostgreSQL.
+- Pendentes: Fases 4–9 (registros por oferta, §8 professores, §9 centro de custo, transferências §10, **D5 conselho**, certificados/indicadores, NOT NULL final). Colunas legadas de `Turma` permanecem (§8.10).
+
 ---
 
 ## 11. Referência cruzada com migrations
@@ -1024,9 +1087,12 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `e1e3a5b2c333` | `f1a2b3c4d5e6` | Colunas de auditoria em `aluno` (repete `f1a2b3c4d5e6`)      | ⚠️ 2    |
 | `a9f3c8e2d1b7` | `e1e3a5b2c333` | `AuditoriaMixin`: colunas de auditoria em 6 tabelas          | ⚠️ 3    |
 | `c4d5e6f7a8b9` | `a9f3c8e2d1b7` | Níveis únicos por unidade (**ponto de bifurcação**)          | ✅       |
-| `5a676f37b9a3` | `c4d5e6f7a8b9` | Fix Onda 2A/2B: conversão real de tipos + índices            | ⚠️ 1, 6 |
-| `b7c1d2e3f4a5` | `5a676f37b9a3` | Fix sequência de `inscricoes.id` (**head**)                  | ⚠️ 1    |
-| `d1e2f3a4b5c6` | `c4d5e6f7a8b9` | **Onda 3C**: remove `curso.carga_horaria` (**head**)         | ⚠️ 1    |
+| `5a676f37b9a3` | `c4d5e6f7a8b9` | Fix Onda 2A/2B: conversão real de tipos + índices (idempotente desde 22/10) | ⚠️ 6 |
+| `b7c1d2e3f4a5` | `5a676f37b9a3` | Fix sequência de `inscricoes.id`                               | ⚠️ 1    |
+| `d1e2f3a4b5c6` | `c4d5e6f7a8b9` | **Onda 3C**: remove `curso.carga_horaria`                      | ⚠️ 1    |
+| `b02f2051bc1e` | `b7c1d2e3f4a5` + `d1e2f3a4b5c6` | **Merge dos heads** (Onda 4, Fase 0; head única)     | ✅       |
+| `311d554dfd6e` | `b02f2051bc1e` | **Onda 4, Fase 1**: `turma_curso` + `inscricoes.turma_curso_id` + backfill | ✅       |
+| `8c4e1f9a7d32` | `311d554dfd6e` | **Onda 4, fix Fase 1**: colunas de auditoria em `turma_curso` (PG) | ✅       |
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 
@@ -1036,7 +1102,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 ### 11.1 Ressalvas das migrations registradas
 
-1. **Dois heads.** `c4d5e6f7a8b9` tem dois filhos: `5a676f37b9a3` (→ `b7c1d2e3f4a5`) e `d1e2f3a4b5c6`. Heads atuais: `b7c1d2e3f4a5` e `d1e2f3a4b5c6`; `flask db upgrade` falha com "Multiple head revisions". Ação: `flask db merge -m "merge heads" b7c1d2e3f4a5 d1e2f3a4b5c6` (ou reapontar o `down_revision` de `d1e2f3a4b5c6` para `b7c1d2e3f4a5`, se ainda não aplicada em nenhum banco). O cabeçalho de `d1e2f3a4b5c6` traz `Create Date: 2026-10-27`, posterior à data do arquivo (2026-10-21).
+1. **Dois heads. ✅ RESOLVIDO em 22/10/2026 (Onda 4, Fase 0).** `c4d5e6f7a8b9` tinha dois filhos: `5a676f37b9a3` (→ `b7c1d2e3f4a5`) e `d1e2f3a4b5c6`. Criada a revision de merge `b02f2051bc1e` e aplicado `flask db upgrade heads`; head única confirmada. No banco local (restaurado de dump sem stamp) o ramo `5a676f37b9a3` estava parcialmente aplicado (colunas em DATE/TIME e sequência existentes, ENUMs ainda em VARCHAR); a revision foi tornada idempotente com guards por `pg_attribute` antes de reexecutar. Resíduo histórico sem efeito: o cabeçalho de `d1e2f3a4b5c6` traz `Create Date: 2026-10-27`, posterior à data real do arquivo.
 2. **`e1e3a5b2c333` duplica `f1a2b3c4d5e6`.** Ambas fazem `add_column` de `aluno.updated_by_id`, `updated_by_name` e `updated_at` e criam `fk_aluno_updated_by_id`; em um banco novo, a segunda falha por coluna duplicada. Ação: tornar `e1e3a5b2c333` idempotente ou removê-la (apontando `a9f3c8e2d1b7` para `f1a2b3c4d5e6`) — esta última só se nenhum banco tiver `e1e3a5b2c333` em `alembic_version`.
 3. **`a9f3c8e2d1b7` inclui `curso`.** Cria as colunas de auditoria em `turma`, `tema_aula`, `registro_aula`, `curso`, `conselho_classe` e `inscricoes`; porém `Curso` não herda `AuditoriaMixin` (pelas migrations, o banco terá três colunas a mais que o modelo). Além disso, o modelo `Aluno` declara a FK `updated_by_id` sem `ondelete`, enquanto a migration cria `ON DELETE SET NULL`. Ação: herdar o mixin em `Curso` (ou dropar as colunas) e alinhar o `ondelete` em `Aluno`.
 4. **`perfil_diversidade.tipo_deficiencia` sem migration.** Em `3b7c9d1e4f20` o `add_column` está comentado, o `downgrade` tenta dropar a coluna e nenhuma outra revisão a cria — modelo e MER a possuem. Ação: nova migration com `add_column` (checando existência).
@@ -1125,6 +1191,7 @@ tabela estruturada, e não duplicados nesse JSON.
 **Onde:** `migrations/versions/` (ver §11.1).
 **Impacto:** dois heads impedem `flask db upgrade`; `e1e3a5b2c333` quebra a criação de bancos novos; `tipo_deficiencia`, o tipo de `documentos_entregues` e as colunas de auditoria de `curso` divergem entre modelo e banco.
 **Plano:** executar as ações do §11.1 (merge dos heads, idempotência de `e1e3a5b2c333`, migrations corretivas) antes da Onda 3C de remoção dos JSONs.
+**Parcialmente resolvido (22/10/2026):** merge dos heads concluído (`b02f2051bc1e`) e `5a676f37b9a3` idempotente. Permanecem: `e1e3a5b2c333` não idempotente, `tipo_deficiencia` sem migration, `documentos_entregues` como JSON e o drift das colunas de auditoria de `curso` — o autogenerate de `311d554dfd6e` propôs dropá-las; a proposta foi descartada e uma revision de sincronia modelo × banco fica no backlog.
 
 ---
 
