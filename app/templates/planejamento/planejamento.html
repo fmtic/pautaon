@@ -193,79 +193,90 @@
                 <table class="table table-hover mb-0 align-middle tabela-temas">
                   <thead class="table-light text-muted small text-uppercase">
                     <tr>
-                      <th class="ps-4" style="width:180px;">Curso</th>
                       <th>Tema / Assunto</th>
                       <th class="text-center pe-4" style="width:120px;">Ações</th>
                     </tr>
                   </thead>
                   <tbody id="temasTbody">
-                    {% for tema in temas %}
-                    <tr class="align-middle {{ 'opacity-50 bg-light' if not tema.ativo }}"
-                      data-tema-id="{{ tema.id }}"
-                      data-tema="{{ '%02d'|format(tema.ordem) }} {{ tema.titulo|lower }} {{ (tema.curso.nome if tema.curso else '')|lower }}">
+                    {% if temas %}
+                      {% for curso_id, temas_do_curso in temas|groupby('curso_id') %}
+                        {% set curso_obj = temas_do_curso[0].curso %}
+                        {% set curso_hash = curso_cores.get(curso_obj.id, 7) if curso_obj else 7 %}
+                        {% set group_id = 'grupo-curso-' ~ (curso_obj.id if curso_obj else 'sem') ~ '-' ~ loop.index %}
+                        <tr class="curso-group-header bg-light" data-group="{{ group_id }}"
+                            role="button" tabindex="0" aria-expanded="false">
+                          <td colspan="2" class="py-2">
+                            <div class="d-flex align-items-center gap-2">
+                              <i class="bi bi-chevron-right curso-group-chevron"></i>
+                              {% if curso_obj %}
+                              <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=curso_obj.id) }}"
+                                 class="badge rounded-pill border curso-badge-{{ curso_hash }} text-decoration-none"
+                                 title="Ver turmas do curso {{ curso_obj.nome }}">
+                                {{ curso_obj.nome }}
+                              </a>
+                              {% else %}
+                              <span class="badge rounded-pill border curso-badge-7">—</span>
+                              {% endif %}
+                              <span class="badge bg-secondary ms-1">{{ temas_do_curso|length }}</span>
+                              <span class="text-muted small ms-auto">Clique para expandir</span>
+                            </div>
+                          </td>
+                        </tr>
+                        {% for tema in temas_do_curso %}
+                        <tr class="align-middle curso-group-member d-none {{ 'opacity-50 bg-light' if not tema.ativo }}"
+                          data-group="{{ group_id }}"
+                          data-tema-id="{{ tema.id }}"
+                          data-tema="{{ '%02d'|format(tema.ordem) }} {{ tema.titulo|lower }} {{ (tema.curso.nome if tema.curso else '')|lower }}">
 
-                      {# ─── Coluna Curso ─── #}
-                      <td class="ps-4">
-                        {% set curso_hash = curso_cores.get(tema.curso_id, 7) if tema.curso else 7 %}
-                        {% if tema.curso %}
-                        <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=tema.curso_id) }}"
-                           class="badge rounded-pill border curso-badge-{{ curso_hash }} text-decoration-none"
-                           title="Ver turmas do curso {{ tema.curso.nome }}">
-                          {{ tema.curso.nome }}
-                        </a>
-                        {% else %}
-                        <span class="badge rounded-pill border curso-badge-7">—</span>
-                        {% endif %}
-                      </td>
+                          {# ─── Coluna Tema (número + título) ─── #}
+                          <td class="fw-medium text-dark col-tema">
+                            <span class="tema-linha">
+                              <span class="tema-numero" title="Ordem sugerida de ministração">
+                                {{ '%02d'|format(tema.ordem) }}
+                              </span>
+                              <span class="tema-titulo">{{ tema.titulo }}</span>
+                            </span>
+                            {% if not tema.ativo %}
+                            <span class="badge bg-secondary-subtle text-secondary border ms-2"
+                              style="font-size:.65rem;">INATIVO</span>
+                            {% endif %}
+                          </td>
 
-                      {# ─── Coluna Tema (número + título) ─── #}
-                      <td class="fw-medium text-dark">
-                        <span class="tema-linha">
-                          <span class="tema-numero" title="Ordem sugerida de ministração">
-                            {{ '%02d'|format(tema.ordem) }}
-                          </span>
-                          <span class="tema-titulo">{{ tema.titulo }}</span>
-                        </span>
-                        {% if not tema.ativo %}
-                        <span class="badge bg-secondary-subtle text-secondary border ms-2"
-                          style="font-size:.65rem;">INATIVO</span>
-                        {% endif %}
-                      </td>
+                          {# ─── Coluna Ações ─── #}
+                          <td class="text-center pe-4">
+                            <div class="btn-group shadow-sm">
+                              <button type="button" class="btn btn-sm btn-white border text-primary"
+                                title="Editar Tema" data-bs-toggle="modal"
+                                data-bs-target="#modalEditTema{{ tema.id }}">
+                                <i class="bi bi-pencil-square"></i>
+                              </button>
 
-                      {# ─── Coluna Ações ─── #}
-                      <td class="text-center pe-4">
-                        <div class="btn-group shadow-sm">
-                          <button type="button" class="btn btn-sm btn-white border text-primary"
-                            title="Editar Tema" data-bs-toggle="modal"
-                            data-bs-target="#modalEditTema{{ tema.id }}">
-                            <i class="bi bi-pencil-square"></i>
-                          </button>
-
-                          <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST"
-                            class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit"
-                              class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}"
-                              title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
-                              <i class="bi {{ 'bi-toggle-off' if not tema.ativo else 'bi-toggle-on' }}"></i>
-                            </button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
+                              <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST"
+                                class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
+                                  class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}"
+                                  title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
+                                  <i class="bi {{ 'bi-toggle-off' if not tema.ativo else 'bi-toggle-on' }}"></i>
+                                </button>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      {% endfor %}
                     {% else %}
-                    <tr>
-                      <td colspan="3" class="text-center p-5">
-                        <div class="text-muted">
-                          <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
-                          <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
-                          <small>Utilize o formulário ao lado para adicionar um novo tema.</small>
-                        </div>
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
+                      <tr>
+                        <td colspan="2" class="text-center p-5">
+                          <div class="text-muted">
+                            <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
+                            <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
+                            <small>Utilize o formulário ao lado para adicionar um novo tema.</small>
+                          </div>
+                        </td>
+                      </tr>
+                    {% endif %}
+                  </tbody>                </table>
               </div>
 
               {# Modais de Edição de Tema (posicionados fora da tabela para W3C compliance) #}

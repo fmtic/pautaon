@@ -59,6 +59,37 @@
   }
 
   /* ─────────────────────────────────────────────
+     4. Grupos expansíveis de temas por curso
+     ───────────────────────────────────────────── */
+  (function initGruposTemas() {
+    const headers = document.querySelectorAll('.curso-group-header');
+    if (!headers.length) return;
+
+    function toggleGroup(header) {
+      const group = header.dataset.group;
+      if (!group) return;
+      const members = document.querySelectorAll(`.curso-group-member[data-group="${CSS.escape(group)}"]`);
+      if (!members.length) return;
+      const collapsed = members[0].classList.contains('d-none');
+      members.forEach(row => row.classList.toggle('d-none', !collapsed));
+      header.setAttribute('aria-expanded', String(collapsed));
+    }
+
+    headers.forEach(header => {
+      header.addEventListener('click', (event) => {
+        if (event.target.closest('a, button, input, form, label')) return;
+        toggleGroup(header);
+      });
+      header.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          toggleGroup(header);
+        }
+      });
+    });
+  })();
+
+  /* ─────────────────────────────────────────────
      5. Gestão de Cursos (AJAX)
      ───────────────────────────────────────────── */
   (function initCursos() {
