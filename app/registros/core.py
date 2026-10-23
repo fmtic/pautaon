@@ -12,7 +12,7 @@ NOTA ONDA 2B (limpeza)
 
 import json
 
-from flask import flash, render_template, url_for, request, redirect, abort, jsonify
+from flask import current_app, flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.orm import joinedload
@@ -43,6 +43,11 @@ from app.utils.logica import (
     carregar_frequencias,
     get_unidade_id,
     salvar_frequencia,
+)
+from app.services.turma_curso import (
+    ofertas_ativas,
+    resolver_oferta_lancamento,
+    _alunos_da_oferta,
 )
 from . import bp
 from .shared import assert_unidade_context
@@ -178,6 +183,23 @@ def painel_professor():
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
+def _contagem_inscricoes_sem_curso(turma_id: int) -> int:
+    """Alunos com inscrição ativa na turma e `turma_curso_id` NULL —
+    ambíguos quando a turma tem 2+ ofertas ativas (aviso da tela, D2)."""
+    return (
+        db.session.query(func.count(func.distinct(Inscricao.aluno_id)))
+        .join(Aluno, Aluno.id == Inscricao.aluno_id)
+        .filter(
+            Inscricao.turma_id == turma_id,
+            Inscricao.ativo == True,
+            Inscricao.turma_curso_id.is_(None),
+            Aluno.ativo == True,
+        )
+        .scalar()
+        or 0
+    )
+
+
 @bp.route('/frequencia', methods=['GET', 'POST'])
 @login_required
 def frequencia():
@@ -208,17 +230,93 @@ def frequencia():
                 flash('A data informada não pertence ao calendário válido da turma.', 'warning')
                 return redirect(url_for('registros.frequencia', turma_id=turma_post_id))
 
-        turma_id, data = salvar_frequencia(request.form)
+        # Onda 4 (Fase 4, D2): resolve a oferta ANTES de gravar.
+        # Decisão do responsável: com 2+ ofertas ativas a escolha é exigida e
+        # a oferta passa validação completa (vigência, dia da grade, tema de
+        # outro curso) — data fora da grade/vigência é BLOQUEADA. Com oferta
+        # única (ou sem oferta) não há validação extra: o resolver é chamado
+        # sem turma_curso_id e apenas escolhe a oferta automaticamente /
+        # cai no legado. O hidden `turma_curso` enviado pela tela com oferta
+        # única é ignorado de propósito aqui. ValueError → flash com a
+        # mensagem e retorno sem gravar.
+        oferta_raw_post = (request.form.get('turma_curso') or '').strip()
+        oferta_id_post = int(oferta_raw_post) if oferta_raw_post.isdigit() else None
+        tema_raw_post = (request.form.get('tema_id') or '').strip()
+        tema_id_post = int(tema_raw_post) if tema_raw_post.isdigit() else None
+        data_alvo_post = parse_date(data_post)
+
+        redirect_back = {'turma_id': turma_post_id, 'data': data_post}
+        if oferta_id_post:
+            redirect_back['turma_curso'] = oferta_id_post
+
+        oferta_post = None
+        ativas_post = (
+            ofertas_ativas(int(turma_post_id)) if turma_post_id.isdigit() else []
+        )
+        exigir_validacao_oferta = len(ativas_post) >= 2
+        if turma_post_id.isdigit() and data_alvo_post:
+            try:
+                oferta_post = resolver_oferta_lancamento(
+                    int(turma_post_id), data_alvo_post,
+                    turma_curso_id=oferta_id_post if exigir_validacao_oferta else None,
+                    tema_id=tema_id_post,
+                )
+            except ValueError as exc:
+                flash(str(exc), 'warning')
+                return redirect(url_for('registros.frequencia', **redirect_back))
+
+        form_data = request.form
+        if oferta_post is not None:
+            # Rejeita lançamentos de alunos fora da pauta da oferta: chaves
+            # aluno_<id> fora da pauta são ignorados e contabilizados no log.
+            # A pauta segue a mesma regra do GET (fallback NULL só com oferta
+            # única ativa — inscrições ambíguas não são aceitas).
+            incluir_null = len(ativas_post) == 1
+            permitidos = {
+                a.id for a in _alunos_da_oferta(
+                    int(turma_post_id), oferta_post.id,
+                    incluir_inscricoes_null=incluir_null,
+                )
+            }
+            form_data = request.form.to_dict()
+            if not exigir_validacao_oferta:
+                # Oferta única: retira o id do form para que o resolver
+                # interno de salvar_frequencia reautoescolha a mesma oferta
+                # sem validação extra (decisão D2 — sem dupla checagem de
+                # vigência/dia no caminho de oferta única).
+                form_data.pop('turma_curso', None)
+            ignorados = 0
+            for chave in list(form_data.keys()):
+                if chave.startswith('aluno_'):
+                    aluno_raw = chave[len('aluno_'):]
+                    if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
+                        form_data.pop(chave)
+                        ignorados += 1
+            if ignorados:
+                current_app.logger.warning(
+                    'Frequência: %s lançamento(s) ignorado(s) fora da pauta da '
+                    'oferta %s (turma %s)',
+                    ignorados, oferta_post.id, turma_post_id,
+                )
+
+        turma_id, data = salvar_frequencia(form_data)
         if not data:
             flash("Preencha a data da aula antes de salvar.", "warning")
             return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
 
         flash('Frequência salva com sucesso!', 'success')
-        return redirect(url_for('registros.frequencia', turma_id=turma_id, data=data))
+        params = {'turma_id': turma_id, 'data': data}
+        if oferta_id_post:
+            params['turma_curso'] = oferta_id_post
+        return redirect(url_for('registros.frequencia', **params))
 
     turma_id_raw = request.args.get('turma_id')
     turma_id = int(turma_id_raw) if turma_id_raw and str(turma_id_raw).isdigit() else None
     data     = request.args.get('data')
+    oferta_raw = request.args.get('turma_curso')
+    oferta_id_param = (
+        int(oferta_raw) if oferta_raw and str(oferta_raw).isdigit() else None
+    )
 
     unidade_id = get_unidade_id()
 
@@ -245,11 +343,54 @@ def frequencia():
     freqs = {}
     tema_sel = None
     obs = ""
+    ofertas = []
+    oferta_atual = None
+    sem_curso_count = 0
 
     if turma_id:
+        # Onda 4 (Fase 4, D2): 0 ofertas ativas = legado (pauta por turma);
+        # exatamente 1 = uso automático sem seletor; 2+ = exige escolha do
+        # curso antes de carregar a pauta (sem escolha, não lista alunos).
+        ofertas = ofertas_ativas(turma_id)
+        exigir_escolha = False
+        if len(ofertas) == 1:
+            oferta_atual = ofertas[0]
+        elif len(ofertas) >= 2:
+            if oferta_id_param:
+                oferta_atual = next(
+                    (o for o in ofertas if o.id == oferta_id_param), None
+                )
+                if oferta_atual is None:
+                    flash('Curso selecionado inválido para esta turma.', 'warning')
+                    return redirect(url_for('registros.frequencia', turma_id=turma_id))
+            else:
+                exigir_escolha = True
+            # Inscrições NULL são ambíguas com 2+ ofertas: não entram em
+            # nenhuma pauta e a secretaria precisa corrigir (aviso na tela).
+            sem_curso_count = _contagem_inscricoes_sem_curso(turma_id)
+
         ctx = carregar_contexto_turma(turma_id)
-        if data:
-            freqs, tema_sel, obs = carregar_frequencias(turma_id, data)
+        if exigir_escolha:
+            ctx['alunos'] = []
+            ctx['temas'] = []
+        elif oferta_atual is not None:
+            # Pauta da oferta com a regra de fallback documentada em
+            # `_alunos_da_oferta`: inscrições NULL só entram com oferta única
+            # ativa. Temas são os do curso da oferta (coerente com a
+            # validação de tema do resolver).
+            ctx['alunos'] = _alunos_da_oferta(
+                turma_id, oferta_atual.id,
+                incluir_inscricoes_null=(len(ofertas) == 1),
+            )
+            ctx['temas'] = TemaAula.query.filter_by(
+                curso_id=oferta_atual.curso_id, ativo=True
+            ).all()
+
+        if data and not exigir_escolha:
+            freqs, tema_sel, obs = carregar_frequencias(
+                turma_id, data,
+                turma_curso_id=oferta_atual.id if oferta_atual else None,
+            )
 
         for aluno in ctx.get('alunos', []):
             registros = Frequencia.query.filter_by(
@@ -286,6 +427,9 @@ def frequencia():
                            datas=ctx.get('datas', []),
                            temas=ctx.get('temas', []),
                            meses=ctx.get('meses', []),
+                           ofertas=ofertas,
+                           oferta_atual=oferta_atual,
+                           sem_curso_count=sem_curso_count,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 

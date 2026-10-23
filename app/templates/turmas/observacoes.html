@@ -14,6 +14,12 @@
                     <i class="bi bi-calendar3 me-1"></i>
                     {{ registro.data[8:10] }}/{{ registro.data[5:7] }}/{{ registro.data[0:4] }}
                 </span>
+                {% if mostrar_curso and registro.turma_curso %}
+                <span class="badge rounded-pill bg-info text-dark px-3 py-2 ms-2">
+                    <i class="bi bi-mortarboard me-1"></i>
+                    {{ registro.turma_curso.curso.nome }}
+                </span>
+                {% endif %}
                 <small class="text-muted">
                     <i class="bi bi-person-badge me-1"></i>
                     {{ registro.instrutor.name if registro.instrutor else (registro.turma_rel.professor.name if registro.turma_rel and registro.turma_rel.professor else '—') }}

@@ -45,6 +45,7 @@
         </div>
         <div class="col-4 text-end small">
           <div><strong>Turma:</strong> {{ turma.nome }}</div>
+          {% if oferta_atual %}<div><strong>Curso:</strong> {{ oferta_atual.curso.nome }}{% if oferta_atual.turno %} — {{ oferta_atual.turno }}{% endif %}</div>{% endif %}
           <div><strong>Programa:</strong> {{ turma.programa or '-' }}</div>
           <div><strong>Professor:</strong> {{ turma.professor.name if turma.professor else 'Não atribuído' }}</div>
           {% if mes_nome %}<div><strong>Mês:</strong> {{ mes_nome }}</div>{% endif %}

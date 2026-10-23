@@ -26,10 +26,13 @@ quem chama (rotas) converter em `flash`.
 """
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, time, timedelta
+
+from sqlalchemy import or_
 
 from app.database import db
-from app.models import Curso, TemaAula, Turma, TurmaCurso, User
+from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, User
+from app.utils.timezone import get_local_now
 
 
 def ofertas_ativas(turma_id: int):
@@ -200,9 +203,38 @@ def adicionar_oferta(
     centro_custo: str | None = None,
 ) -> TurmaCurso:
     """Cria uma oferta incremental na turma, aplicando as regras da Onda 4."""
+    # Guarda se o início veio preenchido do formulário antes de qualquer
+    # herança/ajuste — se veio vazio pode entrar na regra "turma em andamento".
+    data_inicio_informada = data_inicio is not None
+
     curso = _validar_curso(turma, curso_id)
     professor_id = _validar_professor(professor_id, turma.unidade_id)
     _validar_principal_obrigatorio(turma, principal)
+
+    # Regra "turma em andamento" (Onda 4 — Fase 4, D3b-1): roda ANTES da
+    # validação de concomitância e da instanciação, para que o início efetivo
+    # já seja usado em ambas. Se o início veio vazio, a turma já tem outra
+    # oferta (ativa OU desativada) e está em andamento (já começou e ainda não
+    # terminou), define o início da nova oferta como hoje local — para não
+    # inventar aulas retroativas jamais lançadas. Tem PRECEDÊNCIA sobre a
+    # herança abaixo (que usa `or`). Na primeira oferta da turma, ou com turma
+    # encerrada, mantém a herança; com data_inicio preenchida respeita o valor.
+    # Sinaliza via marcador `inicio_ajustado_para_hoje` para a rota exibir flash.
+    inicio_ajustado_para_hoje = False
+    if not data_inicio_informada:
+        hoje_local = get_local_now().date()
+        tem_outra_oferta = (
+            TurmaCurso.query.filter_by(turma_id=turma.id).first() is not None
+        )
+        turma_em_andamento = (
+            turma.data_inicio is not None
+            and turma.data_inicio <= hoje_local
+            and (turma.data_fim is None or turma.data_fim >= hoje_local)
+        )
+        if tem_outra_oferta and turma_em_andamento:
+            data_inicio = hoje_local
+            inicio_ajustado_para_hoje = True
+
     _validar_horario_concomitante(
         turma.id,
         dias_semana=dias_semana,
@@ -214,6 +246,7 @@ def adicionar_oferta(
 
     # Herança de atributos: primeira oferta de uma turma sem vínculo legado
     # parte dos valores da própria turma (compatibilidade com a UI antiga).
+    # Usa `or`, então preserva o `data_inicio` já definido pela regra acima.
     if turma.curso_id is None:
         professor_id = professor_id or turma.professor_id
         turno = turno or turma.turno
@@ -243,6 +276,8 @@ def adicionar_oferta(
     db.session.flush()
     _sincronizar_legado(turma, oferta)
     db.session.commit()
+    # Marcador transitório (não é coluna): a rota usa para avisar o usuário.
+    oferta.inicio_ajustado_para_hoje = inicio_ajustado_para_hoje
     return oferta
 
 
@@ -419,3 +454,119 @@ def resolver_oferta_lancamento(
         f"Esta turma tem {len(ativas)} cursos ativos ({nomes}). "
         "Selecione o curso ao qual o lançamento se refere."
     )
+
+
+# =============================================================================
+# PAUTA E AGENDA DA OFERTA (Onda 4 — Fase 4, D2/D3b-1)
+# =============================================================================
+
+
+def _alunos_da_oferta(
+    turma_id: int,
+    oferta_id: int,
+    *,
+    incluir_inscricoes_null: bool,
+) -> list:
+    """Pauta de lançamento de uma oferta (Onda 4 — Fase 4, D2).
+
+    Regra:
+        - Entram os alunos com inscrição ativa na turma cujo
+          `Inscricao.turma_curso_id` é a oferta.
+        - Fallback: inscrições ativas da mesma turma com `turma_curso_id`
+          NULL entram SOMENTE quando a turma tem exatamente 1 oferta ativa
+          (`incluir_inscricoes_null=True`) — nesse caso a inscrição só pode
+          ser dela. Com 2+ ofertas ativas as NULL são ambíguas e não
+          aparecem em nenhuma pauta; a tela avisa a secretaria para definir
+          o curso da inscrição.
+        - Sem oferta ativa a rota mantém a pauta por turma (legado), que não
+          passa por aqui.
+
+    Move-se para este módulo na D3b-1 para ser reutilizada pelos leitores de
+    pendência (dashboards) sem importar `app.registros.core` (blueprint) de
+    `app.utils` — o que causaria dependência circular.
+    """
+    filtros_inscricao = [
+        Inscricao.turma_id == turma_id,
+        Inscricao.ativo == True,
+    ]
+    if incluir_inscricoes_null:
+        filtros_inscricao.append(
+            or_(
+                Inscricao.turma_curso_id == oferta_id,
+                Inscricao.turma_curso_id.is_(None),
+            )
+        )
+    else:
+        filtros_inscricao.append(Inscricao.turma_curso_id == oferta_id)
+    # EXISTS em vez de JOIN: o aluno aparece uma única vez mesmo quando tem
+    # 2+ inscrições ativas elegíveis (ex.: uma NULL e uma da oferta).
+    return (
+        Aluno.query.filter(
+            Aluno.ativo == True,
+            db.session.query(Inscricao.id)
+            .filter(
+                Inscricao.aluno_id == Aluno.id,
+                *filtros_inscricao,
+            )
+            .exists(),
+        )
+        .order_by(Aluno.nome)
+        .all()
+    )
+
+
+def _dias_efetivos_da_oferta(oferta: TurmaCurso) -> str | None:
+    """Dias da semana que regem a agenda da oferta; herda os da turma quando a
+    oferta não define os próprios (compatibilidade com o backfill legado)."""
+    if oferta.dias_semana:
+        return oferta.dias_semana
+    if oferta.turma is not None:
+        return oferta.turma.dias_semana
+    return None
+
+
+def datas_esperadas_oferta(
+    oferta: TurmaCurso,
+    hoje: date,
+    blocked: set | None = None,
+) -> list[date]:
+    """Datas de aula da OFERTA até `hoje` (inclusive), respeitando a vigência e
+    os dias da semana próprios da oferta — base da contagem de pendência por
+    oferta (D3b-1).
+
+    Diferente de `gerar_datas(turma)`, que usa o calendário legado da turma
+    (congelado no curso do backfill) e por isso NÃO enxergava os dias de uma
+    segunda oferta: com 2+ ofertas essas aulas "sumiam" da pendência.
+
+    - Vigência: janela [data_inicio, min(data_fim, hoje)]; NULL nos extremos
+      herda da turma; sem início OU fim definíveis → sem datas.
+    - Dias da semana: usa `_data_bate_dias_semana` com os dias efetivos da
+      oferta (herdados da turma quando ausentes). Sem dias em nenhum dos dois
+      → sem datas (evita marcar todos os dias como aula).
+    - `blocked`: conjunto de strings 'YYYY-MM-DD' (feriados / dias sem aula).
+    """
+    blocked = blocked or set()
+    inicio = oferta.data_inicio
+    fim = oferta.data_fim
+    if inicio is None and oferta.turma is not None:
+        inicio = oferta.turma.data_inicio
+    if fim is None and oferta.turma is not None:
+        fim = oferta.turma.data_fim
+    if not inicio or not fim:
+        return []
+
+    limite = min(fim, hoje)
+    if inicio > limite:
+        return []
+
+    dias = _dias_efetivos_da_oferta(oferta)
+    if not _parse_dias(dias):
+        return []
+
+    datas: list[date] = []
+    atual = inicio
+    while atual <= limite:
+        if _data_bate_dias_semana(dias, atual) and atual.strftime('%Y-%m-%d') not in blocked:
+            datas.append(atual)
+        atual += timedelta(days=1)
+    return datas

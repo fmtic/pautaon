@@ -400,11 +400,13 @@ def carregar_frequencias(
             turma_curso_id=turma_curso_id, data=data_alvo
         ).first()
     else:
+        # Legado (sem oferta): filtra turma_curso_id IS NULL para não
+        # reaproveitar/reescrever registros de ofertas (mesmo turma_id/data).
         registros = Frequencia.query.filter_by(
-            turma_id=turma_id, data=data_alvo
+            turma_id=turma_id, data=data_alvo, turma_curso_id=None
         ).all()
         diario = RegistroAula.query.filter_by(
-            turma_id=turma_id, data=data_alvo
+            turma_id=turma_id, data=data_alvo, turma_curso_id=None
         ).first()
     frequencias = {f.aluno_id: f.conceito for f in registros}
 
@@ -467,7 +469,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             ).first()
         else:
             registro = RegistroAula.query.filter_by(
-                turma_id=turma_id, data=data_alvo
+                turma_id=turma_id, data=data_alvo, turma_curso_id=None
             ).first()
         if registro:
             registro.observacoes = texto_observacoes
@@ -505,7 +507,8 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 ).first()
             else:
                 freq = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_id=turma_id, data=data_alvo
+                    aluno_id=aluno.id, turma_id=turma_id, data=data_alvo,
+                    turma_curso_id=None,
                 ).first()
 
             if freq:

@@ -18,6 +18,7 @@ env/
 # Flask / SQLite local (não versionar banco de desenvolvimento)
 instance/*.db
 instance/*.sqlite3
+instance/backups/
 
 # IDE e SO
 .idea/

@@ -4,7 +4,7 @@
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
 
-**Última atualização:** 2026-10-22 — Sincronizado com `app/models/` (19 arquivos) e `migrations/versions/` (21 revisões): **Onda 4 — Fases 0–3**: `turma_curso` (§7.32, §8.10), cadastro incremental e regra de principal (Fase 2), concomitância de horários (Fase 3). Heads unificadas em `b02f2051bc1e`; fix `8c4e1f9a7d32` adiciona colunas de auditoria à tabela. Demais ressalvas de §11.1 permanecem.
+**Última atualização:** 2026-10-22 — Sincronizado com `app/models/` (19 arquivos) e `migrations/versions/` (22 revisões): **Onda 4 — Fases 0–4**: `turma_curso` (§7.32, §8.10), cadastro incremental e regra de principal (Fase 2), concomitância de horários (Fase 3). Heads unificadas em `b02f2051bc1e`; fix `8c4e1f9a7d32` adiciona colunas de auditoria à tabela. **Fase 4** (head `e7f3a1b9c4d5`): `frequencia` e `registro_aula` ganham `turma_curso_id` (§7.19/§7.20, §8.10). Demais ressalvas de §11.1 permanecem.
 
 ---
 
@@ -211,6 +211,7 @@ erDiagram
     CURSO          ||--o{ TEMA_AULA : planeja
     USER           ||--o{ TURMA : leciona
     TURMA          ||--o{ REGISTRO_AULA : registra
+    TURMA_CURSO    |o--o{ REGISTRO_AULA : oferta
     TEMA_AULA      ||--o{ REGISTRO_AULA : tema
 ```
 
@@ -224,6 +225,7 @@ erDiagram
     TURMA_CURSO |o--o{ INSCRICAO : oferta
     ALUNO ||--o{ FREQUENCIA : registra
     TURMA ||--o{ FREQUENCIA : pauta
+    TURMA_CURSO |o--o{ FREQUENCIA : oferta
     ALUNO ||--o{ TRANSFERENCIA : movimenta
 ```
 
@@ -649,12 +651,18 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | id           | int      | não  | auto    | PK                                   |
 | aluno_id     | int      | não  | —       | FK → aluno                           |
 | turma_id     | int      | não  | —       | FK → turma                           |
+| **turma_curso_id** | **int** | sim | —      | FK → turma_curso; NULL = registro legado (Onda 4, Fase 4) |
 | **data**     | **date** | não  | —       | Onda 2A                              |
 | **conceito** | **enum** | sim  | —       | `conceito_frequencia_enum` (Onda 2B) |
 | unidade_id   | int      | sim  | —       | FK → unidade                         |
 
-**UNIQUE** (`aluno_id`, `turma_id`, `data`) via `uix_frequencia_aluno_turma_data`.
-**Índices:** `ix_frequencia_turma_data` (`turma_id`, `data`), `ix_frequencia_aluno_data` (`aluno_id`, `data`).
+**Unicidade (Onda 4, Fase 4):** o antigo `UNIQUE (aluno_id, turma_id, data)` (`uix_frequencia_aluno_turma_data`) foi **substituído** por dois índices únicos **parciais**:
+- `uix_freq_legado` — UNIQUE (`aluno_id`, `turma_id`, `data`) **WHERE `turma_curso_id IS NULL`** (uma linha legada por aluno/turma/dia);
+- `uix_freq_oferta` — UNIQUE (`aluno_id`, `turma_curso_id`, `data`) **WHERE `turma_curso_id IS NOT NULL`** (uma linha por oferta; o mesmo aluno/turma/dia pode existir em ofertas diferentes).
+
+**Índices:** `ix_frequencia_turma_data` (`turma_id`, `data`), `ix_frequencia_aluno_data` (`aluno_id`, `data`) e **novo** `ix_frequencia_turma_curso_data` (`turma_curso_id`, `data`), para a "pauta da oferta".
+
+**Nota (`turma_id` espelhado):** `turma_id` continua sendo gravado inclusive nos registros de oferta (backfill e `salvar_frequencia` preenchem ambos), para leitura retrocompatível por turma. A busca **legada** (`turma_curso_id IS NULL`) e a busca **por oferta** (`turma_curso_id = X`) são mutuamente exclusivas — ver §8.10.
 **Property híbrida:** `presente` (A/B/C/D).
 
 ### 7.20 `registro_aula`
@@ -665,6 +673,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 |---------------------|------------------|------|--------------|--------------------------------------------------|
 | id                  | int              | não  | auto         | PK                                               |
 | turma_id            | int              | não  | —            | FK → turma                                       |
+| **turma_curso_id**  | **int**          | sim  | —            | FK → turma_curso; NULL = registro legado (Onda 4, Fase 4) |
 | **data**            | **date**         | não  | —            | Onda 2A                                          |
 | tema_id             | int              | sim  | —            | FK → tema_aula                                   |
 | observacoes         | text             | sim  | —            | —                                                |
@@ -674,6 +683,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **updated_by_id**   | **int**          | sim  | —            | FK → user, `ON DELETE SET NULL` (AuditoriaMixin) |
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
+
+**Índice novo (Onda 4, Fase 4):** `ix_registro_aula_turma_curso_data` (`turma_curso_id`, `data`). O diário é buscado por (`turma_curso_id`, `data`) quando há oferta e por (`turma_id`, `data`) **com `turma_curso_id IS NULL`** no caminho legado — ver §8.10.
 
 ### 7.21 `periodo_conselho`
 
@@ -940,7 +951,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - **Proibido** horário concomitante entre cursos da **mesma turma** (adjacência permitida; vigência considerada). Validação implementada na Fase 3 em `_validar_horario_concomitante` (`app/services/turma_curso.py`); chamada por `adicionar_oferta` e `editar_oferta`. Conflito entre turmas diferentes **não** bloqueia matrícula (regra aprovada; sem mecanismo de checagem).
 - A matrícula é por aluno↔turma e convive com o vínculo à oferta (`inscricoes.turma_curso_id`); a exigência NOT NULL por oferta pertence à **Fase 9**. Aluno disponível para enturmação não é excluído por já estar em outro curso da mesma turma.
 - **Compatibilidade legada (§14 da especificação):** as colunas de `Turma` (`curso_id`, `professor_id`, `turno`, `dias_semana`, horários, datas, centro de custo) continuam existindo; o backfill criou uma oferta por turma com curso. Dual-write descontrolado é proibido; remover colunas exige migrar todos os leitores (fases finais).
-- Frequência, diário, conselho e transferências ainda apontam para a turma; a refatoração por oferta ocorre nas fases seguintes. **D5 (conselho por oferta) permanece pendente** de decisão do usuário.
+- **Frequência e diário agora por oferta (Fase 4):** `frequencia` e `registro_aula` ganharam `turma_curso_id` (nullable). Ao lançar, `resolver_oferta_lancamento` decide a oferta: **oferta única** é escolhida automaticamente **sem validação extra** de vigência/dia/tema (comportamento anterior); com **2+ ofertas ativas** exige a escolha (`turma_curso`) e **valida** vigência da oferta, dia da grade (`_data_bate_dias_semana`) e tema (recusa tema de outro curso; aceita `curso_id` NULL). `salvar_frequencia` grava/busca RegistroAula e Frequência por (`turma_curso_id`, `data`) quando há oferta e por (`turma_id`, `data`) **com `turma_curso_id IS NULL`** no legado, de modo que o diário/frequência de uma segunda oferta **não sobrescreve** o da primeira no mesmo dia.
+- **Pauta da oferta:** `_alunos_da_oferta` lista os alunos por inscrição na oferta; inscrições `turma_curso_id IS NULL` **entram** na pauta quando há **1 oferta ativa** (fallback) e **ficam de fora** de toda pauta com **2+ ofertas** (a secretaria é avisada pelo contador "sem curso definido", via `count(distinct aluno_id)`). Um aluno com 2 inscrições ativas aparece **uma vez** (consulta com `EXISTS`).
+- **Pendência por oferta:** `contar_pendencias_frequencia` e `_aulas_pendentes` (dashboard do professor) com **2+ ofertas** avaliam cada oferta pela sua **própria agenda** (`datas_esperadas_oferta`: vigência + dias herdados da turma quando ausentes) e pela sua própria pauta; com 0/1 oferta o cálculo continua **por turma**, como antes.
+- **Início de oferta em turma em andamento:** `adicionar_oferta`, se `data_inicio` vier vazio, a turma já tiver **outra oferta** (ativa ou desativada) e estiver **em andamento** (`data_inicio <= hoje` e `data_fim` aberto ou `>= hoje`), grava `data_inicio = hoje` (precede a herança); a rota sinaliza com flash. Na primeira oferta, ou com turma encerrada, mantém a herança.
+- **Conselho, ficha do aluno, BI e transferências ainda leem por `turma_id`** (D3b-2 pendente); **D5 (conselho por oferta) permanece pendente** de decisão do usuário.
 - `TurmaCurso` **não** é excluído em cascata por desativação; apagar a **turma** fisicamente remove suas ofertas (cascade do relacionamento `turma`); apagar oferta **não** apaga inscrições (histórico protegido).
 
 ---
@@ -1052,7 +1067,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Remover blocos `# FALLBACK` em `aluno_perfil.py`.
 - Atualizar este MER.
 
-### Onda 4 — Múltiplos cursos por turma (Fases 0–3 — 22/10/2026)
+### Onda 4 — Múltiplos cursos por turma (Fases 0–4 — 22/10/2026)
 
 - **Fase 0:** unificados os dois heads históricos (`b7c1d2e3f4a5` e `d1e2f3a4b5c6`) via revision de merge `b02f2051bc1e`; `flask db upgrade` voltou a funcionar. `5a676f37b9a3` tornou-se **idempotente** no PostgreSQL (guards por inspeção de `pg_attribute` antes de cada `ALTER COLUMN TYPE`), tolerando bancos restaurados de dump com o schema parcialmente aplicado.
 - **Fase 1:** criado `TurmaCurso` (`turma_curso`, §7.32) com `UNIQUE(turma_id, curso_id)` e índice único parcial do principal; adicionado `inscricoes.turma_curso_id` (nullable na transição) com relacionamento `turma_curso` (backref `inscricoes_oferta`, sem cascade).
@@ -1062,7 +1077,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Verificação pós-deploy: `scripts/verificar_onda4_fase1.py` (estrutura, backfill, órfãs, duplicatas, principal, divergência com legado).
 - **Fase 2:** criado `app/services/turma_curso.py` (regras de aplicação: cadastro incremental, principal obrigatório com 2+ ofertas — máximo já garantido pelo índice parcial —, swap atômico de principal, soft delete com guarda, `UNIQUE` pleno inclusive para ofertas desativadas) e rotas `/turma/<id>/ofertas*` em `app/registros/turmas.py` com a tela `turmas/ofertas.html`; acesso por novo botão na ficha da turma. Espelhamento legado apenas em turma sem curso legado com oferta única (situação nova); turmas do backfill mantêm as colunas congeladas.
 - **Fase 3:** validação de concomitância de horários (`_validar_horario_concomitante`): sobreposição proibida entre ofertas ativas da mesma turma quando compartilham dia + intersecção estrita de horário + vigências interceptam; adjacência permitida. Chamada em `adicionar_oferta` e `editar_oferta`. Migration corretiva `8c4e1f9a7d32` adiciona as colunas de auditoria (`updated_by_id`/`name`/`at`) que faltavam em `turma_curso` no PostgreSQL.
-- Pendentes: Fases 4–9 (registros por oferta, §8 professores, §9 centro de custo, transferências §10, **D5 conselho**, certificados/indicadores, NOT NULL final). Colunas legadas de `Turma` permanecem (§8.10).
+- **Fase 4:** frequência e diário por oferta. Migration `e7f3a1b9c4d5` adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos parciais `uix_freq_legado`/`uix_freq_oferta`, cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (escolha + validação de vigência/dia/tema com 2+ ofertas), `datas_esperadas_oferta`/`_dias_efetivos_da_oferta` (agenda por oferta) e `_alunos_da_oferta` (movida para services para evitar ciclo de import; usa `EXISTS`, sem duplicar aluno). Leitores/escritores adaptados em `app/utils/logica.py` (`salvar_frequencia`, `carregar_frequencias` — busca legada agora filtra `turma_curso_id IS NULL`), `app/utils/frequencia.py` (`frequencias_lancadas`, `contar_pendencias_frequencia`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`imprimir_pauta`, `ver_observacoes`, `turmas/detalhe.html`, `frequencia/lancar.html`, `dashboard/professor.html`). Regra "turma em andamento" em `adicionar_oferta`. Testes: `tests/test_turma_curso_fase4.py` e `tests/test_turma_curso_fase4_dash.py`; verificação `scripts/verificar_onda4_fase4.py`.
+- Pendentes: **D3b-2** (ficha do aluno, BI de frequência/diário, `freq_geral` na listagem de turmas e no BI, relatórios, certificados e histórico ainda leem por `turma_id`); Fases 5–9 (autorização por professor ofertada §8, centro de custo §9, transferências §10, **D5 conselho**, certificados/indicadores, NOT NULL final). Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). Colunas legadas de `Turma` permanecem (§8.10).
 
 ---
 
@@ -1093,6 +1109,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `b02f2051bc1e` | `b7c1d2e3f4a5` + `d1e2f3a4b5c6` | **Merge dos heads** (Onda 4, Fase 0; head única)     | ✅       |
 | `311d554dfd6e` | `b02f2051bc1e` | **Onda 4, Fase 1**: `turma_curso` + `inscricoes.turma_curso_id` + backfill | ✅       |
 | `8c4e1f9a7d32` | `311d554dfd6e` | **Onda 4, fix Fase 1**: colunas de auditoria em `turma_curso` (PG) | ✅       |
+| `e7f3a1b9c4d5` | `8c4e1f9a7d32` | **Onda 4, Fase 4**: `turma_curso_id` em `frequencia`/`registro_aula`; UNIQUE legado → índices únicos parciais; backfill oferta única | ✅       |
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 

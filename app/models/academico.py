@@ -163,6 +163,32 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         except Exception:
             return 0.0
 
+    def freq_geral_oferta(self, turma_curso_id: int) -> float:
+        """
+        Frequência geral de UMA oferta da turma (0.0 a 100.0) — Onda 4 D3a.
+
+        Mesmo cálculo da property `freq_geral` (que não aceita parâmetro e
+        segue misturando cursos quando a turma tem 2+ ofertas ativas), mas
+        filtrado por `turma_curso_id`. Regras de contagem idênticas:
+        CONCEITOS_PRESENCA no numerador, CONCEITOS_CONTABEIS no denominador,
+        J fora de ambos.
+        """
+        try:
+            from app.models.aulas import Frequencia
+
+            registros = Frequencia.query.filter_by(
+                turma_id=self.id, turma_curso_id=turma_curso_id
+            ).all()
+
+            contaveis = [r for r in registros if r.conceito in CONCEITOS_CONTABEIS]
+            total = len(contaveis)
+            presentes = sum(
+                1 for r in contaveis if r.conceito in CONCEITOS_PRESENCA
+            )
+            return round((presentes / total) * 100, 1) if total > 0 else 0.0
+        except Exception:
+            return 0.0
+
     @property
     def alunos_ativos_count(self) -> int:
         """Total de alunos com `ativo=True` vinculados a esta turma."""

@@ -1,7 +1,7 @@
 ### Alterações do dia — 22/10/2026
 
 - Data da intervenção: 22/10/2026
-- Conclusão: implementado e validado; alterações de ciclo de vida dos cursos e da Onda 4 (Fases 0–2) ainda não commitadas.
+- Conclusão: implementado e validado; alterações de ciclo de vida dos cursos e da Onda 4 (Fases 0–4) ainda não commitadas.
 
 ### Carga horária por turma e catálogo de cursos
 
@@ -53,7 +53,7 @@
 - `node --check` para `app/static/js/planejamento/planejamento.js`, `compileall` dos módulos Python alterados e `git diff --check`: aprovados.
 - Na suíte completa `tests/test_security_regressions.py`, permaneceram 2 falhas em assertions preexistentes relacionadas a isolamento entre unidades e carga horária, já observadas antes das alterações de 22/10.
 
-### Onda 4 — Múltiplos cursos por turma: Fases 0–3
+### Onda 4 — Múltiplos cursos por turma: Fases 0–4
 
 - Escopo aprovado pelo responsável: especificação de 390 linhas (turma como agrupador lógico, oferta `TurmaCurso`, plano de 9 fases). Fase 0 (higiene de migrations) e Fase 1 (modelo + migration com backfill) executadas nesta data; demais fases seguem o plano.
 - **Fase 0 — heads unificadas:** existiam dois heads Alembic (`b7c1d2e3f4a5` e `d1e2f3a4b5c6`), que faziam `flask db upgrade` falhar. Criada a revision de merge `b02f2051bc1e` e aplicado upgrade completo no PostgreSQL local.
@@ -70,7 +70,10 @@
 - **Fix de migration (PG):** `8c4e1f9a7d32` adiciona as três colunas do `AuditoriaMixin` (`updated_by_id`/`updated_by_name`/`updated_at`) que faltavam em `turma_curso` no PostgreSQL (a revision original `311d554dfd6e` omitiu-os da `create_table`). Guards idempotentes por `sa.inspect(bind)`; FK `ON DELETE SET NULL` no PG.
 - **Fase 3 — concomitância de horários (§5):** implementada em `_validar_horario_concomitante` (`app/services/turma_curso.py`). Detecção por tripla condição: dias em comum (CSV parseado e normalizado) + sobreposição estrita de horário (adjacência permitida) + vigências interceptam (NULL = aberto). Chamada por `adicionar_oferta` e `editar_oferta` (esta última com `exclude_oferta_id` para ignorar a própria). `ValueError` com mensagem indicando o curso conflitante.
 - **Fase 3 — testes:** `tests/test_turma_curso_fase3.py` (20 cenários: unitários de `_parse_dias`/`_sobreposicao_horario`/`_sobreposicao_vigencia`, serviço sobreposição total/parcial/dias distintos/vigência disjunta/adjacência/sem dados, edição cria/remove conflito, rota POST com conflito → flash). Suíte completa: **131 aprovados**, 2 falhas preexistentes.
-- **Pendências da Onda 4:** Fases 4–9 — migração de frequência/diário/avaliações para a oferta (§7), autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), **D5 conselho — aguardando decisão**, certificados/indicadores (§12), NOT NULL final em `inscricoes.turma_curso_id` (Fase 9). Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
+- **Fase 4 — frequência e diário por oferta:** migration `e7f3a1b9c4d5` (down_revision `8c4e1f9a7d32`) adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos **parciais** `uix_freq_legado` (`aluno_id`,`turma_id`,`data` WHERE `turma_curso_id IS NULL`) e `uix_freq_oferta` (`aluno_id`,`turma_curso_id`,`data` WHERE NOT NULL), cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (oferta única escolhida sem validação extra; 2+ ofertas exige escolha e valida vigência/dia/tema), `datas_esperadas_oferta` (agenda por oferta) e `_alunos_da_oferta` (pauta por oferta com `EXISTS`, sem duplicar aluno). Leitores/escritores em `app/utils/logica.py` (`salvar_frequencia`/`carregar_frequencias`), `app/utils/frequencia.py` (`contar_pendencias_frequencia`/`_pendencias_por_ofertas`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`core.py`, `turmas.py`, `lancar.html`, `imprimir_pauta.html`, `detalhe.html`, `professor.html`). Regra "turma em andamento" em `adicionar_oferta` (grava hoje quando a 2ª+ oferta entra em turma já iniciada e viva; flash na rota). "Hoje" local via `get_local_now().date()` nos caminhos novos.
+- **Fase 4 — correção do caminho legado:** `salvar_frequencia` e `carregar_frequencias`, no ramo legado (`turma_curso_id IS NULL`), passaram a filtrar `turma_curso_id IS NULL` em `Frequencia` e `RegistroAula`; assim um lançamento legado (turma sem oferta ativa) não reaproveita/sobrescreve a linha de uma oferta (mesmo `turma_id`/`data`). O ramo por oferta permanece inalterado.
+- **Fase 4 — testes e verificação:** `tests/test_turma_curso_fase4.py` (cenários a–i: resolver sem validação na oferta única, segunda oferta não sobrescreve, legado não duplica/não confunde com oferta, `_data_bate_dias_semana` com acento/variante, vigência/dia/tema no resolver, filtro de aluno fora da pauta, inscrições NULL com 1 vs 2+ ofertas) e `tests/test_turma_curso_fase4_dash.py`; `scripts/verificar_onda4_fase4.py` (só leitura, exit 0/1: colunas, índices únicos parciais, ausência do UNIQUE antigo, FKs, ofertas inconsistentes, turmas 2+ sem principal). Suíte completa: **155 aprovados**, apenas as 2 falhas preexistentes de `/cursos`.
+- **Pendências da Onda 4:** Fases 5–9 — autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), **D5 conselho — aguardando decisão**, certificados/indicadores (§12), NOT NULL final em `inscricoes.turma_curso_id` (Fase 9). **D3b-2:** ficha do aluno, BI de frequência/diário, `freq_geral` (listagem de turmas e BI), relatórios e histórico ainda leem por `turma_id`. Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). **Consequência da correção do legado:** `carregar_frequencias` no caminho legado passou a filtrar `turma_curso_id IS NULL`; registros de ofertas desativadas não aparecem na tela legada. Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
 
 ### Arquivos principais
 
@@ -81,6 +84,8 @@ Onda 4 (Fases 0 e 1): `app/models/academico.py`, `app/models/matriculas.py`, `ap
 Onda 4 (Fase 2): `app/services/turma_curso.py`, `app/registros/turmas.py`, `app/templates/turmas/ofertas.html`, `app/templates/turmas/detalhe.html` e `tests/test_turma_curso_fase2.py`.
 
 Onda 4 (Fix PG + Fase 3): `migrations/versions/8c4e1f9a7d32_onda4_fase1_fix_turma_curso_updated_by_id.py`, `app/services/turma_curso.py` e `tests/test_turma_curso_fase3.py`.
+
+Onda 4 (Fase 4): `migrations/versions/e7f3a1b9c4d5_onda4_fase4_turma_curso_id_frequencia.py`, `app/services/turma_curso.py`, `app/utils/logica.py`, `app/utils/frequencia.py`, `app/main/dashboard_professor.py`, `app/registros/core.py`, `app/registros/turmas.py`, templates (`frequencia/lancar.html`, `frequencia/imprimir_pauta.html`, `turmas/detalhe.html`, `dashboard/professor.html`), `scripts/verificar_onda4_fase4.py`, `tests/test_turma_curso_fase4.py`, `tests/test_turma_curso_fase4_dash.py` e `app/models/MER.md`.
 
 ---
 

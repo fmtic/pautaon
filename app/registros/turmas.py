@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.database import db
 from app.models import (
@@ -25,6 +25,7 @@ from app.services.turma_curso import (
     desativar_oferta,
     editar_oferta,
     ofertas_ativas,
+    _alunos_da_oferta,
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.formatters import formatar_ch
@@ -390,6 +391,7 @@ def ver_turma(id):
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
         niveis_cadastrados=niveis_cadastrados,
+        ofertas=ofertas_ativas(id),
         **ctx,
     )
 
@@ -772,11 +774,19 @@ def turma_oferta_nova(id):
         if dados["curso_id"] is None:
             raise ValueError("Selecione um curso para adicionar à turma.")
         nome_curso = db.session.get(Curso, dados["curso_id"]).nome
-        adicionar_oferta(turma_obj, **dados)
+        oferta = adicionar_oferta(turma_obj, **dados)
     except ValueError as erro:
         flash(str(erro), "warning")
         return redirect(url_for("registros.turma_ofertas", id=id))
 
+    if getattr(oferta, "inicio_ajustado_para_hoje", False) and oferta.data_inicio:
+        flash(
+            "Início da oferta definido como hoje "
+            f"({oferta.data_inicio.strftime('%d/%m/%Y')}) porque a turma já "
+            "está em andamento. Edite a oferta se aulas anteriores devem ser "
+            "cobradas.",
+            "info",
+        )
     flash(
         f"Curso '{nome_curso}' adicionado à turma. "
         "Deseja adicionar outro curso?",
@@ -1146,12 +1156,27 @@ def ver_observacoes(turma_id):
     if current_user.role not in ["admin", "pedagogico", "secretaria", "professor"]:
         abort(403)
 
+    # Onda 4 (Fase 4, D3a): filtro opcional por oferta (querystring
+    # `turma_curso`). Com 2+ ofertas ativas cada observação ganha o rótulo
+    # do curso; registros com turma_curso_id NULL aparecem sem rótulo.
+    # Com 0/1 oferta a tela é exatamente como hoje.
+    ofertas = ofertas_ativas(turma_id)
+    mostrar_curso = len(ofertas) >= 2
+    turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
+
+    filtros = [
+        RegistroAula.turma_id == turma_id,
+        RegistroAula.observacoes != None,
+        RegistroAula.observacoes != "",
+    ]
+    if turma_curso_id is not None:
+        if any(o.id == turma_curso_id for o in ofertas):
+            filtros.append(RegistroAula.turma_curso_id == turma_curso_id)
+        else:
+            flash("Curso selecionado inválido para esta turma.", "warning")
+
     observacoes = (
-        RegistroAula.query.filter(
-            RegistroAula.turma_id == turma_id,
-            RegistroAula.observacoes != None,
-            RegistroAula.observacoes != "",
-        )
+        RegistroAula.query.filter(*filtros)
         .order_by(RegistroAula.data.desc())
         .all()
     )
@@ -1161,6 +1186,7 @@ def ver_observacoes(turma_id):
         obs=observacoes,
         turma=turma_obj,
         historico=observacoes,
+        mostrar_curso=mostrar_curso,
     )
 
 
@@ -1176,6 +1202,33 @@ def imprimir_pauta(id):
     if current_user.role == "professor" and turma.professor_id != current_user.id:
         abort(403)
 
+    # Onda 4 (Fase 4, D3a): `turma_curso` opcional na querystring.
+    #   - 0 ofertas ativas: igual a hoje (pauta e frequências por turma).
+    #   - 1 oferta ativa: uso automático sem seletor; as frequências da
+    #     oferta incluem as legado NULL (regra de pauta da D2 — a inscrição
+    #     sem curso só pode ser dela) e a lista de alunos segue por turma.
+    #   - 2+ ofertas: exige escolha — sem turma_curso não imprime misturado
+    #     (flash pedindo o curso e retorno à tela de frequência, que tem o
+    #     seletor); com turma_curso, alunos e frequências só da oferta, com
+    #     o nome do curso no cabeçalho da impressão.
+    ofertas = ofertas_ativas(id)
+    oferta = None
+    turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
+    if len(ofertas) >= 2:
+        if turma_curso_id is None:
+            flash(
+                "Esta turma tem mais de um curso ativo. Selecione o curso "
+                "antes de imprimir a pauta.",
+                "warning",
+            )
+            return redirect(url_for("registros.frequencia", turma_id=id))
+        oferta = next((o for o in ofertas if o.id == turma_curso_id), None)
+        if oferta is None:
+            flash("Curso selecionado inválido para esta turma.", "warning")
+            return redirect(url_for("registros.frequencia", turma_id=id))
+    elif len(ofertas) == 1:
+        oferta = ofertas[0]
+
     try:
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
@@ -1183,6 +1236,13 @@ def imprimir_pauta(id):
             "Não há informações completas para montar arquitetura de pauta.", "warning"
         )
         return redirect(url_for("registros.ver_turma", id=id))
+
+    if oferta is not None and len(ofertas) >= 2:
+        # Pauta da oferta com a regra de fallback da D2: com 2+ ofertas,
+        # inscrições NULL são ambíguas e ficam de fora.
+        ctx["alunos"] = _alunos_da_oferta(
+            id, oferta.id, incluir_inscricoes_null=False,
+        )
 
     mes_selecionado = request.args.get("mes")
     if mes_selecionado:
@@ -1200,12 +1260,26 @@ def imprimir_pauta(id):
     datas_date = [parse_date(d) for d in datas_ctx]
     datas_date = [d for d in datas_date if d is not None]
 
+    freq_filtros = [
+        Frequencia.turma_id == id,
+        Frequencia.data.in_(datas_date),
+    ] if datas_date else None
+    if freq_filtros is not None and oferta is not None:
+        if len(ofertas) == 1:
+            # Oferta única: frequências legado NULL pertencem a ela (regra
+            # da pauta D2); na prática equivale ao filtro por turma de hoje.
+            freq_filtros.append(
+                or_(
+                    Frequencia.turma_curso_id == oferta.id,
+                    Frequencia.turma_curso_id.is_(None),
+                )
+            )
+        else:
+            freq_filtros.append(Frequencia.turma_curso_id == oferta.id)
+
     registros = (
-        Frequencia.query.filter(
-            Frequencia.turma_id == id,
-            Frequencia.data.in_(datas_date),
-        ).all()
-        if datas_date
+        Frequencia.query.filter(*freq_filtros).all()
+        if freq_filtros
         else []
     )
 
@@ -1219,5 +1293,6 @@ def imprimir_pauta(id):
         "frequencia/imprimir_pauta.html",
         **ctx,
         frequencias=frequencias,
+        oferta_atual=oferta if len(ofertas) >= 2 else None,
         now=datetime.now(),
     )

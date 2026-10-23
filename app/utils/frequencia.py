@@ -23,6 +23,7 @@ from datetime import date
 from typing import Iterable
 
 from app.models import Aluno, DiaBloqueado, Frequencia, Inscricao
+from app.utils.timezone import get_local_now
 
 
 def alunos_ativos_da_turma(turma_id: int) -> list[int]:
@@ -50,6 +51,7 @@ def frequencias_lancadas(
     turma_id: int,
     data_alvo: date,
     aluno_ids: Iterable[int],
+    turma_curso_id: int | None = None,
 ) -> int:
     """
     Conta quantos alunos da turma têm conceito lançado em `data_alvo`.
@@ -59,16 +61,28 @@ def frequencias_lancadas(
     aproveitado pela query.
 
     Considera "lançado" quando o conceito não é NULL (campo é ENUM nativo do PG).
+
+    Onda 4 (Fase 4, D3a): com `turma_curso_id` informado a contagem é por
+    oferta — usa o índice `ix_frequencia_turma_curso_data` e não enxerga
+    lançamentos de outras ofertas no mesmo dia. Sem o parâmetro, mantém o
+    comportamento legado (filtro por `turma_id`). Com 2+ ofertas ativas, o
+    chamador que precisa saber "a turma já lançou hoje?" deve consultar por
+    oferta, pois o total de alunos da turma inclui os das demais ofertas.
     """
     aluno_ids = list(aluno_ids)
     if not aluno_ids:
         return 0
-    return Frequencia.query.filter(
-        Frequencia.turma_id == turma_id,
+
+    filtros = [
         Frequencia.data == data_alvo,
         Frequencia.aluno_id.in_(aluno_ids),
         Frequencia.conceito.isnot(None),
-    ).count()
+    ]
+    if turma_curso_id is not None:
+        filtros.append(Frequencia.turma_curso_id == turma_curso_id)
+    else:
+        filtros.append(Frequencia.turma_id == turma_id)
+    return Frequencia.query.filter(*filtros).count()
 
 
 def datas_bloqueadas_str(periodo_letivo_id: int | None) -> set[str]:
@@ -98,13 +112,29 @@ def contar_pendencias_frequencia(turmas) -> int:
 
     Usa `parse_date` para aceitar tanto `date` quanto string vinda de
     `gerar_datas` (transição).
+
+    Onda 4 (Fase 4, D3b-1): com 2+ ofertas ativas a pendência é avaliada por
+    OFERTA — cada oferta usa sua própria agenda (vigência + dias da semana) e
+    sua própria pauta (`_alunos_da_oferta`, regra da D2), comparando o lançado
+    da oferta (`frequencias_lancadas(..., turma_curso_id=oferta)`) com o tamanho
+    da pauta dela. Assim uma aula de uma segunda oferta em dia que o calendário
+    legado da turma não cobre deixa de "sumir" da contagem. Com 0 ou 1 oferta
+    ativa o cálculo é exatamente o de hoje (por turma).
     """
+    from app.services.turma_curso import ofertas_ativas
     from app.utils.datetime_parse import parse_date
     from app.utils.logica import gerar_datas
 
     total = 0
     for turma in turmas:
         blocked = datas_bloqueadas_str(turma.periodo_letivo_id)
+
+        ativas = ofertas_ativas(turma.id)
+        if len(ativas) >= 2:
+            total += _pendencias_por_ofertas(turma, ativas, blocked)
+            continue
+
+        # 0 ou 1 oferta ativa: comportamento legado inalterado (por turma).
         datas_aula = gerar_datas(
             turma, incluir_futuro=False, blocked_dates=blocked
         )
@@ -120,3 +150,31 @@ def contar_pendencias_frequencia(turmas) -> int:
             if frequencias_lancadas(turma.id, data_alvo, aluno_ids) < len(aluno_ids):
                 total += 1
     return total
+
+
+def _pendencias_por_ofertas(turma, ativas, blocked) -> int:
+    """Pendência somada por oferta (2+ ativas) — D3b-1.
+
+    Para cada oferta: itera as datas esperadas da própria oferta até hoje e
+    conta a aula como pendente quando o lançado da oferta é menor que o
+    tamanho da pauta dela. Pauta estrita (sem fallback NULL), pois com 2+
+    ofertas as inscrições NULL são ambíguas.
+    """
+    from app.services.turma_curso import _alunos_da_oferta, datas_esperadas_oferta
+
+    hoje = get_local_now().date()
+    pendencias = 0
+    for oferta in ativas:
+        pauta = _alunos_da_oferta(
+            turma.id, oferta.id, incluir_inscricoes_null=False,
+        )
+        if not pauta:
+            continue
+        aluno_ids = [a.id for a in pauta]
+        for data_alvo in datas_esperadas_oferta(oferta, hoje, blocked):
+            lancados = frequencias_lancadas(
+                turma.id, data_alvo, aluno_ids, turma_curso_id=oferta.id,
+            )
+            if lancados < len(aluno_ids):
+                pendencias += 1
+    return pendencias

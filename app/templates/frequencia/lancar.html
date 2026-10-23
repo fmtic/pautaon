@@ -9,10 +9,13 @@
         <i class="bi bi-printer"></i> Imprimir Pauta
     </button>
     {% if turma %}
+    {# Onda 4 (D3b-1): se há oferta escolhida na tela, o link de impressão
+       já carrega a pauta daquela oferta (evita o redirect "selecione o curso"). #}
+    {% set tc = oferta_atual.id if oferta_atual else None %}
     <ul class="dropdown-menu">
         {% for mes in meses %}
         <li>
-            <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero) }}"
+            <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero, **({'turma_curso': tc} if tc else {})) }}"
                 target="_blank">
                 Pauta de {{ mes.nome }}
             </a>
@@ -20,7 +23,7 @@
         {% endfor %}
         <li><hr class="dropdown-divider"></li>
         <li>
-            <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id) }}"
+            <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id, **({'turma_curso': tc} if tc else {})) }}"
                 target="_blank">
                 Pauta Completa (Todos os meses)
             </a>
@@ -36,6 +39,11 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="turma" value="{{ turma_id or '' }}">
     <input type="hidden" name="data_hidden" value="{{ data or '' }}">
+    {# Onda 4 (D2): turma com oferta única ativa — oferta resolvida
+       automaticamente, sem seletor; o hidden leva turma_curso ao POST. #}
+    {% if oferta_atual and ofertas|length == 1 %}
+    <input type="hidden" name="turma_curso" value="{{ oferta_atual.id }}">
+    {% endif %}
     <div class="card mb-4 p-3">
 
         <div class="row g-3">
@@ -56,6 +64,39 @@
                 </div>
                 {% endif %}
             </div>
+
+            {# Onda 4 (D2): 2+ ofertas ativas — exige escolha do curso antes
+               de carregar a pauta; a data selecionada é preservada na troca. #}
+            {% if ofertas|length >= 2 %}
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Curso da oferta</label>
+                <select name="turma_curso" id="select-turma-curso" class="form-select border-primary"
+                        onchange="atualizarUrl()">
+                    <option value="">Selecione o curso</option>
+                    {% for o in ofertas %}
+                    <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
+                        {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
+                        {%- if o.turno %} — {{ o.turno }}{% endif -%}
+                        {%- if o.hora_inicio %} ({{ o.hora_inicio.strftime('%H:%M') }}
+                            {%- if o.hora_fim %}–{{ o.hora_fim.strftime('%H:%M') }}{% endif -%}
+                        ){% endif -%}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if not oferta_atual %}
+                <div class="alert alert-info py-2 mt-2 mb-0">
+                    <i class="bi bi-info-circle me-1"></i> Selecione o curso para carregar a pauta.
+                </div>
+                {% endif %}
+                {% if sem_curso_count %}
+                <div class="alert alert-warning py-2 mt-2 mb-0">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    {{ sem_curso_count }} aluno(s) sem curso definido na turma —
+                    peça à Secretaria que vincule a inscrição a um curso.
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
 
             <div class="col-md-6">
                 <label class="form-label fw-bold">Data da Aula</label>
