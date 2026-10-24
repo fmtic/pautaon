@@ -134,6 +134,15 @@
                                     value="{{ oferta.centro_custo or '' }}" placeholder="Compartilhado (turma)">
                                 {% endif %}
                             </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">Programa</label>
+                                <select name="programa" class="form-select form-select-sm">
+                                    <option value="">—</option>
+                                    {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
+                                    <option value="{{ prog }}" {{ 'selected' if oferta.programa == prog }}>{{ prog }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small">Dias da semana</label><br>
                                 {% for dia in dias_semana %}
@@ -232,33 +241,8 @@
                 </label>
             </div>
         </div>
-        <div class="col-12">
-            <label class="form-label fw-bold small">Dias da semana</label><br>
-            {% for dia in dias_semana %}
-            <div class="form-check form-check-inline form-switch">
-                <input class="form-check-input" type="checkbox" name="dias_semana"
-                    id="novo_dia_{{ loop.index }}" value="{{ dia }}">
-                <label class="form-check-label small" for="novo_dia_{{ loop.index }}">{{ dia }}</label>
-            </div>
-            {% endfor %}
-        </div>
-        <div class="col-md-2">
-            <label class="form-label fw-bold small">Hora Início</label>
-            <input type="time" name="hora_inicio" class="form-control">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label fw-bold small">Hora Fim</label>
-            <input type="time" name="hora_fim" class="form-control">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label fw-bold small">Data Início</label>
-            <input type="date" name="data_inicio" class="form-control">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label fw-bold small">Data Fim</label>
-            <input type="date" name="data_fim" class="form-control">
-        </div>
-        <div class="col-md-4">
+        {# Centro de Custo (mantido) #}
+        <div class="col-md-6">
             <label class="form-label fw-bold small">Centro de Custo</label>
             {% if centros %}
             <select name="centro_custo" class="form-select">
@@ -270,6 +254,107 @@
             {% else %}
             <input type="text" name="centro_custo" class="form-control" placeholder="Compartilhado (turma)">
             {% endif %}
+        <div class="col-md-6">
+            <label class="form-label fw-bold small">Programa</label>
+            <select name="programa" class="form-select">
+                <option value="">—</option>
+                {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
+                <option value="{{ prog }}" {{ 'selected' if turma.programa == prog }}>{{ prog }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        </div>
+
+        <!-- Dias da Semana -->
+        <div class="col-12">
+            <label class="form-label fw-bold">Dias da Semana</label>
+            <div class="d-flex flex-wrap gap-3 p-3 bg-white rounded border shadow-sm">
+                {% for dia in dias_semana %}
+                <div class="form-check form-check-inline form-switch">
+                    <input class="form-check-input" type="checkbox" name="dias_semana"
+                        id="novo_dia_{{ loop.index }}" value="{{ dia }}">
+                    <label class="form-check-label fw-medium" for="novo_dia_{{ loop.index }}">{{ dia }}</label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# Datas do curso: por padrão são herdadas do período letivo da turma #}
+        <div class="col-md-6">
+            <div class="card border-info h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="toggle_datas_curso"
+                            name="datas_personalizadas" value="1">
+                        <label class="form-check-label fw-bold" for="toggle_datas_curso">Definir datas
+                            específicas para este curso</label>
+                    </div>
+                    <div id="datas_periodo_info" class="alert alert-info py-2 px-3 small mb-0 border-0">
+                        <i class="bi bi-info-circle-fill me-2"></i>As aulas ocorrerão entre
+                        <strong id="periodo_data_inicio"
+                            data-valor="{{ turma.periodo_letivo.data_inicio.isoformat() if turma.periodo_letivo and turma.periodo_letivo.data_inicio else '' }}">—</strong>
+                        e
+                        <strong id="periodo_data_fim"
+                            data-valor="{{ turma.periodo_letivo.data_fim.isoformat() if turma.periodo_letivo and turma.periodo_letivo.data_fim else '' }}">—</strong>,
+                        nos dias selecionados.
+                    </div>
+
+                    <div id="datas_custom_area" class="row g-3 mt-1 d-none">
+                        <div class="col-sm-6">
+                            <label for="data_inicio_custom" class="form-label fw-bold small">Início do Curso</label>
+                            <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control"
+                                disabled>
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="data_fim_custom" class="form-label fw-bold small">Término do Curso</label>
+                            <input type="date" name="data_fim" id="data_fim_custom" class="form-control" disabled>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-text text-muted small">
+                                <i class="bi bi-calendar-range me-1"></i>Selecione datas dentro dos limites do
+                                período letivo da turma.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Horário das Aulas -->
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm border-0 bg-light">
+                <div class="card-body">
+                    <h6 class="card-title fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Horário das Aulas
+                    </h6>
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <label for="hora_inicio" class="form-label fw-bold small">Hora Início</label>
+                            <input type="time" name="hora_inicio" id="hora_inicio" class="form-control">
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="hora_fim" class="form-label fw-bold small">Hora Fim</label>
+                            <input type="time" name="hora_fim" id="hora_fim" class="form-control">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# C.H. calculada em tempo real via JS #}
+        <div class="col-12" id="bloco_ch">
+            <div class="alert alert-secondary py-3 px-4 mb-0 d-flex flex-wrap gap-4 align-items-center shadow-sm border-0">
+                <span>
+                    <i class="bi bi-clock-fill text-secondary me-2"></i>
+                    <strong>C.H. por Aula:</strong>
+                    <span id="ch_aula_display" class="badge bg-white text-dark ms-1 fs-6">—</span>
+                </span>
+                <span>
+                    <i class="bi bi-calendar-check-fill text-secondary me-2"></i>
+                    <strong>C.H. Total Estimada:</strong>
+                    <span id="ch_total_display" class="badge bg-white text-dark ms-1 fs-6">—</span>
+                    <span class="text-muted small ms-2 fst-italic">(dias bloqueados não descontados aqui)</span>
+                </span>
+            </div>
         </div>
         <div class="col-12">
             <button type="submit" class="btn btn-primary fw-bold">
@@ -288,4 +373,75 @@
     {% endif %}
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    const toggle = $('toggle_datas_curso');
+    const area = $('datas_custom_area');
+    const info = $('datas_periodo_info');
+    const diCustom = $('data_inicio_custom');
+    const dfCustom = $('data_fim_custom');
+    const hIni = $('hora_inicio');
+    const hFim = $('hora_fim');
+    const spanIni = $('periodo_data_inicio');
+    const spanFim = $('periodo_data_fim');
+    const chAula = $('ch_aula_display');
+    const chTotal = $('ch_total_display');
+    const diasInputs = () => document.querySelectorAll('input[name="dias_semana"][id^="novo_dia_"]');
+
+    const fmt = (iso) => iso ? iso.split('-').reverse().join('/') : '—';
+    const parse = (iso) => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+    const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3);
+    const MAPA = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+
+    const periodoIni = spanIni.dataset.valor || '';
+    const periodoFim = spanFim.dataset.valor || '';
+    spanIni.textContent = fmt(periodoIni);
+    spanFim.textContent = fmt(periodoFim);
+    if (periodoIni) { diCustom.min = periodoIni; dfCustom.min = periodoIni; }
+    if (periodoFim) { diCustom.max = periodoFim; dfCustom.max = periodoFim; }
+
+    function horasPorAula() {
+        if (!hIni.value || !hFim.value) return null;
+        const [h1, m1] = hIni.value.split(':').map(Number);
+        const [h2, m2] = hFim.value.split(':').map(Number);
+        const min = (h2 * 60 + m2) - (h1 * 60 + m1);
+        return min > 0 ? min / 60 : null;
+    }
+
+    const fmtH = (h) => (Number.isInteger(h) ? h : h.toFixed(2).replace('.', ',')) + 'h';
+
+    function recalcular() {
+        const porAula = horasPorAula();
+        chAula.textContent = porAula ? fmtH(porAula) : '—';
+
+        const ini = parse(toggle.checked && diCustom.value ? diCustom.value : periodoIni);
+        const fim = parse(toggle.checked && dfCustom.value ? dfCustom.value : periodoFim);
+        const dias = new Set([...diasInputs()].filter(i => i.checked).map(i => MAPA[norm(i.value)]));
+
+        if (!porAula || !ini || !fim || !dias.size || fim < ini) { chTotal.textContent = '—'; return; }
+        let aulas = 0;
+        for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
+            if (dias.has(d.getDay())) aulas++;
+        }
+        chTotal.textContent = fmtH(aulas * porAula) + ' (' + aulas + ' aulas)';
+    }
+
+    toggle.addEventListener('change', () => {
+        const on = toggle.checked;
+        area.classList.toggle('d-none', !on);
+        info.classList.toggle('d-none', on);
+        diCustom.disabled = !on;
+        dfCustom.disabled = !on;
+        if (!on) { diCustom.value = ''; dfCustom.value = ''; }
+        recalcular();
+    });
+    [hIni, hFim, diCustom, dfCustom].forEach(el => el.addEventListener('input', recalcular));
+    diasInputs().forEach(el => el.addEventListener('change', recalcular));
+    recalcular();
+})();
+</script>
 {% endblock %}

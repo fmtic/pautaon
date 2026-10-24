@@ -45,6 +45,47 @@ def ofertas_ativas(turma_id: int):
     )
 
 
+def turma_tem_historico(turma_id: int) -> bool:
+    """True se a turma tem histórico que impede a exclusão física
+    (Onda 4, Etapa I).
+
+    "Tem histórico" = existe qualquer linha em `Frequencia`, `RegistroAula`,
+    `ConselhoClasse` ou `Transferencia` ligada à turma — por `turma_id` ou,
+    em `Frequencia`/`RegistroAula`, por `turma_curso_id` de uma de suas ofertas;
+    em `Transferencia`, por `turma_origem_id` ou `turma_destino_id`.
+    `DiaBloqueadoTurma` e `TemaAula` NÃO contam como histórico (são vínculos
+    de agenda/planejamento, tratados na exclusão).
+    """
+    from app.models import ConselhoClasse, Frequencia, RegistroAula, Transferencia
+
+    oferta_ids = [o.id for o in TurmaCurso.query.filter_by(turma_id=turma_id).all()]
+
+    if Frequencia.query.filter(
+        or_(
+            Frequencia.turma_id == turma_id,
+            Frequencia.turma_curso_id.in_(oferta_ids),
+        )
+    ).first():
+        return True
+    if RegistroAula.query.filter(
+        or_(
+            RegistroAula.turma_id == turma_id,
+            RegistroAula.turma_curso_id.in_(oferta_ids),
+        )
+    ).first():
+        return True
+    if ConselhoClasse.query.filter_by(turma_id=turma_id).first():
+        return True
+    if Transferencia.query.filter(
+        or_(
+            Transferencia.turma_origem_id == turma_id,
+            Transferencia.turma_destino_id == turma_id,
+        )
+    ).first():
+        return True
+    return False
+
+
 def _parse_dias(dias_semana: str | None) -> set[str]:
     """Converte CSV de dias ('Segunda, Quarta') em set normalizado (lowerstrip)."""
     if not dias_semana:
@@ -185,7 +226,69 @@ def _sincronizar_legado(turma: Turma, oferta: TurmaCurso) -> None:
     ativas = ofertas_ativas(turma.id)
     if len(ativas) != 1 or turma.curso_id is not None:
         return
+    # Espelha a oferta única nas colunas legadas de Turma, para que a turma
+    # criada no fluxo novo (sem curso) passe a exibir os dados do curso no
+    # card da listagem e nos leitores que ainda usam as colunas de Turma.
     turma.curso_id = oferta.curso_id
+    turma.professor_id = oferta.professor_id
+    turma.turno = oferta.turno
+    turma.dias_semana = oferta.dias_semana
+    turma.hora_inicio = oferta.hora_inicio
+    turma.hora_fim = oferta.hora_fim
+    turma.data_inicio = oferta.data_inicio
+    turma.data_fim = oferta.data_fim
+    turma.centro_custo = oferta.centro_custo
+    turma.programa = oferta.programa
+
+
+def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
+    """Cria a oferta inicial de uma turma recém-cadastrada que tem curso legado.
+
+    Espelha o backfill da migration `311d554dfd6e`: se a turma tem `curso_id`
+    e ainda não tem **nenhuma** oferta (ativa ou desativada), gera uma única
+    `TurmaCurso` copiando os atributos da própria turma (professor, turno,
+    dias da semana, horários, datas, centro de custo e unidade), com
+    `principal=False` (oferta única não exige marcação).
+
+    Idempotente: havendo qualquer oferta na turma, devolve a existente sem
+    criar nada. Turma sem `curso_id` não gera oferta (devolve `None`).
+
+    Diferente das demais funções deste módulo: **não** faz commit — apenas
+    `add`/`flush` — para que a rota grave turma e oferta na mesma transação
+    (falha na oferta desfaz a turma). Não valida concomitância: a oferta
+    replica exatamente a grade já aceita da turma.
+    """
+    existente = (
+        TurmaCurso.query
+        .filter_by(turma_id=turma.id)
+        .order_by(TurmaCurso.id)
+        .first()
+    )
+    if existente is not None:
+        return existente
+
+    if turma.curso_id is None:
+        return None
+
+    oferta = TurmaCurso(
+        turma_id=turma.id,
+        curso_id=turma.curso_id,
+        principal=False,
+        professor_id=turma.professor_id,
+        turno=turma.turno,
+        dias_semana=turma.dias_semana,
+        hora_inicio=turma.hora_inicio,
+        hora_fim=turma.hora_fim,
+        data_inicio=turma.data_inicio,
+        data_fim=turma.data_fim,
+        centro_custo=turma.centro_custo,
+        programa=turma.programa,
+        unidade_id=turma.unidade_id,
+        ativo=True,
+    )
+    db.session.add(oferta)
+    db.session.flush()
+    return oferta
 
 
 def adicionar_oferta(
@@ -201,6 +304,7 @@ def adicionar_oferta(
     data_inicio=None,
     data_fim=None,
     centro_custo: str | None = None,
+    programa: str | None = None,
 ) -> TurmaCurso:
     """Cria uma oferta incremental na turma, aplicando as regras da Onda 4."""
     # Guarda se o início veio preenchido do formulário antes de qualquer
@@ -256,6 +360,7 @@ def adicionar_oferta(
         data_inicio = data_inicio or turma.data_inicio
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
+        programa = programa or turma.programa
 
     oferta = TurmaCurso(
         turma_id=turma.id,
@@ -269,6 +374,7 @@ def adicionar_oferta(
         data_inicio=data_inicio,
         data_fim=data_fim,
         centro_custo=centro_custo,
+        programa=programa,
         unidade_id=turma.unidade_id,
         ativo=True,
     )
@@ -308,7 +414,7 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
 
     for campo in (
         "curso_id", "professor_id", "turno", "dias_semana",
-        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo",
+        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo", "programa",
     ):
         if campo in dados:
             setattr(oferta, campo, dados[campo])
@@ -525,24 +631,20 @@ def _dias_efetivos_da_oferta(oferta: TurmaCurso) -> str | None:
     return None
 
 
-def datas_esperadas_oferta(
+def datas_aula_oferta(
     oferta: TurmaCurso,
-    hoje: date,
+    limite: date | None = None,
     blocked: set | None = None,
 ) -> list[date]:
-    """Datas de aula da OFERTA até `hoje` (inclusive), respeitando a vigência e
-    os dias da semana próprios da oferta — base da contagem de pendência por
-    oferta (D3b-1).
+    """Datas de aula da OFERTA, respeitando a vigência e os dias da semana
+    próprios da oferta (herdados da turma quando ausentes).
 
-    Diferente de `gerar_datas(turma)`, que usa o calendário legado da turma
-    (congelado no curso do backfill) e por isso NÃO enxergava os dias de uma
-    segunda oferta: com 2+ ofertas essas aulas "sumiam" da pendência.
-
-    - Vigência: janela [data_inicio, min(data_fim, hoje)]; NULL nos extremos
-      herda da turma; sem início OU fim definíveis → sem datas.
-    - Dias da semana: usa `_data_bate_dias_semana` com os dias efetivos da
-      oferta (herdados da turma quando ausentes). Sem dias em nenhum dos dois
-      → sem datas (evita marcar todos os dias como aula).
+    - Vigência: janela [data_inicio, data_fim]; NULL nos extremos herda da
+      turma; sem início OU fim definíveis → sem datas.
+    - `limite`: teto exclusivo de projeção. `None` vai até a `data_fim`
+      efetiva; quando informado, corta em `min(limite, data_fim)`.
+    - Dias da semana: `_data_bate_dias_semana` com os dias efetivos da
+      oferta. Sem dias em nenhum dos dois → sem datas.
     - `blocked`: conjunto de strings 'YYYY-MM-DD' (feriados / dias sem aula).
     """
     blocked = blocked or set()
@@ -555,8 +657,8 @@ def datas_esperadas_oferta(
     if not inicio or not fim:
         return []
 
-    limite = min(fim, hoje)
-    if inicio > limite:
+    limite_efetivo = fim if limite is None else min(limite, fim)
+    if inicio > limite_efetivo:
         return []
 
     dias = _dias_efetivos_da_oferta(oferta)
@@ -565,8 +667,22 @@ def datas_esperadas_oferta(
 
     datas: list[date] = []
     atual = inicio
-    while atual <= limite:
+    while atual <= limite_efetivo:
         if _data_bate_dias_semana(dias, atual) and atual.strftime('%Y-%m-%d') not in blocked:
             datas.append(atual)
         atual += timedelta(days=1)
     return datas
+
+
+def datas_esperadas_oferta(
+    oferta: TurmaCurso,
+    hoje: date,
+    blocked: set | None = None,
+) -> list[date]:
+    """Datas de aula da OFERTA até `hoje` (inclusive), cortadas na `data_fim`
+    efetiva — base da contagem de pendência por oferta (D3b-1).
+
+    Delega para `datas_aula_oferta` com `limite=hoje` (a helper corta em
+    `min(hoje, data_fim)`, preservando exatamente o comportamento anterior).
+    """
+    return datas_aula_oferta(oferta, limite=hoje, blocked=blocked)

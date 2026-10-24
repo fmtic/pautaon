@@ -172,6 +172,11 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         filtrado por `turma_curso_id`. Regras de contagem idênticas:
         CONCEITOS_PRESENCA no numerador, CONCEITOS_CONTABEIS no denominador,
         J fora de ambos.
+
+        PENDÊNCIA DE OTIMIZAÇÃO (Onda 4, Etapa K): faz 1 consulta por oferta;
+        numa lista com N turmas × M ofertas isso vira N+1. Trocar por
+        agregação em lote (SELECT turma_curso_id, conceito, COUNT(*) ... WHERE
+        turma_id IN (...) GROUP BY turma_curso_id, conceito).
         """
         try:
             from app.models.aulas import Frequencia
@@ -307,6 +312,7 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         db.String(150),
         comment='Centro de custo individual; NULL = usa o compartilhado da turma',
     )
+    programa: str = db.Column(db.String(50))
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
@@ -320,6 +326,49 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     professor = db.relationship(
         'User', foreign_keys=[professor_id], backref='ofertas_como_responsavel'
     )
+
+    @property
+    def carga_horaria_aula(self) -> int | None:
+        """
+        Duração de uma aula da OFERTA em MINUTOS (Onda 4, Etapa K).
+
+        Mesma regra de `Turma.carga_horaria_aula`: `hora_fim - hora_inicio`,
+        herdando os horários da turma quando a oferta não define os próprios
+        (NULL = compartilhado). None se ausente ou `hora_fim <= hora_inicio`.
+        """
+        inicio = self.hora_inicio
+        fim = self.hora_fim
+        if (not inicio or not fim) and self.turma is not None:
+            inicio = inicio or self.turma.hora_inicio
+            fim = fim or self.turma.hora_fim
+        if not inicio or not fim:
+            return None
+        delta = (
+            fim.hour * 60 + fim.minute
+            - inicio.hour * 60 - inicio.minute
+        )
+        return delta if delta > 0 else None
+
+    @property
+    def carga_horaria_total(self) -> int | None:
+        """
+        C.H. Total da OFERTA em MINUTOS = carga_horaria_aula × nº de dias de
+        aula da oferta (Onda 4, Etapa K).
+
+        Reaproveita `datas_aula_oferta` (agenda própria da oferta, até a
+        data_fim efetiva) e o MESMO helper de bloqueios usado pela turma
+        (`_blocked_dates_str` sobre a turma da oferta). None se a aula não
+        tiver duração ou se não houver dias calculáveis.
+        """
+        ch_aula = self.carga_horaria_aula
+        if ch_aula is None:
+            return None
+        from app.services.turma_curso import datas_aula_oferta
+        from app.utils.logica import _blocked_dates_str
+
+        blocked = _blocked_dates_str(self.turma) if self.turma is not None else set()
+        datas = datas_aula_oferta(self, blocked=blocked)
+        return ch_aula * len(datas) if datas else None
 
 
 class TemaAula(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):

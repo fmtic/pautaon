@@ -10,6 +10,7 @@
     const originalFim = document.getElementById('original_data_fim');
     const limparInput = document.getElementById('limpar_lancamentos');
     const temLancamentos = window.turmaTemLancamentos || false;
+    const ofertasBloqueadas = window.turmaOfertasBloqueadas || false;
 
     // Elementos de exibição de carga horária.
     const inputHoraInicio = document.getElementById('hora_inicio');
@@ -20,6 +21,7 @@
     const inputFim = document.querySelector('input[name="data_fim"]');
 
     function atualizarCentros() {
+        if (!centroSelect) return;
         const periodoId = periodoSelect ? periodoSelect.value : null;
         const centros = (periodoId && periodosCentros[periodoId]) ? periodosCentros[periodoId] : [];
         centroSelect.innerHTML = '';
@@ -98,6 +100,22 @@
     };
 
     /**
+     * Dias ativos para o cálculo: checkboxes marcados (modo editável) ou, em
+     * campos bloqueados (2+ ofertas), o valor do hidden name="dias_semana".
+     */
+    function diasPermitidosJs() {
+        const boxes = document.querySelectorAll('input[name="dias_semana"]:checked');
+        if (boxes.length) {
+            return Array.from(boxes).map(el => MAP_DIAS[el.value]).filter(d => d !== undefined);
+        }
+        const hidden = document.querySelector('input[name="dias_semana"][type="hidden"]');
+        if (hidden && hidden.value) {
+            return hidden.value.split(',').map(s => MAP_DIAS[s.trim()]).filter(d => d !== undefined);
+        }
+        return [];
+    }
+
+    /**
      * Recalcula e exibe a C.H. por Aula e a C.H. Total Estimada.
      */
     function recalcularCH() {
@@ -112,8 +130,7 @@
         chAulaDisplay.textContent = formatarCH(chAula);
 
         // Dias efetivos.
-        const diasCheckboxes = document.querySelectorAll('input[name="dias_semana"]:checked');
-        const diasPermitidos = Array.from(diasCheckboxes).map(el => MAP_DIAS[el.value]).filter(d => d !== undefined);
+        const diasPermitidos = diasPermitidosJs();
 
         // Datas.
         const dataInicio = inputInicio ? inputInicio.value : null;
@@ -129,6 +146,9 @@
     }
 
     function handleSubmit(event) {
+        if (ofertasBloqueadas) {
+            return;
+        }
         if (!temLancamentos || !form || !originalDias || !originalInicio || !originalFim || !limparInput) {
             return;
         }

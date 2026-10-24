@@ -80,7 +80,11 @@ def _ids_coorte_turno(periodo: PeriodoLetivo, turno: str) -> set[int]:
         for row in (
             db.session.query(Inscricao.aluno_id)
             .join(Turma, Inscricao.turma_id == Turma.id)
-            .filter(Turma.periodo_letivo_id == periodo.id, filtro_turno)
+            .filter(
+                Turma.periodo_letivo_id == periodo.id,
+                Turma.ativo.is_(True),
+                filtro_turno,
+            )
             .distinct()
             .all()
         )
@@ -91,7 +95,11 @@ def _ids_coorte_turno(periodo: PeriodoLetivo, turno: str) -> set[int]:
             row[0]
             for row in db.session.query(Inscricao.aluno_id)
             .join(Turma, Inscricao.turma_id == Turma.id)
-            .filter(Turma.periodo_letivo_id == anterior.id, filtro_turno)
+            .filter(
+                Turma.periodo_letivo_id == anterior.id,
+                Turma.ativo.is_(True),
+                filtro_turno,
+            )
             .distinct()
             .all()
         )
@@ -208,6 +216,9 @@ def status_alunos(
         .join(Turma, Inscricao.turma_id == Turma.id)
         .filter(
             Turma.periodo_letivo_id == periodo.id,
+            # Turma desativada (excluída) não conta: sem isso, inscrições
+            # desativadas com motivo TURMA_DESATIVADA inflariam DESENTURMADO.
+            Turma.ativo.is_(True),
             Inscricao.aluno_id.in_(ids_ativos),
         )
         .group_by(Inscricao.aluno_id)
@@ -239,6 +250,8 @@ def status_alunos(
                 .filter(
                     PeriodoLetivo.unidade_id == periodo.unidade_id,
                     PeriodoLetivo.data_inicio < periodo.data_inicio,
+                    # Histórico de turma desativada não renova nem abre janela.
+                    Turma.ativo.is_(True),
                     Inscricao.aluno_id.in_(ids_ativos),
                 )
                 .group_by(Inscricao.aluno_id)

@@ -698,3 +698,209 @@ def test_inscricao_null_entra_com_1_oferta_e_fica_fora_com_2(app):
 
     pauta_2 = _alunos_da_oferta(turma.id, oa.id, incluir_inscricoes_null=False)
     assert {a.id for a in pauta_2} == {aluno_curso.id}
+
+
+# =============================================================================
+# ETAPA F — oferta automática ao criar turma (criar_oferta_inicial_da_turma)
+# =============================================================================
+
+from datetime import time
+
+
+def _mk_app_criacao():
+    """App + unidade + usuário pedagógico + curso ativo da mesma unidade.
+    Retorna (app, ids) com 'resp', 'unidade' e 'curso'."""
+    app = _novo_app()
+    with app.app_context():
+        db.create_all()
+        unidade = Unidade(nome="U F", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+        resp = User(
+            name="Coord F", email="coord.f@example.com",
+            role="pedagogico", first_login=False, unidade_id=unidade.id,
+        )
+        db.session.add(resp)
+        curso = Curso(nome="Natação F", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.commit()
+        ids = {"resp": resp.id, "unidade": unidade.id, "curso": curso.id}
+    return app, ids
+
+
+def _post_nova_turma(app, ids, *, nome, curso_id=None, dias="Segunda", data=DATA_ROTA):
+    """POST /turma/nova com datas personalizadas cobrindo `data` (Segunda).
+    Retorna (resp, client)."""
+    client = _loga(app, ids["resp"])
+    form = {
+        "turma": nome,
+        "dias_semana": dias,
+        "datas_personalizadas": "1",
+        "data_inicio": data.isoformat(),
+        "data_fim": data.isoformat(),
+    }
+    if curso_id is not None:
+        form["curso_id"] = curso_id
+    return client.post("/turma/nova", data=form), client
+
+
+# --- função: copia atributos, principal=False, oferta única ----------------
+def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
+    from app.services.turma_curso import criar_oferta_inicial_da_turma
+
+    unidade = Unidade(nome="U F func", ativo=True)
+    db.session.add(unidade)
+    db.session.flush()
+    curso = Curso(nome="Natação F func", unidade_id=unidade.id, ativo=True)
+    db.session.add(curso)
+    db.session.flush()
+    turma = Turma(
+        nome="T F func", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        turno="Manhã", dias_semana="Segunda, Quarta",
+        hora_inicio=time(9, 0), hora_fim=time(10, 30),
+        data_inicio=date(2026, 3, 2), data_fim=date(2026, 12, 15),
+        centro_custo="CC-42",
+    )
+    db.session.add(turma)
+    db.session.flush()
+
+    oferta = criar_oferta_inicial_da_turma(turma)
+    db.session.commit()
+
+    assert oferta is not None
+    assert oferta.principal is False
+    assert oferta.ativo is True
+    assert oferta.curso_id == curso.id
+    assert oferta.turma_id == turma.id
+    assert oferta.unidade_id == unidade.id
+    assert oferta.turno == "Manhã"
+    assert oferta.dias_semana == "Segunda, Quarta"
+    assert oferta.hora_inicio == time(9, 0)
+    assert oferta.hora_fim == time(10, 30)
+    assert oferta.data_inicio == date(2026, 3, 2)
+    assert oferta.data_fim == date(2026, 12, 15)
+    assert oferta.centro_custo == "CC-42"
+    assert TurmaCurso.query.filter_by(turma_id=turma.id).count() == 1
+
+
+# --- função: turma sem curso não gera oferta --------------------------------
+def test_criar_oferta_inicial_turma_sem_curso_devolve_none(app):
+    from app.services.turma_curso import criar_oferta_inicial_da_turma
+
+    unidade = Unidade(nome="U F none", ativo=True)
+    db.session.add(unidade)
+    db.session.flush()
+    turma = Turma(
+        nome="T F none", unidade_id=unidade.id, ativo=True, curso_id=None,
+    )
+    db.session.add(turma)
+    db.session.flush()
+
+    assert criar_oferta_inicial_da_turma(turma) is None
+    db.session.commit()
+    assert TurmaCurso.query.count() == 0
+
+
+# --- função: idempotente (chamar duas vezes não duplica) -------------------
+def test_criar_oferta_inicial_idempotente_nao_duplica(app):
+    from app.services.turma_curso import criar_oferta_inicial_da_turma
+
+    unidade = Unidade(nome="U F idem", ativo=True)
+    db.session.add(unidade)
+    db.session.flush()
+    curso = Curso(nome="Natação F idem", unidade_id=unidade.id, ativo=True)
+    db.session.add(curso)
+    db.session.flush()
+    turma = Turma(
+        nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+    )
+    db.session.add(turma)
+    db.session.flush()
+
+    o1 = criar_oferta_inicial_da_turma(turma)
+    o2 = criar_oferta_inicial_da_turma(turma)
+    db.session.commit()
+
+    assert o1 is not None
+    assert o2.id == o1.id
+    assert TurmaCurso.query.filter_by(turma_id=turma.id).count() == 1
+
+
+# --- rota: turma com curso gera exatamente 1 oferta ------------------------
+def test_nova_turma_com_curso_gera_uma_oferta_principal_false():
+    app, ids = _mk_app_criacao()
+    nome = "Turma F Rota"
+    r, _ = _post_nova_turma(app, ids, nome=nome, curso_id=ids["curso"])
+    assert r.status_code == 302
+    with app.app_context():
+        turma = Turma.query.filter_by(nome=nome).first()
+        assert turma is not None
+        assert turma.curso_id == ids["curso"]
+        ofertas = TurmaCurso.query.filter_by(turma_id=turma.id).all()
+        assert len(ofertas) == 1
+        assert ofertas[0].principal is False
+        assert ofertas[0].ativo is True
+        assert ofertas[0].curso_id == ids["curso"]
+
+
+# --- rota: turma sem curso não gera oferta ---------------------------------
+def test_nova_turma_sem_curso_nao_gera_oferta():
+    app, ids = _mk_app_criacao()
+    nome = "Turma F Rota Sem Curso"
+    r, _ = _post_nova_turma(app, ids, nome=nome, curso_id=None)
+    assert r.status_code == 302
+    with app.app_context():
+        turma = Turma.query.filter_by(nome=nome).first()
+        assert turma is not None
+        assert turma.curso_id is None
+        assert TurmaCurso.query.filter_by(turma_id=turma.id).count() == 0
+
+
+# --- rota: frequência lançada em turma nova grava turma_curso_id -----------
+def test_frequencia_lancada_em_turma_nova_grava_turma_curso_id():
+    app, ids = _mk_app_criacao()
+    nome = "Turma F Lanca"
+    _post_nova_turma(app, ids, nome=nome, curso_id=ids["curso"])
+    with app.app_context():
+        turma = Turma.query.filter_by(nome=nome).first()
+        oferta = TurmaCurso.query.filter_by(turma_id=turma.id).first()
+        assert oferta is not None
+        aluno = Aluno(nome="Aluno Lanca", unidade_id=turma.unidade_id, ativo=True)
+        db.session.add(aluno)
+        db.session.flush()
+        db.session.add(Inscricao(
+            aluno_id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id,
+            ativo=True,
+        ))
+        db.session.commit()
+        turma_id, oferta_id, aluno_id = turma.id, oferta.id, aluno.id
+
+    client = _loga(app, ids["resp"])
+    # Sem turma_curso no form: com oferta única, o resolver a escolhe sozinho.
+    client.post("/frequencia", data={
+        "turma": turma_id,
+        "data": DATA_ROTA.isoformat(),
+        f"aluno_{aluno_id}": ConceitoFrequencia.A.value,
+    })
+    with app.app_context():
+        freq = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma_id).first()
+        assert freq is not None, "lançamento deveria criar registro de frequência"
+        assert freq.turma_curso_id == oferta_id
+
+
+# --- rota: falha na oferta não deixa turma gravada (transação única) -------
+def test_falha_ao_criar_oferta_nao_deixa_turma_gravada(monkeypatch):
+    app, ids = _mk_app_criacao()
+    import app.registros.turmas as turmas_mod
+
+    def _boom(_turma):
+        raise RuntimeError("oferta falhou")
+
+    monkeypatch.setattr(turmas_mod, "criar_oferta_inicial_da_turma", _boom)
+
+    nome = "Turma F Rollback"
+    r, _ = _post_nova_turma(app, ids, nome=nome, curso_id=ids["curso"])
+    assert r.status_code == 302
+    with app.app_context():
+        assert Turma.query.filter_by(nome=nome).first() is None
+        assert TurmaCurso.query.count() == 0

@@ -37,7 +37,7 @@ MAPA DE MÓDULOS
 # A ordem abaixo segue a dependência conceitual entre domínios.
 from app.models.organizacao import Unidade, ConfiguracaoSistema
 from app.models.usuarios import User
-from app.models.pedagogico import Curso, Nivel
+from app.models.pedagogico import Curso, CentroCusto, Nivel
 from app.models.academico import PeriodoLetivo, Turma, TurmaCurso, TemaAula
 from app.models.pessoas import Aluno, SituacaoEscolar
 from app.models.perfis import (
@@ -68,7 +68,7 @@ __all__ = [
     # Usuários
     'User',
     # Pedagógico
-    'Curso', 'Nivel',
+    'Curso', 'CentroCusto', 'Nivel',
     # Acadêmico
     'PeriodoLetivo', 'Turma', 'TurmaCurso', 'TemaAula',
     # Pessoas

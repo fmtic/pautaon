@@ -21,6 +21,7 @@ from app.services.aluno_status import (
     periodos_de_referencia_bi,
     status_alunos_para_bi,
 )
+from app.relatorios.bi_filtros import cond_inscricao_enturmada
 from sqlalchemy import func, case, cast, Integer
 from sqlalchemy.orm import selectinload
 from datetime import date
@@ -414,6 +415,9 @@ def alunos_por_unidade(
     if precisa_inscricao:
         query = query.join(Inscricao, Inscricao.aluno_id == Aluno.id).join(
             Turma, Turma.id == Inscricao.turma_id
+        ).filter(
+            # Só conta enturmado em oferta ativa (turma desativada fora).
+            cond_inscricao_enturmada(),
         )
 
         if periodo_letivo_id:
@@ -499,6 +503,7 @@ def alunos_por_curso(
         .join(Curso, Curso.id == Turma.curso_id)
         .filter(
             Inscricao.ativo.is_(True),
+            Turma.ativo.is_(True),
             Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
         )
     )
@@ -588,6 +593,7 @@ def alunos_por_turma(
         .join(Turma, Turma.id == Inscricao.turma_id)
         .filter(
             Inscricao.ativo.is_(True),
+            Turma.ativo.is_(True),
             Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
         )
     )
@@ -821,6 +827,9 @@ def inscricoes_por_curso(
 
     query = Inscricao.query.join(Turma, Turma.id == Inscricao.turma_id).join(
         Curso, Curso.id == Turma.curso_id
+    ).filter(
+        # Turma desativada (excluída) não entra em contagens agregadas.
+        Turma.ativo.is_(True),
     )
 
     if unidade_id:
@@ -1291,7 +1300,8 @@ def frequencia_por_turma(
 ):
     """Retorna a frequência média agrupada por turma."""
 
-    query = Turma.query
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    query = Turma.query.filter(Turma.ativo.is_(True))
 
     if unidade_id:
         query = query.filter(Turma.unidade_id == unidade_id)
@@ -1370,6 +1380,9 @@ def frequencia_por_curso(
 
     query = Frequencia.query.join(Turma, Turma.id == Frequencia.turma_id).join(
         Curso, Curso.id == Turma.curso_id
+    ).filter(
+        # Turma desativada (excluída) não entra em contagens agregadas.
+        Turma.ativo.is_(True),
     )
 
     if unidade_id:
@@ -1445,7 +1458,9 @@ def total_turmas(
 ):
     """Retorna o total de turmas conforme os filtros informados."""
 
-    query = Turma.query
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    # Contadores de TURMAS mantêm só Turma.ativo (não exigem oferta ativa).
+    query = Turma.query.filter(Turma.ativo.is_(True))
 
     if unidade_id:
         query = query.filter(Turma.unidade_id == unidade_id)
@@ -1519,7 +1534,9 @@ def media_alunos_por_turma(
 ):
     """Retorna a média de alunos por turma conforme os filtros informados."""
 
-    turmas_query = Turma.query
+    # Turma desativada (excluída) não entra; numerador só conta enturmados
+    # em oferta ativa (helper da Etapa J2).
+    turmas_query = Turma.query.filter(Turma.ativo.is_(True))
 
     if unidade_id:
         turmas_query = turmas_query.filter(Turma.unidade_id == unidade_id)
@@ -1552,7 +1569,7 @@ def media_alunos_por_turma(
     for turma in turmas:
         total_alunos += Inscricao.query.filter(
             Inscricao.turma_id == turma.id,
-            Inscricao.ativo.is_(True),
+            cond_inscricao_enturmada(),
         ).count()
 
     return round(total_alunos / len(turmas), 1)
@@ -1569,7 +1586,8 @@ def turmas_por_curso(
 ):
     """Retorna a quantidade de turmas agrupada por curso."""
 
-    query = Turma.query.join(
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    query = Turma.query.filter(Turma.ativo.is_(True)).join(
         Curso,
         Curso.id == Turma.curso_id,
     )
@@ -1627,7 +1645,8 @@ def turmas_por_periodo(
 ):
     """Retorna a quantidade de turmas agrupada por período letivo."""
 
-    query = Turma.query.join(
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    query = Turma.query.filter(Turma.ativo.is_(True)).join(
         PeriodoLetivo,
         PeriodoLetivo.id == Turma.periodo_letivo_id,
     ).join(
@@ -1693,7 +1712,8 @@ def turmas_por_unidade(
 ):
     """Retorna a quantidade de turmas agrupada por unidade."""
 
-    query = Turma.query.join(
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    query = Turma.query.filter(Turma.ativo.is_(True)).join(
         Unidade,
         Unidade.id == Turma.unidade_id,
     )
@@ -1754,7 +1774,8 @@ def turmas_por_professor(
 ):
     """Retorna a quantidade de turmas agrupada por professor."""
 
-    query = Turma.query.join(
+    # Turma desativada (excluída) não entra em contagens agregadas.
+    query = Turma.query.filter(Turma.ativo.is_(True)).join(
         User,
         User.id == Turma.professor_id,
     )

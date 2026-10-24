@@ -1,3 +1,70 @@
+### Alterações do dia — 23/10/2026
+
+- Conclusão: Etapas F, G2, G3, I, J2, K e K2 da Onda 4 (Fase 4) implementadas e validadas; centros de custo no formulário de períodos corrigidos (CSRF + sincronização das checkboxes); coluna `turma_curso.programa` adicionada (migration `a1b2c3d4e5f6`) e schema drift corrigido via `flask db upgrade`; alterações ainda não commitadas.
+
+### Etapa F — oferta criada junto com a turma
+
+- `app/services/turma_curso.py`: `criar_oferta_inicial_da_turma` — ao gravar uma turma **com curso**, a oferta inicial é criada na **mesma transação** de `criar_turma`; copia professor, turno, dias, horários, datas, centro de custo e unidade da turma; `principal=false`; idempotente (não duplica se já houver oferta); não commita. Turma sem curso não gera oferta.
+- `scripts/verificar_onda4_fase4.py`: nova checagem **"turma ativa com curso e sem oferta"** (emite aviso, sem alterar dados).
+
+### G2 — `editar_turma` por número de ofertas ativas
+
+- Regras no POST de `editar_turma` conforme a contagem de `ofertas_ativas(id)`: **0** = fluxo atual; **exatamente 1** = grava os campos de agenda na turma **e espelha na oferta** em transação única, com `_validar_horario_concomitante(..., exclude_oferta_id=...)` e recusa de troca de curso; **2+** = descarta curso/professor/turno/dias/horários/datas/centro vindos do formulário e grava só nome/programa/período/ordenação, sem disparar a limpeza de lançamentos.
+- **Correção do ramo sem oferta:** `curso_id` vazio **não apaga** mais o `curso_id` da turma (a ausência do campo não é tratada como limpa).
+- **Rollback antes do flash** quando a validação de concomitância falha (`ValueError` → `db.session.rollback()` e só então flash/redirect), preservando turma e oferta.
+
+### G3 — tela de edição de turma
+
+- GET de `editar_turma` injeta `ofertas` (`ofertas_ativas(id)`) e `n_ofertas`; novo bloco **"Cursos desta turma"** com botão **"Adicionar curso"** (→ `registros.turma_ofertas`) aparece com ≥1 oferta.
+- Com **1 oferta**, o curso é exibido **pela oferta ativa** (`ofertas[0]`) e enviado em campo oculto `curso_id` (somente leitura); com **2+**, os campos de oferta ficam **bloqueados** (readonly + hidden) com aviso no topo.
+- `app/static/js/turmas/editar.js`: com 2+ ofertas (`window.turmaOfertasBloqueadas`) **não pede confirmação de limpeza** nem dispara recálculo de C.H.; guardas para selects/checkboxes ausentes.
+
+### I — exclusão de turma (física ou lógica)
+
+- `app/services/turma_curso.py`: `turma_tem_historico` — verifica se existe Frequencia, RegistroAula, ConselhoClasse ou Transferencia ligada à turma (por `turma_id` ou por `turma_curso_id` das ofertas).
+- `app/registros/turmas.py`: `excluir_turma` — **sem histórico**: exclusão física (inscrições, DiaBloqueadoTurma, ofertas, turma; TemaAula tem `turma_id` liberado) + `LogAcao`; **com histórico**: exclusão lógica (turma, ofertas e inscrições ativas viram `ativo=False`, inscrições com `data_desativacao` + motivo `TURMA_DESATIVADA`); lançamentos preservados; aluno permanece ativo e disponível para nova enturmação.
+- `app/registros/turmas.py`: constante `MOTIVO_INSCRICAO_TURMA_DESATIVADA = "TURMA_DESATIVADA"` (token CAIXA-ALTA, sem acento, alinhado a `TRANSFERENCIA`).
+
+### J2 — contagens do BI e turma desativada
+
+- `app/relatorios/bi_filtros.py`: `cond_inscricao_enturmada` — inscrição conta quando turma ativa e ligada a oferta ativa (por `turma_curso_id`), ou `turma_curso_id` NULL numa turma com exatamente 1 oferta ativa.
+- `app/relatorios/bi_alunos.py`: filtros de turma ativa e uso do helper em `alunos_por_unidade`, `alunos_por_curso`, `alunos_por_turma`, `inscricoes_por_curso`, `frequencia_por_turma/curso`, `total_turmas`, `media_alunos_por_turma`, `turmas_por_curso/periodo/unidade/professor`.
+- `app/services/aluno_status.py`: coorte e histórico ignoram turma desativada, evitando inflar DESENTURMADO.
+- `tests/test_bi_turma_desativada.py`: cenário central e regressão.
+
+### K — C.H. por oferta e listagem por oferta (K2)
+
+- `app/models/academico.py`: `TurmaCurso.carga_horaria_aula` e `carga_horaria_total` (minutos), herdando horários da turma quando a oferta não define os próprios; nota de otimização em `Turma.freq_geral_oferta`.
+- `app/services/turma_curso.py`: `datas_aula_oferta` (extraída de `datas_esperadas_oferta`, com teto opcional) e `criar_oferta_inicial_da_turma` (já documentada em Etapa F).
+- `app/registros/turmas.py`: `_filtrar_turmas`/`pos_filtrar_turmas` agregam professores/turnos/dias das ofertas ativas; filtros professor/turno/dia/horário por COALESCE(oferta→turma) com fallback só sem oferta ativa; `min_freq`/`min_ch_aula`/`min_ch_total` sobre a oferta principal com 2+ ofertas; `_ofertas_ativas_da_turma`/`_oferta_principal`/`_resumo_ofertas`; tolerância a objetos sem `ofertas_curso`.
+- `app/templates/turmas/listar.html`: selo/sub-linha só com 2+ ofertas; filtros Nome da Turma e Professor viraram `<select>` derivados das turmas exibidas (`nomes_turmas`, `professores`).
+- `tests/test_turma_curso_lista.py`: GET 0/1/2 ofertas, agregação, filtros por oferta, C.H. manual com bloqueio, `datas_esperadas_oferta` inalterada.
+
+### Correções de legado e regras de vigência
+
+- **Caminho legado da frequência:** `salvar_frequencia` e `carregar_frequencias` tratam o lançamento legado por `turma_curso_id IS NULL` tanto na **leitura** quanto na **gravação**, sem sobrescrever a linha de uma oferta no mesmo dia.
+- **Oferta em turma em andamento:** `adicionar_oferta` sem `data_inicio`, em turma já iniciada e viva que já tem outra oferta, recebe **a data de hoje** (precede a herança).
+
+### Validação manual na tela
+
+- **Espelhamento confirmado:** ao editar a turma com oferta única, o **professor da oferta acompanha a turma** (gravado nos dois lados na mesma transação).
+- **Campos bloqueados:** na turma com **2 ofertas**, os campos de oferta ficam somente leitura e o POST forjado é descartado pelo servidor.
+
+### Testes e verificações
+
+- `tests/test_turma_curso_edicao.py`: cenários de G2 (espelhamento, recusa de troca de curso, 2+ ofertas, rollback) e G3 (GET 0/1/2 ofertas; hidden `curso_id` pela oferta ativa; sem bloco com 0 ofertas; readonly com 2+; oferta desativada A + ativa B → hidden vale B e edição do nome é aceita).
+- `tests/test_turma_curso_exclusao.py`: exclusão física (sem histórico) e lógica (com histórico), preservação de lançamentos, aluno disponível para nova enturmação, isolamento por unidade.
+- `tests/test_bi_turma_desativada.py`: contagens do BI com turma desativada e inscrições enturmadas em oferta.
+- `tests/test_turma_curso_lista.py`: listagem por oferta, agregação, filtros por COALESCE, C.H. por oferta.
+- `tests/test_filtros_turmas.py`: filtros da listagem (incluindo seleção de Nome da Turma e Professor).
+- Suíte completa: **174+ aprovados**, restando apenas as **2 falhas preexistentes** de `/cursos`.
+
+### Arquivos principais
+
+`app/registros/turmas.py` (`criar_turma`, `editar_turma` GET/POST, `excluir_turma`, `_filtrar_turmas`/`pos_filtrar_turmas`), `app/services/turma_curso.py` (`criar_oferta_inicial_da_turma`, `turma_tem_historico`, `datas_aula_oferta`), `app/models/academico.py` (`TurmaCurso.carga_horaria_aula/total`), `app/relatorios/bi_alunos.py`, `app/relatorios/bi_filtros.py` (`cond_inscricao_enturmada`), `app/services/aluno_status.py`, `app/templates/turmas/editar.html`, `app/templates/turmas/listar.html`, `app/static/js/turmas/editar.js`, `scripts/verificar_onda4_fase4.py`, `tests/test_turma_curso_edicao.py`, `tests/test_turma_curso_exclusao.py`, `tests/test_bi_turma_desativada.py`, `tests/test_turma_curso_lista.py`, `tests/test_filtros_turmas.py`, `app/models/MER.md` e este `backlog_desenvolvimento.md`.
+
+---
+
 ### Alterações do dia — 22/10/2026
 
 - Data da intervenção: 22/10/2026
@@ -44,6 +111,25 @@
 - Ajustados formulários/templates de login, troca de senha, termos, certificado e telas de turmas/planejamento.
 - Removidos arquivos JavaScript legados de alunos e um backup de banco obsoleto versionado; removida a configuração `.continue/mcpServers/new-mcp-server.yaml`.
 - `backlog.md` recebeu o registro da entrega de carga horária no commit do dia; esta entrada documenta a consolidação em `backlog_desenvolvimento.md`.
+
+### Centros de custo no formulário de períodos (23/10/2026)
+
+- `app/models/pedagogico.py`: criado `CentroCusto` (tabela `centro_custo`) como catálogo de centros de custo por unidade, com unicidade (`nome`, `unidade_id`) e soft delete.
+- `migrations/versions/d2e3f4a5b6c7_centro_custo.py`: cria a tabela e faz backfill a partir das colunas CSV `centro_custo` de `periodo_letivo`, `turma` e `turma_curso`.
+- `app/registros/periodos.py`: endpoints `/centros-custo` para listar, criar, editar, inativar e reativar; edição propaga o novo nome via `_propagar_centro_custo`; impacto informado antes da confirmação.
+- `app/static/js/periodos/centros_custo.js`: reescrito para ler `csrf_token` de `#periodoForm`, enviar `X-CSRFToken` em todos os POSTs, tratar erros de rede/JSON e sincronizar as checkboxes do formulário após criar/editar/inativar/reativar (incluindo criação dinâmica do container quando ausente).
+- `app/templates/periodos/form.html`: integra o modal de centros de custo ao formulário de períodos e mantém o token CSRF disponível para o JavaScript.
+- `app/models/MER.md`: documentada a tabela `centro_custo`, a relação com `unidade` e a regra de propagação (§7.4a, §8.11).
+
+### Programa na oferta (`turma_curso.programa`) — 23/10/2026
+
+- `app/models/academico.py`: `TurmaCurso` ganha a coluna `programa` (varchar(50), nullable) — programa passa a ser atributo também da oferta, além de permanecer em `Turma` (agrupador).
+- `migrations/versions/a1b2c3d4e5f6_programa_oferta.py`: adiciona a coluna `programa` em `turma_curso` e faz backfill a partir de `turma.programa`.
+- Correção de schema drift: o banco local estava na revisão `d2e3f4a5b6c7` e não possuía a coluna, causando `sqlalchemy.exc.ProgrammingError: coluna turma_curso.programa não existe` na query `TurmaCurso.query.filter_by(turma_id=6, ativo=True)`. Aplicado `flask db upgrade` (head `a1b2c3d4e5f6`); coluna confirmada em `information_schema`; query validada. Backup do banco salvo em `%TEMP%\pautaon_pre_programa.dump`.
+- `app/models/MER.md`: documentada a coluna em §7.32, a regra em §8.10 e a migration em §11 (head atual `a1b2c3d4e5f6`); contagem atualizada para 26 revisões.
+
+---
+
 
 ### Testes e verificações
 
