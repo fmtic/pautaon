@@ -15,6 +15,7 @@ from app.models import (
     Inscricao,
     Nivel,
     PerguntaConselho,
+    PerfilDiversidade,
     PeriodoLetivo,
     RegistroAula,
     Turma,
@@ -27,6 +28,7 @@ from app.services.turma_curso import (
     criar_oferta_inicial_da_turma,
     definir_principal,
     desativar_oferta,
+    datas_aula_oferta,
     editar_oferta,
     ofertas_ativas,
     sincronizar_programa_turma,
@@ -36,7 +38,7 @@ from app.services.turma_curso import (
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.formatters import formatar_ch
-from app.utils.logica import carregar_contexto_turma, get_unidade_id
+from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
 from app.utils.timezone import get_local_now
 from app.services.auth_service import register_security_log
 
@@ -2054,15 +2056,99 @@ def imprimir_pauta(id):
             id, oferta.id, incluir_inscricoes_null=False,
         )
 
+    if oferta is not None:
+        # A agenda da impressão segue a vigência e os dias próprios da oferta,
+        # incluindo datas futuras e respeitando os dias bloqueados do período.
+        ctx["datas"] = [
+            data_aula.strftime("%Y-%m-%d")
+            for data_aula in datas_aula_oferta(
+                oferta, blocked=_blocked_dates_str(ctx["turma"])
+            )
+        ]
+
+    alunos_ids = [aluno.id for aluno in ctx["alunos"]]
+    outras_ofertas_por_aluno = {aluno_id: [] for aluno_id in alunos_ids}
+    if alunos_ids:
+        stmt_ofertas_alunos = (
+            select(Inscricao.aluno_id, TurmaCurso.id, Curso.nome)
+            .join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
+            .join(Curso, TurmaCurso.curso_id == Curso.id)
+            .where(
+                Inscricao.turma_id == id,
+                Inscricao.ativo.is_(True),
+                TurmaCurso.ativo.is_(True),
+                Inscricao.aluno_id.in_(alunos_ids),
+            )
+            .order_by(Curso.nome)
+        )
+        for aluno_id, oferta_id, nome_curso in db.session.execute(
+            stmt_ofertas_alunos
+        ):
+            if oferta is not None and oferta_id == oferta.id:
+                continue
+            if nome_curso and nome_curso not in outras_ofertas_por_aluno[aluno_id]:
+                outras_ofertas_por_aluno[aluno_id].append(nome_curso)
+
+    perfis_diversidade = {}
+    if alunos_ids:
+        perfis_diversidade = {
+            perfil.aluno_id: perfil
+            for perfil in db.session.execute(
+                select(PerfilDiversidade).where(
+                    PerfilDiversidade.aluno_id.in_(alunos_ids)
+                )
+            ).scalars()
+        }
+    dados_alunos_impressao = {}
+    for aluno in ctx["alunos"]:
+        perfil = perfis_diversidade.get(aluno.id)
+        dados_alunos_impressao[aluno.id] = {
+            "idade": aluno.idade if aluno.data_nascimento else None,
+            "acompanhante": (
+                aluno.acompanhante_aulas
+                if aluno.vai_acompanhado_aulas else None
+            ),
+            "medicacao": (
+                perfil.saude_medicamento_nome or "Sim"
+                if perfil and perfil.saude_medicacao == "Sim"
+                else None
+            ),
+            "informacoes_professor": (
+                perfil.informacoes_para_professor.strip()
+                if perfil and perfil.informacoes_para_professor
+                else None
+            ),
+            "outras_ofertas": outras_ofertas_por_aluno.get(aluno.id, []),
+        }
+
+    nomes_meses = {
+        "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+        "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+        "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
+    }
     mes_selecionado = request.args.get("mes")
     if mes_selecionado:
         ctx["datas"] = [data for data in ctx["datas"] if f"-{mes_selecionado}-" in data]
-        nomes_meses = {
-            "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
-            "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
-            "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
-        }
         ctx["mes_nome"] = nomes_meses.get(mes_selecionado, mes_selecionado)
+
+    # A pauta completa é dividida por mês para evitar que as colunas de todo o
+    # ano sejam cortadas pela área rolável do navegador ao imprimir.
+    datas_por_mes_map = {}
+    for data_aula in sorted(ctx["datas"]):
+        numero_mes = data_aula[5:7]
+        chave_mes = data_aula[:7]
+        grupo_mes = datas_por_mes_map.setdefault(
+            chave_mes,
+            {"ano": data_aula[:4], "numero": numero_mes, "datas": []},
+        )
+        grupo_mes["datas"].append(data_aula)
+    datas_por_mes = [
+        {
+            **grupo_mes,
+            "nome": nomes_meses.get(grupo_mes["numero"], grupo_mes["numero"]),
+        }
+        for grupo_mes in datas_por_mes_map.values()
+    ]
 
     # Onda 2A: Frequencia.data é `date`, mas ctx["datas"] é list[str].
     # Converter para date antes do IN, senão nunca casa.
@@ -2103,6 +2189,8 @@ def imprimir_pauta(id):
         "frequencia/imprimir_pauta.html",
         **ctx,
         frequencias=frequencias,
-        oferta_atual=oferta if len(ofertas) >= 2 else None,
+        datas_por_mes=datas_por_mes,
+        oferta_atual=oferta,
+        dados_alunos_impressao=dados_alunos_impressao,
         now=datetime.now(),
     )

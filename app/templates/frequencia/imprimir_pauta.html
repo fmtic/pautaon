@@ -1,33 +1,179 @@
 <!doctype html>
 <html lang="pt-br">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pauta de Frequência - {{ turma.nome }}</title>
   <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
   <style>
-    body { background: #f5f6f8; color: #212529; font-family: Arial, sans-serif; }
-    .print-page { max-width: 1400px; margin: 1.5rem auto; background: #fff; padding: 1.5rem; }
-    .pauta-table { font-size: 0.72rem; }
-    .pauta-table th, .pauta-table td { border: 1px solid #adb5bd; padding: 0.28rem; text-align: center; vertical-align: middle; }
-    .pauta-table th:first-child, .pauta-table td:first-child { text-align: left; min-width: 220px; }
-    .pauta-table thead th { background: #e9ecef; white-space: nowrap; }
-    .conceito-A, .conceito-B, .conceito-C, .conceito-D { color: #146c43; font-weight: 700; }
-    .conceito-F { color: #b02a37; font-weight: 700; }
-    .conceito-J { color: #997404; font-weight: 700; }
-    .legenda span { margin-right: 0.8rem; }
+    body {
+      background: #f5f6f8;
+      color: #212529;
+      font-family: Arial, sans-serif;
+    }
+
+    .print-page {
+      max-width: 1400px;
+      margin: 1.5rem auto;
+      background: #fff;
+      padding: 1.5rem;
+    }
+
+    .report-header {
+      border-bottom: 2px solid #343a40;
+    }
+
+    .report-logo {
+      max-width: 130px;
+      max-height: 54px;
+      object-fit: contain;
+    }
+
+    .pauta-table thead th.report-header-cell {
+      text-align: left;
+      white-space: normal;
+      background: #fff;
+      border: 0;
+      padding: 0 0 0.3rem;
+    }
+
+    .pauta-table {
+      font-size: 0.72rem;
+    }
+
+    .pauta-table th,
+    .pauta-table td {
+      border: 1px solid #adb5bd;
+      padding: 0.28rem;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .pauta-table th:first-child,
+    .pauta-table td:first-child {
+      text-align: left;
+      min-width: 260px;
+      width: 300px;
+    }
+
+    .pauta-table thead th {
+      background: #e9ecef;
+      white-space: nowrap;
+    }
+
+    .mes-pauta {
+      margin-bottom: 0.8rem;
+    }
+
+    .student-details {
+      font-size: 0.64rem;
+      line-height: 1.2;
+      color: #495057;
+    }
+
+    .student-details>div {
+      margin-top: 0.1rem;
+    }
+
+    .conceitos {
+      white-space: nowrap;
+    }
+
+    .conceito-A,
+    .conceito-B,
+    .conceito-C,
+    .conceito-D {
+      color: #146c43;
+      font-weight: 700;
+    }
+
+    .conceito-F {
+      color: #b02a37;
+      font-weight: 700;
+    }
+
+    .conceito-J {
+      color: #997404;
+      font-weight: 700;
+    }
+
+    .legenda span {
+      margin-right: 0.8rem;
+    }
+
     @media print {
-      @page { size: landscape; margin: 0.7cm; }
-      body { background: #fff; }
-      .print-page { max-width: none; margin: 0; padding: 0; }
-      .no-print { display: none !important; }
-      .pauta-table { font-size: 0.62rem; }
-      .pauta-table th:first-child, .pauta-table td:first-child { min-width: 180px; }
-      thead { display: table-header-group; }
-      tr { page-break-inside: avoid; }
+      @page {
+        size: landscape;
+        margin: 0.7cm;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      .print-page {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .mes-pauta+.mes-pauta {
+        break-before: page;
+        page-break-before: always;
+      }
+
+      .pauta-table {
+        font-size: 0.56rem;
+      }
+
+      .student-details {
+        font-size: 0.56rem;
+      }
+
+      .pauta-table td:first-child {
+        font-size: 0.62rem;
+      }
+
+      .pauta-table th:first-child,
+      .pauta-table td:first-child {
+        min-width: 70mm;
+        width: 70mm;
+      }
+
+      .pauta-table th:not(:first-child),
+      .pauta-table td:not(:first-child) {
+        width: 8mm;
+        min-width: 8mm;
+        max-width: 8mm;
+        padding-left: 0.05rem;
+        padding-right: 0.05rem;
+      }
+
+      .table-responsive {
+        overflow: visible !important;
+      }
+
+      thead {
+        display: table-header-group;
+      }
+
+      tr {
+        page-break-inside: avoid;
+      }
+
+      .pauta-table thead th {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
     }
   </style>
 </head>
+
 <body>
   <main class="print-page">
     <div class="no-print d-flex justify-content-between align-items-center mb-3">
@@ -37,65 +183,104 @@
       </button>
     </div>
 
-    <header class="border-bottom pb-3 mb-3">
-      <div class="row align-items-end">
-        <div class="col-8">
-          <h2 class="mb-1 fw-bold">Pauta de Frequência</h2>
-          <div class="text-muted">{{ informacao_padrao.nome_instituicao or 'Instituição' }}</div>
-        </div>
-        <div class="col-4 text-end small">
-          <div><strong>Turma:</strong> {{ turma.nome }}</div>
-          {% if oferta_atual %}<div><strong>Curso:</strong> {{ oferta_atual.curso.nome }}{% if oferta_atual.turno %} — {{ oferta_atual.turno }}{% endif %}</div>{% endif %}
-          <div><strong>Programa:</strong> {{ turma.programa or '-' }}</div>
-          <div><strong>Professor:</strong> {{ turma.professor.name if turma.professor else 'Não atribuído' }}</div>
-          {% if mes_nome %}<div><strong>Mês:</strong> {{ mes_nome }}</div>{% endif %}
-        </div>
-      </div>
-    </header>
-
-    <div class="table-responsive">
-      <table class="table pauta-table mb-2">
-        <thead>
-          <tr>
-            <th>Aluno</th>
-            {% for data in datas %}
-            <th>{{ data[8:10] }}/{{ data[5:7] }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for aluno in alunos %}
-          <tr>
-            <td>
-              <strong>{{ aluno.nome_social or aluno.nome }}</strong>
-              {% if aluno.nome_social %}<small class="d-block text-muted">{{ aluno.nome }}</small>{% endif %}
-            </td>
-            {% for data in datas %}
+    {% for grupo_mes in datas_por_mes %}
+    <section class="mes-pauta">
+      <div class="table-responsive">
+        <table class="table pauta-table mb-3">
+          <thead>
+            <tr>
+              <th class="report-header-cell" colspan="{{ grupo_mes.datas|length + 1 }}">
+                <div class="report-header d-flex justify-content-between align-items-center pb-2 mb-1">
+                  <div class="d-flex align-items-center gap-3">
+                    {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+                    <img class="report-logo" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional">
+                    {% endif %}
+                    <div>
+                      <div class="text-muted">{{ informacao_padrao.nome_instituicao or 'Instituição' }}</div>
+                      <h1 class="h4 mb-1">Pauta de Frequência — {{ grupo_mes.nome }} {{ grupo_mes.ano }}</h1>
+                      <div class="small text-muted">
+                        {{ turma.unidade.nome if turma.unidade else 'Unidade não informada' }}
+                        · {{ turma.periodo_letivo.nome if turma.periodo_letivo else 'Período letivo não informado' }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="text-end small">
+                    <div><strong>Turma:</strong> {{ turma.nome }}</div>
+                    {% if oferta_atual %}<div><strong>Curso:</strong> {{ oferta_atual.curso.nome }}{% if
+                      oferta_atual.turno %} — {{ oferta_atual.turno }}{% endif %}</div>{% endif %}
+                    <div><strong>Programa:</strong> {{ oferta_atual.programa if oferta_atual else (turma.programa or
+                      '-') }}</div>
+                    <div><strong>Professor:</strong> {{ oferta_atual.professor.name if oferta_atual and
+                      oferta_atual.professor else (turma.professor.name if turma.professor else 'Não atribuído') }}
+                    </div>
+                    <div>Emitido por: <strong>{{ current_user.name }}</strong></div>
+                    <!-- <div>Em {{ now.strftime('%d/%m/%Y às %H:%M') if now else '' }}</div> -->
+                  </div>
+                </div>
+              </th>
+            </tr>
+            <tr>
+              <th>Aluno</th>
+              {% for data in grupo_mes.datas %}
+              <th>{{ data[8:10] }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for aluno in alunos %}
+            <tr>
+              <td>
+                <strong>{{ aluno.nome_social or aluno.nome }}</strong>
+                {% if aluno.nome_social %}<small class="d-block text-muted">{{ aluno.nome }}</small>{% endif %}
+                {% set dados_aluno = dados_alunos_impressao.get(aluno.id, {}) %}
+                <div class="student-details">
+                  <div><strong>Idade:</strong> {{ dados_aluno.idade if dados_aluno.idade is not none else 'Não
+                    informada' }}</div>
+                  {% if dados_aluno.outras_ofertas %}
+                  <div><strong>Outras ofertas:</strong> {{ dados_aluno.outras_ofertas|join(', ') }}</div>
+                  {% endif %}
+                  {% if dados_aluno.acompanhante %}
+                  <div><strong>Quem acompanha:</strong> {{ dados_aluno.acompanhante }}</div>
+                  {% endif %}
+                  {% if dados_aluno.medicacao %}
+                  <div><strong>Medicação regular:</strong> Sim{% if dados_aluno.medicacao != 'Sim' %} — {{
+                    dados_aluno.medicacao }}{% endif %}</div>
+                  {% endif %}
+                  {% if dados_aluno.informacoes_professor %}
+                  <div><strong>Informações para o professor:</strong> {{ dados_aluno.informacoes_professor }}</div>
+                  {% endif %}
+                </div>
+              </td>
+              {% for data in grupo_mes.datas %}
               {% set conceito = frequencias.get(data, {}).get(aluno.id, '') %}
               <td class="conceito-{{ conceito }}">{{ conceito or '-' }}</td>
+              {% endfor %}
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="{{ (grupo_mes.datas|length) + 1 }}" class="text-muted">Nenhum aluno ativo nesta turma.</td>
+            </tr>
             {% endfor %}
-          </tr>
-          {% else %}
-          <tr><td colspan="{{ (datas|length) + 1 }}" class="text-muted">Nenhum aluno ativo nesta turma.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    {% if not datas %}
+          </tbody>
+        </table>
+      </div>
+      <div class="legenda small border-top pt-2 mt-2">
+        <strong>Legenda:</strong>
+        <span><strong class="text-success">A-D</strong> Presença</span>
+        <span><strong class="text-danger">F</strong> Falta</span>
+        <span><strong class="text-warning-emphasis">J</strong> Justificada</span>
+      </div>
+      <footer class="small text-muted text-end mt-2">
+        Documento gerado em {{ now.strftime('%d/%m/%Y às %H:%M') if now else '' }}<br>
+        {{ informacao_padrao.nome_instituicao or 'pautaON' }} · pautaON {{app_version}} {{ app_stage}}
+      </footer>
+      </footer>
+    </section>
+    {% else %}
     <div class="alert alert-warning">Não há datas de aula cadastradas para este período.</div>
-    {% endif %}
+    {% endfor %}
 
-    <div class="legenda small border-top pt-2 mt-2">
-      <strong>Legenda:</strong>
-      <span><strong class="text-success">A-D</strong> Presença</span>
-      <span><strong class="text-danger">F</strong> Falta</span>
-      <span><strong class="text-warning-emphasis">J</strong> Justificada</span>
-    </div>
-
-    <footer class="small text-muted text-end mt-3">
-      Documento gerado em {{ now.strftime('%d/%m/%Y %H:%M') if now else '' }}
-    </footer>
   </main>
 </body>
+
 </html>
