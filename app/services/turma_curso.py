@@ -226,7 +226,19 @@ def _sincronizar_legado(turma: Turma, oferta: TurmaCurso) -> None:
     ativas = ofertas_ativas(turma.id)
     if len(ativas) != 1 or turma.curso_id is not None:
         return
+    # Espelha a oferta única nas colunas legadas de Turma, para que a turma
+    # criada no fluxo novo (sem curso) passe a exibir os dados do curso no
+    # card da listagem e nos leitores que ainda usam as colunas de Turma.
     turma.curso_id = oferta.curso_id
+    turma.professor_id = oferta.professor_id
+    turma.turno = oferta.turno
+    turma.dias_semana = oferta.dias_semana
+    turma.hora_inicio = oferta.hora_inicio
+    turma.hora_fim = oferta.hora_fim
+    turma.data_inicio = oferta.data_inicio
+    turma.data_fim = oferta.data_fim
+    turma.centro_custo = oferta.centro_custo
+    turma.programa = oferta.programa
 
 
 def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
@@ -270,6 +282,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
         data_inicio=turma.data_inicio,
         data_fim=turma.data_fim,
         centro_custo=turma.centro_custo,
+        programa=turma.programa,
         unidade_id=turma.unidade_id,
         ativo=True,
     )
@@ -291,6 +304,7 @@ def adicionar_oferta(
     data_inicio=None,
     data_fim=None,
     centro_custo: str | None = None,
+    programa: str | None = None,
 ) -> TurmaCurso:
     """Cria uma oferta incremental na turma, aplicando as regras da Onda 4."""
     # Guarda se o início veio preenchido do formulário antes de qualquer
@@ -346,6 +360,7 @@ def adicionar_oferta(
         data_inicio = data_inicio or turma.data_inicio
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
+        programa = programa or turma.programa
 
     oferta = TurmaCurso(
         turma_id=turma.id,
@@ -359,6 +374,7 @@ def adicionar_oferta(
         data_inicio=data_inicio,
         data_fim=data_fim,
         centro_custo=centro_custo,
+        programa=programa,
         unidade_id=turma.unidade_id,
         ativo=True,
     )
@@ -398,7 +414,7 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
 
     for campo in (
         "curso_id", "professor_id", "turno", "dias_semana",
-        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo",
+        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo", "programa",
     ):
         if campo in dados:
             setattr(oferta, campo, dados[campo])

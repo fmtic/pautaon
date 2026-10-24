@@ -312,6 +312,7 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         db.String(150),
         comment='Centro de custo individual; NULL = usa o compartilhado da turma',
     )
+    programa: str = db.Column(db.String(50))
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 

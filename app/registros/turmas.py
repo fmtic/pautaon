@@ -369,13 +369,7 @@ def nova_turma():
             return redirect(url_for("registros.nova_turma"))
 
         dias_selecionados = request.form.getlist("dias_semana")
-        dias_string = ", ".join([dia for dia in dias_selecionados if dia])
-        if not dias_string:
-            flash(
-                "Selecione pelo menos um dia da semana para geração do cronograma de frequência.",
-                "warning",
-            )
-            return redirect(url_for("registros.nova_turma"))
+        dias_string = ", ".join([dia for dia in dias_selecionados if dia]) or None
 
         professor_id = request.form.get("professor_id")
         professor_id = (
@@ -920,6 +914,7 @@ def editar_turma(id):
                 oferta_única.data_fim = turma_obj.data_fim
                 oferta_única.centro_custo = turma_obj.centro_custo
 
+                oferta_única.programa = turma_obj.programa
             db.session.commit()
 
             # Verificar inconsistências após salvar
@@ -1054,6 +1049,7 @@ def _dados_oferta_form(form, turma_obj):
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "centro_custo": centro_custo,
+        "programa": form.get("programa") or None,
     }
 
 

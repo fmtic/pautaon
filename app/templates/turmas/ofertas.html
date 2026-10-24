@@ -134,6 +134,15 @@
                                     value="{{ oferta.centro_custo or '' }}" placeholder="Compartilhado (turma)">
                                 {% endif %}
                             </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">Programa</label>
+                                <select name="programa" class="form-select form-select-sm">
+                                    <option value="">—</option>
+                                    {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
+                                    <option value="{{ prog }}" {{ 'selected' if oferta.programa == prog }}>{{ prog }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small">Dias da semana</label><br>
                                 {% for dia in dias_semana %}
@@ -245,6 +254,15 @@
             {% else %}
             <input type="text" name="centro_custo" class="form-control" placeholder="Compartilhado (turma)">
             {% endif %}
+        <div class="col-md-6">
+            <label class="form-label fw-bold small">Programa</label>
+            <select name="programa" class="form-select">
+                <option value="">—</option>
+                {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
+                <option value="{{ prog }}" {{ 'selected' if turma.programa == prog }}>{{ prog }}</option>
+                {% endfor %}
+            </select>
+        </div>
         </div>
 
         <!-- Dias da Semana -->

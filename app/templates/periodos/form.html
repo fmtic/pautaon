@@ -3,6 +3,12 @@
 {% block content %}
 <h2>{{ 'Editar' if periodo else 'Novo' }} Período Letivo</h2>
 
+{% if current_user.role in ['admin', 'gerencia', 'pedagogico', 'secretaria'] %}
+<div class="mb-3">
+    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalCentrosCusto">Centros de Custo</button>
+</div>
+{% endif %}
+
 {# Prepara lista de centros de custo já salvos (como lista Python) #}
 {% set centros_salvos = periodo.centro_custo.split(', ') if periodo and periodo.centro_custo else [] %}
 
@@ -28,10 +34,8 @@
         <div class="col-md-5">
             <label class="form-label d-block">Centro(s) de Custo</label>
 
-            {% if unidade and unidade.nome == 'NIT' %}
-                {% set opcoes = ['Petrobras', 'Mar de Oportunidades'] %}
-            {% elif unidade and unidade.nome == 'MGB' %}
-                {% set opcoes = ['Ventos de Cidadania'] %}
+            {% if centros_ativos %}
+                {% set opcoes = centros_ativos %}
             {% else %}
                 {# Fallback: usa os valores já salvos como opções #}
                 {% set opcoes = centros_salvos %}
@@ -74,8 +78,28 @@
         <a href="{{ url_for('registros.periodo_letivo') }}" class="btn btn-secondary">Cancelar</a>
     </div>
 </form>
+
+{# ── Modal: Centros de Custo ── #}
+<div class="modal fade" id="modalCentrosCusto" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Centros de Custo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input type="text" id="cc_novo_nome" class="form-control" placeholder="Novo centro de custo">
+          <button class="btn btn-primary" id="cc_btn_criar" type="button">Adicionar</button>
+        </div>
+        <div id="cc_lista" class="list-group"></div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/periodos/form.js') }}"></script>
+<script src="{{ url_for('static', filename='js/periodos/centros_custo.js') }}"></script>
 {% endblock %}

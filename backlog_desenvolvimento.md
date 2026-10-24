@@ -1,7 +1,6 @@
 ### Alterações do dia — 23/10/2026
 
-- Data da intervenção: 23/10/2026
-- Conclusão: Etapas F, G2, G3, I, J2, K e K2 da Onda 4 (Fase 4) implementadas e validadas; alterações ainda não commitadas.
+- Conclusão: Etapas F, G2, G3, I, J2, K e K2 da Onda 4 (Fase 4) implementadas e validadas; centros de custo no formulário de períodos corrigidos (CSRF + sincronização das checkboxes); coluna `turma_curso.programa` adicionada (migration `a1b2c3d4e5f6`) e schema drift corrigido via `flask db upgrade`; alterações ainda não commitadas.
 
 ### Etapa F — oferta criada junto com a turma
 
@@ -112,6 +111,25 @@
 - Ajustados formulários/templates de login, troca de senha, termos, certificado e telas de turmas/planejamento.
 - Removidos arquivos JavaScript legados de alunos e um backup de banco obsoleto versionado; removida a configuração `.continue/mcpServers/new-mcp-server.yaml`.
 - `backlog.md` recebeu o registro da entrega de carga horária no commit do dia; esta entrada documenta a consolidação em `backlog_desenvolvimento.md`.
+
+### Centros de custo no formulário de períodos (23/10/2026)
+
+- `app/models/pedagogico.py`: criado `CentroCusto` (tabela `centro_custo`) como catálogo de centros de custo por unidade, com unicidade (`nome`, `unidade_id`) e soft delete.
+- `migrations/versions/d2e3f4a5b6c7_centro_custo.py`: cria a tabela e faz backfill a partir das colunas CSV `centro_custo` de `periodo_letivo`, `turma` e `turma_curso`.
+- `app/registros/periodos.py`: endpoints `/centros-custo` para listar, criar, editar, inativar e reativar; edição propaga o novo nome via `_propagar_centro_custo`; impacto informado antes da confirmação.
+- `app/static/js/periodos/centros_custo.js`: reescrito para ler `csrf_token` de `#periodoForm`, enviar `X-CSRFToken` em todos os POSTs, tratar erros de rede/JSON e sincronizar as checkboxes do formulário após criar/editar/inativar/reativar (incluindo criação dinâmica do container quando ausente).
+- `app/templates/periodos/form.html`: integra o modal de centros de custo ao formulário de períodos e mantém o token CSRF disponível para o JavaScript.
+- `app/models/MER.md`: documentada a tabela `centro_custo`, a relação com `unidade` e a regra de propagação (§7.4a, §8.11).
+
+### Programa na oferta (`turma_curso.programa`) — 23/10/2026
+
+- `app/models/academico.py`: `TurmaCurso` ganha a coluna `programa` (varchar(50), nullable) — programa passa a ser atributo também da oferta, além de permanecer em `Turma` (agrupador).
+- `migrations/versions/a1b2c3d4e5f6_programa_oferta.py`: adiciona a coluna `programa` em `turma_curso` e faz backfill a partir de `turma.programa`.
+- Correção de schema drift: o banco local estava na revisão `d2e3f4a5b6c7` e não possuía a coluna, causando `sqlalchemy.exc.ProgrammingError: coluna turma_curso.programa não existe` na query `TurmaCurso.query.filter_by(turma_id=6, ativo=True)`. Aplicado `flask db upgrade` (head `a1b2c3d4e5f6`); coluna confirmada em `information_schema`; query validada. Backup do banco salvo em `%TEMP%\pautaon_pre_programa.dump`.
+- `app/models/MER.md`: documentada a coluna em §7.32, a regra em §8.10 e a migration em §11 (head atual `a1b2c3d4e5f6`); contagem atualizada para 26 revisões.
+
+---
+
 
 ### Testes e verificações
 
