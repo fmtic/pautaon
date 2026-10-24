@@ -26,9 +26,9 @@ O código da aplicação fica principalmente em `app/`; templates Jinja2 em `app
 
 - **Unidade:** tenant e fronteira principal de isolamento dos dados.
 - **Período letivo:** intervalo acadêmico pertencente a uma unidade.
-- **Turma:** oferta operacional associada a período, curso, turno e unidade.
+- **Turma:** agrupador acadêmico associado a um período letivo. Cursos, professores, horários, vigência e centro de custo são definidos nas ofertas (`TurmaCurso`) vinculadas à turma; a oferta principal é destacada quando há mais de uma.
 - **Aluno:** cadastro da pessoa. `Aluno.ativo` indica se o cadastro permanece ativo no sistema; não significa, por si só, que o aluno esteja enturmado.
-- **Inscrição:** vínculo histórico entre aluno e turma. `Inscricao.ativo=True` identifica o vínculo atual; podem existir várias inscrições para o mesmo aluno e turma.
+- **Inscrição:** vínculo histórico entre aluno, turma e oferta (`Inscricao.turma_curso_id`). `Inscricao.ativo=True` identifica o vínculo atual; o aluno pode estar inscrito em diferentes ofertas da mesma turma.
 - **Status do aluno por período:** classificação calculada pelo serviço `app.services.aluno_status`, sem coluna de status persistida. Inclui Novo, Renovado, Retornante, Em janela, Não renovado, Desenturmado e Outros.
 - **Histórico:** transferências e reativações não devem ser deduzidas apenas de `Aluno.ativo`; use as inscrições e suas datas conforme a regra do serviço.
 
@@ -82,7 +82,11 @@ O cadastro do aluno e a inscrição em turma são operações distintas. Uma ins
 
 ### Frequência e aulas
 
-A frequência associa aluno, turma, data e conceito. Os conceitos e as regras de contagem ficam em `app/models/enums.py` e `app/utils/frequencia.py`. Planejamento e registros de aula ficam em módulos próprios.
+A frequência associa aluno, turma, oferta quando aplicável, data e conceito. Os conceitos e as regras de contagem ficam em `app/models/enums.py` e `app/utils/frequencia.py`. Planejamento e registros de aula ficam em módulos próprios. A impressão de pauta mensal gera uma folha por mês e pode listar os alunos da oferta principal ou as demais ofertas em que estão enturmados; inclui identificação da unidade/período e informações de apoio pedagógico cadastradas para o aluno.
+
+### Painel Geral
+
+Os indicadores de períodos ativos, turmas ativas, alunos ativos e professores aparecem agrupados em duas colunas. Períodos ativos ocupa a primeira posição; em telas estreitas, os cards são empilhados.
 
 ### Conselho de classe
 

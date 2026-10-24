@@ -3,7 +3,7 @@
 > Documento vivo do esquema do banco de dados. **Atualize sempre que criar,
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
-**Última atualização:** 2026-10-24 — Sincronizado com `app/models/` e `migrations/versions/`. **Programa por oferta:** `turma_curso.programa` é obrigatório (`d4e5f6a7b8c9`); `turma.programa` é uma projeção da oferta principal ativa (ou da única oferta ativa), atualizada ao criar, editar, promover ou desativar ofertas. Filtros de turma por programa consultam essa projeção. O cadastro e a edição de turma não alteram programa diretamente.
+**Última atualização:** 2026-10-24 — Sincronizado com `app/models/` e `migrations/versions/`. **Programa por oferta:** `turma_curso.programa` é obrigatório (`d4e5f6a7b8c9`); `turma.programa` é uma projeção da oferta principal ativa (ou da única oferta ativa), atualizada ao criar, editar, promover ou desativar ofertas. Filtros de turma por programa consultam essa projeção. O cadastro e a edição de turma não alteram programa diretamente. **Interface:** impressão mensal da pauta detalha informações do aluno e ofertas; indicadores do painel geral são apresentados em duas colunas, iniciando por períodos ativos. Sem alteração no esquema do banco.
 
 ---
 
@@ -985,6 +985,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - **Filtros da listagem (selects):** "Período letivo" e "Centro de custo" filtram a turma por `periodo_letivo_id` e pela associação de centro de custo em oferta ativa. "Nome da Turma" e "Professor" são `<select>` com opções de todas as turmas/ofertas ativas da unidade, independentes do resultado filtrado; para professor, considera-se o docente efetivo da oferta, com fallback para o professor da turma. Centros vêm do catálogo ativo da unidade. Programa já era select.
 - **Navegação por período na listagem:** por padrão, a tela filtra pelo ano atual (ano de `get_local_now()`); as badges rápidas mostram esse ano e o anterior quando houver períodos cadastrados. Os períodos aparecem sob o ano de início e compartilham sua cor. O seletor permite consultar qualquer período cadastrado, inclusive histórico ou futuro.
 - **Impressão da listagem:** `/turmas/centros-custo/imprimir` (template `turmas/imprimir_listar_turma.html`) respeita os filtros da listagem e organiza registros ativos em centro de custo → turma → ofertas. A turma pode aparecer sob cada centro associado às suas ofertas, exibindo em cada grupo somente as ofertas daquele centro. O cabeçalho informa o período selecionado, todos os períodos do ano filtrado ou "Todos" quando não há filtro de período, além do usuário e data/hora de emissão.
+- **Impressão da pauta mensal:** `imprimir_pauta` gera uma folha por mês. Cada folha contém a oferta, logo secundária, nome da unidade e período letivo, grade de presença e alunos da oferta; também apresenta idade e informações de acompanhamento/medicação/instruções ao professor conforme os dados cadastrados. A lista de alunos e a indicação da oferta principal ou das demais ofertas enturmadas variam conforme o modo solicitado. É comportamento de apresentação; não altera o modelo de frequência.
 - **Conselho, ficha do aluno, BI e transferências ainda leem por `turma_id`** (D3b-2 pendente); **D5 (conselho por oferta) permanece pendente** de decisão do usuário.
 - `TurmaCurso` **não** é excluído em cascata por desativação; apagar a **turma** fisicamente remove suas ofertas (cascade do relacionamento `turma`); apagar oferta **não** apaga inscrições (histórico protegido).
 
@@ -1030,6 +1031,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 ---
 
 ## 10. Histórico de ondas
+
+### Ajustes de interface — 2026-10-24
+
+- Impressão mensal da pauta: uma folha por mês, com logo secundária, unidade e período letivo, alunos e informações de apoio pedagógico cadastradas. A pauta pode identificar, conforme a opção escolhida, a oferta principal ou as demais ofertas do aluno. Nenhuma tabela ou coluna foi alterada nesta entrega.
+- Painel geral: os quatro indicadores (períodos ativos, turmas ativas, alunos ativos e professores) ficam agrupados em duas colunas; períodos ativos é o primeiro card.
 
 ### Onda 1 — Modularização + integridade + JSONB
 

@@ -1,5 +1,8 @@
 ### Alterações do dia — 24/10/2026
 
+- A impressão de pauta foi organizada por mês, com uma folha para cada mês e logo secundária em todas elas. A folha identifica unidade e período letivo, oferece a lista de alunos por oferta (principal ou demais ofertas, conforme a opção), e inclui idade e dados relevantes para o professor: acompanhante, medicação regular quando informada como sim e instruções pedagógicas cadastradas.
+- Os campos de data da grade de presença tiveram a largura reduzida e a fonte do conteúdo da coluna Aluno foi ligeiramente ampliada para facilitar o preenchimento manual.
+- No Painel Geral, os quatro indicadores ficaram reunidos em uma grade de duas colunas, com Períodos Ativos sempre na primeira posição. Em telas estreitas, a grade se reorganiza em coluna.
 - A listagem de turmas ganhou filtros de período letivo e centro de custo. Sem período específico, abre no ano atual; as badges rápidas exibem o ano atual e o anterior quando este tiver períodos. O seletor mantém disponíveis todos os períodos cadastrados, inclusive históricos e futuros.
 - As opções de Nome da Turma e Professor passaram a vir de todas as turmas/ofertas ativas da unidade, sem serem reduzidas pelos filtros atuais; no professor, considera-se o docente efetivo da oferta com fallback para o professor da turma. Centro de custo usa o catálogo ativo da unidade.
 - A impressão em `app/templates/turmas/imprimir_listar_turma.html` respeita os filtros da listagem, mantém a hierarquia centro → turma → ofertas e identifica no cabeçalho o período, todos os períodos do ano ou "Todos", além do usuário e data/hora de emissão.
