@@ -12,6 +12,7 @@ from app.models import (
     PerfilDiversidade,
     PeriodoLetivo,
     Turma,
+    TurmaCurso,
     Unidade,
     User,
 )
@@ -151,6 +152,22 @@ def test_indicadores_de_status_e_filtros_globais(app):
         turma_atual_a.curso_id = cursos[0].id
         turma_anterior_b.curso_id = cursos[1].id
         turma_atual_b.curso_id = cursos[1].id
+
+        # Etapa J3: cada turma das sementes ganha exatamente 1 oferta ativa,
+        # para que o helper 'enturmado em oferta ativa' (usado por ALU-009 e
+        # ALU-010) conte as inscrições com turma_curso_id NULL.
+        for turma_seed in (
+            turma_anterior_a, turma_atual_a, turma_anterior_b, turma_atual_b
+        ):
+            db.session.add(TurmaCurso(
+                turma_id=turma_seed.id,
+                curso_id=turma_seed.curso_id,
+                unidade_id=turma_seed.unidade_id,
+                turno=turma_seed.turno,
+                ativo=True,
+                principal=True,
+            ))
+        db.session.flush()
 
         def aluno(unidade, nome, ativo=True):
             registro = Aluno(nome=nome, unidade_id=unidade.id, ativo=ativo)

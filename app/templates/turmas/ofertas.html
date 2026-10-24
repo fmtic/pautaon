@@ -12,7 +12,8 @@
 {% if ofertas %}
 <div class="card p-4 shadow-sm border-0 mb-4">
     <h5 class="fw-bold text-primary mb-3">
-        <i class="bi bi-mortarboard me-2"></i>Cursos ofertados ({{ ofertas|selectattr('ativo')|list|length }} ativo{{ 's' if ofertas|selectattr('ativo')|list|length != 1 else '' }})
+        <i class="bi bi-mortarboard me-2"></i>Cursos ofertados ({{ ofertas|selectattr('ativo')|list|length }} ativo{{
+        's' if ofertas|selectattr('ativo')|list|length != 1 else '' }})
     </h5>
     <div class="table-responsive">
         <table class="table table-hover align-middle">
@@ -62,8 +63,8 @@
                             <i class="bi bi-pencil"></i>
                         </button>
                         {% if not oferta.principal %}
-                        <form action="{{ url_for('registros.turma_oferta_principal', oferta_id=oferta.id) }}" method="POST"
-                            class="d-inline">
+                        <form action="{{ url_for('registros.turma_oferta_principal', oferta_id=oferta.id) }}"
+                            method="POST" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-outline-warning"
                                 title="Definir como curso principal da turma"
@@ -72,8 +73,8 @@
                             </button>
                         </form>
                         {% endif %}
-                        <form action="{{ url_for('registros.turma_oferta_desativar', oferta_id=oferta.id) }}" method="POST"
-                            class="d-inline">
+                        <form action="{{ url_for('registros.turma_oferta_desativar', oferta_id=oferta.id) }}"
+                            method="POST" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-outline-danger" title="Remover curso da turma"
                                 onclick="return confirm('Remover o curso {{ oferta.curso.nome }} da turma {{ turma.nome }}? As inscrições já feitas neste curso permanecem no histórico.');">
@@ -95,7 +96,7 @@
                                 <select name="professor_id" class="form-select form-select-sm">
                                     <option value="">-- Sem professor --</option>
                                     {% for p in professores %}
-                                    <option value="{{ p.id }}" {{ 'selected' if oferta.professor_id == p.id }}>
+                                    <option value="{{ p.id }}" {{ 'selected' if oferta.professor_id==p.id }}>
                                         {{ p.name }}
                                     </option>
                                     {% endfor %}
@@ -106,7 +107,7 @@
                                 <select name="turno" class="form-select form-select-sm">
                                     <option value="">—</option>
                                     {% for t in ['Manhã', 'Tarde', 'Noite'] %}
-                                    <option value="{{ t }}" {{ 'selected' if oferta.turno == t }}>{{ t }}</option>
+                                    <option value="{{ t }}" {{ 'selected' if oferta.turno==t }}>{{ t }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -126,7 +127,8 @@
                                 <select name="centro_custo" class="form-select form-select-sm">
                                     <option value="">Compartilhado (turma)</option>
                                     {% for cc in centros %}
-                                    <option value="{{ cc }}" {{ 'selected' if oferta.centro_custo == cc }}>{{ cc }}</option>
+                                    <option value="{{ cc }}" {{ 'selected' if oferta.centro_custo==cc }}>{{ cc }}
+                                    </option>
                                     {% endfor %}
                                 </select>
                                 {% else %}
@@ -136,25 +138,15 @@
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-bold small">Programa</label>
-                                <select name="programa" class="form-select form-select-sm">
-                                    <option value="">—</option>
+                                <select name="programa" class="form-select form-select-sm" required>
+                                    <option value="">Selecione um programa</option>
                                     {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
-                                    <option value="{{ prog }}" {{ 'selected' if oferta.programa == prog }}>{{ prog }}</option>
+                                    <option value="{{ prog }}" {{ 'selected' if oferta.programa==prog }}>{{ prog }}
+                                    </option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small">Dias da semana</label><br>
-                                {% for dia in dias_semana %}
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="dias_semana"
-                                        id="ed_dia_{{ oferta.id }}_{{ loop.index }}" value="{{ dia }}"
-                                        {{ 'checked' if oferta.dias_semana and dia in oferta.dias_semana }}>
-                                    <label class="form-check-label small"
-                                        for="ed_dia_{{ oferta.id }}_{{ loop.index }}">{{ dia }}</label>
-                                </div>
-                                {% endfor %}
-                            </div>
+
                             <div class="col-md-2">
                                 <label class="form-label fw-bold small">Data Início</label>
                                 <input type="date" name="data_inicio" class="form-control form-control-sm"
@@ -165,6 +157,20 @@
                                 <input type="date" name="data_fim" class="form-control form-control-sm"
                                     value="{{ oferta.data_fim.isoformat() if oferta.data_fim else '' }}">
                             </div>
+
+                            <div class="col-md-7">
+                                <label class="form-label fw-bold small">Dias da semana</label><br>
+                                {% for dia in dias_semana %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="dias_semana"
+                                        id="ed_dia_{{ oferta.id }}_{{ loop.index }}" value="{{ dia }}" {{ 'checked' if
+                                        oferta.dias_semana and dia in oferta.dias_semana }}>
+                                    <label class="form-check-label small"
+                                        for="ed_dia_{{ oferta.id }}_{{ loop.index }}">{{ dia }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+
                             <div class="col-12">
                                 <button type="submit" class="btn btn-primary btn-sm fw-bold">
                                     <i class="bi bi-save me-1"></i> Salvar oferta
@@ -181,7 +187,8 @@
             </tbody>
         </table>
     </div>
-    {% if ofertas|selectattr('ativo')|list|length >= 2 and not ofertas|selectattr('ativo')|selectattr('principal')|list %}
+    {% if ofertas|selectattr('ativo')|list|length >= 2 and not ofertas|selectattr('ativo')|selectattr('principal')|list
+    %}
     <div class="alert alert-warning mb-0">
         <i class="bi bi-exclamation-triangle me-1"></i>
         Esta turma tem mais de um curso ativo mas ainda <strong>não tem curso principal</strong>.
@@ -234,19 +241,19 @@
         <div class="col-md-3">
             <label class="form-label fw-bold small d-block">Curso principal da turma</label>
             <div class="form-check form-switch mt-2">
-                <input class="form-check-input" type="checkbox" name="principal" id="principal"
-                    {{ 'checked' if not ofertas|selectattr('ativo')|selectattr('principal')|list }}>
+                <input class="form-check-input" type="checkbox" name="principal" id="principal" {{ 'checked' if not
+                    ofertas|selectattr('ativo')|selectattr('principal')|list }}>
                 <label class="form-check-label small" for="principal">
                     Marcar este curso como principal
                 </label>
             </div>
         </div>
         {# Centro de Custo (mantido) #}
-        <div class="col-md-6">
+        <div class="col-md-4">
             <label class="form-label fw-bold small">Centro de Custo</label>
             {% if centros %}
             <select name="centro_custo" class="form-select">
-                <option value="">Compartilhado (turma)</option>
+                <option value="">Não compartilhado</option>
                 {% for cc in centros %}
                 <option value="{{ cc }}">{{ cc }}</option>
                 {% endfor %}
@@ -254,15 +261,16 @@
             {% else %}
             <input type="text" name="centro_custo" class="form-control" placeholder="Compartilhado (turma)">
             {% endif %}
-        <div class="col-md-6">
+        </div>
+
+        <div class="col-md-4">
             <label class="form-label fw-bold small">Programa</label>
-            <select name="programa" class="form-select">
-                <option value="">—</option>
+            <select name="programa" class="form-select" required>
+                <option value="">Selecione um programa</option>
                 {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
-                <option value="{{ prog }}" {{ 'selected' if turma.programa == prog }}>{{ prog }}</option>
+                <option value="{{ prog }}">{{ prog }}</option>
                 {% endfor %}
             </select>
-        </div>
         </div>
 
         <!-- Dias da Semana -->
@@ -271,8 +279,8 @@
             <div class="d-flex flex-wrap gap-3 p-3 bg-white rounded border shadow-sm">
                 {% for dia in dias_semana %}
                 <div class="form-check form-check-inline form-switch">
-                    <input class="form-check-input" type="checkbox" name="dias_semana"
-                        id="novo_dia_{{ loop.index }}" value="{{ dia }}">
+                    <input class="form-check-input" type="checkbox" name="dias_semana" id="novo_dia_{{ loop.index }}"
+                        value="{{ dia }}">
                     <label class="form-check-label fw-medium" for="novo_dia_{{ loop.index }}">{{ dia }}</label>
                 </div>
                 {% endfor %}
@@ -302,8 +310,7 @@
                     <div id="datas_custom_area" class="row g-3 mt-1 d-none">
                         <div class="col-sm-6">
                             <label for="data_inicio_custom" class="form-label fw-bold small">Início do Curso</label>
-                            <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control"
-                                disabled>
+                            <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control" disabled>
                         </div>
                         <div class="col-sm-6">
                             <label for="data_fim_custom" class="form-label fw-bold small">Término do Curso</label>
@@ -342,7 +349,8 @@
 
         {# C.H. calculada em tempo real via JS #}
         <div class="col-12" id="bloco_ch">
-            <div class="alert alert-secondary py-3 px-4 mb-0 d-flex flex-wrap gap-4 align-items-center shadow-sm border-0">
+            <div
+                class="alert alert-secondary py-3 px-4 mb-0 d-flex flex-wrap gap-4 align-items-center shadow-sm border-0">
                 <span>
                     <i class="bi bi-clock-fill text-secondary me-2"></i>
                     <strong>C.H. por Aula:</strong>
@@ -377,71 +385,71 @@
 
 {% block scripts %}
 <script>
-(function () {
-    const $ = (id) => document.getElementById(id);
-    const toggle = $('toggle_datas_curso');
-    const area = $('datas_custom_area');
-    const info = $('datas_periodo_info');
-    const diCustom = $('data_inicio_custom');
-    const dfCustom = $('data_fim_custom');
-    const hIni = $('hora_inicio');
-    const hFim = $('hora_fim');
-    const spanIni = $('periodo_data_inicio');
-    const spanFim = $('periodo_data_fim');
-    const chAula = $('ch_aula_display');
-    const chTotal = $('ch_total_display');
-    const diasInputs = () => document.querySelectorAll('input[name="dias_semana"][id^="novo_dia_"]');
+    (function () {
+        const $ = (id) => document.getElementById(id);
+        const toggle = $('toggle_datas_curso');
+        const area = $('datas_custom_area');
+        const info = $('datas_periodo_info');
+        const diCustom = $('data_inicio_custom');
+        const dfCustom = $('data_fim_custom');
+        const hIni = $('hora_inicio');
+        const hFim = $('hora_fim');
+        const spanIni = $('periodo_data_inicio');
+        const spanFim = $('periodo_data_fim');
+        const chAula = $('ch_aula_display');
+        const chTotal = $('ch_total_display');
+        const diasInputs = () => document.querySelectorAll('input[name="dias_semana"][id^="novo_dia_"]');
 
-    const fmt = (iso) => iso ? iso.split('-').reverse().join('/') : '—';
-    const parse = (iso) => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
-    const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3);
-    const MAPA = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+        const fmt = (iso) => iso ? iso.split('-').reverse().join('/') : '—';
+        const parse = (iso) => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+        const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3);
+        const MAPA = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
 
-    const periodoIni = spanIni.dataset.valor || '';
-    const periodoFim = spanFim.dataset.valor || '';
-    spanIni.textContent = fmt(periodoIni);
-    spanFim.textContent = fmt(periodoFim);
-    if (periodoIni) { diCustom.min = periodoIni; dfCustom.min = periodoIni; }
-    if (periodoFim) { diCustom.max = periodoFim; dfCustom.max = periodoFim; }
+        const periodoIni = spanIni.dataset.valor || '';
+        const periodoFim = spanFim.dataset.valor || '';
+        spanIni.textContent = fmt(periodoIni);
+        spanFim.textContent = fmt(periodoFim);
+        if (periodoIni) { diCustom.min = periodoIni; dfCustom.min = periodoIni; }
+        if (periodoFim) { diCustom.max = periodoFim; dfCustom.max = periodoFim; }
 
-    function horasPorAula() {
-        if (!hIni.value || !hFim.value) return null;
-        const [h1, m1] = hIni.value.split(':').map(Number);
-        const [h2, m2] = hFim.value.split(':').map(Number);
-        const min = (h2 * 60 + m2) - (h1 * 60 + m1);
-        return min > 0 ? min / 60 : null;
-    }
-
-    const fmtH = (h) => (Number.isInteger(h) ? h : h.toFixed(2).replace('.', ',')) + 'h';
-
-    function recalcular() {
-        const porAula = horasPorAula();
-        chAula.textContent = porAula ? fmtH(porAula) : '—';
-
-        const ini = parse(toggle.checked && diCustom.value ? diCustom.value : periodoIni);
-        const fim = parse(toggle.checked && dfCustom.value ? dfCustom.value : periodoFim);
-        const dias = new Set([...diasInputs()].filter(i => i.checked).map(i => MAPA[norm(i.value)]));
-
-        if (!porAula || !ini || !fim || !dias.size || fim < ini) { chTotal.textContent = '—'; return; }
-        let aulas = 0;
-        for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
-            if (dias.has(d.getDay())) aulas++;
+        function horasPorAula() {
+            if (!hIni.value || !hFim.value) return null;
+            const [h1, m1] = hIni.value.split(':').map(Number);
+            const [h2, m2] = hFim.value.split(':').map(Number);
+            const min = (h2 * 60 + m2) - (h1 * 60 + m1);
+            return min > 0 ? min / 60 : null;
         }
-        chTotal.textContent = fmtH(aulas * porAula) + ' (' + aulas + ' aulas)';
-    }
 
-    toggle.addEventListener('change', () => {
-        const on = toggle.checked;
-        area.classList.toggle('d-none', !on);
-        info.classList.toggle('d-none', on);
-        diCustom.disabled = !on;
-        dfCustom.disabled = !on;
-        if (!on) { diCustom.value = ''; dfCustom.value = ''; }
+        const fmtH = (h) => (Number.isInteger(h) ? h : h.toFixed(2).replace('.', ',')) + 'h';
+
+        function recalcular() {
+            const porAula = horasPorAula();
+            chAula.textContent = porAula ? fmtH(porAula) : '—';
+
+            const ini = parse(toggle.checked && diCustom.value ? diCustom.value : periodoIni);
+            const fim = parse(toggle.checked && dfCustom.value ? dfCustom.value : periodoFim);
+            const dias = new Set([...diasInputs()].filter(i => i.checked).map(i => MAPA[norm(i.value)]));
+
+            if (!porAula || !ini || !fim || !dias.size || fim < ini) { chTotal.textContent = '—'; return; }
+            let aulas = 0;
+            for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
+                if (dias.has(d.getDay())) aulas++;
+            }
+            chTotal.textContent = fmtH(aulas * porAula) + ' (' + aulas + ' aulas)';
+        }
+
+        toggle.addEventListener('change', () => {
+            const on = toggle.checked;
+            area.classList.toggle('d-none', !on);
+            info.classList.toggle('d-none', on);
+            diCustom.disabled = !on;
+            dfCustom.disabled = !on;
+            if (!on) { diCustom.value = ''; dfCustom.value = ''; }
+            recalcular();
+        });
+        [hIni, hFim, diCustom, dfCustom].forEach(el => el.addEventListener('input', recalcular));
+        diasInputs().forEach(el => el.addEventListener('change', recalcular));
         recalcular();
-    });
-    [hIni, hFim, diCustom, dfCustom].forEach(el => el.addEventListener('input', recalcular));
-    diasInputs().forEach(el => el.addEventListener('change', recalcular));
-    recalcular();
-})();
+    })();
 </script>
 {% endblock %}

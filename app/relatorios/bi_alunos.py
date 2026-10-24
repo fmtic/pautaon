@@ -502,8 +502,9 @@ def alunos_por_curso(
         .join(Turma, Turma.id == Inscricao.turma_id)
         .join(Curso, Curso.id == Turma.curso_id)
         .filter(
-            Inscricao.ativo.is_(True),
-            Turma.ativo.is_(True),
+            # Etapa J3: só conta enturmado em oferta ativa (helper inclui
+            # Inscricao.ativo e Turma.ativo; NULL ambíguo com 2+ ofertas fora).
+            cond_inscricao_enturmada(),
             Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
         )
     )
@@ -592,8 +593,8 @@ def alunos_por_turma(
         .join(Inscricao, Inscricao.aluno_id == Aluno.id)
         .join(Turma, Turma.id == Inscricao.turma_id)
         .filter(
-            Inscricao.ativo.is_(True),
-            Turma.ativo.is_(True),
+            # Etapa J3: só conta enturmado em oferta ativa (ver alunos_por_curso).
+            cond_inscricao_enturmada(),
             Turma.periodo_letivo_id.in_([periodo.id for periodo in periodos]),
         )
     )

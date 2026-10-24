@@ -1,10 +1,20 @@
+### Alterações do dia — 24/10/2026
+
+- A listagem de turmas ganhou filtros de período letivo e centro de custo. Sem período específico, abre no ano atual; as badges rápidas exibem o ano atual e o anterior quando este tiver períodos. O seletor mantém disponíveis todos os períodos cadastrados, inclusive históricos e futuros.
+- As opções de Nome da Turma e Professor passaram a vir de todas as turmas/ofertas ativas da unidade, sem serem reduzidas pelos filtros atuais; no professor, considera-se o docente efetivo da oferta com fallback para o professor da turma. Centro de custo usa o catálogo ativo da unidade.
+- A impressão em `app/templates/turmas/imprimir_listar_turma.html` respeita os filtros da listagem, mantém a hierarquia centro → turma → ofertas e identifica no cabeçalho o período, todos os períodos do ano ou "Todos", além do usuário e data/hora de emissão.
+- `app/templates/alunos/historico.html` passou a mostrar usuário e data/hora de emissão no cabeçalho, usando o horário local fornecido pela rota; os dados deixaram de ser duplicados no rodapé.
+- Documentação do MER e dos comentários/docstrings dos arquivos de código alterados foi conferida e alinhada ao comportamento implementado. Validação realizada: sintaxe Python/Jinja e `git diff --check`; suíte de testes não executada.
+
+---
+
 ### Alterações do dia — 23/10/2026
 
 - Conclusão: Etapas F, G2, G3, I, J2, K e K2 da Onda 4 (Fase 4) implementadas e validadas; centros de custo no formulário de períodos corrigidos (CSRF + sincronização das checkboxes); coluna `turma_curso.programa` adicionada (migration `a1b2c3d4e5f6`) e schema drift corrigido via `flask db upgrade`; alterações ainda não commitadas.
 
 ### Etapa F — oferta criada junto com a turma
 
-- `app/services/turma_curso.py`: `criar_oferta_inicial_da_turma` — ao gravar uma turma **com curso**, a oferta inicial é criada na **mesma transação** de `criar_turma`; copia professor, turno, dias, horários, datas, centro de custo e unidade da turma; `principal=false`; idempotente (não duplica se já houver oferta); não commita. Turma sem curso não gera oferta.
+- `app/services/turma_curso.py`: `criar_oferta_inicial_da_turma` — ao gravar uma turma **com curso**, a oferta inicial é criada na **mesma transação** de `nova_turma`; copia professor, turno, dias, horários, datas, centro de custo e unidade da turma; `principal=false`; idempotente (não duplica se já houver oferta); não commita. Turma sem curso não gera oferta.
 - `scripts/verificar_onda4_fase4.py`: nova checagem **"turma ativa com curso e sem oferta"** (emite aviso, sem alterar dados).
 
 ### G2 — `editar_turma` por número de ofertas ativas
@@ -28,7 +38,9 @@
 ### J2 — contagens do BI e turma desativada
 
 - `app/relatorios/bi_filtros.py`: `cond_inscricao_enturmada` — inscrição conta quando turma ativa e ligada a oferta ativa (por `turma_curso_id`), ou `turma_curso_id` NULL numa turma com exatamente 1 oferta ativa.
-- `app/relatorios/bi_alunos.py`: filtros de turma ativa e uso do helper em `alunos_por_unidade`, `alunos_por_curso`, `alunos_por_turma`, `inscricoes_por_curso`, `frequencia_por_turma/curso`, `total_turmas`, `media_alunos_por_turma`, `turmas_por_curso/periodo/unidade/professor`.
+- `app/relatorios/bi_alunos.py`: filtros de turma ativa e uso do helper em `alunos_por_unidade`, `inscricoes_por_curso`, `frequencia_por_turma/curso`, `total_turmas`, `media_alunos_por_turma`, `turmas_por_curso/periodo/unidade/professor`. `alunos_por_curso` e `alunos_por_turma` (ALU-009/ALU-010) usam **apenas** `Turma.ativo`; o helper `cond_inscricao_enturmada` será aplicado neles na J3, depois de dar oferta às turmas das sementes de teste.
+- **Efeito retroativo do status:** desativar uma turma pode alterar o status do aluno em **períodos passados** (o histórico em `aluno_status.py` ignora turma desativada).
+- **Média por turma:** `media_alunos_por_turma` conta **linhas de inscrição ativas**, não alunos distintos — aluno com 2 inscrições que contam é contado 2 vezes.
 - `app/services/aluno_status.py`: coorte e histórico ignoram turma desativada, evitando inflar DESENTURMADO.
 - `tests/test_bi_turma_desativada.py`: cenário central e regressão.
 
@@ -36,8 +48,9 @@
 
 - `app/models/academico.py`: `TurmaCurso.carga_horaria_aula` e `carga_horaria_total` (minutos), herdando horários da turma quando a oferta não define os próprios; nota de otimização em `Turma.freq_geral_oferta`.
 - `app/services/turma_curso.py`: `datas_aula_oferta` (extraída de `datas_esperadas_oferta`, com teto opcional) e `criar_oferta_inicial_da_turma` (já documentada em Etapa F).
-- `app/registros/turmas.py`: `_filtrar_turmas`/`pos_filtrar_turmas` agregam professores/turnos/dias das ofertas ativas; filtros professor/turno/dia/horário por COALESCE(oferta→turma) com fallback só sem oferta ativa; `min_freq`/`min_ch_aula`/`min_ch_total` sobre a oferta principal com 2+ ofertas; `_ofertas_ativas_da_turma`/`_oferta_principal`/`_resumo_ofertas`; tolerância a objetos sem `ofertas_curso`.
-- `app/templates/turmas/listar.html`: selo/sub-linha só com 2+ ofertas; filtros Nome da Turma e Professor viraram `<select>` derivados das turmas exibidas (`nomes_turmas`, `professores`).
+- `app/registros/turmas.py`: `aplicar_filtros_turmas`/`pos_filtrar_turmas` agregam professores/turnos/dias das ofertas ativas; filtros professor/turno/dia/horário por COALESCE(oferta→turma) com fallback só sem oferta ativa; `min_freq`/`min_ch_aula`/`min_ch_total` sobre a oferta principal com 2+ ofertas; `_ofertas_ativas_da_turma`/`_oferta_principal`/`_resumo_ofertas`; tolerância a objetos sem `ofertas_curso`.
+- `app/templates/turmas/listar.html`: selo/sub-linha só com 2+ ofertas; filtros Nome da Turma e Professor viraram `<select>` derivados de todas as turmas/ofertas ativas da unidade, independentemente dos filtros atuais; o professor listado é o efetivo da oferta, com fallback para o professor da turma.
+- **Atualização de 24/10/2026:** incluídos filtros de período e centro de custo; ano atual como padrão, badges rápidas do ano atual e anterior, seletor com períodos históricos/futuros e impressão hierárquica que respeita os filtros e informa o período no cabeçalho.
 - `tests/test_turma_curso_lista.py`: GET 0/1/2 ofertas, agregação, filtros por oferta, C.H. manual com bloqueio, `datas_esperadas_oferta` inalterada.
 
 ### Correções de legado e regras de vigência
@@ -49,6 +62,8 @@
 
 - **Espelhamento confirmado:** ao editar a turma com oferta única, o **professor da oferta acompanha a turma** (gravado nos dois lados na mesma transação).
 - **Campos bloqueados:** na turma com **2 ofertas**, os campos de oferta ficam somente leitura e o POST forjado é descartado pelo servidor.
+- **Etapa F confirmada:** a turma "Básico Optimist" nasceu com oferta (curso, professor, turno, dias e horários copiados).
+- Exclusão (I), lista por oferta (K2) e contagens do BI (J2) validadas **apenas por testes automatizados**; falta conferência na tela.
 
 ### Testes e verificações
 
@@ -57,11 +72,21 @@
 - `tests/test_bi_turma_desativada.py`: contagens do BI com turma desativada e inscrições enturmadas em oferta.
 - `tests/test_turma_curso_lista.py`: listagem por oferta, agregação, filtros por COALESCE, C.H. por oferta.
 - `tests/test_filtros_turmas.py`: filtros da listagem (incluindo seleção de Nome da Turma e Professor).
-- Suíte completa: **174+ aprovados**, restando apenas as **2 falhas preexistentes** de `/cursos`.
+- Suíte completa: **200 aprovados**, com as **2 falhas preexistentes** de `/cursos` (`2 failed, 200 passed`).
 
 ### Arquivos principais
 
-`app/registros/turmas.py` (`criar_turma`, `editar_turma` GET/POST, `excluir_turma`, `_filtrar_turmas`/`pos_filtrar_turmas`), `app/services/turma_curso.py` (`criar_oferta_inicial_da_turma`, `turma_tem_historico`, `datas_aula_oferta`), `app/models/academico.py` (`TurmaCurso.carga_horaria_aula/total`), `app/relatorios/bi_alunos.py`, `app/relatorios/bi_filtros.py` (`cond_inscricao_enturmada`), `app/services/aluno_status.py`, `app/templates/turmas/editar.html`, `app/templates/turmas/listar.html`, `app/static/js/turmas/editar.js`, `scripts/verificar_onda4_fase4.py`, `tests/test_turma_curso_edicao.py`, `tests/test_turma_curso_exclusao.py`, `tests/test_bi_turma_desativada.py`, `tests/test_turma_curso_lista.py`, `tests/test_filtros_turmas.py`, `app/models/MER.md` e este `backlog_desenvolvimento.md`.
+`app/registros/turmas.py` (`nova_turma`, `editar_turma` GET/POST, `excluir_turma`, `aplicar_filtros_turmas`/`pos_filtrar_turmas`), `app/services/turma_curso.py` (`criar_oferta_inicial_da_turma`, `turma_tem_historico`, `datas_aula_oferta`), `app/models/academico.py` (`TurmaCurso.carga_horaria_aula/total`), `app/relatorios/bi_alunos.py`, `app/relatorios/bi_filtros.py` (`cond_inscricao_enturmada`), `app/services/aluno_status.py`, `app/templates/turmas/editar.html`, `app/templates/turmas/listar.html`, `app/static/js/turmas/editar.js`, `scripts/verificar_onda4_fase4.py`, `tests/test_turma_curso_edicao.py`, `tests/test_turma_curso_exclusao.py`, `tests/test_bi_turma_desativada.py`, `tests/test_turma_curso_lista.py`, `tests/test_filtros_turmas.py`, `app/models/MER.md` e este `backlog_desenvolvimento.md`.
+
+### Pendências e decisões abertas
+
+- `turma_lixeira` (GET `/turmas/lixeira`) renderiza `turma_lixeira.html`, que **não existe**; não há rota para **reativar** turma desativada.
+- **J3:** atribuição por curso no BI pelo **curso da oferta**; `Turma.programa` ainda é lido no BI e na lista (o programa já existe na oferta, `turma_curso.programa`).
+- `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
+- Estatísticas do GET `/frequencia` (`core.py` ~L396-400) agregam oferta e legado **sem separar por oferta**.
+- Turma sem oferta que lança frequência e depois ganha a **primeira oferta**: registros com `turma_curso_id` NULL deixam de aparecer na tela por oferta, e relançar o mesmo dia cria **linha duplicada** (turmas novas já nascem com oferta — Etapa F).
+- Turma que **desativa todas as ofertas** deixa de mostrar, na tela legada, o histórico lançado por oferta.
+- Decisões do responsável **não implementadas**: aluno só é enturmado em curso (oferta); turma sem curso não recebe alunos nem lançamento; cadastro de turma em dois passos (criar a turma, depois "informar cursos agora? Sim/Agora não"); turno é por curso, pré-preenchido pela turma; EAD e Outros descartados.
 
 ---
 

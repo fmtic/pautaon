@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relatório de Turmas — {{ informacao_padrao.nome_instituicao or 'pautaON' }}</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/icons/bootstrap-icons.css') }}">
+  <style>
+    body { background: #f3f4f6; color: #212529; font-family: Arial, sans-serif; }
+    .print-page { max-width: 1500px; margin: 1.5rem auto; padding: 1.5rem; background: #fff; }
+    .report-header { border-bottom: 2px solid #343a40; }
+    .report-logo { max-width: 150px; max-height: 58px; object-fit: contain; }
+    .report-title { font-size: 1.75rem; }
+    .center-block { margin: 1.4rem 0; break-inside: avoid; }
+    .center-title { padding: .55rem .75rem; background: #e9ecef; border-left: 5px solid #0d6efd; }
+    .class-block { margin: .8rem 0 .8rem 1.2rem; padding-left: .8rem; border-left: 2px solid #ced4da; break-inside: avoid; }
+    .offer-table { font-size: .82rem; }
+    .offer-table th, .offer-table td { border: 1px solid #adb5bd; padding: .35rem .45rem; vertical-align: middle; }
+    .offer-table thead th { background: #f1f3f5; }
+    @media print {
+      @page { size: landscape; margin: 1.1cm; }
+      body { background: #fff; font-size: 10pt; }
+      .print-page { max-width: none; margin: 0; padding: 0; }
+      .no-print { display: none !important; }
+      .center-block, .class-block, tr { break-inside: avoid; }
+      .offer-table { font-size: 8.5pt; }
+      thead { display: table-header-group; }
+    }
+  </style>
+</head>
+<body>
+  <main class="print-page">
+    <div class="no-print d-flex justify-content-end gap-2 mb-3">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i> Imprimir
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="window.close()">
+        <i class="bi bi-x-lg me-1"></i> Fechar
+      </button>
+    </div>
+
+    <header class="report-header d-flex justify-content-between align-items-center pb-3 mb-3">
+      <div class="d-flex align-items-center gap-3">
+        {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+        <img class="report-logo" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional">
+        {% endif %}
+        <div>
+          <div class="text-muted">{{ informacao_padrao.nome_instituicao or 'PautaON' }}</div>
+          <h1 class="h3 mb-1 report-title">Relatório de Turmas e Cursos</h1>
+          <div class="small text-muted">Período letivo: <strong>{{ periodo_relatorio }}</strong></div>
+          <div class="small text-muted">{{ unidade_nome or 'Todas as unidades' }} · Registros ativos{% if filtros_aplicados %} · Filtros da listagem aplicados{% endif %}</div>
+        </div>
+      </div>
+      <div class="text-end small">
+        <div>Emitido por: <strong>{{ current_user.name }}</strong></div>
+        <div>Em {{ agora.strftime('%d/%m/%Y às %H:%M') }}</div>
+      </div>
+    </header>
+
+    {% for centro in centros %}
+    <section class="center-block">
+      <h2 class="h5 center-title">Centro de custo: {{ centro.nome }}</h2>
+      {% for item in turmas_por_centro.get(centro.id, []) %}
+      {% set turma = item.turma %}
+      <article class="class-block">
+        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-2">
+          <h3 class="h6 mb-0">Turma: {{ turma.nome }}{% if not unidade_id %}<span class="text-muted fw-normal"> · {{ turma.unidade.nome if turma.unidade else 'Unidade não informada' }}</span>{% endif %}</h3>
+          <span class="small"><strong>C.H. total da turma:</strong> {{ formatar_ch(item.carga_horaria_total) }}</span>
+        </div>
+        {% if item.ofertas %}
+        <div class="table-responsive">
+          <table class="table table-sm offer-table mb-0">
+            <thead>
+              <tr>
+                <th>Oferta / Curso</th>
+                <th>Professor</th>
+                <th>Turno</th>
+                <th>Dias</th>
+                <th>Horários</th>
+                <th class="text-center">C.H. por aula</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for oferta in item.ofertas %}
+              {% set hora_inicio = oferta.hora_inicio or turma.hora_inicio %}
+              {% set hora_fim = oferta.hora_fim or turma.hora_fim %}
+              <tr>
+                <td>
+                  {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}
+                  {% if oferta.id == item.principal_id %}
+                  <span class="badge text-bg-primary">Principal</span>
+                  {% endif %}
+                </td>
+                <td>{{ oferta.professor.name if oferta.professor else (turma.professor.name if turma.professor else 'Não atribuído') }}</td>
+                <td>{{ oferta.turno or turma.turno or '—' }}</td>
+                <td>{{ oferta.dias_semana or turma.dias_semana or '—' }}</td>
+                <td>{{ hora_inicio.strftime('%H:%M') if hora_inicio else '--:--' }}–{{ hora_fim.strftime('%H:%M') if hora_fim else '--:--' }}</td>
+                <td class="text-center">{{ formatar_ch(oferta.carga_horaria_aula) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="small text-muted">Turma sem ofertas ativas.</div>
+        {% endif %}
+      </article>
+      {% else %}
+      <p class="small text-muted mb-0">Nenhuma turma ativa vinculada a este centro de custo.</p>
+      {% endfor %}
+    </section>
+    {% else %}
+    <p class="text-muted">Nenhum centro de custo ativo encontrado.</p>
+    {% endfor %}
+
+    <footer class="border-top pt-2 mt-4 small text-muted text-end">
+      {{ informacao_padrao.nome_instituicao or 'pautaON' }} · pautaON {{app_version}} {{ app_stage}}
+    </footer>
+  </main>
+</body>
+</html>

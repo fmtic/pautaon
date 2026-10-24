@@ -85,13 +85,9 @@
             </div>
 
             <div class="col-md-6 mb-3">
-                <label class="form-label fw-bold">Programa</label>
-                <select name="programa" class="form-select">
-                    <option value="">-- Selecione um Programa --</option>
-                    {% for p in programas %}
-                    <option value="{{ p }}" {% if turma.programa==p %}selected{% endif %}>{{ p }}</option>
-                    {% endfor %}
-                </select>
+                <label class="form-label fw-bold">Programa da oferta principal</label>
+                <input class="form-control" value="{{ turma.programa or 'Não definido' }}" readonly>
+                <div class="form-text">O programa é definido nos dados da oferta principal.</div>
             </div>
 
             <div class="col-md-6 mb-3">

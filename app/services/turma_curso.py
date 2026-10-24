@@ -12,9 +12,8 @@ especificação §4/§5/§14:
       mais ofertas ativas deve existir exatamente um curso principal. O
       máximo já é garantido pelo índice único parcial `uix_turma_curso_principal`;
       a obrigatoriedade é validada aqui.
-    - Concomitância (§5): é proibido horário sobreposto entre cursos da
-      mesma turma em dias comuns, dentro de vigências que se interceptam.
-      Adjacência (fim de um = início do outro) é permitida.
+    - Concomitância: horários sobrepostos entre ofertas ativas da mesma turma
+      são permitidos; o usuário recebe um aviso informativo.
     - Compatibilidade legada (§14): o espelhamento para as colunas de `Turma`
       só ocorre em turma com oferta única ativa e que nunca teve curso legado
       (situação criada por esta feature). Turmas do backfill e turmas com
@@ -32,7 +31,6 @@ from sqlalchemy import or_
 
 from app.database import db
 from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, User
-from app.utils.timezone import get_local_now
 
 
 def ofertas_ativas(turma_id: int):
@@ -113,7 +111,7 @@ def _sobreposicao_vigencia(
     return True
 
 
-def _validar_horario_concomitante(
+def _conflitos_horario_concomitante(
     turma_id: int,
     *,
     dias_semana: str | None,
@@ -122,16 +120,16 @@ def _validar_horario_concomitante(
     data_inicio: date | None,
     data_fim: date | None,
     exclude_oferta_id: int | None = None,
-) -> None:
-    """Levanta ValueError se a nova/edição da oferta conflitar com outra oferta
-    ativa da mesma turma (§5 — concomitância proibida; adjacência permitida).
+) -> list[str]:
+    """Lista conflitos com outras ofertas ativas da mesma turma.
 
     A checagem é pulada quando faltam dados mínimos (sem dias OU sem horários).
+    Concomitância é permitida; as mensagens servem apenas como alerta.
     """
     # Dados insuficientes — não há como determinar conflito
     dias_novos = _parse_dias(dias_semana)
     if not dias_novos or hora_inicio is None or hora_fim is None:
-        return
+        return []
 
     outras = (
         TurmaCurso.query
@@ -139,6 +137,7 @@ def _validar_horario_concomitante(
         .order_by(TurmaCurso.id)
         .all()
     )
+    conflitos = []
     for outra in outras:
         if exclude_oferta_id and outra.id == exclude_oferta_id:
             continue
@@ -155,14 +154,14 @@ def _validar_horario_concomitante(
         # Condição 3: vigências se interceptam
         if not _sobreposicao_vigencia(data_inicio, data_fim, outra.data_inicio, outra.data_fim):
             continue
-        # Conflito detectado
+        # Conflito detectado: alerta sem bloquear a operação.
         curso_nome = outra.curso.nome if outra.curso else f"curso #{outra.curso_id}"
-        raise ValueError(
+        conflitos.append(
             f"Horário concomitante com '{curso_nome}' "
             f"({outra.dias_semana}, {outra.hora_inicio:%H:%M}–{outra.hora_fim:%H:%M}). "
-            "Cursos da mesma turma não podem ter aulas no mesmo dia e horário "
-            "(adjacência é permitida)."
+            "A oferta foi salva."
         )
+    return conflitos
 
 
 def _validar_curso(turma: Turma, curso_id: int) -> Curso:
@@ -209,7 +208,7 @@ def _validar_principal_obrigatorio(turma: Turma, principal_oferta: bool):
 
     Como a nova oferta ainda não está no banco, a conta considera as ofertas
     ativas existentes: se alguma já é principal, a nova pode entrar sem marca;
-    caso contrário (legado sem principal do backfill), a marca é obrigatória.
+    caso contrário, a nova oferta precisa ser marcada como principal.
     """
     ativas = ofertas_ativas(turma.id)
     if len(ativas) >= 1 and not principal_oferta and not any(o.principal for o in ativas):
@@ -241,6 +240,18 @@ def _sincronizar_legado(turma: Turma, oferta: TurmaCurso) -> None:
     turma.programa = oferta.programa
 
 
+def sincronizar_programa_turma(turma: Turma) -> None:
+    """Projeta na turma o programa da oferta principal ativa.
+
+    Quando há uma única oferta ativa, ela é a referência mesmo sem a marca
+    explícita de principal. Sem ofertas ativas, limpa a projeção.
+    """
+    ativas = ofertas_ativas(turma.id)
+    principal = next((o for o in ativas if o.principal), None)
+    referencia = principal or (ativas[0] if ativas else None)
+    turma.programa = referencia.programa if referencia else None
+
+
 def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     """Cria a oferta inicial de uma turma recém-cadastrada que tem curso legado.
 
@@ -270,6 +281,11 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     if turma.curso_id is None:
         return None
 
+    if not turma.programa or not turma.programa.strip():
+        raise ValueError("Toda oferta precisa ter um programa.")
+
+    periodo = turma.periodo_letivo
+
     oferta = TurmaCurso(
         turma_id=turma.id,
         curso_id=turma.curso_id,
@@ -279,8 +295,8 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
         dias_semana=turma.dias_semana,
         hora_inicio=turma.hora_inicio,
         hora_fim=turma.hora_fim,
-        data_inicio=turma.data_inicio,
-        data_fim=turma.data_fim,
+        data_inicio=periodo.data_inicio if periodo else turma.data_inicio,
+        data_fim=periodo.data_fim if periodo else turma.data_fim,
         centro_custo=turma.centro_custo,
         programa=turma.programa,
         unidade_id=turma.unidade_id,
@@ -288,6 +304,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     )
     db.session.add(oferta)
     db.session.flush()
+    sincronizar_programa_turma(turma)
     return oferta
 
 
@@ -307,39 +324,27 @@ def adicionar_oferta(
     programa: str | None = None,
 ) -> TurmaCurso:
     """Cria uma oferta incremental na turma, aplicando as regras da Onda 4."""
-    # Guarda se o início veio preenchido do formulário antes de qualquer
-    # herança/ajuste — se veio vazio pode entrar na regra "turma em andamento".
-    data_inicio_informada = data_inicio is not None
-
     curso = _validar_curso(turma, curso_id)
+    programa = (programa or "").strip()
+    if not programa:
+        raise ValueError("Toda oferta precisa ter um programa.")
     professor_id = _validar_professor(professor_id, turma.unidade_id)
     _validar_principal_obrigatorio(turma, principal)
 
-    # Regra "turma em andamento" (Onda 4 — Fase 4, D3b-1): roda ANTES da
-    # validação de concomitância e da instanciação, para que o início efetivo
-    # já seja usado em ambas. Se o início veio vazio, a turma já tem outra
-    # oferta (ativa OU desativada) e está em andamento (já começou e ainda não
-    # terminou), define o início da nova oferta como hoje local — para não
-    # inventar aulas retroativas jamais lançadas. Tem PRECEDÊNCIA sobre a
-    # herança abaixo (que usa `or`). Na primeira oferta da turma, ou com turma
-    # encerrada, mantém a herança; com data_inicio preenchida respeita o valor.
-    # Sinaliza via marcador `inicio_ajustado_para_hoje` para a rota exibir flash.
-    inicio_ajustado_para_hoje = False
-    if not data_inicio_informada:
-        hoje_local = get_local_now().date()
-        tem_outra_oferta = (
-            TurmaCurso.query.filter_by(turma_id=turma.id).first() is not None
-        )
-        turma_em_andamento = (
-            turma.data_inicio is not None
-            and turma.data_inicio <= hoje_local
-            and (turma.data_fim is None or turma.data_fim >= hoje_local)
-        )
-        if tem_outra_oferta and turma_em_andamento:
-            data_inicio = hoje_local
-            inicio_ajustado_para_hoje = True
+    # A oferta usa os limites do período letivo por padrão. Datas enviadas
+    # explicitamente pelo usuário prevalecem, desde que dentro do período.
+    periodo = turma.periodo_letivo
+    if periodo:
+        data_inicio = data_inicio or periodo.data_inicio
+        data_fim = data_fim or periodo.data_fim
+        if data_inicio and not periodo.data_inicio <= data_inicio <= periodo.data_fim:
+            raise ValueError("A data de início deve estar dentro do período letivo da turma.")
+        if data_fim and not periodo.data_inicio <= data_fim <= periodo.data_fim:
+            raise ValueError("A data de término deve estar dentro do período letivo da turma.")
+    if data_inicio and data_fim and data_inicio > data_fim:
+        raise ValueError("A data de início da oferta não pode ser posterior à data de término.")
 
-    _validar_horario_concomitante(
+    avisos_horario = _conflitos_horario_concomitante(
         turma.id,
         dias_semana=dias_semana,
         hora_inicio=hora_inicio,
@@ -350,7 +355,7 @@ def adicionar_oferta(
 
     # Herança de atributos: primeira oferta de uma turma sem vínculo legado
     # parte dos valores da própria turma (compatibilidade com a UI antiga).
-    # Usa `or`, então preserva o `data_inicio` já definido pela regra acima.
+    # Usa `or` para herdar os demais atributos de turma quando aplicável.
     if turma.curso_id is None:
         professor_id = professor_id or turma.professor_id
         turno = turno or turma.turno
@@ -360,7 +365,14 @@ def adicionar_oferta(
         data_inicio = data_inicio or turma.data_inicio
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
-        programa = programa or turma.programa
+
+    # A troca é feita antes do INSERT e dentro da mesma transação. O flush
+    # libera o índice único parcial antes de gravar a nova oferta principal.
+    if principal:
+        for oferta_existente in ofertas_ativas(turma.id):
+            if oferta_existente.principal:
+                oferta_existente.principal = False
+        db.session.flush()
 
     oferta = TurmaCurso(
         turma_id=turma.id,
@@ -381,9 +393,10 @@ def adicionar_oferta(
     db.session.add(oferta)
     db.session.flush()
     _sincronizar_legado(turma, oferta)
+    sincronizar_programa_turma(turma)
+
     db.session.commit()
-    # Marcador transitório (não é coluna): a rota usa para avisar o usuário.
-    oferta.inicio_ajustado_para_hoje = inicio_ajustado_para_hoje
+    oferta.avisos_horario = avisos_horario
     return oferta
 
 
@@ -398,11 +411,15 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         )
     if "curso_id" in dados and dados["curso_id"] != oferta.curso_id:
         _validar_curso(oferta.turma, dados["curso_id"])
+    if "programa" in dados:
+        dados["programa"] = (dados["programa"] or "").strip()
+        if not dados["programa"]:
+            raise ValueError("Toda oferta precisa ter um programa.")
 
     # Concomitância: checar apenas se pelo menos um dos campos de horário/dias mudou
     campos_horario = {"dias_semana", "hora_inicio", "hora_fim", "data_inicio", "data_fim"}
     if campos_horario & set(dados):
-        _validar_horario_concomitante(
+        avisos_horario = _conflitos_horario_concomitante(
             oferta.turma_id,
             dias_semana=dados.get("dias_semana", oferta.dias_semana),
             hora_inicio=dados.get("hora_inicio", oferta.hora_inicio),
@@ -411,6 +428,8 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
             data_fim=dados.get("data_fim", oferta.data_fim),
             exclude_oferta_id=oferta.id,
         )
+    else:
+        avisos_horario = []
 
     for campo in (
         "curso_id", "professor_id", "turno", "dias_semana",
@@ -419,6 +438,8 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         if campo in dados:
             setattr(oferta, campo, dados[campo])
 
+    sincronizar_programa_turma(oferta.turma)
+
     # Espelhamento somente na situação-herança criada pela Fase 2
     # (oferta única ativa e turma sem curso legado — nunca ocorre com legado).
     ativas = ofertas_ativas(oferta.turma_id)
@@ -426,6 +447,7 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         _sincronizar_legado(oferta.turma, oferta)
 
     db.session.commit()
+    oferta.avisos_horario = avisos_horario
     return oferta
 
 
@@ -438,9 +460,11 @@ def definir_principal(oferta: TurmaCurso) -> TurmaCurso:
     if not oferta.ativo:
         raise ValueError("Só é possível definir principal entre ofertas ativas.")
     for outra in ofertas_ativas(oferta.turma_id):
-        outra.principal = outra.id == oferta.id
-    if not oferta.principal:
-        oferta.principal = True
+        if outra.id != oferta.id and outra.principal:
+            outra.principal = False
+    db.session.flush()
+    oferta.principal = True
+    sincronizar_programa_turma(oferta.turma)
     db.session.commit()
     return oferta
 
@@ -456,6 +480,7 @@ def desativar_oferta(oferta: TurmaCurso) -> TurmaCurso:
             "Defina o curso principal antes de desativar esta oferta."
         )
     oferta.ativo = False
+    sincronizar_programa_turma(oferta.turma)
     db.session.commit()
     return oferta
 

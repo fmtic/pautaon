@@ -4,7 +4,7 @@ from werkzeug.exceptions import Forbidden
 
 from app import create_app
 from app.database import db
-from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, Unidade, User
+from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, Unidade, User
 from app.registros.shared import assert_unidade_context
 from config import Config
 
@@ -254,6 +254,17 @@ def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role)
         )
         turma = Turma(nome="1 - Natação", ativo=True, unidade_id=unidade.id)
         db.session.add_all([user, aluno, turma])
+        db.session.flush()
+        # Etapa M1: só se enturma em curso (oferta). A semente passa a ter
+        # 1 oferta ativa para manter a intenção do teste (perfis autorizados
+        # conseguem enturmar na própria unidade) sob a nova regra.
+        curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+        db.session.add(TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id,
+            unidade_id=unidade.id, ativo=True, principal=True,
+        ))
         db.session.commit()
         user_id = user.id
         aluno_id = aluno.id

@@ -55,18 +55,6 @@
                         </div>
                     </div>
 
-                    <!-- Linha 3: Centro de Custo -->
-                    <div class="row g-4 mb-4">
-                        <div class="col-md-6">
-                            <label for="centro_custo_select" class="form-label fw-bold small">Centro de Custo</label>
-                            <select name="centro_custo" id="centro_custo_select" class="form-select" disabled required>
-                                <option value="">-- Selecione um período primeiro --</option>
-                            </select>
-                            <div id="centro_custo_help" class="form-text">Os centros listados dependem do período letivo
-                                escolhido.</div>
-                        </div>
-                    </div>
-
                     {# Referências ocultas utilizadas pelo JS para atualização do período #}
                     <div class="d-none">
                         <strong id="periodo_data_inicio">—</strong>
@@ -81,7 +69,7 @@
                         </a>
                         {% if periodos %}
                         <button type="submit" class="btn btn-success px-5 py-2 shadow-sm fw-bold">
-                            <i class="bi bi-check-lg me-2"></i>Salvar Turma
+                            <i class="bi bi-check-lg me-2"></i>Salvar e incluir cursos
                         </button>
                         {% endif %}
                     </div>
@@ -94,7 +82,6 @@
 
 {% block scripts %}
 <script>
-    window.periodosCentros = {{ periodos_centros | default ({}) | tojson }};
     window.periodosDatas = {{ periodos_datas | default ({}) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>

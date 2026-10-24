@@ -225,14 +225,17 @@ def test_frequencia_por_turma_nao_lista_turma_desativada(cenario):
 
 
 def test_alunos_por_turma_e_por_curso_excluem_turma_desativada(cenario):
-    # alunos_por_curso/turma recebem só Turma.ativo (ver decisão reportada):
-    # a3 (enturmado por status) ainda aparece na turma2 ativa; a5 não aparece.
+    # Etapa J3: alunos_por_curso/turma usam o helper estrito (enturmado em
+    # oferta ativa): a1, a2, a4 e a6 (uma vez) contam; a3 (NULL + 2 ofertas)
+    # e a5 (turma desativada) ficam fora.
     por_turma = _valor_por_nome(alunos_por_turma())
     assert "Turma Desativada" not in por_turma
     assert por_turma["Turma Ativa 1"] == 4  # a1, a2, a4, a6 (uma vez)
-    assert por_turma.get("Turma Ativa 2") == 1  # a3 (status NOVO)
+    assert "Turma Ativa 2" not in por_turma  # a3 não conta (NULL ambíguo)
     # Curso Y só tinha enturmados na turma desativada: não aparece.
     assert "Curso Y" not in _valor_por_nome(alunos_por_curso())
+    # Curso X: a1, a2, a4, a6 (uma vez); a3 não contribui.
+    assert _valor_por_nome(alunos_por_curso())["Curso X"] == 4
 
 
 def test_status_nao_infla_desenturmado_com_turma_desativada(cenario):

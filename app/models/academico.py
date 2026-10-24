@@ -196,9 +196,21 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
 
     @property
     def alunos_ativos_count(self) -> int:
-        """Total de alunos com `ativo=True` vinculados a esta turma."""
+        """Total de alunos ativos, sem contar separadamente cada oferta."""
         from app.models.pessoas import Aluno
-        return self.alunos.filter(Aluno.ativo == True).count()
+        from app.models.matriculas import Inscricao
+
+        return (
+            db.session.query(db.func.count(db.func.distinct(Aluno.id)))
+            .join(Inscricao, Inscricao.aluno_id == Aluno.id)
+            .filter(
+                Inscricao.turma_id == self.id,
+                Inscricao.ativo.is_(True),
+                Aluno.ativo.is_(True),
+            )
+            .scalar()
+            or 0
+        )
 
     def dias_aula_efetivos(self) -> int:
         """
@@ -312,7 +324,7 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         db.String(150),
         comment='Centro de custo individual; NULL = usa o compartilhado da turma',
     )
-    programa: str = db.Column(db.String(50))
+    programa: str = db.Column(db.String(50), nullable=False)
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
