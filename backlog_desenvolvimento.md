@@ -1,3 +1,44 @@
+### Alterações do dia — 25/10/2026 (Onda 4 pós-Fase 4)
+
+- **T1:** Reparo da suíte (120F→210P); `tests/_helpers.py`; 8 testes de transferência; 4 bugs reportados.
+- **P1:** Ensaio upgrade scratch (5 cenários); `scripts/preparar_deploy_onda4.py`; dump autêntico ausente.
+- **B1:** P2 KeyError, P3 nova turma programa, P4 reprojeção 2+ ofertas; concomitância realinhada (4 testes); `\_PROGRAMAS_OFERTA`. 218P.
+- **B2:** D4 fechado; bloco programa removido de `nova_turma.html`; investigação falha `/cursos`. 220P/1F.
+- **B3:** `editar_curso` — isolamento para todos; suíte verde. 221P.
+- **B4:** Isolamento em 12 rotas de escrita; `test_isolamento_unidade_escrita.py` (36 testes). 257P.
+- **B5:** Migrations c3d4/d4e5 endurecidas (checagens + COALESCE); ensaios A–E. 257P.
+- **B6:** Criar nível Visão Global recusada; D3 (turma sem período); R2 limpo; código morto NULL inscrição removido. 262P.
+- **M1 (24/10):** Enturmação por oferta: `enturmar_alunos` grava `turma_curso_id`; regras 0/1/2+ ofertas (0 recusa; 1 auto; 2+ exige escolha validada em `ofertas_ativas`); duplicidade por aluno+turma+oferta; `ver_turma` com `?oferta_sel=&modal=enturmar`, disponíveis por oferta e selos de curso (`cursos_por_aluno`); `adicionar_oferta` vinculava NULL ativas; 11 testes em `test_enturmacao_oferta.py`; semente `test_security_regressions` ganhou 1 oferta. 211P/2F.
+- **M1.1 (24/10):** Adoção de `Inscricao` NULL ativa ao enturmar (menor id; `data_inicio` preservado); `scripts/verificar_onda4_m1.py` (somente leitura, ainda presente); +6 testes (17 total). **A adoção NULL em `enturmar_alunos` e em `adicionar_oferta` foi tornada obsoleta pelo NOT NULL de `c3d4e5f6a7b8` e removida na T1** (7 testes eliminados; restam 13).
+- **M2:** `app/services/enturmacao.py`; desenturmar por oferta; `test_desenturmacao_oferta.py` (16). 278P.
+- **M4:** Guarda desativar_oferta; `cond_oferta_efetiva()`; `test_desativar_oferta.py` (13). 291P.
+- **L1:** Limpeza: `detalhe copy.html`, `_contagem_inscricoes_sem_curso`, “sem curso definido”, rodapé teste. A2 mantido. Sync MER + backlog.
+
+**Estado da suíte ao final de L1: 291 passed, 0 falhas.**
+
+### Pendências abertas (pós-L2)
+
+- D5 conselho por oferta (decidido 24/10; implementação pendente; ver §12.18 do MER).
+- D3b-2/J3: leitores ainda por `turma_id` (ficha, BI freq, relatórios, certificados); J3 ainda não aplica `cond_inscricao_enturmada` em ALU-009/ALU-010 e o BI ainda lê `Turma.programa` em vez de `turma_curso.programa`.
+- Fases 5–7 Onda 4 (autorização por professor por oferta, centro de custo por oferta, transferências avançadas). Fases 8–9 e NOT NULL final (c3d4/d4e5) **concluídas**.
+- `turma_lixeira`: GET `/turmas/lixeira` renderiza `turma_lixeira.html` inexistente; não há rota para **reativar** turma desativada.
+- Onda 3C: dropar JSONs legados de `Aluno`.
+- Dívidas de migrations §11.1 (itens 2–6, 8).
+- Dump autêntico de produção para novo ensaio P1/B5 (B5-P2).
+- Duplicação `cond_oferta_efetiva` (M4 §12.13).
+- `ofertas.html` com lista de programas embutida (D6 §12.14).
+- `TurmaCurso.avisos_horario` transiente (D7 §12.15).
+- `conftest.py` único (P7 §12.16).
+- CLI Alembic pode não exibir mensagem do bloqueio em deploy (B5-P1 §12.17).
+- Turma sem oferta que lança frequência e depois ganha a **primeira oferta**: registros com `turma_curso_id` NULL deixam de aparecer na tela por oferta; relançar o mesmo dia cria **linha duplicada** (turmas novas já nascem com oferta — Etapa F; só afeta turmas sem curso).
+- Turma que **desativa todas as ofertas** deixa de mostrar, na tela legada, o histórico lançado por oferta.
+- Estatísticas do GET `/frequencia` (`core.py` ~L396–400) agregam oferta e legado **sem separar por oferta**.
+- `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
+- `Transferencia` (MER §7.16) **não registra a oferta de origem nem a de destino** — apenas `turma_origem_id`/`turma_destino_id`; decisão pendente sobre adicionar colunas `turma_curso_id_origem`/`_destino` ou manter rastreamento via `Inscricao`.
+- Frequencia/RegistroAula legados com `turma_curso_id IS NULL` ainda existem em produção (coluna nullable); backfill definitivo só na Fase 9 (fora do alcance das rotas atuais de leitura, que preservam `IS NULL` de propósito).
+
+---
+
 ### Alterações do dia — 24/10/2026
 
 - A impressão de pauta foi organizada por mês, com uma folha para cada mês e logo secundária em todas elas. A folha identifica unidade e período letivo, oferece a lista de alunos por oferta (principal ou demais ofertas, conforme a opção), e inclui idade e dados relevantes para o professor: acompanhante, medicação regular quando informada como sim e instruções pedagógicas cadastradas.
@@ -187,7 +228,7 @@
 - **Fase 4 — frequência e diário por oferta:** migration `e7f3a1b9c4d5` (down_revision `8c4e1f9a7d32`) adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos **parciais** `uix_freq_legado` (`aluno_id`,`turma_id`,`data` WHERE `turma_curso_id IS NULL`) e `uix_freq_oferta` (`aluno_id`,`turma_curso_id`,`data` WHERE NOT NULL), cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (oferta única escolhida sem validação extra; 2+ ofertas exige escolha e valida vigência/dia/tema), `datas_esperadas_oferta` (agenda por oferta) e `_alunos_da_oferta` (pauta por oferta com `EXISTS`, sem duplicar aluno). Leitores/escritores em `app/utils/logica.py` (`salvar_frequencia`/`carregar_frequencias`), `app/utils/frequencia.py` (`contar_pendencias_frequencia`/`_pendencias_por_ofertas`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`core.py`, `turmas.py`, `lancar.html`, `imprimir_pauta.html`, `detalhe.html`, `professor.html`). Regra "turma em andamento" em `adicionar_oferta` (grava hoje quando a 2ª+ oferta entra em turma já iniciada e viva; flash na rota). "Hoje" local via `get_local_now().date()` nos caminhos novos.
 - **Fase 4 — correção do caminho legado:** `salvar_frequencia` e `carregar_frequencias`, no ramo legado (`turma_curso_id IS NULL`), passaram a filtrar `turma_curso_id IS NULL` em `Frequencia` e `RegistroAula`; assim um lançamento legado (turma sem oferta ativa) não reaproveita/sobrescreve a linha de uma oferta (mesmo `turma_id`/`data`). O ramo por oferta permanece inalterado.
 - **Fase 4 — testes e verificação:** `tests/test_turma_curso_fase4.py` (cenários a–i: resolver sem validação na oferta única, segunda oferta não sobrescreve, legado não duplica/não confunde com oferta, `_data_bate_dias_semana` com acento/variante, vigência/dia/tema no resolver, filtro de aluno fora da pauta, inscrições NULL com 1 vs 2+ ofertas) e `tests/test_turma_curso_fase4_dash.py`; `scripts/verificar_onda4_fase4.py` (só leitura, exit 0/1: colunas, índices únicos parciais, ausência do UNIQUE antigo, FKs, ofertas inconsistentes, turmas 2+ sem principal). Suíte completa: **155 aprovados**, apenas as 2 falhas preexistentes de `/cursos`.
-- **Pendências da Onda 4:** Fases 5–9 — autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), **D5 conselho — aguardando decisão**, certificados/indicadores (§12), NOT NULL final em `inscricoes.turma_curso_id` (Fase 9). **D3b-2:** ficha do aluno, BI de frequência/diário, `freq_geral` (listagem de turmas e BI), relatórios e histórico ainda leem por `turma_id`. Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). **Consequência da correção do legado:** `carregar_frequencias` no caminho legado passou a filtrar `turma_curso_id IS NULL`; registros de ofertas desativadas não aparecem na tela legada. Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
+- **Pendências da Onda 4 (registro histórico de 22/10; status atualizado na L2):** Fases 5–7 — autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), certificados/indicadores (§12). **Fases 8–9 e NOT NULL final em `inscricoes.turma_curso_id` aplicadas** (`c3d4e5f6a7b8` T1 + `d4e5f6a7b8c9` B5). **D5 conselho — decidido em 24/10/2026** (implementação pendente; ver §12.18 do MER). **D3b-2:** ficha do aluno, BI de frequência/diário, `freq_geral` (listagem de turmas e BI), relatórios e histórico ainda leem por `turma_id`. Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). **Consequência da correção do legado:** `carregar_frequencias` no caminho legado passou a filtrar `turma_curso_id IS NULL`; registros de ofertas desativadas não aparecem na tela legada. Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
 
 ### Arquivos principais
 
