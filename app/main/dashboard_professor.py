@@ -77,7 +77,7 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
         if len(ativas) >= 2:
             for oferta in ativas:
                 pauta = _alunos_da_oferta(
-                    turma.id, oferta.id, incluir_inscricoes_null=False,
+                    turma.id, oferta.id,
                 )
                 if not pauta:
                     continue
@@ -159,10 +159,8 @@ def _entradas_professor(user_id):
         if chave in vistas:
             continue
         vistas.add(chave)
-        ativas_turma = ofertas_ativas(turma.id)
-        incluir_null = len(ativas_turma) <= 1
         pauta = _alunos_da_oferta(
-            turma.id, oferta.id, incluir_inscricoes_null=incluir_null,
+            turma.id, oferta.id,
         )
         hi, hf = _horario_oferta(oferta)
         dias = _dias_efetivos_da_oferta(oferta)
@@ -213,10 +211,8 @@ def _entradas_professor(user_id):
         blocked = datas_bloqueadas_str(turma.periodo_letivo_id)
         oferta = e['oferta']
         if oferta is not None:
-            ativas_turma = ofertas_ativas(turma.id)
-            incluir_null = len(ativas_turma) <= 1
             pauta = _alunos_da_oferta(
-                turma.id, oferta.id, incluir_inscricoes_null=incluir_null,
+                turma.id, oferta.id,
             )
             aluno_ids = [a.id for a in pauta]
             if not aluno_ids:
@@ -288,10 +284,8 @@ def render_dashboard_professor():
             turma = e['turma']
             oferta = e['oferta']
             if oferta is not None:
-                ativas_turma = ofertas_ativas(turma.id)
-                incluir_null = len(ativas_turma) <= 1
                 pauta = _alunos_da_oferta(
-                    turma.id, oferta.id, incluir_inscricoes_null=incluir_null,
+                    turma.id, oferta.id,
                 )
                 for a in pauta:
                     aluno_ids.add(a.id)

@@ -71,7 +71,8 @@
         {% if n_ofertas >= 2 %}
         <div class="alert alert-warning">
             <i class="bi bi-lock-fill me-1"></i>
-            Com mais de um curso, edite professor, turno, horários e datas em
+            Com mais de um curso, edite professor, turno, horários, datas e o
+            <strong>programa</strong> em
             <a href="{{ url_for('registros.turma_ofertas', id=turma.id) }}" class="btn btn-outline-primary btn-sm fw-bold">
                 <i class="bi bi-mortarboard me-1"></i> CURSOS DA TURMA
               </a>
@@ -86,8 +87,14 @@
 
             <div class="col-md-6 mb-3">
                 <label class="form-label fw-bold">Programa da oferta principal</label>
-                <input class="form-control" value="{{ turma.programa or 'Não definido' }}" readonly>
+                <input class="form-control" value="{{ turma.programa or 'Não definido' }}" readonly
+                    {% if n_ofertas >= 2 %}tabindex="-1"{% endif %}>
+                {% if n_ofertas >= 2 %}
+                <div class="form-text"><i class="bi bi-lock-fill me-1"></i>Somente leitura: com mais de
+                    um curso, edite o programa na oferta, em <strong>Cursos da Turma</strong>.</div>
+                {% else %}
                 <div class="form-text">O programa é definido nos dados da oferta principal.</div>
+                {% endif %}
             </div>
 
             <div class="col-md-6 mb-3">

@@ -176,11 +176,14 @@
                       <i class="bi bi-arrow-left-right"></i> Transferir
                     </a>
                     {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
+                    {# ETAPA M2 (Passo 4): desenturmar POR oferta — o aluno em 2+ ofertas
+                       aparece em cada card com seu próprio botão, identificado pelo nome
+                       do curso; em 1 oferta o botão é o mesmo de antes. #}
                     <form action="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id) }}"
                       method="POST" class="d-inline">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Desenturmar desta oferta"
-                        onclick="return confirm('Deseja desenturmar {{ aluno.nome }} desta oferta?');">
+                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Desenturmar de {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}"
+                        onclick="return confirm('Deseja desenturmar {{ aluno.nome }} de {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}?');">
                         <i class="bi bi-person-dash"></i>
                       </button>
                     </form>

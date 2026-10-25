@@ -102,7 +102,9 @@ def calendario_salvar():
     if not periodo:
         return jsonify({"success": False, "message": "Período não encontrado"}), 404
 
-    if unidade_id and periodo.unidade_id != unidade_id:
+    # ETAPA B4: recusa também sem unidade efetiva na sessão (Visão Global é
+    # somente leitura). Mantida a resposta JSON 403, idioma original da rota.
+    if unidade_id is None or periodo.unidade_id != unidade_id:
         return (
             jsonify({"success": False, "message": "Acesso negado a esta unidade"}),
             403,
@@ -202,9 +204,12 @@ def calendario_remover(dia_id):
     unidade_id = get_unidade_id()
     _check_calendario_access(unidade_id)
 
+    from .shared import assert_unidade_context
+
     dia = DiaBloqueado.query.get_or_404(dia_id)
-    if unidade_id and dia.unidade_id != unidade_id:
-        abort(403)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis; o guard
+    # anterior (`unidade_id and ...`) era pulado na Visão Global.
+    assert_unidade_context(dia.unidade_id, unidade_id)
 
     try:
         db.session.delete(dia)
@@ -370,8 +375,9 @@ def periodo_letivo_editar(id):
     from .shared import assert_unidade_context
 
     periodo = db.get_or_404(PeriodoLetivo, id)
-    if current_user.role != "admin":
-        assert_unidade_context(periodo.unidade_id, get_unidade_id())
+    # ETAPA B4: isolamento por unidade vale para todos os perfis, inclusive
+    # admin (Visão Global é somente leitura; B3 §4, item 7).
+    assert_unidade_context(periodo.unidade_id, get_unidade_id())
     unidade = periodo.unidade
 
     if request.method == "POST":
@@ -722,11 +728,9 @@ def editar_centro_custo(centro_id):
     from .shared import assert_unidade_context
 
     centro = db.get_or_404(CentroCusto, centro_id)
-    if current_user.role not in ("admin", "gerencia"):
-        assert_unidade_context(centro.unidade_id, unidade_id)
-    if unidade_id is not None and centro.unidade_id != unidade_id and current_user.role in ("admin", "gerencia"):
-        # permite admin/gerencia apenas se o centro pertencer à unidade do contexto
-        assert_unidade_context(centro.unidade_id, unidade_id)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis, inclusive
+    # admin/gerencia — os guards anteriores eram pulados na Visão Global (item 10).
+    assert_unidade_context(centro.unidade_id, unidade_id)
     if not centro.ativo:
         return jsonify({"success": False, "message": "Reative o centro de custo antes de editá-lo."}), 409
 

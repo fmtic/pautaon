@@ -51,6 +51,7 @@ from app.services.aluno_perfil import (
     upsert_perfil_socioeconomico,
     upsert_responsavel,
 )
+from app.services.enturmacao import enturmar_aluno
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 from . import bp
@@ -747,10 +748,24 @@ def desenturmar_alunos(id):
         inscricoes_ativas = Inscricao.query.filter_by(
             aluno_id=aluno.id, turma_id=turma.id, ativo=True
         )
+        # ETAPA M2: com 2+ inscrições ativas do aluno na turma a escolha da
+        # oferta é obrigatória; nunca se usa .first() para "escolher".
+        # Com turma_curso_id informado, a busca é sempre escopada em
+        # aluno+turma+ativo e espera NO MÁXIMO uma linha (índice único
+        # parcial uix_inscricao_ativa_aluno_oferta), via one_or_none().
+        inscricao = None
         if turma_curso_id:
             inscricao = inscricoes_ativas.filter_by(
                 turma_curso_id=turma_curso_id
-            ).first()
+            ).one_or_none()
+            if inscricao is not None:
+                # A oferta apontada precisa pertencer à mesma turma —
+                # impede desenturmar por oferta de outra turma (e, por
+                # transitividade, de outra unidade: a turma já foi
+                # validada no assert_unidade_context acima).
+                oferta_alvo = inscricao.turma_curso
+                if oferta_alvo is None or oferta_alvo.turma_id != turma.id:
+                    inscricao = None
         else:
             opcoes = inscricoes_ativas.order_by(Inscricao.id).all()
             inscricao = opcoes[0] if len(opcoes) == 1 else None
@@ -1096,15 +1111,15 @@ def transferir_aluno(aluno_id):
         )
         inscricao_origem.motivo_desativacao = "TRANSFERENCIA"
 
-        db.session.add(
-            Inscricao(
-                aluno_id=aluno.id,
-                turma_id=turma_destino.id,
-                turma_curso_id=oferta_destino.id,
-                nivel=inscricao_origem.nivel,
-                data_inicio=data_transferencia,
-                ativo=True,
-            )
+        # ETAPA M2: criação da inscrição de destino concentrada no serviço
+        # único de enturmação (valida oferta/duplicidade e não commita).
+        # A checagem de duplicidade acima preserva o flash original.
+        enturmar_aluno(
+            aluno,
+            turma_destino,
+            oferta_destino.id,
+            nivel=inscricao_origem.nivel,
+            data_inicio=data_transferencia,
         )
 
         from app.models import Transferencia

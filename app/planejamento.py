@@ -44,8 +44,9 @@ def alternar_conselho(turma_id):
 
     turma = Turma.query.get_or_404(turma_id)
     unidade_id = get_unidade_id()
-    if current_user.role != "admin":
-        assert_unidade_context(turma.unidade_id, unidade_id)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis, inclusive
+    # admin (Visão Global é somente leitura; B3 §4, item 6).
+    assert_unidade_context(turma.unidade_id, unidade_id)
 
     try:
         turma.conselho_concluido = not turma.conselho_concluido

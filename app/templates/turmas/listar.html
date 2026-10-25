@@ -254,6 +254,9 @@
                                 <i class="bi bi-chevron-expand"></i>
                             </button>
                             {% endif %}
+                            {% if turma.periodo_letivo_id is none %}
+                            <span class="badge bg-secondary text-white ms-1" title="Turma sem período letivo vinculado">Sem período</span>
+                            {% endif %}
                         </td>
 
                         <td class="text-center">

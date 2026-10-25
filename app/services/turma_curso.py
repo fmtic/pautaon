@@ -27,10 +27,20 @@ from __future__ import annotations
 
 from datetime import date, time, timedelta
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.database import db
-from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, User
+from app.models import (
+    Aluno,
+    Curso,
+    Inscricao,
+    PeriodoLetivo,
+    TemaAula,
+    Turma,
+    TurmaCurso,
+    User,
+)
+from app.models.base import get_local_now
 
 
 def ofertas_ativas(turma_id: int):
@@ -469,9 +479,46 @@ def definir_principal(oferta: TurmaCurso) -> TurmaCurso:
     return oferta
 
 
-def desativar_oferta(oferta: TurmaCurso) -> TurmaCurso:
+def _alunos_ativos_em_andamento(oferta: TurmaCurso) -> int:
+    """ETAPA M4: quantos alunos têm inscrição ATIVA nesta oferta, em turma
+    ativa, cujo período letivo ainda não encerrou.
+
+    Regra do responsável: período com `data_fim >= hoje` está em andamento
+    (futuro conta como andamento); turma **sem** `periodo_letivo_id` conta
+    como em andamento por prudência. Período encerrado (`data_fim < hoje`)
+    e inscrição inativa não bloqueiam.
+    """
+    hoje = get_local_now().date()
+    return (
+        db.session.query(func.count(func.distinct(Inscricao.aluno_id)))
+        .join(Turma, Turma.id == Inscricao.turma_id)
+        .outerjoin(PeriodoLetivo, PeriodoLetivo.id == Turma.periodo_letivo_id)
+        .filter(
+            Inscricao.turma_curso_id == oferta.id,
+            Inscricao.ativo.is_(True),
+            Turma.ativo.is_(True),
+            or_(
+                Turma.periodo_letivo_id.is_(None),
+                PeriodoLetivo.data_fim.is_(None),
+                PeriodoLetivo.data_fim >= hoje,
+            ),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def desativar_oferta(
+    oferta: TurmaCurso, *, verificar_alunos_em_andamento: bool = False,
+) -> TurmaCurso:
     """Soft delete da oferta (`ativo=False`). O histórico de inscrições é
     preservado — `inscricoes_oferta` não tem cascade.
+
+    `verificar_alunos_em_andamento` (ETAPA M4): guarda usada **apenas** pela
+    rota `registros.turma_oferta_desativar` — recusa enquanto houver aluno
+    ativo em período não encerrado. Fluxos internos (excluir_turma desativa
+    as ofertas por atributo próprio, sem passar aqui) mantêm o comportamento
+    antigo ligando o valor padrão False.
     """
     restantes = [o for o in ofertas_ativas(oferta.turma_id) if o.id != oferta.id]
     if len(restantes) >= 2 and not any(o.principal for o in restantes):
@@ -479,6 +526,20 @@ def desativar_oferta(oferta: TurmaCurso) -> TurmaCurso:
             "A turma ficará com mais de um curso ativo sem principal. "
             "Defina o curso principal antes de desativar esta oferta."
         )
+    if verificar_alunos_em_andamento:
+        bloqueantes = _alunos_ativos_em_andamento(oferta)
+        if bloqueantes:
+            # A oferta ainda não foi desativada, então 'restantes' ainda a
+            # inclui ao procurar o período da turma para a mensagem.
+            periodo = oferta.turma.periodo_letivo if oferta.turma else None
+            nome_periodo = periodo.nome if periodo else "sem período letivo"
+            raise ValueError(
+                f"Não é possível remover o curso '{_nome_curso(oferta)}': "
+                f"há {bloqueantes} aluno(s) ativo(s) na oferta em período "
+                f"letivo ainda em andamento ('{nome_periodo}'). A desativação "
+                "só é permitida após o encerramento do período ou quando não "
+                "houver alunos ativos."
+            )
     oferta.ativo = False
     sincronizar_programa_turma(oferta.turma)
     db.session.commit()
@@ -595,22 +656,21 @@ def resolver_oferta_lancamento(
 def _alunos_da_oferta(
     turma_id: int,
     oferta_id: int,
-    *,
-    incluir_inscricoes_null: bool,
 ) -> list:
     """Pauta de lançamento de uma oferta (Onda 4 — Fase 4, D2).
 
-    Regra:
+    Regra (endurecida na ETAPA B6):
         - Entram os alunos com inscrição ativa na turma cujo
           `Inscricao.turma_curso_id` é a oferta.
-        - Fallback: inscrições ativas da mesma turma com `turma_curso_id`
-          NULL entram SOMENTE quando a turma tem exatamente 1 oferta ativa
-          (`incluir_inscricoes_null=True`) — nesse caso a inscrição só pode
-          ser dela. Com 2+ ofertas ativas as NULL são ambíguas e não
-          aparecem em nenhuma pauta; a tela avisa a secretaria para definir
-          o curso da inscrição.
-        - Sem oferta ativa a rota mantém a pauta por turma (legado), que não
-          passa por aqui.
+
+    O antigo fallback (`turma_curso_id` NULL quando a turma tem exatamente
+    1 oferta ativa, via `incluir_inscricoes_null`) tornou-se código morto:
+    desde a migration da Onda 4 (c3d4e5f6a7b8) Inscricao.turma_curso_id é
+    NOT NULL, então nenhuma inscrição pode ficar sem oferta — o parâmetro e
+    o ramo foram removidos.
+
+    - Sem oferta ativa a rota mantém a pauta por turma (legado), que não
+      passa por aqui.
 
     Move-se para este módulo na D3b-1 para ser reutilizada pelos leitores de
     pendência (dashboards) sem importar `app.registros.core` (blueprint) de
@@ -619,18 +679,10 @@ def _alunos_da_oferta(
     filtros_inscricao = [
         Inscricao.turma_id == turma_id,
         Inscricao.ativo == True,
+        Inscricao.turma_curso_id == oferta_id,
     ]
-    if incluir_inscricoes_null:
-        filtros_inscricao.append(
-            or_(
-                Inscricao.turma_curso_id == oferta_id,
-                Inscricao.turma_curso_id.is_(None),
-            )
-        )
-    else:
-        filtros_inscricao.append(Inscricao.turma_curso_id == oferta_id)
     # EXISTS em vez de JOIN: o aluno aparece uma única vez mesmo quando tem
-    # 2+ inscrições ativas elegíveis (ex.: uma NULL e uma da oferta).
+    # 2+ inscrições ativas elegíveis na oferta.
     return (
         Aluno.query.filter(
             Aluno.ativo == True,

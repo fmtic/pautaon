@@ -23,6 +23,7 @@ from app.models import (
     User,
 )
 from app.models.enums import UserRole
+from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
@@ -165,6 +166,10 @@ _PALETA_BADGES_ANO = (
     ("#6c757d", "#ffffff"), ("#ffc107", "#212529"),
 )
 
+# Programas aceitos na oferta (mesma lista da tela "Cursos da Turma"). A
+# coluna Turma.programa é projeção da oferta principal ativa (MER §8.10).
+_PROGRAMAS_OFERTA = ("Profissionalizante", "Esporte", "Meio Ambiente", "Outros")
+
 
 def _filtro_por_oferta(cond_oferta, cond_turma):
     """Casa se QUALQUER oferta ativa casa (via COALESCE) OU, só quando a turma
@@ -206,7 +211,7 @@ def _resumo_ofertas(turma):
     }
 
 
-def aplicar_filtros_turmas(stmt, args):
+def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
     """Aplica filtros persistidos (SQL) sobre o select de Turma.
 
     periodo_letivo_id e ano_periodo restringem o período da turma; centro_custo
@@ -214,6 +219,11 @@ def aplicar_filtros_turmas(stmt, args):
     professor/turno/dia/horario_inicio, a turma casa se QUALQUER oferta ativa
     casar usando COALESCE(coluna da oferta, coluna da turma); sem oferta ativa,
     valem as colunas da turma. nome e programa seguem na turma.
+
+    incluir_turmas_sem_periodo: na vista padrão (sem período/ano escolhidos,
+    quando a rota injeta o ano vigente) turmas com periodo_letivo_id NULL
+    continuam visíveis — exibidas com o selo "Sem período". Quando o usuário
+    escolhe período/ano explicitamente o filtro permanece estrito (flag False).
     """
     nome = (args.get("nome") or "").strip()
     if nome:
@@ -231,14 +241,17 @@ def aplicar_filtros_turmas(stmt, args):
         )
     ano_periodo = _parse_int_arg(args.get("ano_periodo"))
     if ano_periodo:
-        stmt = stmt.where(
-            Turma.periodo_letivo_id.in_(
-                select(PeriodoLetivo.id).where(
-                    PeriodoLetivo.unidade_id == Turma.unidade_id,
-                    func.extract("year", PeriodoLetivo.data_inicio) == ano_periodo
-                )
+        por_ano = Turma.periodo_letivo_id.in_(
+            select(PeriodoLetivo.id).where(
+                PeriodoLetivo.unidade_id == Turma.unidade_id,
+                func.extract("year", PeriodoLetivo.data_inicio) == ano_periodo
             )
         )
+        if incluir_turmas_sem_periodo:
+            # Vista padrão: turma sem período letivo não é ocultada pelo ano
+            # vigente injetado automaticamente (D3).
+            por_ano = or_(por_ano, Turma.periodo_letivo_id.is_(None))
+        stmt = stmt.where(por_ano)
 
     centro_custo_id = _parse_int_arg(args.get("centro_custo"))
     if centro_custo_id:
@@ -399,11 +412,14 @@ def turma():
     periodo_selecionado = _parse_int_arg(filtros.get("periodo_letivo_id"))
     ano_atual = get_local_now().year
     # Sem período exato ou ano informado, a listagem abre no ano vigente.
-    if not periodo_selecionado and not _parse_int_arg(filtros.get("ano_periodo")):
+    vista_padrao = not periodo_selecionado and not _parse_int_arg(filtros.get("ano_periodo"))
+    if vista_padrao:
         filtros["ano_periodo"] = str(ano_atual)
     filtros_rapidos = {"centro_custo", "ano_periodo", "periodo_letivo_id"}
     filtros_painel_aberto = any(chave not in filtros_rapidos for chave in filtros)
-    stmt = aplicar_filtros_turmas(stmt_base, filtros)
+    stmt = aplicar_filtros_turmas(
+        stmt_base, filtros, incluir_turmas_sem_periodo=vista_padrao
+    )
     turmas = (
         db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome))
         .unique()
@@ -469,7 +485,10 @@ def turma():
             "selecionado": ano == ano_selecionado,
             "periodos": [],
         })
-        for periodo in periodos_por_ano[ano]:
+        # O ano corrente é sempre oferecido como etiqueta visual; quando a
+        # unidade ainda não cadastrou período nele, `periodos_por_ano` não tem
+        # a chave — daí o .get() (defeito P2: KeyError → 500 na virada de ano).
+        for periodo in periodos_por_ano.get(ano, []):
             params_periodo = dict(filtros_sem_periodo)
             params_periodo["periodo_letivo_id"] = periodo.id
             item = {
@@ -697,6 +716,10 @@ def nova_turma():
         abort(403)
 
     unidade_id = get_unidade_id()
+    if request.method == "POST" and unidade_id is None:
+        # ETAPA B4: Visão Global é somente leitura — sem unidade efetiva a
+        # rota recusa (403) em vez de criar Turma com unidade_id NULL (item 11).
+        abort(403)
     if request.method == "POST":
         nome_turma = request.form.get("turma")
         if not nome_turma or not nome_turma.strip():
@@ -725,7 +748,9 @@ def nova_turma():
 
         if periodo_letivo_id:
             periodo_obj = db.session.get(PeriodoLetivo, periodo_letivo_id)
-            if not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id):
+            # ETAPA B4: guard incondicional por unidade (o `unidade_id and`
+            # anterior era pulado na Visão Global).
+            if not periodo_obj or periodo_obj.unidade_id != unidade_id:
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.nova_turma"))
 
@@ -737,7 +762,7 @@ def nova_turma():
                 or (
                     periodo_letivo_id and professor.unidade_id != periodo_obj.unidade_id
                 )
-                or (unidade_id and professor.unidade_id != unidade_id)
+                or professor.unidade_id != unidade_id
             ):
                 flash(
                     "Professor inválido para esta unidade ou período letivo.", "warning"
@@ -799,9 +824,17 @@ def nova_turma():
                 )
                 return redirect(url_for("registros.nova_turma"))
 
+        # Toda oferta exige programa (MER §8.10). A oferta inicial é criada a
+        # partir da turma, então o programa precisa chegar antes dela.
+        programa = (request.form.get("programa") or "").strip() or None
+        if curso_id is not None and not programa:
+            flash("Selecione o programa da oferta.", "warning")
+            return redirect(url_for("registros.nova_turma"))
+
         nova = Turma(
             nome=nome_turma,
-            programa=None,
+            # Turma sem curso não tem oferta: a projeção continua NULL.
+            programa=programa if curso_id is not None else None,
             turno=turno,
             centro_custo=centro_custo,
             professor_id=professor_id,
@@ -861,6 +894,10 @@ def nova_turma():
         }
         for p in periodos
     }
+    # ETAPA B6 (R2): o programa é projeção da oferta principal e não é mais
+    # solicitado no cadastro da turma; nova_turma.html não consome `programas`,
+    # então o contexto órfão foi removido daqui. `_PROGRAMAS_OFERTA` segue em
+    # uso por editar_turma.
     return render_template(
         "turmas/nova_turma.html",
         professores=professores,
@@ -1055,28 +1092,22 @@ def enturmar_alunos(turma_id):
                 if nivel_form:
                     aluno.nivel = nivel_val
 
-                # Duplicidade por OFERTA (M1): bloqueia só inscrição ativa do
-                # mesmo aluno na mesma oferta; em outra oferta da turma, o
-                # aluno pode ter nova inscrição ativa.
-                inscricao_existente = Inscricao.query.filter_by(
-                    aluno_id=aluno.id,
-                    turma_id=turma_obj.id,
-                    turma_curso_id=oferta_id,
-                    ativo=True,
-                ).first()
-                if inscricao_existente:
+                # ETAPA M2: duplicidade e criação concentradas no serviço
+                # único de enturmação. Duplicata ativa na mesma oferta segue
+                # como salto silencioso (sem flash), como antes; em outra
+                # oferta da turma, o aluno pode ter nova inscrição ativa.
+                try:
+                    enturmar_aluno(
+                        aluno,
+                        turma_obj,
+                        oferta_id,
+                        nivel=nivel_val,
+                        data_inicio=date.today(),
+                    )
+                except ValueError as e:
+                    if str(e) != MSG_JA_ENTURMADO:
+                        raise
                     continue
-
-                nova_inscricao = Inscricao(
-                    aluno_id=aluno.id,
-                    turma_id=turma_obj.id,
-                    turma_curso_id=oferta_id,
-                    nivel=nivel_val,
-                    ativo=True,
-                    # Usa fuso local em vez de UTC, alinhado com o default do modelo.
-                    data_inicio=date.today(),
-                )
-                db.session.add(nova_inscricao)
                 enturmados += 1
 
             db.session.commit()
@@ -1103,7 +1134,7 @@ def editar_turma(id):
     turma_obj = db.session.get(Turma, id)
     unidade_id = get_unidade_id()
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
-    programas = ["Profissionalizante", "Esporte", "Meio Ambiente", "Outros"]
+    programas = list(_PROGRAMAS_OFERTA)
 
     if request.method == "POST":
         avisos_horario = []
@@ -1195,8 +1226,7 @@ def editar_turma(id):
                     else turma_obj.periodo_letivo
                 )
                 if novo_periodo_id and (
-                    not periodo_obj
-                    or (unidade_id and periodo_obj.unidade_id != unidade_id)
+                    not periodo_obj or periodo_obj.unidade_id != unidade_id
                 ):
                     flash(
                         "Período letivo inválido para a unidade selecionada.",
@@ -1205,6 +1235,11 @@ def editar_turma(id):
                     return redirect(url_for("registros.editar_turma", id=id))
                 if original_periodo_id != novo_periodo_id or not turma_obj.ordenacao:
                     turma_obj.ordenacao = obter_proximo_ordenacao(novo_periodo_id)
+
+                # Turma.programa é projeção da oferta principal ativa (MER
+                # §8.10) e não é editável de forma independente: reprojeta em
+                # vez de ler o campo do formulário (defeito P4).
+                sincronizar_programa_turma(turma_obj)
 
                 db.session.commit()
                 flash(
@@ -1260,7 +1295,7 @@ def editar_turma(id):
                 else turma_obj.periodo_letivo
             )
             if novo_periodo_id and (
-                not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id)
+                not periodo_obj or periodo_obj.unidade_id != unidade_id
             ):
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.editar_turma", id=id))
@@ -1614,7 +1649,10 @@ def turma_oferta_desativar(oferta_id):
         abort(404)
     turma_obj = _turma_para_ofertas(oferta.turma_id)
     try:
-        desativar_oferta(oferta)
+        # ETAPA M4: a guarda de alunos ativos em período em andamento vale
+        # apenas para este caminho de rota; excluir_turma e demais fluxos
+        # internos não passam por aqui (ou usam o padrão False).
+        desativar_oferta(oferta, verificar_alunos_em_andamento=True)
     except ValueError as erro:
         flash(str(erro), "warning")
         return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
@@ -2050,10 +2088,10 @@ def imprimir_pauta(id):
         return redirect(url_for("registros.ver_turma", id=id))
 
     if oferta is not None and len(ofertas) >= 2:
-        # Pauta da oferta com a regra de fallback da D2: com 2+ ofertas,
-        # inscrições NULL são ambíguas e ficam de fora.
+        # Pauta da oferta (multi-oferta): inscrição sempre apontada para a
+        # oferta — Inscricao.turma_curso_id é NOT NULL desde a Onda 4.
         ctx["alunos"] = _alunos_da_oferta(
-            id, oferta.id, incluir_inscricoes_null=False,
+            id, oferta.id,
         )
 
     if oferta is not None:

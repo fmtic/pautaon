@@ -16,6 +16,7 @@ from flask import current_app, flash, render_template, url_for, request, redirec
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.orm import joinedload
+from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
 
 from app.database import db
@@ -183,23 +184,6 @@ def painel_professor():
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
-def _contagem_inscricoes_sem_curso(turma_id: int) -> int:
-    """Alunos com inscrição ativa na turma e `turma_curso_id` NULL —
-    ambíguos quando a turma tem 2+ ofertas ativas (aviso da tela, D2)."""
-    return (
-        db.session.query(func.count(func.distinct(Inscricao.aluno_id)))
-        .join(Aluno, Aluno.id == Inscricao.aluno_id)
-        .filter(
-            Inscricao.turma_id == turma_id,
-            Inscricao.ativo == True,
-            Inscricao.turma_curso_id.is_(None),
-            Aluno.ativo == True,
-        )
-        .scalar()
-        or 0
-    )
-
-
 @bp.route('/frequencia', methods=['GET', 'POST'])
 @login_required
 def frequencia():
@@ -269,13 +253,11 @@ def frequencia():
         if oferta_post is not None:
             # Rejeita lançamentos de alunos fora da pauta da oferta: chaves
             # aluno_<id> fora da pauta são ignorados e contabilizados no log.
-            # A pauta segue a mesma regra do GET (fallback NULL só com oferta
-            # única ativa — inscrições ambíguas não são aceitas).
-            incluir_null = len(ativas_post) == 1
+            # A pauta segue a mesma regra do GET: inscrição sempre apontada
+            # para a oferta (Inscricao.turma_curso_id NOT NULL desde a Onda 4).
             permitidos = {
                 a.id for a in _alunos_da_oferta(
                     int(turma_post_id), oferta_post.id,
-                    incluir_inscricoes_null=incluir_null,
                 )
             }
             form_data = request.form.to_dict()
@@ -345,7 +327,6 @@ def frequencia():
     obs = ""
     ofertas = []
     oferta_atual = None
-    sem_curso_count = 0
 
     if turma_id:
         # Onda 4 (Fase 4, D2): 0 ofertas ativas = legado (pauta por turma);
@@ -365,22 +346,20 @@ def frequencia():
                     return redirect(url_for('registros.frequencia', turma_id=turma_id))
             else:
                 exigir_escolha = True
-            # Inscrições NULL são ambíguas com 2+ ofertas: não entram em
-            # nenhuma pauta e a secretaria precisa corrigir (aviso na tela).
-            sem_curso_count = _contagem_inscricoes_sem_curso(turma_id)
+            # ETAPA L1 (A3): o aviso "sem curso definido" (contador de
+            # inscrições com turma_curso_id NULL) foi removido — código morto
+            # desde o NOT NULL de Inscricao.turma_curso_id (c3d4e5f6a7b8).
 
         ctx = carregar_contexto_turma(turma_id)
         if exigir_escolha:
             ctx['alunos'] = []
             ctx['temas'] = []
         elif oferta_atual is not None:
-            # Pauta da oferta com a regra de fallback documentada em
-            # `_alunos_da_oferta`: inscrições NULL só entram com oferta única
-            # ativa. Temas são os do curso da oferta (coerente com a
-            # validação de tema do resolver).
+            # Pauta da oferta: inscrição sempre apontada para a oferta
+            # (Inscricao.turma_curso_id NOT NULL desde a Onda 4). Temas são os
+            # do curso da oferta (coerente com a validação de tema do resolver).
             ctx['alunos'] = _alunos_da_oferta(
                 turma_id, oferta_atual.id,
-                incluir_inscricoes_null=(len(ofertas) == 1),
             )
             ctx['temas'] = TemaAula.query.filter_by(
                 curso_id=oferta_atual.curso_id, ativo=True
@@ -429,7 +408,6 @@ def frequencia():
                            meses=ctx.get('meses', []),
                            ofertas=ofertas,
                            oferta_atual=oferta_atual,
-                           sem_curso_count=sem_curso_count,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
@@ -603,8 +581,10 @@ def editar_curso(curso_id):
         abort(403)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, curso_id)
-    if current_user.role not in (UserRole.ADMIN, UserRole.GERENCIA):
-        assert_unidade_context(curso.unidade_id, unidade_id)
+    # ETAPA B3: isolamento por unidade vale para todos os perfis, inclusive
+    # ADMIN/GERENCIA (que escolhem a unidade após o login; Visão Global é
+    # somente leitura). Igual a inativar_curso/reativar_curso.
+    assert_unidade_context(curso.unidade_id, unidade_id)
     if not curso.ativo:
         return jsonify({
             'success': False,
@@ -732,6 +712,10 @@ def planejamento():
             nome_nivel = request.form.get('nome_nivel', '').strip()
             if nome_nivel:
                 nivel_unidade_id = get_unidade_id()
+                # ETAPA B6: criar nível exige unidade efetiva na sessão; a
+                # Visão Global (unidade None) é somente leitura, como nos
+                # demais ramos de escrita do planejamento.
+                assert_unidade_context(nivel_unidade_id, nivel_unidade_id)
                 existente = Nivel.query.filter_by(
                     nome=nome_nivel,
                     unidade_id=nivel_unidade_id,
@@ -759,8 +743,9 @@ def planejamento():
         if curso_id and titulo_tema:
             try:
                 curso = db.get_or_404(Curso, int(curso_id))
-                if current_user.role != UserRole.ADMIN:
-                    assert_unidade_context(curso.unidade_id, unidade_id)
+                # ETAPA B4: isolamento por unidade vale para todos os perfis,
+                # inclusive ADMIN (Visão Global é somente leitura).
+                assert_unidade_context(curso.unidade_id, unidade_id)
                 if not curso.ativo:
                     flash(
                         "Não é possível adicionar temas a um curso inativo. Reative-o primeiro.",
@@ -781,6 +766,11 @@ def planejamento():
                 ))
                 db.session.commit()
                 flash(f"Tema '{titulo_tema}' adicionado ao curso '{curso.nome if curso else ''}'!", "success")
+            except HTTPException:
+                # ETAPA B4: o 403 do assert_unidade_context (e o 404 do
+                # get_or_404) devem chegar ao cliente — não podem ser
+                # engolidos pelo except Exception genérico abaixo.
+                raise
             except Exception as e:
                 from app.utils.errors import flash_and_log
 
@@ -881,13 +871,15 @@ def editar_tema(id):
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+    # ETAPA B6: o isolamento por unidade vem ANTES da checagem de curso
+    # inativo, para que um tema de curso de outra unidade devolva 403
+    # (e não um 302 com flash que revelaria a existência do curso).
+    # ETAPA B4: sem isenção de ADMIN; o assert abaixo também recusa sessão
+    # sem unidade (antes coberta só pelo cheque de SECRETARIA).
+    assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de editar seus temas.", "warning")
         return redirect(url_for('registros.planejamento'))
-    if current_user.role != UserRole.ADMIN:
-        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
-            abort(403)
-        assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
 
     novo_titulo = request.form.get('titulo', '').strip()
     nova_ordem = request.form.get('ordem')
@@ -927,13 +919,15 @@ def inativar_tema(id):
     tema = db.get_or_404(TemaAula, id)
     unidade_id = get_unidade_id()
     curso = db.get_or_404(Curso, tema.curso_id) if tema.curso_id else None
+    # ETAPA B6: o isolamento por unidade vem ANTES da checagem de curso
+    # inativo, para que um tema de curso de outra unidade devolva 403
+    # (e não um 302 com flash que revelaria a existência do curso).
+    # ETAPA B4: sem isenção de ADMIN; o assert abaixo também recusa sessão
+    # sem unidade (antes coberta só pelo cheque de SECRETARIA).
+    assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de alterar o status de seus temas.", "warning")
         return redirect(url_for('registros.planejamento'))
-    if current_user.role != UserRole.ADMIN:
-        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
-            abort(403)
-        assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     try:
         tema.ativo = not tema.ativo
         db.session.commit()
@@ -956,11 +950,10 @@ def editar_nivel(id):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
-    if current_user.role != UserRole.ADMIN:
-        unidade_id = get_unidade_id()
-        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
-            abort(403)
-        assert_unidade_context(nivel.unidade_id, unidade_id)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis (sem isenção
+    # de ADMIN; sessão sem unidade efetiva é recusada pelo assert).
+    unidade_id = get_unidade_id()
+    assert_unidade_context(nivel.unidade_id, unidade_id)
 
     novo_nome = request.form.get('nome_nivel', '').strip()
     if novo_nome:
@@ -983,11 +976,10 @@ def inativar_nivel(id):
         abort(403)
     from app.models import Nivel
     nivel = db.get_or_404(Nivel, id)
-    if current_user.role != UserRole.ADMIN:
-        unidade_id = get_unidade_id()
-        if current_user.role == UserRole.SECRETARIA and unidade_id is None:
-            abort(403)
-        assert_unidade_context(nivel.unidade_id, unidade_id)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis (sem isenção
+    # de ADMIN; sessão sem unidade efetiva é recusada pelo assert).
+    unidade_id = get_unidade_id()
+    assert_unidade_context(nivel.unidade_id, unidade_id)
     try:
         nivel.ativo = not nivel.ativo
         db.session.commit()
