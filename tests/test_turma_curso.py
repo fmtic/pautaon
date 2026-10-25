@@ -83,6 +83,7 @@ def test_oferta_unica_sem_principal(base):
     oferta = TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     )
     db.session.add(oferta)
     db.session.commit()
@@ -97,12 +98,14 @@ def test_mesmo_curso_nao_pode_repetir_na_mesma_turma(base):
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     ))
     db.session.commit()
 
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     ))
     with pytest.raises(IntegrityError):
         db.session.commit()
@@ -113,9 +116,9 @@ def test_mesmo_curso_em_turmas_diferentes_e_permitido(base):
     """O mesmo curso pode ser ofertado em turmas distintas."""
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
-                   unidade_id=base["unidade_id"], ativo=True),
+                   unidade_id=base["unidade_id"], ativo=True, programa="Teste"),
         TurmaCurso(turma_id=base["turma2"], curso_id=base["curso1"],
-                   unidade_id=base["unidade_id"], ativo=True),
+                   unidade_id=base["unidade_id"], ativo=True, programa="Teste"),
     ])
     db.session.commit()
 
@@ -126,9 +129,11 @@ def test_multiplos_cursos_com_um_exato_principal(base):
     """Dois cursos na mesma turma com exatamente um principal é válido."""
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
-                   principal=True, unidade_id=base["unidade_id"], ativo=True),
+                   principal=True, unidade_id=base["unidade_id"], ativo=True,
+                   programa="Teste"),
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso2"],
-                   principal=False, unidade_id=base["unidade_id"], ativo=True),
+                   principal=False, unidade_id=base["unidade_id"], ativo=True,
+                   programa="Teste"),
     ])
     db.session.commit()
 
@@ -145,12 +150,14 @@ def test_nao_pode_haver_dois_principais_na_mesma_turma(base):
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=True, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     ))
     db.session.commit()
 
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso2"],
         principal=True, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     ))
     with pytest.raises(IntegrityError):
         db.session.commit()
@@ -161,9 +168,11 @@ def test_principal_pode_repetir_em_turmas_diferentes(base):
     """Cada turma tem seu próprio principal; o índice é escopado por turma."""
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
-                   principal=True, unidade_id=base["unidade_id"], ativo=True),
+                   principal=True, unidade_id=base["unidade_id"], ativo=True,
+                   programa="Teste"),
         TurmaCurso(turma_id=base["turma2"], curso_id=base["curso1"],
-                   principal=True, unidade_id=base["unidade_id"], ativo=True),
+                   principal=True, unidade_id=base["unidade_id"], ativo=True,
+                   programa="Teste"),
     ])
     db.session.commit()
 
@@ -175,6 +184,7 @@ def test_inscricao_vinculada_a_oferta(base):
     oferta = TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
+        programa="Teste",
     )
     db.session.add(oferta)
     db.session.flush()

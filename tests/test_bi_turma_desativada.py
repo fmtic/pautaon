@@ -75,10 +75,15 @@ def cenario(app):
     """Turma ativa (2 alunos + extras) e turma desativada (1 aluno).
 
     a1, a2: inscrição ativa apontando para a oferta ativa de turma1.
-    a3:     turma_curso_id NULL em turma2 com 2 ofertas ativas -> NÃO conta.
-    a4:     turma_curso_id NULL em turma1 com exatamente 1 oferta -> conta.
+    a4:     inscrição ativa apontando para a (única) oferta de turma1 -> conta.
     a5:     única inscrição, inativa, na turma desativada (TURMA_DESATIVADA).
-    a6:     duas inscrições ativas na mesma oferta -> contado uma vez.
+    a6:     duas inscrições ativas em duas ofertas da mesma turma -> 1 aluno
+          (distinct) mas 2 linhas (media/total).
+
+    A inscrição a3, que exercitava a exclusão do estado legado
+    `turma_curso_id NULL` em turma com 2+ ofertas, foi removida: o NOT NULL de
+    Inscricao.turma_curso_id (migration c3d4e5f6a7b8) tornou esse estado
+    impossível e o ramo NULL de `cond_inscricao_enturmada` virou código morto.
 
     Retorna IDs (inteiros) para evitar DetachedInstanceError entre contexts.
     """
@@ -96,7 +101,8 @@ def cenario(app):
     )
     curso_x = Curso(nome="Curso X", unidade_id=unidade.id)
     curso_y = Curso(nome="Curso Y", unidade_id=unidade.id)
-    db.session.add_all([periodo, curso_x, curso_y])
+    curso_z = Curso(nome="Curso Z", unidade_id=unidade.id)
+    db.session.add_all([periodo, curso_x, curso_y, curso_z])
     db.session.flush()
 
     turma1 = Turma(
@@ -116,23 +122,29 @@ def cenario(app):
 
     # Ofertas (TurmaCurso): turma1 e turma3 com 1 oferta; turma2 com 2.
     o1 = TurmaCurso(turma_id=turma1.id, curso_id=curso_x.id,
-                    unidade_id=unidade.id, ativo=True, principal=True)
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
     o2 = TurmaCurso(turma_id=turma2.id, curso_id=curso_x.id,
-                    unidade_id=unidade.id, ativo=True, principal=True)
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
     o3 = TurmaCurso(turma_id=turma2.id, curso_id=curso_y.id,
-                    unidade_id=unidade.id, ativo=True, principal=False)
+                    unidade_id=unidade.id, ativo=True, principal=False, programa="Teste")
     o4 = TurmaCurso(turma_id=turma3.id, curso_id=curso_y.id,
-                    unidade_id=unidade.id, ativo=True, principal=True)
-    db.session.add_all([o1, o2, o3, o4])
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
+    # Segunda oferta ativa de turma1 (curso distinto): permite ao aluno a6 ter
+    # duas inscrições ativas sem violar uix_inscricao_ativa_aluno_oferta
+    # (índice parcial por (aluno_id, turma_curso_id)). Serve para provar que
+    # o helper conta LINHAS (media/total) enquanto as métricas distinct contam 1.
+    o1b = TurmaCurso(turma_id=turma1.id, curso_id=curso_z.id,
+                     unidade_id=unidade.id, ativo=True, principal=False, programa="Teste")
+    db.session.add_all([o1, o2, o3, o4, o1b])
     db.session.flush()
 
     alunos = [
         Aluno(nome=f"Aluno {i}", unidade_id=unidade.id, ativo=True)
-        for i in range(1, 7)
+        for i in range(1, 6)
     ]
     db.session.add_all(alunos)
     db.session.flush()
-    a1, a2, a3, a4, a5, a6 = alunos
+    a1, a2, a4, a5, a6 = alunos
 
     def inscricao(aluno, turma, oferta=None, ativo=True, motivo=None):
         registro = Inscricao(
@@ -149,11 +161,10 @@ def cenario(app):
 
     inscricao(a1, turma1, o1)
     inscricao(a2, turma1, o1)
-    inscricao(a3, turma2, None)
-    inscricao(a4, turma1, None)
+    inscricao(a4, turma1, o1)
     inscricao(a5, turma3, o4, ativo=False, motivo="TURMA_DESATIVADA")
     inscricao(a6, turma1, o1)
-    inscricao(a6, turma1, o1)
+    inscricao(a6, turma1, o1b)
 
     # Frequência preservada também na turma desativada (legado).
     db.session.add_all([
@@ -177,12 +188,12 @@ def cenario(app):
     }
 
 
-def test_helper_nulo_ambiguo_e_turma_desativada(cenario):
-    """Prova direta do helper: NULL+1 oferta conta; NULL+2 ofertas e turma
-    desativada não contam; a6 (2 inscrições) é contado pelas 2 linhas."""
+def test_helper_oferta_apontada_e_turma_desativada(cenario):
+    """Prova direta do helper: inscrição ativa com oferta ativa conta; turma
+    desativada não conta; a6 (2 inscrições) é contado pelas 2 linhas."""
     # turma1: a1, a2, a4 e a6 (2 linhas) => 5 inscrições enturmadas.
     assert _count_inscricoes_enturmadas(cenario["turma1_id"]) == 5
-    # turma2: a3 com NULL e 2 ofertas ativas => nenhuma inscrição conta.
+    # turma2: sem inscrições enturmadas => nenhuma conta.
     assert _count_inscricoes_enturmadas(cenario["turma2_id"]) == 0
     # turma3: desativada; inscrição inativa => nenhuma conta.
     assert _count_inscricoes_enturmadas(cenario["turma3_id"]) == 0
@@ -212,8 +223,8 @@ def test_inscricoes_desativadas_e_encerradas_excluem_turma_desativada(cenario):
     # A única inscrição inativa é a da turma desativada: não entra.
     assert inscricoes_desativadas() == 0
     assert inscricoes_encerradas() == 0
-    # As 6 ativas das turmas ativas continuam contando (a6 tem 2 linhas).
-    assert total_inscricoes() == 6
+    # As 5 ativas das turmas ativas continuam contando (a6 tem 2 linhas).
+    assert total_inscricoes() == 5
 
 
 def test_frequencia_por_turma_nao_lista_turma_desativada(cenario):
@@ -231,7 +242,7 @@ def test_alunos_por_turma_e_por_curso_excluem_turma_desativada(cenario):
     por_turma = _valor_por_nome(alunos_por_turma())
     assert "Turma Desativada" not in por_turma
     assert por_turma["Turma Ativa 1"] == 4  # a1, a2, a4, a6 (uma vez)
-    assert "Turma Ativa 2" not in por_turma  # a3 não conta (NULL ambíguo)
+    assert "Turma Ativa 2" not in por_turma  # sem inscrições enturmadas
     # Curso Y só tinha enturmados na turma desativada: não aparece.
     assert "Curso Y" not in _valor_por_nome(alunos_por_curso())
     # Curso X: a1, a2, a4, a6 (uma vez); a3 não contribui.
@@ -249,7 +260,7 @@ def test_status_nao_infla_desenturmado_com_turma_desativada(cenario):
 
 
 def test_regressao_sem_turma_desativada(app):
-    """Sem turma desativada (e sem ofertas), contagem de turmas/inscrições não muda."""
+    """Sem turma desativada, contagem de turmas/inscrições não muda (1 cada)."""
     hoje = date.today()
     unidade = Unidade(nome="Unidade Só Ativas", ativo=True)
     db.session.add(unidade)
@@ -263,12 +274,19 @@ def test_regressao_sem_turma_desativada(app):
     turma = Turma(nome="Única", ativo=True, unidade_id=unidade.id,
                   periodo_letivo_id=periodo.id)
     db.session.add(turma)
+    curso = Curso(nome="Curso Única", unidade_id=unidade.id, ativo=True)
+    db.session.add(curso)
     db.session.flush()
+    oferta = TurmaCurso(
+        turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+        ativo=True, principal=True, programa="Teste",
+    )
+    db.session.add(oferta)
     aluno = Aluno(nome="A", unidade_id=unidade.id, ativo=True)
     db.session.add(aluno)
     db.session.flush()
     db.session.add(Inscricao(
-        aluno_id=aluno.id, turma_id=turma.id,
+        aluno_id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id,
         data_inicio=hoje - timedelta(days=2), ativo=True,
     ))
     db.session.commit()

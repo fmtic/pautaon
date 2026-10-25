@@ -3,7 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from app import create_app, db
-from app.models import Aluno, Inscricao, PeriodoLetivo, Turma, Unidade
+from app.models import Aluno, Curso, Inscricao, PeriodoLetivo, Turma, TurmaCurso, Unidade
 from app.models.enums import StatusAluno
 from app.services.aluno_status import (
     status_aluno,
@@ -36,6 +36,13 @@ def _world():
     db.session.add(unidade)
     db.session.flush()
 
+    # Uma única oferta por turma basta para satisfazer o NOT NULL de
+    # Inscricao.turma_curso_id (c3d4e5f6a7b8); a classificação de status usa
+    # datas/`ativo` da inscrição, não a oferta — a finalidade é preservada.
+    curso = Curso(nome="Curso base", unidade_id=unidade.id, ativo=True)
+    db.session.add(curso)
+    db.session.flush()
+
     periodos = []
     for nome, inicio in (
         ("P-2", date(2025, 1, 1)),
@@ -53,6 +60,12 @@ def _world():
         db.session.flush()
         turma = Turma(nome=f"Turma {nome}", unidade_id=unidade.id, periodo_letivo_id=periodo.id)
         db.session.add(turma)
+        db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+            ativo=True, principal=True, programa="Teste",
+        )
+        db.session.add(oferta)
         db.session.flush()
         periodos.append((periodo, turma))
 
@@ -73,10 +86,17 @@ def _aluno(unidade, nome, ativo=True):
     return aluno
 
 
-def _inscricao(aluno, turma, inicio, ativo=True, desativacao=None):
+def _inscricao(aluno, turma, inicio, ativo=True, desativacao=None, oferta=None):
+    if oferta is None:
+        oferta = (
+            TurmaCurso.query.filter_by(turma_id=turma.id, ativo=True)
+            .order_by(TurmaCurso.id)
+            .first()
+        )
     inscricao = Inscricao(
         aluno_id=aluno.id,
         turma_id=turma.id,
+        turma_curso_id=oferta.id,
         data_inicio=inicio,
         ativo=ativo,
         data_desativacao=desativacao,
@@ -165,6 +185,14 @@ def test_desenturmado_transferencia_no_periodo_e_inativo(app):
         )
         db.session.add(outra_turma)
         db.session.flush()
+        curso_alt = Curso(nome="C alt", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso_alt)
+        db.session.flush()
+        db.session.add(TurmaCurso(
+            turma_id=outra_turma.id, curso_id=curso_alt.id,
+            unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+        ))
+        db.session.flush()
         _inscricao(transferido, p[1], date(2026, 1, 2), ativo=False)
         _inscricao(transferido, outra_turma, date(2026, 1, 5), ativo=True)
         _inscricao(inativo, p[1], date(2026, 1, 2))
@@ -194,11 +222,29 @@ def test_periodo_inicial_e_total_enturmado_batem_com_tres_status(app):
         turma = Turma(nome="Primeira turma", unidade_id=unidade.id, periodo_letivo_id=periodo.id)
         db.session.add(turma)
         db.session.flush()
+        curso = Curso(nome="C", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        curso2 = Curso(nome="C2", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso2)
+        db.session.flush()
+        db.session.add(TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id,
+            unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+        ))
+        oferta2 = TurmaCurso(
+            turma_id=turma.id, curso_id=curso2.id,
+            unidade_id=unidade.id, ativo=True, principal=False, programa="Teste",
+        )
+        db.session.add(oferta2)
+        db.session.flush()
 
         alunos = [_aluno(unidade, f"Aluno {idx}") for idx in range(3)]
         _inscricao(alunos[0], turma, date(2026, 1, 1))
         _inscricao(alunos[1], turma, date(2026, 1, 2))
-        _inscricao(alunos[1], turma, date(2026, 1, 3))
+        # 2ª linha do mesmo aluno em OUTRA oferta: duas ativas na MESMA oferta
+        # violariam uix_inscricao_ativa_aluno_oferta; em ofertas distintas é
+        # permitido e o aluno segue contado uma vez (total de enturmados = 2).
+        _inscricao(alunos[1], turma, date(2026, 1, 3), oferta=oferta2)
         _inscricao(alunos[2], turma, date(2026, 1, 4), ativo=False)
 
         resultado = status_alunos(periodo.id, date(2027, 1, 5))

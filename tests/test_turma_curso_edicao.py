@@ -6,7 +6,8 @@ Cobertura (só servidor, rota /turma/editar/<id>):
     - 1 oferta ativa: trocar curso_id é recusado; nada muda (turma nem oferta).
     - 1 oferta com lançamentos: mudar horário exige confirmação; confirmada,
       limpa os lançamentos e a oferta acompanha.
-    - 2+ ofertas: campos de oferta enviados são IGNORADOS; só nome/programa gravam.
+    - 2+ ofertas: campos de oferta enviados são IGNORADOS; só o nome grava na
+      turma — programa é projeção da oferta principal ativa (MER §8.10).
     - 2+ ofertas: POST forjado com campos de oferta é descartado no servidor.
     - turma sem oferta: edição igual a hoje (sem espelhamento).
     - falha na validação não grava nem a turma nem a oferta (transação única).
@@ -104,7 +105,7 @@ def _seed(*, ofertas=0, curso_turma=True, com_lancamentos=False):
                 unidade_id=unidade.id, ativo=True, principal=(i == 0),
                 professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
                 hora_inicio=time(9, 0), hora_fim=time(10, 0),
-                data_inicio=DATA_INI, data_fim=DATA_FIM,
+                data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
             )
             db.session.add(o)
             db.session.flush()
@@ -232,7 +233,7 @@ def test_edicao_uma_oferta_com_lancamentos_exige_confirmacao():
         assert Frequencia.query.filter_by(turma_id=ids["turma"]).count() == 0
 
 
-# --- 2+ ofertas: ignora campos de oferta; só nome/programa gravam -----------
+# --- 2+ ofertas: ignora campos de oferta; nome grava; programa é projeção ---
 def test_edicao_duas_ofertas_ignora_campos_de_oferta():
     app, ids = _seed(ofertas=2)
     r = _post_edit(
@@ -244,9 +245,11 @@ def test_edicao_duas_ofertas_ignora_campos_de_oferta():
     assert r.status_code == 302
     with app.app_context():
         turma = db.session.get(Turma, ids["turma"])
-        # Nome/programa gravados:
+        # Nome gravado. Programa: Turma.programa é projeção da oferta
+        # principal ativa (MER §8.10) — o "Esporte" vindo do formulário é
+        # descartado e a semente (oferta principal "Teste") é o que reprojeta.
         assert turma.nome == "T edit NOVA"
-        assert turma.programa == "Esporte"
+        assert turma.programa == "Teste"
         # Campos de oferta IGNORADOS na turma:
         assert turma.curso_id == ids["cA"]
         assert turma.professor_id == ids["p1"]
@@ -308,7 +311,12 @@ def test_edicao_falha_validacao_rollback_turma_e_oferta(monkeypatch):
     def _boom(*a, **k):
         raise ValueError("conflito artificial")
 
-    monkeypatch.setattr(turmas_mod, "_validar_horario_concomitante", _boom)
+    # O símbolo chamava-se `_validar_horario_concomitante`; desde a etapa que
+    # tornou `programa` obrigatório na oferta passou a `_conflitos_horario_
+    # concomitante` (retorna avisos em vez de levantar). O que o teste exercita
+    # é o caminho de rollback da rota, então continuar explodindo nesse ponto
+    # preserva a finalidade: nenhuma das duas gravações pode sobreviver.
+    monkeypatch.setattr(turmas_mod, "_conflitos_horario_concomitante", _boom)
 
     r = _post_edit(
         app, ids, turma="T edit POS-ROLLBACK",
@@ -398,9 +406,9 @@ def test_g3_oferta_desativada_e_ativa_hidden_e_ativa_e_nome_aceito():
         db.session.flush()
         db.session.add_all([
             TurmaCurso(turma_id=turma.id, curso_id=cA.id, unidade_id=unidade.id,
-                       ativo=False, principal=False),                 # A desativada
+                       ativo=False, principal=False, programa="Teste"),                 # A desativada
             TurmaCurso(turma_id=turma.id, curso_id=cB.id, unidade_id=unidade.id,
-                       ativo=True, principal=True),                    # B ativa
+                       ativo=True, principal=True, programa="Teste"),                    # B ativa
         ])
         db.session.commit()
         ids = {"resp": resp.id, "turma": turma.id, "cA": cA.id, "cB": cB.id,

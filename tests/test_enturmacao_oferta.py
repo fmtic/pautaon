@@ -7,13 +7,16 @@ Regras do responsável:
       inscrições ativas, uma por oferta). Não pode estar duas vezes na
       mesma oferta.
 
-Cobertura (roteiro do passo 6):
+Cobertura (roteiro do passo 6, pós c3d4e5f6a7b8):
     1 oferta grava a oferta sem escolha; 2 ofertas sem escolha recusa; com
     escolha grava; oferta de outra turma recusada; oferta desativada recusada;
     0 ofertas recusa; mesmo aluno nas duas ofertas permitido; duplicata na
-    mesma oferta recusada; adicionar_oferta vincula as NULL ativas à oferta
-    existente; aluno enturmado aparece na pauta da oferta correta
-    (_alunos_da_oferta); usuário de outra unidade recusado.
+    mesma oferta recusada (rota mostra flash, sem 500) e bloqueada pelo índice
+    uix_inscricao_ativa_aluno_oferta; aluno enturmado aparece na pauta da
+    oferta correta (_alunos_da_oferta); usuário de outra unidade recusado.
+
+    Os testes de adoção/vínculo de inscrição NULL (Etapa M1.1) foram removidos:
+    o NOT NULL de Inscricao.turma_curso_id extinguiu esse estado.
 """
 
 from datetime import date, time
@@ -30,7 +33,7 @@ from app.models import (
     Unidade,
     User,
 )
-from app.services.turma_curso import _alunos_da_oferta, adicionar_oferta
+from app.services.turma_curso import _alunos_da_oferta
 from config import Config
 
 DATA_INI = date(2026, 3, 2)
@@ -116,7 +119,7 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
             ativo=True, principal=(k == 0), professor_id=i["p1"],
             turno="Manhã", dias_semana="Segunda",
             hora_inicio=time(9, 0), hora_fim=time(10, 0),
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add(o)
         db.session.flush()
@@ -128,7 +131,7 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
             turma_id=turma.id, curso_id=cursos[(ativo_ofertas + k) % 3],
             unidade_id=i["unidade"], ativo=False, principal=False,
             professor_id=i["p1"],
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add(o)
         db.session.flush()
@@ -239,7 +242,7 @@ def test_oferta_de_outra_turma_recusada(app):
         db.session.flush()
         oferta_outra = TurmaCurso(
             turma_id=outra.id, curso_id=i["cA"], unidade_id=i["unidade"],
-            ativo=True, principal=True,
+            ativo=True, principal=True, programa="Teste",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(oferta_outra)
@@ -302,7 +305,7 @@ def test_mesmo_aluno_em_duas_ofertas_permitido(app):
         assert {x.turma_curso_id for x in inscs} == {o1, o2}
 
 
-# --- duplicata na MESMA oferta: recusada -------------------------------------
+# --- duplicata na MESMA oferta: rota recusa com flash, sem 500 ---------------
 def test_duplicata_mesma_oferta_recusada(app):
     with app.app_context():
         i = _base()
@@ -312,52 +315,60 @@ def test_duplicata_mesma_oferta_recusada(app):
         turma_id = t["turma"]
 
     client = _loga(app, i["resp"])
-    client.post(
+    r1 = client.post(
         f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
     )
-    client.post(
+    r2 = client.post(
         f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
     )
+    # A rota redireciona (flash) em vez de estourar 500 ao reenturmar.
+    assert r1.status_code == 302
+    assert r2.status_code == 302
     with app.app_context():
         assert len(_inscricoes_ativas(turma_id)) == 1
 
 
-# --- adicionar_oferta vincula as NULL ativas à oferta existente --------------
-def test_adicionar_oferta_vincula_null_ativas(app):
+# --- duplicata ativa na mesma oferta: recusada pelo índice único -------------
+def test_indice_unicidade_bloqueia_duplicata_ativa_mesma_oferta(app):
+    """uix_inscricao_ativa_aluno_oferta: duas ativas do mesmo aluno na mesma
+    oferta são recusadas pelo índice único parcial (rede de segurança do DB)."""
+    from sqlalchemy.exc import IntegrityError
+
+    from _helpers import nova_inscricao
+
     with app.app_context():
         i = _base()
-        t = _turma(i, curso_id=None, ativo_ofertas=1)  # 1 oferta existente
-        turma = db.session.get(Turma, t["turma"])
-        oferta_existente = t["ativas"][0]
+        t = _turma(i, curso_id=i["cA"], ativo_ofertas=1)
         aluno = _aluno(i)
-        # inscrição ATIVA com turma_curso_id NULL (legado).
-        db.session.add(Inscricao(
-            aluno_id=aluno, turma_id=turma.id, turma_curso_id=None,
-            ativo=True, data_inicio=DATA_INI,
-        ))
-        # inscrição INATIVA NULL não deve mudar.
-        outro = _aluno(i, "Inativo")
-        db.session.add(Inscricao(
-            aluno_id=outro, turma_id=turma.id, turma_curso_id=None,
-            ativo=False, data_inicio=DATA_INI,
-        ))
         db.session.commit()
+        turma_id, oferta_id = t["turma"], t["ativas"][0]
 
-        nova = adicionar_oferta(
-            turma, curso_id=i["cB"], professor_id=i["p2"], turno="Tarde",
-            dias_semana="Terça", hora_inicio=time(14, 0), hora_fim=time(15, 0),
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
-        )
+        nova_inscricao(aluno, turma_id, oferta_id)
         db.session.commit()
+        with pytest.raises(IntegrityError):
+            nova_inscricao(aluno, turma_id, oferta_id)
+            db.session.commit()
+        db.session.rollback()
+        assert len(_inscricoes_ativas(turma_id)) == 1
 
-        # NULL ativa foi vinculada à ÚNICA oferta pré-existente (não à nova).
-        insc = Inscricao.query.filter_by(aluno_id=aluno, ativo=True).first()
-        assert insc.turma_curso_id == oferta_existente
-        # Inativa permaneceu NULL.
-        insc_inat = Inscricao.query.filter_by(aluno_id=outro, ativo=False).first()
-        assert insc_inat.turma_curso_id is None
-        assert getattr(nova, "inscricoes_vinculadas", 0) == 1
-        assert nova.id != oferta_existente
+
+# --- aluno em DUAS ofertas da mesma turma: permitido (índice por oferta) -----
+def test_duas_ofertas_diferentes_mesma_turma_nao_violam_indice(app):
+    """O índice é (aluno_id, turma_curso_id): o mesmo aluno pode ter duas
+    ativas em ofertas distintas da mesma turma sem violá-lo."""
+    from _helpers import nova_inscricao
+
+    with app.app_context():
+        i = _base()
+        t = _turma(i, curso_id=None, ativo_ofertas=2)
+        aluno = _aluno(i)
+        db.session.commit()
+        turma_id, o1, o2 = t["turma"], t["ativas"][0], t["ativas"][1]
+
+        nova_inscricao(aluno, turma_id, o1)
+        nova_inscricao(aluno, turma_id, o2)
+        db.session.commit()
+        assert len(_inscricoes_ativas(turma_id)) == 2
 
 
 # --- aluno enturmado aparece na pauta da oferta correta ----------------------
@@ -375,8 +386,8 @@ def test_pauta_por_oferta_correta(app):
         data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o1)},
     )
     with app.app_context():
-        na_o1 = _alunos_da_oferta(turma_id, o1, incluir_inscricoes_null=False)
-        na_o2 = _alunos_da_oferta(turma_id, o2, incluir_inscricoes_null=False)
+        na_o1 = _alunos_da_oferta(turma_id, o1)
+        na_o2 = _alunos_da_oferta(turma_id, o2)
         assert [a.id for a in na_o1] == [aluno]
         assert na_o2 == []
 
@@ -401,115 +412,17 @@ def test_usuario_de_outra_unidade_recusado(app):
         assert _inscricoes_ativas(turma_id) == []
 
 
-# --- Etapa M1.1: adoção de inscrição NULL ativa -----------------------------
-def _null_ativa(aluno_id, turma_id, *, ativo=True, data_inicio=DATA_INI):
-    """Cria uma Inscricao sem curso (turma_curso_id NULL) e retorna seu id."""
-    insc = Inscricao(
-        aluno_id=aluno_id, turma_id=turma_id, turma_curso_id=None,
-        ativo=ativo, data_inicio=data_inicio,
-    )
-    db.session.add(insc)
-    db.session.flush()
-    return insc.id
+# --- Etapa M1.1 removida: adoção/vínculo de inscrição NULL ------------------
+# O NOT NULL de Inscricao.turma_curso_id (c3d4e5f6a7b8) extinguiu o estado
+# NULL; _null_ativa, test_adota_null_ativa_com_uma_oferta,
+# test_adota_null_ativa_com_duas_ofertas, test_nao_adota_null_inativa e
+# test_adota_apenas_menor_id_entre_duas_null foram removidos. O leitor
+# defensivo incluir_inscricoes_null tornou-se código morto e foi removido
+# na ETAPA B6 (parâmetro de _alunos_da_oferta e todos os call-sites),
+# juntamente com o ramo NULL de cond_inscricao_enturmada.
 
-
-# NULL ativa + 1 oferta: adota a linha (1 só, data_inicio preservado)
-def test_adota_null_ativa_com_uma_oferta(app):
-    with app.app_context():
-        i = _base()
-        t = _turma(i, curso_id=i["cA"], ativo_ofertas=1)
-        aluno = _aluno(i)
-        _null_ativa(aluno, t["turma"])
-        db.session.commit()
-        turma_id, oferta_id = t["turma"], t["ativas"][0]
-
-    client = _loga(app, i["resp"])
-    r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
-    )
-    assert r.status_code == 302
-    with app.app_context():
-        inscs = _inscricoes_ativas(turma_id)
-        assert len(inscs) == 1  # adotada, não criou segunda linha
-        assert inscs[0].turma_curso_id == oferta_id
-        assert inscs[0].data_inicio == DATA_INI  # preservado
-
-
-# NULL ativa + 2+ ofertas: adota na oferta escolhida
-def test_adota_null_ativa_com_duas_ofertas(app):
-    with app.app_context():
-        i = _base()
-        t = _turma(i, curso_id=None, ativo_ofertas=2)
-        aluno = _aluno(i)
-        _null_ativa(aluno, t["turma"])
-        db.session.commit()
-        turma_id, seg = t["turma"], t["ativas"][1]
-
-    client = _loga(app, i["resp"])
-    r = client.post(
-        f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(seg)},
-    )
-    assert r.status_code == 302
-    with app.app_context():
-        inscs = _inscricoes_ativas(turma_id)
-        assert len(inscs) == 1
-        assert inscs[0].turma_curso_id == seg
-        assert inscs[0].data_inicio == DATA_INI
-
-
-# NULL INATIVA nunca é adotada (cria linha nova; inativa fica intacta)
-def test_nao_adota_null_inativa(app):
-    with app.app_context():
-        i = _base()
-        t = _turma(i, curso_id=i["cA"], ativo_ofertas=1)
-        aluno = _aluno(i)
-        _null_ativa(aluno, t["turma"], ativo=False)
-        db.session.commit()
-        turma_id, oferta_id = t["turma"], t["ativas"][0]
-
-    client = _loga(app, i["resp"])
-    r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
-    )
-    assert r.status_code == 302
-    with app.app_context():
-        ativas = _inscricoes_ativas(turma_id)
-        assert len(ativas) == 1
-        assert ativas[0].turma_curso_id == oferta_id
-        # a inativa permaneceu NULL e inativa
-        inat = Inscricao.query.filter_by(aluno_id=aluno, ativo=False).all()
-        assert len(inat) == 1
-        assert inat[0].turma_curso_id is None
-
-
-# 2 NULL ativas: adota só a de menor id; a outra permanece NULL
-def test_adota_apenas_menor_id_entre_duas_null(app):
-    with app.app_context():
-        i = _base()
-        t = _turma(i, curso_id=i["cA"], ativo_ofertas=1)
-        aluno = _aluno(i)
-        id1 = _null_ativa(aluno, t["turma"])
-        id2 = _null_ativa(aluno, t["turma"])
-        menor_id = min(id1, id2)
-        db.session.commit()
-        turma_id, oferta_id = t["turma"], t["ativas"][0]
-
-    client = _loga(app, i["resp"])
-    r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
-    )
-    assert r.status_code == 302
-    with app.app_context():
-        assert db.session.get(Inscricao, menor_id).turma_curso_id == oferta_id
-        restantes_null = Inscricao.query.filter_by(
-            aluno_id=aluno, turma_id=turma_id, ativo=True
-        ).filter(Inscricao.turma_curso_id.is_(None)).all()
-        assert len(restantes_null) == 1
-        assert restantes_null[0].id != menor_id
-
-
-# Aluno sem NULL segue criando normalmente (data_inicio = hoje)
+# Criação normal na oferta (data_inicio = hoje). O nome "sem_null" é
+# histórico: referia-se à ausência do estado NULL, extinto pelo NOT NULL.
 def test_sem_null_cria_normalmente(app):
     with app.app_context():
         i = _base()
@@ -528,24 +441,3 @@ def test_sem_null_cria_normalmente(app):
         assert len(inscs) == 1
         assert inscs[0].turma_curso_id == oferta_id
         assert inscs[0].data_inicio == date.today()
-
-
-# Regressão: após adotar, nova tentativa na mesma oferta é barrada (1 linha)
-def test_duplicata_recusada_apos_adocao(app):
-    with app.app_context():
-        i = _base()
-        t = _turma(i, curso_id=i["cA"], ativo_ofertas=1)
-        aluno = _aluno(i)
-        _null_ativa(aluno, t["turma"])
-        db.session.commit()
-        turma_id = t["turma"]
-
-    client = _loga(app, i["resp"])
-    client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
-    )  # adota a NULL
-    client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
-    )  # agora há ativa na oferta → duplicata barrada
-    with app.app_context():
-        assert len(_inscricoes_ativas(turma_id)) == 1

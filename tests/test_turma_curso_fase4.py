@@ -1,12 +1,11 @@
 """
 Testes da Onda 4 — Fase 4 (D2 + D3a).
 
-D2 (pauta da oferta e contagem de inscrições NULL):
-    - Aluno com DUAS inscrições ativas na turma (uma NULL e outra da oferta
-      única ativa) aparece UMA única vez na pauta (EXISTS, não JOIN).
-    - Modo estrito (2+ ofertas, sem fallback NULL) também não duplica.
-    - Contagem do aviso "N aluno(s) sem curso definido na turma" conta
-      aluno_id distinto.
+D2 (pauta da oferta — leitor estrito):
+    - As inscrições agora exigem oferta (c3d4e5f6a7b8); o estado legado
+      "turma_curso_id NULL" e sua deduplicação/contagem deixaram de existir.
+      Os testes que o exercitavam foram removidos; permanece o leitor estrito
+      da pauta da oferta.
 
 D3a (leitores de pauta impressa / frequência lançada):
     - Pauta impressa com oferta única continua igual (sem exigir turma_curso).
@@ -26,13 +25,14 @@ from app.models import (
     Curso,
     Frequencia,
     Inscricao,
+    PeriodoLetivo,
     Turma,
     TurmaCurso,
     Unidade,
     User,
 )
 from app.models.enums import ConceitoFrequencia
-from app.registros.core import _alunos_da_oferta, _contagem_inscricoes_sem_curso
+from app.registros.core import _alunos_da_oferta
 from app.utils.frequencia import frequencias_lancadas
 from config import Config
 
@@ -60,7 +60,11 @@ def app():
 
 @pytest.fixture
 def base(app):
-    """Turma com oferta única ativa e aluno com 2 inscrições ativas (NULL + oferta)."""
+    """Turma com oferta única ativa e aluno com inscrição vinculada à oferta.
+
+    A segunda inscrição legada (turma_curso_id NULL) foi removida: o NOT NULL
+    de Inscricao.turma_curso_id (migration c3d4e5f6a7b8) extinguiu esse estado.
+    """
     unidade = Unidade(nome="Unidade F4 D2", ativo=True)
     db.session.add(unidade)
     db.session.flush()
@@ -78,44 +82,29 @@ def base(app):
         unidade_id=unidade.id,
         ativo=True,
         principal=True,
+        programa="Teste",
     )
     db.session.add(oferta)
 
-    aluno = Aluno(nome="Aluno Dupla Inscrição", unidade_id=unidade.id, ativo=True)
+    aluno = Aluno(nome="Aluno da Oferta", unidade_id=unidade.id, ativo=True)
     db.session.add(aluno)
     db.session.flush()
 
-    db.session.add_all([
-        # Inscrição legada sem curso (turma_curso_id NULL)
-        Inscricao(aluno_id=aluno.id, turma_id=turma.id, turma_curso_id=None, ativo=True),
-        # Inscrição vinculada à oferta única ativa
+    db.session.add(
         Inscricao(aluno_id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id, ativo=True),
-    ])
+    )
     db.session.commit()
 
     return {"unidade": unidade, "curso": curso, "turma": turma,
             "oferta": oferta, "aluno": aluno}
 
 
-def test_aluno_com_duas_inscricoes_aparece_uma_vez_na_pauta(base):
-    """Fallback NULL ativo (oferta única): EXISTS não duplica o aluno."""
+def test_aluno_da_oferta_aparece_no_modo_estrito(base):
+    """Leitor estrito da pauta: a inscrição da oferta única aparece 1 vez."""
     pauta = _alunos_da_oferta(
-        base["turma"].id, base["oferta"].id, incluir_inscricoes_null=True,
+        base["turma"].id, base["oferta"].id,
     )
     assert [a.id for a in pauta] == [base["aluno"].id]
-
-
-def test_aluno_com_duas_inscricoes_aparece_uma_vez_no_modo_estrito(base):
-    """Sem fallback (regra 2+ ofertas): só a inscrição da oferta, 1 linha."""
-    pauta = _alunos_da_oferta(
-        base["turma"].id, base["oferta"].id, incluir_inscricoes_null=False,
-    )
-    assert [a.id for a in pauta] == [base["aluno"].id]
-
-
-def test_contagem_sem_curso_conta_aluno_uma_vez(base):
-    """Aluno com 1 inscrição NULL entre as 2 ativas → aviso conta 1."""
-    assert _contagem_inscricoes_sem_curso(base["turma"].id) == 1
 
 
 # =============================================================================
@@ -166,7 +155,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
             db.session.flush()
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id,
-                unidade_id=unidade.id, ativo=True,
+                unidade_id=unidade.id, ativo=True, programa="Teste",
             )
             db.session.add(oferta)
             aluno = Aluno(nome=nome_aluno, unidade_id=unidade.id, ativo=True)
@@ -204,7 +193,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
             db.session.flush()
             oo = TurmaCurso(
                 turma_id=outra.id, curso_id=oc.id,
-                unidade_id=unidade.id, ativo=True,
+                unidade_id=unidade.id, ativo=True, programa="Teste",
             )
             db.session.add(oo)
             info["outra_oferta_id"] = oo.id
@@ -322,12 +311,14 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
     # Oferta A já existente (principal), sem dias/hora para não conflitar.
     db.session.add(TurmaCurso(
         turma_id=turma.id, curso_id=curso_a.id, unidade_id=unidade.id,
-        ativo=True, principal=True,
+        ativo=True, principal=True, programa="Teste",
     ))
     db.session.commit()
 
     # Adiciona a 2ª oferta (B) sem data_inicio: turma encerrada → não usa hoje.
-    oferta = adicionar_oferta(turma, curso_id=curso_b.id, principal=False)
+    oferta = adicionar_oferta(
+        turma, curso_id=curso_b.id, principal=False, programa="Teste",
+    )
 
     assert getattr(oferta, "inicio_ajustado_para_hoje", False) is False
     # Mantém a herança da turma (data_inicio da turma), não 'hoje'.
@@ -374,6 +365,7 @@ def _seed_servico(*, ofertas):
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=(i == 0), dias_semana=cfg.get("dias"),
             data_inicio=cfg.get("ini"), data_fim=cfg.get("fim"),
+            programa="Teste",
         )
         db.session.add(oferta)
         db.session.flush()
@@ -430,7 +422,7 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
                 ativo=True, principal=(i == 0), dias_semana=dia,
-                data_inicio=data, data_fim=data,
+                data_inicio=data, data_fim=data, programa="Teste",
             )
             db.session.add(oferta)
             db.session.flush()
@@ -655,51 +647,6 @@ def test_post_ignora_aluno_fora_da_pauta_da_oferta():
         assert Frequencia.query.filter_by(turma_curso_id=oa, aluno_id=b).count() == 0
 
 
-# --- h) inscrição NULL: entra com 1 oferta, fica fora com 2+ ---------------
-def test_inscricao_null_entra_com_1_oferta_e_fica_fora_com_2(app):
-    unidade = Unidade(nome="U null", ativo=True)
-    db.session.add(unidade)
-    db.session.flush()
-    turma = Turma(nome="T null", unidade_id=unidade.id, ativo=True, curso_id=None)
-    db.session.add(turma)
-    db.session.flush()
-    curso_a = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
-    db.session.add(curso_a)
-    db.session.flush()
-    oa = TurmaCurso(
-        turma_id=turma.id, curso_id=curso_a.id, unidade_id=unidade.id,
-        ativo=True, principal=True,
-    )
-    db.session.add(oa)
-    db.session.flush()
-
-    aluno_curso = Aluno(nome="Com Curso", unidade_id=unidade.id, ativo=True)
-    aluno_null = Aluno(nome="Sem Curso", unidade_id=unidade.id, ativo=True)
-    db.session.add_all([aluno_curso, aluno_null])
-    db.session.flush()
-    db.session.add_all([
-        Inscricao(aluno_id=aluno_curso.id, turma_id=turma.id, turma_curso_id=oa.id, ativo=True),
-        Inscricao(aluno_id=aluno_null.id, turma_id=turma.id, turma_curso_id=None, ativo=True),
-    ])
-    db.session.commit()
-
-    # Com 1 oferta ativa (fallback NULL ligado): o aluno sem curso entra.
-    pauta_1 = _alunos_da_oferta(turma.id, oa.id, incluir_inscricoes_null=True)
-    assert {a.id for a in pauta_1} == {aluno_curso.id, aluno_null.id}
-
-    # Surge a 2ª oferta → modo estrito (NULL fora de toda pauta).
-    curso_b = Curso(nome="Judô", unidade_id=unidade.id, ativo=True)
-    db.session.add(curso_b)
-    db.session.flush()
-    db.session.add(TurmaCurso(
-        turma_id=turma.id, curso_id=curso_b.id, unidade_id=unidade.id, ativo=True,
-    ))
-    db.session.commit()
-
-    pauta_2 = _alunos_da_oferta(turma.id, oa.id, incluir_inscricoes_null=False)
-    assert {a.id for a in pauta_2} == {aluno_curso.id}
-
-
 # =============================================================================
 # ETAPA F — oferta automática ao criar turma (criar_oferta_inicial_da_turma)
 # =============================================================================
@@ -723,8 +670,17 @@ def _mk_app_criacao():
         db.session.add(resp)
         curso = Curso(nome="Natação F", unidade_id=unidade.id, ativo=True)
         db.session.add(curso)
+        periodo = PeriodoLetivo(
+            nome="P F", data_inicio=DATA_ROTA - timedelta(days=5),
+            data_fim=DATA_ROTA + timedelta(days=5), unidade_id=unidade.id,
+            ativo=True,
+        )
+        db.session.add(periodo)
         db.session.commit()
-        ids = {"resp": resp.id, "unidade": unidade.id, "curso": curso.id}
+        ids = {
+            "resp": resp.id, "unidade": unidade.id, "curso": curso.id,
+            "periodo": periodo.id,
+        }
     return app, ids
 
 
@@ -734,6 +690,8 @@ def _post_nova_turma(app, ids, *, nome, curso_id=None, dias="Segunda", data=DATA
     client = _loga(app, ids["resp"])
     form = {
         "turma": nome,
+        "periodo_letivo_id": ids["periodo"],
+        "programa": "Teste",
         "dias_semana": dias,
         "datas_personalizadas": "1",
         "data_inicio": data.isoformat(),
@@ -759,7 +717,7 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
         turno="Manhã", dias_semana="Segunda, Quarta",
         hora_inicio=time(9, 0), hora_fim=time(10, 30),
         data_inicio=date(2026, 3, 2), data_fim=date(2026, 12, 15),
-        centro_custo="CC-42",
+        centro_custo="CC-42", programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()
@@ -813,6 +771,7 @@ def test_criar_oferta_inicial_idempotente_nao_duplica(app):
     db.session.flush()
     turma = Turma(
         nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()

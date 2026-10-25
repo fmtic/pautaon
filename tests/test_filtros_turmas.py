@@ -1,6 +1,6 @@
 """Testes dos filtros da listagem de turmas."""
 
-from datetime import time
+from datetime import date, time
 from types import SimpleNamespace
 
 import pytest
@@ -8,8 +8,9 @@ from sqlalchemy import select
 
 from app import create_app
 from app.database import db
-from app.models import Turma, Unidade, User
+from app.models import PeriodoLetivo, Turma, Unidade, User
 from app.registros.turmas import aplicar_filtros_turmas, pos_filtrar_turmas
+from app.utils.timezone import get_local_now
 from config import Config
 
 
@@ -41,6 +42,18 @@ def _nomes(stmt):
     return {t.nome for t in db.session.execute(stmt).scalars().all()}
 
 
+def _linha(body, turma_id):
+    """True se a turma aparece como LINHA da tabela de resultados.
+
+    Os <select> de "Nome da Turma" e "Professor" listam todas as turmas
+    ativas da unidade independentemente do filtro aplicado (MER.md, Etapa
+    K2), então ``"Natação Tarde" in body`` seria falso positivo para "a
+    turma foi filtrada". O marcador confiável da linha é o link de ação da
+    turma (``href="/turma/<id>"``, gerado por ``registros.ver_turma``).
+    """
+    return f'href="/turma/{turma_id}"' in body
+
+
 def _seed_turmas(app):
     with app.test_request_context():
         return _criar_turmas()
@@ -63,11 +76,27 @@ def _criar_turmas():
     db.session.add_all([unidade, prof_ana, prof_bruno])
     db.session.flush()
 
+    # A listagem abre filtrada pelo ano corrente (MER §8.10 — navegação por
+    # período), e o filtro de ano exige vínculo com um período da unidade.
+    # Sem período vigente na semente, nenhuma turma apareceria na tela e o
+    # filtro de nome não poderia ser medido pelas linhas da tabela.
+    ano = get_local_now().year
+    periodo = PeriodoLetivo(
+        nome="Corrente",
+        data_inicio=date(ano, 1, 15),
+        data_fim=date(ano, 12, 15),
+        unidade_id=unidade.id,
+        ativo=True,
+    )
+    db.session.add(periodo)
+    db.session.flush()
+
     turmas = [
         Turma(
             nome="Informática Manhã",
             ativo=True,
             unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
             professor_id=prof_ana.id,
             turno="Manhã",
             programa="Profissionalizante",
@@ -79,6 +108,7 @@ def _criar_turmas():
             nome="Natação Tarde",
             ativo=True,
             unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
             professor_id=prof_bruno.id,
             turno="Tarde",
             programa="Esporte",
@@ -90,6 +120,7 @@ def _criar_turmas():
             nome="Horta Noite",
             ativo=True,
             unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
             professor_id=None,
             turno="Noite",
             programa="Meio Ambiente",
@@ -231,9 +262,87 @@ class TestPosFiltrarTurmas:
         assert [t.nome for t in filtradas] == ["A"]
 
 
+def _seed_unidade_periodo_passado(app):
+    """Unidade com período somente no ano ANTERIOR e uma turma sem período.
+
+    Era o estado que expunha o defeito P2: `periodos_por_ano` não tem a chave
+    do ano corrente, mas a listagem continua abrindo no ano vigente.
+
+    A 'Turma Avulsa' tem periodo_letivo_id NULL — estado LEGADO: a criação
+    de turma hoje exige período (select obrigatório em nova_turma e
+    `periodo_letivo_id` required em turmas.py:719), mas turmas históricas
+    ainda podem estar sem vínculo. Desde a ETAPA B6 (D3) elas aparecem na
+    vista padrão com o selo "Sem período".
+    Devolve (unidade_id, admin_id).
+    """
+    with app.test_request_context():
+        unidade = Unidade(nome="Unidade Ano Anterior", ativo=True)
+        admin = User(
+            name="Admin Ano Anterior",
+            email="admin.past@example.com",
+            role="admin",
+            first_login=False,
+        )
+        db.session.add_all([unidade, admin])
+        db.session.flush()
+        ano = get_local_now().year
+        db.session.add(PeriodoLetivo(
+            nome="Anterior",
+            data_inicio=date(ano - 1, 2, 1),
+            data_fim=date(ano - 1, 11, 30),
+            unidade_id=unidade.id,
+            ativo=True,
+        ))
+        db.session.add(Turma(
+            nome="Turma Avulsa",
+            ativo=True,
+            unidade_id=unidade.id,
+            turno="Manhã",
+            dias_semana="Segunda",
+            hora_inicio=time(8, 0),
+            hora_fim=time(9, 0),
+        ))
+        db.session.commit()
+        return unidade.id, admin.id
+
+
+def test_listagem_padrao_inclui_turma_sem_periodo_e_nao_quebra_sem_periodo_no_ano(app, client):
+    """ETAPA B6 (D3) + guarda anti-P2.
+
+    Mantém o cerne do antigo teste de P2 (sem período no ano corrente a
+    listagem não pode dar 500/KeyError e o ano vigente segue oferecido), mas
+    agora a turma sem vínculo APARECE na vista padrão, marcada com o selo
+    "Sem período". O comportamento inverso (escolher um período torna o
+    filtro estrito e a turma sem período some) está coberto em
+    tests/test_turma_curso_lista.py::test_turma_sem_periodo_some_quando_periodo_escolhido.
+    """
+    with app.app_context():
+        unidade_id, admin_id = _seed_unidade_periodo_passado(app)
+        turma_id = Turma.query.filter_by(nome="Turma Avulsa").first().id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(admin_id)
+        session["_fresh"] = True
+        session["unidade_id"] = unidade_id
+
+    ano = get_local_now().year
+    resp = client.get("/turma")
+    # Anti-P2: a listagem não pode quebrar (KeyError) quando o ano corrente
+    # não tem período cadastrado.
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    # O ano corrente segue oferecido como opção visual, mesmo sem período.
+    assert f"ano_periodo={ano}" in html
+    # D3: a turma sem vínculo entra na tabela da vista padrão...
+    assert _linha(html, turma_id)
+    # ... exibida com o selo dedicado.
+    assert "Sem período" in html
+
+
 def test_rota_listagem_aplica_filtro_nome(app, client):
     with app.app_context():
         unidade = _seed_turmas(app)
+        ids = {t.nome: t.id for t in Turma.query.all()}
         with app.test_request_context():
             admin = User(
                 name="Administrador",
@@ -254,7 +363,8 @@ def test_rota_listagem_aplica_filtro_nome(app, client):
     resp = client.get("/turma?nome=Informática")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "Informática Manhã" in html
-    assert "Natação Tarde" not in html
-    assert "Horta Noite" not in html
+    # Marcador por linha (ver _linha): o nome também aparece nos <select>.
+    assert _linha(html, ids["Informática Manhã"])
+    assert not _linha(html, ids["Natação Tarde"])
+    assert not _linha(html, ids["Horta Noite"])
     assert 'id="collapseFiltros" class="accordion-collapse collapse show"' in html
