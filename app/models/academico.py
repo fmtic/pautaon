@@ -273,6 +273,9 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         - `UNIQUE(turma_id, curso_id)`: cada curso é ofertado no máximo uma
           vez na mesma turma, independentemente de professor/turno/horário.
           O mesmo curso pode ser ofertado em turmas diferentes.
+        - D5.1: a oferta ganha `conselho_concluido` e os pareceres coletivos
+          `avaliacao_inicial/percurso/final` (mesmos tipos de `Turma`),
+          preparando a migração do conselho por oferta (rotas em D5.2+).
         - `principal` pertence ao vínculo turma↔curso (nunca ao aluno nem ao
           curso globalmente). No máximo um por turma: garantido por índice
           único parcial. A obrigatoriedade de exatamente um quando houver
@@ -325,6 +328,18 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         comment='Centro de custo individual; NULL = usa o compartilhado da turma',
     )
     programa: str = db.Column(db.String(50), nullable=False)
+
+    # D5.1 (Onda 4): conselho de classe por oferta. Espelham os campos
+    # legados de `Turma` (mesmos tipos); as colunas da turma permanecem
+    # intactas e continuam sendo a fonte das rotas atuais até D5.2/D5.3.
+    conselho_concluido: bool = db.Column(
+        db.Boolean, default=False, server_default=db.text('false'),
+        nullable=False,
+        comment='Encerramento do conselho da OFERTA (D5.1); legado vive em Turma',
+    )
+    avaliacao_inicial: str = db.Column(db.Text)
+    avaliacao_percurso: str = db.Column(db.Text)
+    avaliacao_final: str = db.Column(db.Text)
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
