@@ -5,6 +5,8 @@
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body">
             <form method="GET" action="{{ url_for('conselho.lancamento_conselho') }}" class="row g-3 align-items-end">
+                {# D5.2: etapa e oferta sobrevivem ao reenvio dos filtros #}
+                <input type="hidden" name="etapa" value="{{ etapa }}">
                 <div class="col-md-4">
                     <label class="form-label small fw-bold text-secondary">Programa</label>
                     <select name="programa" class="form-select" onchange="this.form.submit()">
@@ -33,6 +35,19 @@
                         {% endfor %}
                     </select>
                 </div>
+                {# D5.2 (M1): com 2+ ofertas ativas a escolha do curso é obrigatória;
+                   com 0/1 o seletor não aparece (uso direto ou recusa). #}
+                {% if turma and ofertas and ofertas|length >= 2 %}
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary">Curso (oferta)</label>
+                    <select name="oferta_sel" class="form-select" onchange="this.form.submit()">
+                        <option value="">Selecione o curso...</option>
+                        {% for o in ofertas %}
+                        <option value="{{ o.id }}" {% if oferta and oferta.id==o.id %}selected{% endif %}>{{ o.curso.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
             </form>
         </div>
     </div>
@@ -50,23 +65,87 @@
                     <i class="bi bi-tag-fill me-1"></i> {{ turma.programa or 'Programa não definido' }} |
                     <i class="bi bi-clock-history me-1"></i> {{ turma.turno or '-' }} |
                     <i class="bi bi-bar-chart-steps me-1"></i> Etapa: {{ etapa }}
+                    {% if oferta %}
+                    | <i class="bi bi-mortarboard me-1"></i> Curso: {{ oferta.curso.nome }}
+                    {% endif %}
                 </p>
             </div>
-            <button type="button" class="btn btn-warning btn-sm shadow-sm" data-bs-toggle="modal"
-                data-bs-target="#modalAvaliacaoTurma">
-                <i class="bi bi-chat-left-text-fill me-1"></i> Ver Avaliação da Turma
-            </button>
+            {# D5.2: avaliação coletiva é da OFERTA — link direto com a oferta #}
+            <a class="btn btn-warning btn-sm shadow-sm"
+                href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}{% if oferta %}?oferta_sel={{ oferta.id }}{% endif %}">
+                <i class="bi bi-chat-left-text-fill me-1"></i> Ver Avaliação da Oferta
+            </a>
         </div>
     </div>
 
+    {% if exigir_escolha %}
+    {# 2+ ofertas sem escolha: nada é listado nem criado antes de escolher #}
+    <div class="alert alert-warning shadow-sm">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Esta turma tem mais de um curso ativo. Selecione o <strong>curso (oferta)</strong>
+        acima para abrir o lançamento do conselho daquela oferta.
+    </div>
+    {% else %}
     {# Formulário de Lançamento #}
     <form action="{{ url_for('conselho.salvar_conselho') }}" method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="turma_id" value="{{ turma.id }}">
         <input type="hidden" name="etapa" value="{{ etapa }}">
+        {# D5.2: toda gravação nasce vinculada à oferta escolhida #}
+        <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}">
         <div class="row">
+            {# D5.2b: grade aluno×pergunta. Só perguntas tipo ALUNO aparecem aqui —
+               as do tipo TURMA são a avaliação coletiva da oferta (turma_aval).
+               Os nomes resp_<aluno_id>_<pergunta_id> são os que o salvar_conselho
+               lê e os que a validação do conselho.js percorre. #}
+            {% set perguntas_aluno = perguntas | selectattr('tipo', 'equalto', 'ALUNO') | list %}
+            {% if not perguntas_aluno %}
+            <div class="col-12">
+                <div class="alert alert-info shadow-sm">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Nenhuma pergunta individual (tipo ALUNO) cadastrada para a etapa
+                    <strong>{{ etapa }}</strong>. Cadastre as perguntas do conselho
+                    antes de lançar.
+                </div>
+            </div>
+            {% endif %}
             {% for aluno in alunos %}
-            {# ... Seu loop de alunos aqui ... #}
+            <div class="col-12 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-2">
+                        <h6 class="mb-0 fw-bold text-primary">
+                            <i class="bi bi-person-circle me-2"></i>{{ aluno.nome_social or aluno.nome }}
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for pergunta in perguntas_aluno %}
+                            <div class="col-md-6 mb-3">
+                                <label class="fw-bold mb-2 small text-muted text-uppercase"
+                                    for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ pergunta.texto }}</label>
+
+                                {% if pergunta.opcoes %}
+                                <div class="mb-2">
+                                    {% for opcao in pergunta.opcoes.split(' | ') %}
+                                    <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
+                                        style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
+                                        onclick='document.getElementById("resp_{{ aluno.id }}_{{ pergunta.id }}").value = {{ opcao | tojson }};'>
+                                        {{ opcao }}
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+
+                                <textarea name="resp_{{ aluno.id }}_{{ pergunta.id }}"
+                                    id="resp_{{ aluno.id }}_{{ pergunta.id }}"
+                                    class="form-control" rows="2"
+                                    placeholder="Digite sua observação...">{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
             {% endfor %}
         </div>
 
@@ -75,6 +154,7 @@
             <button type="submit" class="btn btn-success px-5">Salvar Tudo</button>
         </div>
     </form>
+    {% endif %}
 
     {% else %}
     {# MENSAGEM QUANDO NÃO HÁ TURMA SELECIONADA OU SE A TURMA ESTAVA VAZIA #}

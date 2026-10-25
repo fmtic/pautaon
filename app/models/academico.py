@@ -96,7 +96,9 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
 
     Regras:
         - `dias_semana` é uma string CSV (ex.: "Segunda,Quarta,Sexta").
-        - `conselho_concluido` é o flag que libera o encerramento da turma.
+        - O encerramento do conselho NÃO vive na turma: desde a D5.5 ele é da
+          OFERTA (`turma_curso.conselho_concluido`) e a turma é DERIVADA em
+          leitura.
         - `carga_horaria_aula` e `carga_horaria_total` são inteiros em MINUTOS.
           Use `formatar_ch()` de `app.utils.formatters` para exibição legível.
     """
@@ -130,10 +132,11 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         'User', foreign_keys=[professor_id], backref='turmas_vinculadas'
     )
 
+    # LEGADO: parecer coletivo agora em turma_curso.avaliacao_*; remover após
+    # conferir dump autêntico (decisão D5.5 — nenhuma leitura/escrita nova).
     avaliacao_inicial: str = db.Column(db.Text)
     avaliacao_percurso: str = db.Column(db.Text)
     avaliacao_final: str = db.Column(db.Text)
-    conselho_concluido: bool = db.Column(db.Boolean, default=False, nullable=False)
 
     conselhos = db.relationship('ConselhoClasse', backref='turma', lazy=True)
 
@@ -196,9 +199,21 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
 
     @property
     def alunos_ativos_count(self) -> int:
-        """Total de alunos com `ativo=True` vinculados a esta turma."""
+        """Total de alunos ativos, sem contar separadamente cada oferta."""
         from app.models.pessoas import Aluno
-        return self.alunos.filter(Aluno.ativo == True).count()
+        from app.models.matriculas import Inscricao
+
+        return (
+            db.session.query(db.func.count(db.func.distinct(Aluno.id)))
+            .join(Inscricao, Inscricao.aluno_id == Aluno.id)
+            .filter(
+                Inscricao.turma_id == self.id,
+                Inscricao.ativo.is_(True),
+                Aluno.ativo.is_(True),
+            )
+            .scalar()
+            or 0
+        )
 
     def dias_aula_efetivos(self) -> int:
         """
@@ -261,6 +276,9 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         - `UNIQUE(turma_id, curso_id)`: cada curso é ofertado no máximo uma
           vez na mesma turma, independentemente de professor/turno/horário.
           O mesmo curso pode ser ofertado em turmas diferentes.
+        - D5.1: a oferta ganha `conselho_concluido` e os pareceres coletivos
+          `avaliacao_inicial/percurso/final` (mesmos tipos de `Turma`),
+          preparando a migração do conselho por oferta (rotas em D5.2+).
         - `principal` pertence ao vínculo turma↔curso (nunca ao aluno nem ao
           curso globalmente). No máximo um por turma: garantido por índice
           único parcial. A obrigatoriedade de exatamente um quando houver
@@ -312,7 +330,19 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         db.String(150),
         comment='Centro de custo individual; NULL = usa o compartilhado da turma',
     )
-    programa: str = db.Column(db.String(50))
+    programa: str = db.Column(db.String(50), nullable=False)
+
+    # D5.1 (Onda 4): conselho de classe por oferta. Espelham os campos
+    # legados de `Turma` (mesmos tipos); as colunas da turma permanecem
+    # intactas e continuam sendo a fonte das rotas atuais até D5.2/D5.3.
+    conselho_concluido: bool = db.Column(
+        db.Boolean, default=False, server_default=db.text('false'),
+        nullable=False,
+        comment='Encerramento do conselho da OFERTA (D5.1); legado vive em Turma',
+    )
+    avaliacao_inicial: str = db.Column(db.Text)
+    avaliacao_percurso: str = db.Column(db.Text)
+    avaliacao_final: str = db.Column(db.Text)
 
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 

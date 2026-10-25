@@ -32,6 +32,7 @@
                             <label class="form-label fw-bold">Turma de Origem</label>
                             <div class="p-3 bg-light border rounded">
                                 <div><strong>{{ turma_origem.nome }}</strong></div>
+                                <div><span class="text-muted">Oferta:</span> {{ oferta_origem.curso.nome }}{% if oferta_origem.turno %} · {{ oferta_origem.turno }}{% endif %}</div>
                                 {% if turma_origem.programa %}
                                 <div class="mt-1"><span class="text-muted">Programa:</span> {{ turma_origem.programa }}
                                 </div>
@@ -44,16 +45,23 @@
                                     às {{ turma_origem.hora_fim or '--:--' }}</div>
                             </div>
                             <input type="hidden" name="turma_origem_id" value="{{ turma_origem.id }}">
+                            <input type="hidden" name="turma_curso_id" value="{{ oferta_origem.id }}">
                         </div>
 
                         <div class="mb-3">
-                            <label for="turma_destino" class="form-label fw-bold">Turma de Destino *</label>
-                            <select class="form-select" id="turma_destino" name="turma_destino_id" required>
+                            <label for="turma_destino" class="form-label fw-bold">Oferta de Destino *</label>
+                            <select class="form-select" id="turma_destino" name="turma_curso_id_destino" required>
                                 <option value="">Selecione...</option>
-                                {% for turma in turmas_destino %}
-                                <option value="{{ turma.id }}">{{ turma.nome }}</option>
+                                {% for oferta in ofertas_destino %}
+                                <option value="{{ oferta.id }}">{{ oferta.turma.nome }} — {{ oferta.curso.nome }}{% if oferta.turno %} · {{ oferta.turno }}{% endif %}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="data_transferencia" class="form-label fw-bold">Data da Transferência *</label>
+                            <input type="date" class="form-control" id="data_transferencia"
+                                name="data_transferencia" value="{{ hoje.isoformat() }}" required>
                         </div>
 
                         <div class="mb-3">
@@ -66,16 +74,15 @@
 
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle me-2"></i>
-                            <strong>Regra de Transferência:</strong> O aluno permanecerá na pauta da turma de origem
-                            para fins históricos, mas não poderá mais receber frequência nessa turma. Na turma de
-                            destino, poderá receber frequência normalmente.
+                            <strong>Regra de Transferência:</strong> Somente o vínculo com a oferta de origem será encerrado.
+                            Os demais cursos do aluno na turma continuam ativos. A matrícula será criada na oferta de destino.
                         </div>
 
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-warning fw-bold" id="btnAbrirModal">
                                 <i class="bi bi-arrow-left-right me-1"></i> CONFIRMAR TRANSFERÊNCIA
                             </button>
-                            <a href="{{ url_for('registros.ver_turma', id=turma_origem.id, **request.args) }}"
+                            <a href="{{ url_for('registros.ver_turma', id=turma_origem.id, oferta_sel=oferta_origem.id) }}"
                                 class="btn btn-secondary">
                                 <i class="bi bi-x-circle me-1"></i> Cancelar
                             </a>
@@ -110,9 +117,9 @@
                     </div>
 
                     <div class="row mt-2">
-                        <div class="col-5 text-muted">Turma de Origem:</div>
+                                <div class="col-5 text-muted">Oferta de Origem:</div>
                         <div class="col-7">
-                            <span class="fw-bold">{{ turma_origem.nome }}</span>
+                                    <span class="fw-bold">{{ turma_origem.nome }} — {{ oferta_origem.curso.nome }}</span>
                             <br><small class="text-muted">
                                 {% if turma_origem.programa %}Programa: {{ turma_origem.programa }}<br>{% endif %}
                                 Turno: {{ turma_origem.turno or 'Não informado' }}<br>
@@ -124,7 +131,7 @@
                     </div>
 
                     <div class="row mt-2">
-                        <div class="col-5 text-muted">Turma de Destino:</div>
+                        <div class="col-5 text-muted">Oferta de Destino:</div>
                         <div class="col-7 fw-bold" id="modalTurmaDestino">-</div>
                     </div>
 
@@ -136,8 +143,8 @@
 
                 <p class="text-muted small mb-0">
                     <i class="bi bi-info-circle me-1"></i>
-                    Após confirmar, o aluno será desvinculado da turma de origem e passará a pertencer à turma de
-                    destino.
+                    Após confirmar, o aluno será desvinculado da oferta de origem e passará a pertencer à oferta de
+                    destino. Outros vínculos permanecem ativos.
                     Esta ação não pode ser desfeita automaticamente.
                 </p>
             </div>

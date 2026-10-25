@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Listagem de Turmas</h2>
+        <div class="d-flex gap-2">
+            <a href="{{ url_imprimir_centros }}" target="_blank" class="btn btn-outline-secondary shadow-sm">
+                <i class="bi bi-printer me-1"></i> Imprimir
+            </a>
+            <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success shadow-sm">
+                <i class="bi bi-plus-lg me-1"></i> Nova Turma
+            </a>
+        </div>
+    </div>
+
+    {% if anos_badges %}
+    <section class="mb-3" aria-label="Filtrar turmas por período letivo">
+        <div class="d-flex flex-column gap-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small fw-bold text-muted me-1">Ano:</span>
+                {% for grupo in anos_badges %}
+                <a href="{{ grupo.url }}"
+                    class="badge rounded-pill text-decoration-none px-3 py-2 {% if grupo.selecionado %}border border-3 border-dark{% endif %}"
+                    style="background-color: {{ grupo.cor }}; color: {{ grupo.cor_texto }};"
+                    aria-pressed="{{ 'true' if grupo.selecionado else 'false' }}">
+                    {{ grupo.ano }}
+                </a>
+                {% endfor %}
+            </div>
+            {% for grupo in anos_badges %}
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small text-muted me-1">{{ grupo.ano }}:</span>
+                {% for item in grupo.periodos %}
+                <a href="{{ item.url }}"
+                    class="badge rounded-pill text-decoration-none px-3 py-2 {% if item.selecionado %}border border-3 border-dark{% endif %}"
+                    style="background-color: {{ item.cor }}; color: {{ item.cor_texto }};"
+                    aria-pressed="{{ 'true' if item.selecionado else 'false' }}">
+                    {{ item.periodo.nome }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Seção de Filtros -->
+    <div class="accordion mb-4 shadow-sm" id="accordionFiltros">
+        <div class="accordion-item border-0 rounded-3">
+            <h2 class="accordion-header" id="headingFiltros">
+                <button
+                    class="accordion-button {% if not filtros_painel_aberto %}collapsed{% endif %} bg-light fw-semibold rounded-3"
+                    type="button" data-bs-toggle="collapse" data-bs-target="#collapseFiltros"
+                    aria-expanded="{{ 'true' if filtros_painel_aberto else 'false' }}" aria-controls="collapseFiltros">
+                    <i class="bi bi-funnel-fill me-2 text-primary"></i> Filtros de Busca
+                </button>
+            </h2>
+            <div id="collapseFiltros" class="accordion-collapse collapse {% if filtros_painel_aberto %}show{% endif %}"
+                aria-labelledby="headingFiltros" data-bs-parent="#accordionFiltros">
+                <div class="accordion-body border border-top-0 rounded-bottom">
+                    <form method="GET" action="{{ url_for('registros.turma') }}">
+                        <div class="row g-3">
+                            <!-- Período letivo -->
+                            <div class="col-md-4">
+                                <label for="filtro_periodo" class="form-label small fw-bold text-muted">Período
+                                    letivo</label>
+                                <select class="form-select form-select-sm" id="filtro_periodo" name="periodo_letivo_id">
+                                    <option value="">Todos</option>
+                                    {% for periodo in periodos_filtro %}
+                                    <option value="{{ periodo.id }}" {% if periodo_selecionado==periodo.id %}selected{%
+                                        endif %}>
+                                        {{ periodo.nome }} ({{ periodo.data_inicio.year }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Centro de custo -->
+                            <div class="col-md-4">
+                                <label for="filtro_centro_custo" class="form-label small fw-bold text-muted">Centro de
+                                    custo</label>
+                                <select class="form-select form-select-sm" id="filtro_centro_custo" name="centro_custo">
+                                    <option value="">Todos</option>
+                                    {% for centro in centros_filtro %}
+                                    <option value="{{ centro.id }}" {% if centro_custo_selecionado==centro.id
+                                        %}selected{% endif %}>{{ centro.nome }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Nome da Turma -->
+                            <div class="col-md-4">
+                                <label for="filtro_nome" class="form-label small fw-bold text-muted">Nome da
+                                    Turma</label>
+                                <select class="form-select form-select-sm" id="filtro_nome" name="nome">
+                                    <option value="">Todos</option>
+                                    {% for nome_turma in nomes_turmas|default([]) %}
+                                    <option value="{{ nome_turma }}" {% if request.args.get('nome')==nome_turma
+                                        %}selected{% endif %}>{{ nome_turma }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Professor -->
+                            <div class="col-md-4">
+                                <label for="filtro_professor"
+                                    class="form-label small fw-bold text-muted">Professor</label>
+                                <select class="form-select form-select-sm" id="filtro_professor" name="professor">
+                                    <option value="">Todos</option>
+                                    {% for prof in professores|default([]) %}
+                                    <option value="{{ prof.name }}" {% if request.args.get('professor')==prof.name
+                                        %}selected{% endif %}>{{ prof.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Turno -->
+                            <div class="col-md-2">
+                                <label for="filtro_turno" class="form-label small fw-bold text-muted">Turno</label>
+                                <select class="form-select form-select-sm" id="filtro_turno" name="turno">
+                                    <option value="">Todos</option>
+                                    <option value="Manhã" {% if request.args.get('turno')=='Manhã' %}selected{% endif
+                                        %}>Manhã</option>
+                                    <option value="Tarde" {% if request.args.get('turno')=='Tarde' %}selected{% endif
+                                        %}>Tarde</option>
+                                    <option value="Noite" {% if request.args.get('turno')=='Noite' %}selected{% endif
+                                        %}>Noite</option>
+                                </select>
+                            </div>
+
+                            <!-- Programa -->
+                            <div class="col-md-2">
+                                <label for="filtro_programa"
+                                    class="form-label small fw-bold text-muted">Programa</label>
+                                <select class="form-select form-select-sm" id="filtro_programa" name="programa">
+                                    <option value="">Todos</option>
+                                    <option value="Profissionalizante" {% if
+                                        request.args.get('programa')=='Profissionalizante' %}selected{% endif %}>
+                                        Profissionalizante</option>
+                                    <option value="Esporte" {% if request.args.get('programa')=='Esporte' %}selected{%
+                                        endif %}>Esporte</option>
+                                    <option value="Meio Ambiente" {% if request.args.get('programa')=='Meio Ambiente'
+                                        %}selected{% endif %}>Meio Ambiente</option>
+                                    <option value="Outros" {% if request.args.get('programa')=='Outros' %}selected{%
+                                        endif %}>Outros</option>
+                                </select>
+                            </div>
+
+                            <!-- Alunos (Quantidade Mínima) -->
+                            <div class="col-md-2">
+                                <label for="filtro_alunos" class="form-label small fw-bold text-muted">Mín.
+                                    Alunos</label>
+                                <input type="number" class="form-control form-control-sm" id="filtro_alunos"
+                                    name="min_alunos" min="0" value="{{ request.args.get('min_alunos', '') }}">
+                            </div>
+
+                            <!-- Frequência (Mínima) -->
+                            <div class="col-md-2">
+                                <label for="filtro_freq" class="form-label small fw-bold text-muted">Freq. Mínima
+                                    (%)</label>
+                                <input type="number" class="form-control form-control-sm" id="filtro_freq"
+                                    name="min_freq" min="0" max="100" placeholder="Ex: 75"
+                                    value="{{ request.args.get('min_freq', '') }}">
+                            </div>
+
+                            <!-- Dias da Semana -->
+                            <div class="col-md-2">
+                                <label for="filtro_dias" class="form-label small fw-bold text-muted">Dia da
+                                    Semana</label>
+                                <select class="form-select form-select-sm" id="filtro_dias" name="dia">
+                                    <option value="">Todos</option>
+                                    <option value="Segunda" {% if request.args.get('dia')=='Segunda' %}selected{% endif
+                                        %}>Segunda</option>
+                                    <option value="Terça" {% if request.args.get('dia')=='Terça' %}selected{% endif %}>
+                                        Terça</option>
+                                    <option value="Quarta" {% if request.args.get('dia')=='Quarta' %}selected{% endif
+                                        %}>Quarta</option>
+                                    <option value="Quinta" {% if request.args.get('dia')=='Quinta' %}selected{% endif
+                                        %}>Quinta</option>
+                                    <option value="Sexta" {% if request.args.get('dia')=='Sexta' %}selected{% endif %}>
+                                        Sexta</option>
+                                    <option value="Sábado" {% if request.args.get('dia')=='Sábado' %}selected{% endif
+                                        %}>Sábado</option>
+                                </select>
+                            </div>
+
+                            <!-- Horário -->
+                            <div class="col-md-2">
+                                <label for="filtro_horario" class="form-label small fw-bold text-muted">Horário
+                                    Inicial</label>
+                                <input type="time" class="form-control form-control-sm" id="filtro_horario"
+                                    name="horario_inicio" value="{{ request.args.get('horario_inicio', '') }}">
+                            </div>
+
+                            <!-- C.H./Aula -->
+                            <div class="col-md-2">
+                                <label for="filtro_ch_aula" class="form-label small fw-bold text-muted">C.H./Aula
+                                    (Mín)</label>
+                                <input type="number" step="0.5" class="form-control form-control-sm" id="filtro_ch_aula"
+                                    name="min_ch_aula" value="{{ request.args.get('min_ch_aula', '') }}">
+                            </div>
+
+                            <!-- C.H. Total -->
+                            <div class="col-md-2">
+                                <label for="filtro_ch_total" class="form-label small fw-bold text-muted">C.H. Total
+                                    (Mín)</label>
+                                <input type="number" step="1" class="form-control form-control-sm" id="filtro_ch_total"
+                                    name="min_ch_total" value="{{ request.args.get('min_ch_total', '') }}">
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-3 gap-2">
+                            <a href="{{ url_for('registros.turma') }}" class="btn btn-sm btn-outline-secondary">Limpar
+                                Filtros</a>
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search me-1"></i>
+                                Filtrar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Listagem -->
+    <div class="card shadow-sm border-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr class="small text-uppercase text-muted">
+                        <th class="ps-4">Nome da Turma</th>
+                        <th class="text-center">Professor</th>
+                        <th class="text-center">Turno</th>
+                        <!-- <th class="text-center">Alunos</th> -->
+                        <th class="text-center">Alunos Freq.</th>
+                        <th class="text-center">C. de Custos</th>
+                        <th class="text-center">Dias</th>
+                        <th class="text-center">Horário</th>
+                        <!-- <th class="text-center">C.H./Aula</th> -->
+                        <th class="text-center">C.H. Total</th>
+                        <th class="text-end pe-4">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for turma in turmas %}
+                    {% set ovas = ofertas_map.get(turma.id, []) %}
+                    {% set principal = principal_map.get(turma.id) %}
+                    {% set multi = ovas|length >= 2 %}
+                    {% set resumo = resumo_map.get(turma.id) %}
+                    <tr>
+                        <td class="ps-4 fw-bold">
+                            <span class="text-muted me-1 small">#{{ "%02d"|format(turma.ordenacao or 0) }}</span>
+                            {{ turma.nome }}
+                            {% if multi %}
+                            <span class="badge bg-info text-dark ms-1">{{ ovas|length }} cursos</span>
+                            <button class="btn btn-sm btn-outline-secondary ms-1" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#ofertas-{{ turma.id }}" aria-expanded="false"
+                                aria-controls="ofertas-{{ turma.id }}" title="Ver cursos">
+                                <i class="bi bi-chevron-expand"></i>
+                            </button>
+                            {% endif %}
+                            {% if turma.periodo_letivo_id is none %}
+                            <span class="badge bg-secondary text-white ms-1"
+                                title="Turma sem período letivo vinculado">Sem período</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            {% if multi %}
+                            {% if resumo and resumo.professores %}
+                            {% for nm in resumo.professores %}
+                            <span class="small text-dark d-block">{{ nm }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-muted small">Não atribuído</span>
+                            {% endif %}
+                            {% else %}
+                            {% if turma.professor %}
+                            <span class="small text-dark">{{ turma.professor.name }}</span>
+                            {% else %}
+                            <span class="text-muted small">Não atribuído</span>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            {% if multi %}
+                            {% if resumo and resumo.turnos %}
+                            {% for tv in resumo.turnos %}
+                            <span class="badge bg-light text-dark border">{{ tv }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="badge bg-light text-dark border">-</span>
+                            {% endif %}
+                            {% else %}
+                            <span class="badge bg-light text-dark border">{{ turma.turno or '-' }}</span>
+                            {% endif %}
+                            {% if multi %}<div class="small text-muted"><span class="small">principal</span></div>{%
+                            endif %}
+                        </td>
+
+                        <!-- <td class="text-center">
+                            <span class="badge rounded-pill bg-primary px-3">
+                                {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
+                                turma.alunos|length }}
+                            </span>
+                        </td> -->
+
+                        <td class="text-center">
+                            <span class="badge rounded-pill bg-primary px-3">
+                                {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
+                                turma.alunos|length }}
+                            </span>
+                            {% set frequencia_turma = turma.freq_geral %}
+                            <span
+                                class="badge {% if frequencia_turma >= 75 %}bg-success{% elif frequencia_turma >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
+                                {{ frequencia_turma }}%
+                            </span>
+                        </td>
+
+                        <td class="text-center">
+                            <span class="badge bg-secondary opacity-75">{{ principal.centro_custo if principal and
+                                principal.centro_custo else 'Não definido' }}</span>
+                            {% if multi %}<div class="small text-muted"><span class="small">principal</span></div>{%
+                            endif %}
+                        </td>
+
+                        <td class="text-center">
+                            {% if resumo and resumo.dias_abreviados %}
+                            {% for dia in resumo.dias_abreviados %}
+                            <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-muted">Não informado</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center small">
+                            {% if multi %}
+                            {% set hi = principal.hora_inicio or turma.hora_inicio %}
+                            {% set hf = principal.hora_fim or turma.hora_fim %}
+                            <i class="bi bi-clock me-1 text-muted"></i>{{ hi.strftime('%H:%M') if hi else '--:--' }} -
+                            {{
+                            hf.strftime('%H:%M') if hf else '--:--' }}
+                            <div class="small text-muted">principal</div>
+                            {% else %}
+                            <i class="bi bi-clock me-1 text-muted"></i>
+                            {{ turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--' }} - {{
+                            turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--' }}
+                            {% endif %}
+                        </td>
+
+                        <!-- <td class="text-center small fw-semibold">
+                            {{ formatar_ch(principal.carga_horaria_aula) if multi else
+                            formatar_ch(turma.carga_horaria_aula) }}
+                            {% if multi %}<div class="small text-muted fw-normal">principal</div>{% endif %}
+                        </td>  -->
+
+                        <td class="text-center small fw-semibold">
+                            {{ formatar_ch(carga_horaria_total_map.get(turma.id)) }}
+                        </td>
+
+                        <td class="text-end pe-4">
+                            <div class="btn-group">
+                                <a href="{{ url_for('registros.ver_turma', id=turma.id) }}"
+                                    class="btn btn-sm btn-outline-info" title="Visualizar">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{{ url_for('registros.editar_turma', id=turma.id) }}"
+                                    class="btn btn-sm btn-outline-primary" title="Editar">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form action="{{ url_for('registros.excluir_turma', id=turma.id) }}" method="POST"
+                                    class="d-inline"
+                                    onsubmit="return confirm('Se a turma tiver lançamentos, ela será desativada e o histórico preservado; caso contrário, será excluída. Continuar?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% if multi %}
+                    <tr class="collapse" id="ofertas-{{ turma.id }}">
+                        <td colspan="11" class="p-0">
+                            <div class="bg-light border-top py-2 px-4">
+                                <table class="table table-sm table-bordered mb-0 bg-white">
+                                    <thead>
+                                        <tr class="small text-uppercase text-muted">
+                                            <th>Curso</th>
+                                            <th class="text-center">Professor</th>
+                                            <th class="text-center">Turno</th>
+                                            <th class="text-center">Dias</th>
+                                            <th class="text-center">Horário</th>
+                                            <th class="text-center">C.H./Aula</th>
+                                            <th class="text-center">C.H. Total</th>
+                                            <th class="text-center">Freq.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for o in ovas %}
+                                        <tr class="small">
+                                            <td>
+                                                {{ o.curso.nome if o.curso else '-' }}
+                                                {% if o.id == principal.id %}<span
+                                                    class="badge bg-primary ms-1">principal</span>{% endif %}
+                                            </td>
+                                            <td class="text-center">{{ (o.professor.name if o.professor else
+                                                (turma.professor.name if turma.professor else '-')) }}</td>
+                                            <td class="text-center">{{ o.turno or turma.turno or '-' }}</td>
+                                            <td class="text-center">{{ o.dias_semana or turma.dias_semana or '-' }}</td>
+                                            <td class="text-center">
+                                                {% set ohi = o.hora_inicio or turma.hora_inicio %}
+                                                {% set ohf = o.hora_fim or turma.hora_fim %}
+                                                {{ ohi.strftime('%H:%M') if ohi else '--:--' }} - {{
+                                                ohf.strftime('%H:%M') if ohf else '--:--' }}
+                                            </td>
+                                            <td class="text-center">{{ formatar_ch(o.carga_horaria_aula) }}</td>
+                                            <td class="text-center">{{ formatar_ch(o.carga_horaria_total) }}</td>
+                                            <td class="text-center">{{ turma.freq_geral_oferta(o.id) }}%</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% else %}
+                    <tr>
+                        <td colspan="11" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            Nenhuma turma encontrada com os filtros aplicados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

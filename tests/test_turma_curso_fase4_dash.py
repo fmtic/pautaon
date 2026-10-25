@@ -78,7 +78,7 @@ def _seed(app, ofertas_cfg):
             db.session.flush()
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-                ativo=True, dias_semana=cfg["dias"],
+                ativo=True, dias_semana=cfg["dias"], programa="Teste",
                 data_inicio=cfg["data_inicio"], data_fim=cfg["data_fim"],
             )
             db.session.add(oferta)

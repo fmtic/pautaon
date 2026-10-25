@@ -128,19 +128,19 @@ def _seed():
             turma_id=t2.id, curso_id=cA.id, unidade_id=u1.id, ativo=True,
             principal=True, professor_id=pA.id, turno="Manhã",
             dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         o3p = TurmaCurso(
             turma_id=t3.id, curso_id=cA.id, unidade_id=u1.id, ativo=True,
             principal=True, professor_id=pA.id, turno="Manhã",
             dias_semana="Segunda,Quarta", hora_inicio=time(9, 0), hora_fim=time(10, 0),
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         o3b = TurmaCurso(
             turma_id=t3.id, curso_id=cB.id, unidade_id=u1.id, ativo=True,
             principal=False, professor_id=pB.id, turno="Tarde",
             dias_semana="Terça", hora_inicio=time(14, 0), hora_fim=time(15, 30),
-            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add_all([o2, o3p, o3b])
 
@@ -170,13 +170,25 @@ def _corpo(r):
     return r.get_data(as_text=True)
 
 
+def _linha(body, turma_id):
+    """True se a turma aparece como LINHA da tabela de resultados.
+
+    Os <select> de "Nome da Turma" e "Professor" listam todas as turmas e
+    professores ativos da unidade independentemente do filtro aplicado
+    (MER.md, Etapa K2), então ``"T1" in body`` seria um falso positivo para
+    "a turma foi filtrada". O marcador confiável da linha é o link de ação
+    da turma (``href="/turma/<id>"``, gerado por ``registros.ver_turma``).
+    """
+    return f'href="/turma/{turma_id}"' in body
+
+
 # --- GET com 0, 1 e 2 ofertas -------------------------------------------------
 def test_lista_retorna_200_e_mostra_selo_e_sublinha_so_para_2_ofertas():
     app, ids = _seed()
     r = _lista(app, ids["resp"])
     assert r.status_code == 200
     body = _corpo(r)
-    assert "T1" in body and "T2" in body and "T3" in body
+    assert _linha(body, ids["t1"]) and _linha(body, ids["t2"]) and _linha(body, ids["t3"])
     # Selos e sub-linha só da turma de 2+ ofertas.
     assert "2 cursos" in body
     assert 'id="ofertas-%d"' % ids["t3"] in body
@@ -200,18 +212,20 @@ def test_linha_multi_mostra_dois_professores_e_uniao_de_dias():
 def test_filtro_professor_segunda_oferta_encontra_turma():
     app, ids = _seed()
     body = _corpo(_lista(app, ids["resp"], "?professor=Prof%20B"))
-    assert "T3" in body
-    assert "T1" not in body and "T2" not in body
+    assert _linha(body, ids["t3"])
+    assert not _linha(body, ids["t1"]) and not _linha(body, ids["t2"])
 
 
 def test_filtro_turno_e_dia_da_segunda_oferta_encontram_turma():
     app, ids = _seed()
     # turno "Tarde" só existe na oferta secundária de T3.
     corpo_turno = _corpo(_lista(app, ids["resp"], "?turno=Tarde"))
-    assert "T3" in corpo_turno and "T1" not in corpo_turno
+    assert _linha(corpo_turno, ids["t3"])
+    assert not _linha(corpo_turno, ids["t1"])
     # dia "Terça" só existe na oferta secundária de T3.
     corpo_dia = _corpo(_lista(app, ids["resp"], "?dia=Ter%C3%A7a"))
-    assert "T3" in corpo_dia and "T1" not in corpo_dia
+    assert _linha(corpo_dia, ids["t3"])
+    assert not _linha(corpo_dia, ids["t1"])
 
 
 # --- Coluna congelada da turma NÃO casa quando há ofertas ativas --------------
@@ -219,14 +233,14 @@ def test_professor_so_na_coluna_congelada_nao_encontra_turma_multi():
     app, ids = _seed()
     # "Prof C" é apenas a coluna congelada de T2/T3; nenhuma oferta ativa o usa.
     body = _corpo(_lista(app, ids["resp"], "?professor=Prof%20C"))
-    assert "T2" not in body
-    assert "T3" not in body
+    assert not _linha(body, ids["t2"])
+    assert not _linha(body, ids["t3"])
 
 
 def test_professor_da_oferta_encontra_turma_de_uma_oferta():
     app, ids = _seed()
     body = _corpo(_lista(app, ids["resp"], "?professor=Prof%20A"))
-    assert "T2" in body and "T3" in body
+    assert _linha(body, ids["t2"]) and _linha(body, ids["t3"])
 
 
 # --- min_ch_total sobre a oferta principal ------------------------------------
@@ -244,12 +258,12 @@ def test_min_ch_total_usa_oferta_principal():
     # principal, T3 permanece.
     thr = b_total_min // 60 + 1
     body = _corpo(_lista(app, ids["resp"], f"?min_ch_total={thr}"))
-    assert "T3" in body
+    assert _linha(body, ids["t3"])
 
     # Acima da principal, T3 sai.
     thr_hi = p_total_min // 60 + 1
     body_hi = _corpo(_lista(app, ids["resp"], f"?min_ch_total={thr_hi}"))
-    assert "T3" not in body_hi
+    assert not _linha(body_hi, ids["t3"])
 
 
 # --- C.H. da oferta conferem com cálculo manual (com dia bloqueado) -----------
@@ -290,3 +304,77 @@ def test_datas_esperadas_oferta_continua_cortando_em_hoje():
         # Sem limite vai até data_fim → mais datas do que "até hoje".
         todas = datas_aula_oferta(o3p)
         assert len(todas) > len(ate_hoje)
+
+
+# --- ETAPA B6 (D3): turma sem período na vista padrão ------------------------
+def _seed_d3():
+    """Unidade com um período no ano corrente e duas turmas ativas:
+
+    - `com_periodo`: vinculada ao período do ano vigente (aparece na vista
+      padrão, que abre no ano atual).
+    - `sem_periodo`: `periodo_letivo_id` NULL — deve aparecer na vista padrão
+      com o selo "Sem período" e sumir quando um período é escolhido.
+
+    O período é ancorado no ano corrente (get_local_now) para o teste não
+    quebrar na virada do ano.
+    """
+    from app.utils.timezone import get_local_now
+
+    ano = get_local_now().year
+    app = _novo_app()
+    with app.app_context():
+        db.create_all()
+
+        u = Unidade(nome="UD3", ativo=True)
+        db.session.add(u)
+        db.session.flush()
+
+        resp = User(name="Coord D3", email="coord.d3@example.com",
+                    role="pedagogico", first_login=False, unidade_id=u.id)
+        db.session.add(resp)
+
+        periodo = PeriodoLetivo(
+            nome=f"{ano}", data_inicio=date(ano, 2, 1), data_fim=date(ano, 11, 30),
+            unidade_id=u.id, ativo=True,
+        )
+        db.session.add(periodo)
+        db.session.flush()
+
+        comuns = dict(
+            unidade_id=u.id, ativo=True, turno="Manhã", dias_semana="Segunda",
+            data_inicio=date(ano, 2, 1), data_fim=date(ano, 11, 30),
+        )
+        com_periodo = Turma(nome="D3 Com Periodo", periodo_letivo_id=periodo.id,
+                            **comuns)
+        sem_periodo = Turma(nome="D3 Sem Periodo", periodo_letivo_id=None,
+                            **comuns)
+        db.session.add_all([com_periodo, sem_periodo])
+        db.session.commit()
+
+        ids = {
+            "resp": resp.id, "periodo": periodo.id,
+            "com_periodo": com_periodo.id, "sem_periodo": sem_periodo.id,
+        }
+    return app, ids
+
+
+def test_turma_sem_periodo_aparece_na_vista_padrao_com_selo():
+    """D3: sem período/ano escolhidos, a turma sem período aparece com selo."""
+    app, ids = _seed_d3()
+    r = _lista(app, ids["resp"])
+    assert r.status_code == 200
+    body = _corpo(r)
+    assert _linha(body, ids["com_periodo"])
+    assert _linha(body, ids["sem_periodo"])
+    assert "Sem período" in body
+
+
+def test_turma_sem_periodo_some_quando_periodo_escolhido():
+    """D3: escolher período explícito mantém o filtro estrito (sem período some)."""
+    app, ids = _seed_d3()
+    r = _lista(app, ids["resp"], query=f"?periodo_letivo_id={ids['periodo']}")
+    assert r.status_code == 200
+    body = _corpo(r)
+    assert _linha(body, ids["com_periodo"])
+    assert not _linha(body, ids["sem_periodo"])
+    assert "Sem período" not in body

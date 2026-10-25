@@ -1,72 +1,30 @@
 {% extends "base.html" %} {% block content %}
 
-<h2>{{ turma.nome }}</h2>
-<span class="badge bg-light text-dark border">{{ turma.centro_custo }}</span>
+
 
 <div class="card p-4 shadow-sm border-0 mb-4">
+  <h5 class="fw-bold text-primary mb-3">
+    <i class="bi bi-info-circle me-2"></i>{{ turma.nome }}
+  </h5>
   <div class="row">
     <div class="col-md-6">
-      <h5 class="fw-bold text-primary mb-3">
-        <i class="bi bi-info-circle me-2"></i>Informações da Turma
-      </h5>
-      <p class="mb-1">
-        <strong>Programa:</strong> {{ turma.programa or 'Não definido' }}
-      </p>
-      <p class="mb-1">
-        <strong>Professor:</strong>
-        {% if turma.professor %}
-        <span class="text-success fw-bold">{{ turma.professor.name }}</span>
-        {% else %}
-        <span class="text-muted small">Não atribuído</span>
-        {% endif %}
-      </p>
-      <p class="mb-1">
-        <strong>Turno:</strong>
-        <span class="badge bg-light text-primary border">{{ turma.turno or '-' }}</span>
-      </p>
+      <p class="mb-1"><strong>Curso principal:</strong> {{ turma.programa or 'Não definido' }}</p>
     </div>
-
-    <div class="col-md-6 border-start">
-      <h5 class="fw-bold text-primary mb-3">
-        <i class="bi bi-calendar-check me-2"></i>Cronograma
-      </h5>
-      <p class="mb-1">
-        <strong>Horário:</strong>
-        <span class="badge bg-light text-primary border">
-          <i class="bi bi-clock me-1"></i> {{ turma.hora_inicio or '--:--' }} às
-          {{ turma.hora_fim or '--:--' }}
-        </span>
-      </p>
-      <p class="mb-1">
-        <strong>Período:</strong>
-        {% if turma.data_inicio %} {{ turma.data_inicio.strftime('%d/%m/%Y') }}
-        até {{ turma.data_fim.strftime('%d/%m/%Y') if turma.data_fim else '--'}}
-        {% else %}
-        <span class="text-muted small">Datas não cadastradas</span>
-        {% endif %}
-      </p>
-      <p class="mb-1">
-        <strong>Dias:</strong>
-        {% if turma.dias_semana %}
-        {% for dia in turma.dias_semana.split(', ')%}
-        <span class="badge bg-warning text-dark me-1 mb-1">{{ dia }}</span>
-        {% endfor %} {% else %}
-        <span>--</span>
-        {% endif %}
-      </p>
+    <div class="col-md-6">
+      <p class="mb-1"><strong>Centro de custo compartilhado:</strong> {{ oferta_principal.centro_custo if oferta_principal and oferta_principal.centro_custo else 'Não definido' }}</p>
     </div>
   </div>
 </div>
 
-<div class="card p-4 shadow-sm border-0">
+<section class="mb-4" aria-labelledby="ofertas-heading">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h5 class="fw-bold mb-0">Alunos da Turma</h5>
+      <h5 class="fw-bold mb-0">Ofertas e alunos enturmados</h5>
       <small class="text-muted">Alunos ativos: {{ alunos_ativos_count }}</small>
     </div>
-    {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
+    {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
     <a href="{{ url_for('registros.turma_ofertas', id=turma.id) }}" class="btn btn-outline-primary btn-sm fw-bold">
-      <i class="bi bi-mortarboard me-1"></i> CURSOS DA TURMA
+      <i class="bi bi-mortarboard me-1"></i> +CURSOS
     </a>
     {% endif %} {% if current_user.role in ['admin', 'pedagogico', 'secretaria',
     'gerencia'] %}
@@ -111,79 +69,144 @@
       </ul>
     </div>
   </div>
-
-  {% if alunos %}
-  <div class="table-responsive">
-    <table class="table table-hover align-middle">
-      <thead class="table-light">
-        <tr class="small text-uppercase text-muted">
-          <th>Foto</th>
-          <th>Nome</th>
-          <th>Nível</th>
-          <th class="text-end">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for aluno in alunos %}
-        <tr>
-          <td>
-            <div class="rounded bg-light d-flex align-items-center justify-content-center overflow-hidden"
-            style="width: 50px; height: 64px; border: 1px solid #ddd">
-              <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
-                class="w-100 h-100 object-fit-cover" />
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 id="ofertas-heading" class="fw-bold mb-0">Ofertas da Turma</h5>
+    <small class="text-muted">{{ ofertas_todas|length }} curso(s)</small>
+  </div>
+  {% if ofertas_todas %}
+  <div class="row row-cols-1 row-cols-lg-2 g-3">
+    {% for oferta in ofertas_todas %}
+    {% set professor_oferta = oferta.professor or turma.professor %}
+    {% set turno_oferta = oferta.turno or turma.turno %}
+    <div class="col">
+    <article class="card h-100 shadow-sm border-0">
+      <h6 class="card-header p-0 border-0">
+        <button class="btn btn-light w-100 text-start p-3 d-flex justify-content-between align-items-center collapsed"
+          type="button" data-bs-toggle="collapse" data-bs-target="#detalhes-oferta-{{ oferta.id }}"
+          aria-expanded="false" aria-controls="detalhes-oferta-{{ oferta.id }}">
+          <span class="d-flex flex-column flex-md-row gap-md-3 align-items-md-center">
+            <strong>{{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}</strong>
+            <span class="text-muted small">{{ turno_oferta or 'Turno não informado' }}</span>
+            <span class="text-muted small">{{ professor_oferta.name if professor_oferta else 'Professor não atribuído' }}</span>
+          </span>
+          <span class="d-flex gap-2 align-items-center ms-2">
+            {% if oferta_principal and oferta.id == oferta_principal.id %}<span class="badge bg-primary">Principal</span>{% endif %}
+            {% if not oferta.ativo %}<span class="badge bg-secondary">Inativa</span>{% endif %}
+            <i class="bi bi-chevron-down" aria-hidden="true"></i>
+          </span>
+        </button>
+      </h6>
+      <div id="detalhes-oferta-{{ oferta.id }}" class="collapse">
+        <div class="card-body">
+          <div class="row g-3 small">
+            <div class="col-md-6">
+              <strong>Dias:</strong> {{ oferta.dias_semana or turma.dias_semana or 'Não informados' }}
             </div>
-          </td>
-          <td class="fw-bold small">{{ aluno.nome }}</td>
-          <td>
-            <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
-              style="width: 150px">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-              <input type="hidden" name="turma_id" value="{{ turma.id }}" />
-              <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
-                {# "Não se aplica" é sempre fixo e pré-selecionado quando o aluno não tem nível #}
-                <option value="Não se aplica" {% if not aluno.nivel or aluno.nivel == "Não se aplica" %}selected{% endif %}>
-                  Não se aplica
-                </option>
-                {# Níveis cadastrados pelo usuário em Planejamento #}
-                {% for nv in niveis_cadastrados %}
-                <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>
-                  {{ nv.nome }}
-                </option>
+            <div class="col-md-6">
+              <strong>Horários:</strong>
+              {% if oferta.hora_inicio or turma.hora_inicio %}{{ (oferta.hora_inicio or turma.hora_inicio).strftime('%H:%M') }}{% else %}--:--{% endif %}
+              às
+              {% if oferta.hora_fim or turma.hora_fim %}{{ (oferta.hora_fim or turma.hora_fim).strftime('%H:%M') }}{% else %}--:--{% endif %}
+            </div>
+            <div class="col-md-6">
+              {% set inicio_oferta = oferta.data_inicio or turma.data_inicio %}
+              {% set fim_oferta = oferta.data_fim or turma.data_fim %}
+              <strong>Vigência:</strong>
+              {{ inicio_oferta.strftime('%d/%m/%Y') if inicio_oferta else 'Início aberto' }}
+              até {{ fim_oferta.strftime('%d/%m/%Y') if fim_oferta else 'sem término definido' }}
+            </div>
+            <div class="col-md-6">
+              <strong>Centro de custo:</strong>
+              {% if oferta.centro_custo %}{{ oferta.centro_custo }} (individual)
+              {% elif turma.centro_custo %}{{ turma.centro_custo }} (compartilhado)
+              {% else %}Compartilhado, não informado{% endif %}
+            </div>
+            <div class="col-md-6">
+              <strong>Programa:</strong> {{ oferta.programa }}
+            </div>
+          </div>
+          <hr class="my-3">
+          {% set inscricoes_oferta = alunos_por_oferta.get(oferta.id, []) %}
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Alunos enturmados</strong>
+            <span class="text-muted small">{{ inscricoes_oferta|length }} aluno(s)</span>
+          </div>
+          {% if inscricoes_oferta %}
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr class="small text-uppercase text-muted">
+                  <th>Foto</th>
+                  <th>Nome</th>
+                  <th>Nível</th>
+                  <th class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for inscricao_aluno in inscricoes_oferta %}
+                {% set aluno = inscricao_aluno.aluno %}
+                <tr>
+                  <td>
+                    <div class="rounded bg-light d-flex align-items-center justify-content-center overflow-hidden"
+                      style="width: 50px; height: 64px; border: 1px solid #ddd">
+                      <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
+                        class="w-100 h-100 object-fit-cover" alt="Foto de {{ aluno.nome }}" />
+                    </div>
+                  </td>
+                  <td class="fw-bold small">{{ aluno.nome }}</td>
+                  <td>
+                    <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
+                      style="width: 150px">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                      <input type="hidden" name="turma_id" value="{{ turma.id }}" />
+                      <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
+                        <option value="Não se aplica" {% if not aluno.nivel or aluno.nivel == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
+                        {% for nv in niveis_cadastrados %}
+                        <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>{{ nv.nome }}</option>
+                        {% endfor %}
+                      </select>
+                    </form>
+                  </td>
+                  <td class="text-end">
+                    <a href="/aluno/editar/{{ aluno.id }}" class="btn btn-sm btn-outline-primary" title="Editar">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id, turma_origem_id=turma.id, turma_curso_id=oferta.id) }}"
+                      class="btn btn-sm btn-outline-warning" title="Transferir {{ oferta.curso.nome }}">
+                      <i class="bi bi-arrow-left-right"></i> Transferir
+                    </a>
+                    {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
+                    {# ETAPA M2 (Passo 4): desenturmar POR oferta — o aluno em 2+ ofertas
+                       aparece em cada card com seu próprio botão, identificado pelo nome
+                       do curso; em 1 oferta o botão é o mesmo de antes. #}
+                    <form action="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id) }}"
+                      method="POST" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Desenturmar de {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}"
+                        onclick="return confirm('Deseja desenturmar {{ aluno.nome }} de {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}?');">
+                        <i class="bi bi-person-dash"></i>
+                      </button>
+                    </form>
+                    {% endif %}
+                  </td>
+                </tr>
                 {% endfor %}
-              </select>
-            </form>
-          </td>
-          <td class="text-end">
-            <a href="/aluno/editar/{{ aluno.id }}" class="btn btn-sm btn-outline-primary" title="Editar">
-              <i class="bi bi-pencil"></i>
-            </a>
-            <a href="{{ url_for('registros.transferir_aluno', aluno_id=aluno.id, turma_origem_id=turma.id) }}"
-              class="btn btn-sm btn-outline-warning" title="Transferir desta turma"
-              onclick="return confirm('Transferir este aluno da turma {{ turma.nome }} para outra turma?');">
-              <i class="bi bi-arrow-left-right"></i>
-            </a>
-            {% if current_user.role in ['admin', 'pedagogico', 'secretaria',
-            'gerencia'] %}
-            <form action="{{ url_for('registros.desenturmar_alunos', id=aluno.id, turma_id=turma.id) }}" method="POST"
-              class="d-inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-              <button type="submit" class="btn btn-sm btn-outline-danger" title="Remover da Turma" onclick="
-                  return confirm('Deseja remover este aluno da turma atual?');
-                ">
-                <i class="bi bi-person-dash"></i>
-              </button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted small mb-0">Nenhum aluno enturmado nesta oferta.</p>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
-  <p class="text-muted text-center py-4">Nenhum aluno enturmado nesta turma.</p>
+  <div class="alert alert-info mb-0">Esta turma ainda não possui ofertas cadastradas.</div>
   {% endif %}
-</div>
+</section>
 
 {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
 <!-- Modal Enturmar -->
@@ -197,9 +220,36 @@
       </div>
       <div class="modal-body">
         <p class="small text-muted mb-3">
-          Selecione os alunos cadastrados que deseja adicionar à turma
-          <strong>{{ turma.nome }}</strong>.
+          Selecione os alunos cadastrados que deseja vincular à oferta escolhida
+          da turma <strong>{{ turma.nome }}</strong>.
         </p>
+        {# Etapa M1: turma sem oferta ativa não recebe alunos #}
+        {% if ofertas | length == 0 %}
+        <div class="alert alert-warning small mb-3">
+          Esta turma ainda não tem curso. Cadastre um curso em
+          <strong>Cursos da Turma</strong> antes de enturmar alunos.
+        </div>
+        {% endif %}
+        {# A oferta é escolhida antes de exibir a lista de alunos. #}
+        {% if ofertas | length >= 1 %}
+        <div class="mb-3">
+          <label class="form-label small fw-bold" for="cursoEnturmar">Curso</label>
+          <select name="turma_curso_id" class="form-select form-select-sm"
+            id="cursoEnturmar" required
+            {% if ofertas | length >= 2 %}onchange="if(this.value){window.location.href='{{ url_for('registros.ver_turma', id=turma.id) }}?oferta_sel='+this.value+'&modal=enturmar'}"{% endif %}>
+            {% if ofertas | length >= 2 %}
+            <option value="" {% if not oferta_sel %}selected{% endif %}>Selecione um curso</option>
+            {% endif %}
+            {% for o in ofertas %}
+            <option value="{{ o.id }}" {% if oferta_sel and o.id == oferta_sel.id %}selected{% elif ofertas|length == 1 %}selected{% endif %}>
+              {{ o.curso.nome }}{% if o.turno %} — {{ o.turno }}{% endif %}{% if o.hora_inicio %} {{ o.hora_inicio.strftime('%H:%M') }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Escolha o curso para mostrar os alunos disponíveis nessa oferta.</div>
+        </div>
+        {% endif %}
+        {% if ofertas | length == 1 or oferta_sel %}
         <div class="mb-3">
           <input type="search" id="alunoSearchInput" class="form-control form-control-sm"
             placeholder="Pesquisar aluno..." autocomplete="off" />
@@ -214,6 +264,7 @@
               </tr>
             </thead>
             <tbody>
+              {% if alunos_sem_turma %}
               {% for a in alunos_sem_turma %}
               <tr class="enturmar-row" data-nome="{{ a.nome.lower() }}">
                 <td>
@@ -234,23 +285,29 @@
                   </select>
                 </td>
               </tr>
+              {% endfor %}
               {% else %}
               <tr>
                 <td colspan="3" class="text-center py-4 text-muted">
-                  Todos os alunos cadastrados já estão em alguma turma.
+                  Nenhum aluno disponível para este curso.
                 </td>
               </tr>
-              {% endfor %}
+              {% endif %}
             </tbody>
           </table>
         </div>
+        {% elif ofertas | length >= 2 %}
+        <div class="alert alert-info small">Selecione um curso para carregar a lista de alunos disponíveis.</div>
+        {% endif %}
       </div>
       <div class="modal-footer">
-        <a href="/alunos" class="btn btn-link text-primary small me-auto">Cadastrar Novo Aluno</a>
+        <a href="{{ url_for('registros.turma_ofertas', id=turma.id) }}"
+          class="btn btn-link text-primary small me-auto">Nova Oferta de Curso</a>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
           Cancelar
         </button>
-        <button type="submit" class="btn btn-primary fw-bold" {% if not alunos_sem_turma %}disabled{% endif %}>
+        <button type="submit" class="btn btn-primary fw-bold"
+          {% if not alunos_sem_turma or ofertas | length == 0 or (ofertas | length >= 2 and not oferta_sel) %}disabled{% endif %}>
           ENTURMAR SELECIONADOS
         </button>
       </div>
@@ -274,68 +331,52 @@
         });
     });
   });
-</script>
+
+  // Etapa M1: após trocar o curso no seletor (reload), reabrir o modal.
+  {% if abrir_modal_enturmar and ofertas | length >= 2 %}
+  document.addEventListener("DOMContentLoaded", function () {
+    var modalEnturmarEl = document.getElementById("modalEnturmar");
+    if (modalEnturmarEl) {
+      new bootstrap.Modal(modalEnturmarEl).show();
+    }
+  });
+  {% endif %}</script>
 
 <div class="mt-4 d-flex gap-2">
   <a href="/turma" class="btn btn-secondary">Voltar</a>
+  {# D5.2: conselho é por OFERTA — com 1 oferta ativa o link dispensa o
+     parâmetro (a rota usa direto); com 2+ aproveita a oferta já selecionada
+     na página (?oferta_sel=) e sem seleção a própria página de lançamento
+     pede a escolha. #}
+  {% set conselho_oferta = oferta_sel or (ofertas[0] if ofertas and ofertas|length == 1 else none) %}
+  {% set conselho_sufixo = '&oferta_sel=' ~ conselho_oferta.id if conselho_oferta else '' %}
   <div class="dropdown">
     <button class="btn btn-info dropdown-toggle fw-bold" type="button" data-bs-toggle="dropdown">
       <i class="bi bi-journal-check me-1"></i> CONSELHO DE CLASSE
     </button>
     <ul class="dropdown-menu shadow border-0">
       <li>
-        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=INICIAL"><i
+        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=INICIAL{{ conselho_sufixo }}"><i
             class="bi bi-1-circle me-2"></i>Conselho Inicial</a>
       </li>
       <li>
-        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=PERCURSO"><i
+        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=PERCURSO{{ conselho_sufixo }}"><i
             class="bi bi-2-circle me-2"></i>Conselho de Percurso</a>
       </li>
       <li>
-        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=FINAL"><i
+        <a class="dropdown-item py-2" href="/conselho/lancamento?turma={{ turma.id }}&etapa=FINAL{{ conselho_sufixo }}"><i
             class="bi bi-3-circle me-2"></i>Conselho Final</a>
       </li>
+      {# D5.2b: o antigo modal #modalConselho postava campos resposta_<id>
+         que o servidor ignora (nunca gravava nada) e nenhum botão o abria.
+         O caminho real da avaliação coletiva é a tela da OFERTA. #}
+      <li><hr class="dropdown-divider"></li>
+      <li>
+        <a class="dropdown-item py-2"
+          href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}{% if conselho_oferta %}?oferta_sel={{ conselho_oferta.id }}{% endif %}"><i
+            class="bi bi-chat-left-text me-2"></i>Avaliação da Oferta</a>
+      </li>
     </ul>
-  </div>
-</div>
-
-<div class="modal fade" id="modalConselho" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <form action="/conselho/salvar" method="POST" class="modal-content">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-      <div class="modal-header bg-info text-white">
-        <h5 class="modal-title fw-bold">
-          <i class="bi bi-chat-left-dots me-2"></i>Lançamento: Conselho
-          <span id="labelEtapa"></span>
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" name="turma_id" value="{{ turma.id }}" />
-        <input type="hidden" name="etapa" id="inputEtapa" />
-        <div id="containerPerguntas">
-          {% for p in perguntas %}
-          <div class="pergunta-item mb-4 p-3 border rounded bg-light" data-etapa="{{ p.etapa }}" style="display: none">
-            <label class="form-label fw-bold">{{ loop.index }}. {{ p.texto }}</label>
-            <select name="resposta_{{ p.id }}" class="form-select" required disabled>
-              <option value="">-- Selecione --</option>
-              {% for opcao in p.opcoes.split(',') %}
-              <option value="{{ opcao.strip() }}">{{ opcao.strip() }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-          Fechar
-        </button>
-        <button type="submit" class="btn btn-info fw-bold text-white">
-          GRAVAR AVALIAÇÃO
-        </button>
-      </div>
-    </form>
   </div>
 </div>
 

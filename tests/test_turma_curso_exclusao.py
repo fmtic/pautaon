@@ -107,7 +107,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
                 unidade_id=u1.id, ativo=True, principal=(i == 0),
                 professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
                 hora_inicio=time(9, 0), hora_fim=time(10, 0),
-                data_inicio=DATA_INI, data_fim=DATA_FIM,
+                data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
             )
             db.session.add(o)
             db.session.flush()
@@ -141,6 +141,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
         elif historico == "conselho":
             db.session.add(ConselhoClasse(
                 turma_id=turma.id, aluno_id=aluno_id,
+                turma_curso_id=oferta_ids[0],
                 etapa=EtapaConselho.INICIAL, unidade_id=u1.id,
             ))
 
@@ -259,8 +260,15 @@ def test_aluno_disponivel_apos_desativacao():
         )
         db.session.add(outra)
         db.session.flush()
+        oferta_outra = TurmaCurso(
+            turma_id=outra.id, curso_id=ids["cA"], unidade_id=ids["u1"],
+            ativo=True, principal=True, programa="Teste",
+        )
+        db.session.add(oferta_outra)
+        db.session.flush()
         db.session.add(Inscricao(
             aluno_id=ids["aluno"], turma_id=outra.id,
+            turma_curso_id=oferta_outra.id,
             data_inicio=DATA_INI, ativo=True,
         ))
         db.session.commit()

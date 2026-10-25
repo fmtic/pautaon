@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 
 from flask import (
     abort,
@@ -15,7 +15,6 @@ from flask_login import current_user, login_required
 
 from app.database import db
 from app.models import (
-    Aluno,
     DiaBloqueado,
     DiaBloqueadoTurma,
     Inscricao,
@@ -28,6 +27,7 @@ from app.services.feriados import obter_feriados_nacionais
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
 from app.utils.logica import get_unidade_id
+
 from . import bp
 
 _ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
@@ -102,7 +102,9 @@ def calendario_salvar():
     if not periodo:
         return jsonify({"success": False, "message": "Período não encontrado"}), 404
 
-    if unidade_id and periodo.unidade_id != unidade_id:
+    # ETAPA B4: recusa também sem unidade efetiva na sessão (Visão Global é
+    # somente leitura). Mantida a resposta JSON 403, idioma original da rota.
+    if unidade_id is None or periodo.unidade_id != unidade_id:
         return (
             jsonify({"success": False, "message": "Acesso negado a esta unidade"}),
             403,
@@ -202,9 +204,12 @@ def calendario_remover(dia_id):
     unidade_id = get_unidade_id()
     _check_calendario_access(unidade_id)
 
+    from .shared import assert_unidade_context
+
     dia = DiaBloqueado.query.get_or_404(dia_id)
-    if unidade_id and dia.unidade_id != unidade_id:
-        abort(403)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis; o guard
+    # anterior (`unidade_id and ...`) era pulado na Visão Global.
+    assert_unidade_context(dia.unidade_id, unidade_id)
 
     try:
         db.session.delete(dia)
@@ -370,8 +375,9 @@ def periodo_letivo_editar(id):
     from .shared import assert_unidade_context
 
     periodo = db.get_or_404(PeriodoLetivo, id)
-    if current_user.role != "admin":
-        assert_unidade_context(periodo.unidade_id, get_unidade_id())
+    # ETAPA B4: isolamento por unidade vale para todos os perfis, inclusive
+    # admin (Visão Global é somente leitura; B3 §4, item 7).
+    assert_unidade_context(periodo.unidade_id, get_unidade_id())
     unidade = periodo.unidade
 
     if request.method == "POST":
@@ -513,7 +519,15 @@ def periodo_letivo_calendario(id):
 @bp.route("/periodo-letivo/relatorio/<int:id>")
 @login_required
 def periodo_letivo_relatorio_certificado(id):
-    """Gera lista de alunos aprovados ou participantes para certificados."""
+    """Lista os alunos aprovados/participantes para certificados.
+
+    D5.4: o documento é montado UMA LINHA POR INSCRIÇÃO (aluno × oferta).
+    O conselho FINAL vem de `(turma_curso_id, aluno_id, etapa)` e o ícone
+    Concluído/Pendente do flag da PRÓPRIA oferta. Linhas legadas (oferta
+    NULL) não são exibidas — a lista está em `scripts/verificar_onda4_d5.py`.
+    """
+    from sqlalchemy.orm import joinedload
+
     from app.models import ConselhoClasse
 
     if current_user.role not in _ROLES_PERIODO:
@@ -530,45 +544,56 @@ def periodo_letivo_relatorio_certificado(id):
     situacoes_aprovadas = {"Aprovado", "Participação", "Concluído"}
 
     for turma in turmas:
-        alunos_turma = (
-            Aluno.query.join(Inscricao)
-            .filter(
-                Inscricao.turma_id == turma.id,
-                Inscricao.ativo == True,
-                Aluno.ativo == True,
+        inscricoes = (
+            Inscricao.query.options(
+                joinedload(Inscricao.aluno), joinedload(Inscricao.turma_curso)
             )
-            .order_by(Aluno.nome)
+            .filter(Inscricao.turma_id == turma.id, Inscricao.ativo.is_(True))
+            .order_by(Inscricao.id)
             .all()
         )
 
-        for aluno in alunos_turma:
+        vistos = set()
+        for inscricao in inscricoes:
+            aluno = inscricao.aluno
+            oferta = inscricao.turma_curso
+            if aluno is None or not aluno.ativo or oferta is None:
+                continue
+            # Uma linha por INSCRIÇÃO (aluno × oferta): inscrições duplicadas
+            # do mesmo par não repetem o aluno no documento.
+            chave = (aluno.id, oferta.id)
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+
             conselho = ConselhoClasse.query.filter_by(
-                turma_id=turma.id,
+                turma_curso_id=oferta.id,
                 aluno_id=aluno.id,
                 etapa="FINAL",
             ).first()
             situacao = conselho.situacao_final if conselho else None
             aprovado = situacao in situacoes_aprovadas if situacao else False
-            inscricao = Inscricao.query.filter_by(
-                aluno_id=aluno.id, turma_id=turma.id
-            ).first()
-            nivel_turma = inscricao.nivel if inscricao and inscricao.nivel else None
+            nivel_turma = inscricao.nivel or aluno.nivel
 
-            # Carga horária TOTAL cursada pelo aluno nesta turma do período:
-            #   C.H. por aula (curso) x dias de aula da turma, já descontando
-            #   os dias sem aula (DiaBloqueado) com exceções por turma.
-            # É o valor que deve constar no certificado, e não a C.H. por aula.
-            carga_total = formatar_ch(turma.carga_horaria_total)
+            # Carga horária TOTAL cursada pelo aluno NA OFERTA (cai na da
+            # turma apenas quando a oferta não tem carga própria definida).
+            carga_total = formatar_ch(
+                oferta.carga_horaria_total
+                if oferta.carga_horaria_total
+                else turma.carga_horaria_total
+            )
 
             alunos_map[aluno.id]["aluno"] = aluno
             alunos_map[aluno.id]["cursos"].append(
                 {
                     "turma": turma,
-                    "curso": turma.curso,
+                    "curso": oferta.curso or turma.curso,
                     "nivel": nivel_turma,
                     "situacao": situacao or "—",
                     "aprovado": aprovado,
-                    "concluido": turma.conselho_concluido,
+                    # D5.4: encerramento da PRÓPRIA oferta (o derivado da
+                    # turma deixou de ser usado aqui na D5.3).
+                    "concluido": bool(oferta.conselho_concluido),
                     "carga_total": carga_total,
                 }
             )
@@ -719,14 +744,13 @@ def editar_centro_custo(centro_id):
         abort(403)
     unidade_id = _centro_custo_unidade_id()
     from app.models import CentroCusto
+
     from .shared import assert_unidade_context
 
     centro = db.get_or_404(CentroCusto, centro_id)
-    if current_user.role not in ("admin", "gerencia"):
-        assert_unidade_context(centro.unidade_id, unidade_id)
-    if unidade_id is not None and centro.unidade_id != unidade_id and current_user.role in ("admin", "gerencia"):
-        # permite admin/gerencia apenas se o centro pertencer à unidade do contexto
-        assert_unidade_context(centro.unidade_id, unidade_id)
+    # ETAPA B4: isolamento por unidade vale para todos os perfis, inclusive
+    # admin/gerencia — os guards anteriores eram pulados na Visão Global (item 10).
+    assert_unidade_context(centro.unidade_id, unidade_id)
     if not centro.ativo:
         return jsonify({"success": False, "message": "Reative o centro de custo antes de editá-lo."}), 409
 
@@ -779,6 +803,7 @@ def inativar_centro_custo(centro_id):
         abort(403)
     unidade_id = _centro_custo_unidade_id()
     from app.models import CentroCusto
+
     from .shared import assert_unidade_context
 
     centro = db.get_or_404(CentroCusto, centro_id)
@@ -807,6 +832,7 @@ def reativar_centro_custo(centro_id):
         abort(403)
     unidade_id = _centro_custo_unidade_id()
     from app.models import CentroCusto
+
     from .shared import assert_unidade_context
 
     centro = db.get_or_404(CentroCusto, centro_id)

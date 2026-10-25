@@ -166,7 +166,7 @@ def _pendencias_por_ofertas(turma, ativas, blocked) -> int:
     pendencias = 0
     for oferta in ativas:
         pauta = _alunos_da_oferta(
-            turma.id, oferta.id, incluir_inscricoes_null=False,
+            turma.id, oferta.id,
         )
         if not pauta:
             continue

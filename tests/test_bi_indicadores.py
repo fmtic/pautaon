@@ -12,6 +12,7 @@ from app.models import (
     PerfilDiversidade,
     PeriodoLetivo,
     Turma,
+    TurmaCurso,
     Unidade,
     User,
 )
@@ -152,6 +153,23 @@ def test_indicadores_de_status_e_filtros_globais(app):
         turma_anterior_b.curso_id = cursos[1].id
         turma_atual_b.curso_id = cursos[1].id
 
+        # Etapa J3: cada turma das sementes ganha exatamente 1 oferta ativa,
+        # para que o helper 'enturmado em oferta ativa' (usado por ALU-009 e
+        # ALU-010) conte as inscrições com turma_curso_id NULL.
+        for turma_seed in (
+            turma_anterior_a, turma_atual_a, turma_anterior_b, turma_atual_b
+        ):
+            db.session.add(TurmaCurso(
+                turma_id=turma_seed.id,
+                curso_id=turma_seed.curso_id,
+                unidade_id=turma_seed.unidade_id,
+                turno=turma_seed.turno,
+                ativo=True,
+                principal=True,
+                programa="Teste",
+            ))
+        db.session.flush()
+
         def aluno(unidade, nome, ativo=True):
             registro = Aluno(nome=nome, unidade_id=unidade.id, ativo=ativo)
             db.session.add(registro)
@@ -159,9 +177,18 @@ def test_indicadores_de_status_e_filtros_globais(app):
             return registro
 
         def inscricao(registro, turma, inicio, ativo=True):
+            # Cada turma das sementes tem exatamente 1 oferta ativa; vincular a
+            # inscrição a ela preserva as contagens (o fallback NULL de oferta
+            # única contava do mesmo jeito). c3d4e5f6a7b8 não permite mais NULL.
+            oferta = (
+                TurmaCurso.query.filter_by(turma_id=turma.id, ativo=True)
+                .order_by(TurmaCurso.id)
+                .first()
+            )
             db.session.add(Inscricao(
                 aluno_id=registro.id,
                 turma_id=turma.id,
+                turma_curso_id=oferta.id,
                 data_inicio=inicio,
                 ativo=ativo,
             ))
@@ -304,12 +331,22 @@ def test_indicadores_de_status_isolam_unidade_do_usuario_na_rota(app):
             )
             db.session.add(turma)
             db.session.flush()
+            curso = Curso(nome="Curso vigente", unidade_id=unidade.id, ativo=True)
+            db.session.add(curso)
+            db.session.flush()
+            oferta = TurmaCurso(
+                turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+                turno="Manhã", ativo=True, principal=True, programa="Teste",
+            )
+            db.session.add(oferta)
+            db.session.flush()
             estudante = Aluno(nome="Aluno", unidade_id=unidade.id, ativo=True)
             db.session.add(estudante)
             db.session.flush()
             db.session.add(Inscricao(
                 aluno_id=estudante.id,
                 turma_id=turma.id,
+                turma_curso_id=oferta.id,
                 data_inicio=hoje,
                 ativo=True,
             ))

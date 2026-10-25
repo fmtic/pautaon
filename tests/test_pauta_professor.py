@@ -1,5 +1,7 @@
+from datetime import date, time
+
 from app import create_app, db
-from app.models import Aluno, Curso, Inscricao, Turma, Unidade, User
+from app.models import Aluno, Curso, Inscricao, Turma, TurmaCurso, Unidade, User
 from config import Config
 
 
@@ -66,16 +68,36 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
             ]
         )
         db.session.flush()
+
+        oferta_assoc = TurmaCurso(
+            turma_id=turma_associada.id, curso_id=curso.id,
+            unidade_id=unidade.id, professor_id=professor.id,
+            ativo=True, principal=True, programa="Teste",
+            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            data_inicio=date(2026, 1, 5), data_fim=date(2026, 12, 21),
+        )
+        oferta_nao_assoc = TurmaCurso(
+            turma_id=turma_nao_associada.id, curso_id=curso.id,
+            unidade_id=unidade.id,
+            ativo=True, principal=True, programa="Teste",
+            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            data_inicio=date(2026, 1, 5), data_fim=date(2026, 12, 21),
+        )
+        db.session.add_all([oferta_assoc, oferta_nao_assoc])
+        db.session.flush()
+
         db.session.add_all(
             [
                 Inscricao(
                     aluno_id=aluno_associado.id,
                     turma_id=turma_associada.id,
+                    turma_curso_id=oferta_assoc.id,
                     ativo=True,
                 ),
                 Inscricao(
                     aluno_id=aluno_de_outra_turma.id,
                     turma_id=turma_nao_associada.id,
+                    turma_curso_id=oferta_nao_assoc.id,
                     ativo=True,
                 ),
             ]
@@ -155,8 +177,16 @@ def test_professor_nao_acessa_pauta_de_turma_de_outro_professor():
         )
         db.session.add_all([turma, aluno])
         db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+            professor_id=outro_professor.id, ativo=True, principal=True,
+            programa="Teste",
+        )
+        db.session.add(oferta)
+        db.session.flush()
         db.session.add(
-            Inscricao(aluno_id=aluno.id, turma_id=turma.id, ativo=True)
+            Inscricao(aluno_id=aluno.id, turma_id=turma.id,
+                      turma_curso_id=oferta.id, ativo=True)
         )
         db.session.commit()
 

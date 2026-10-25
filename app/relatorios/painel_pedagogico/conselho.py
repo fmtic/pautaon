@@ -1,11 +1,67 @@
-"""Agregação do conselho de classe por turma (1 consulta por tabela)."""
+"""Agregação do conselho de classe POR OFERTA (1 consulta por tabela).
+
+D5.4: a unidade de conselho é (oferta, aluno, etapa). `por_turma` continua
+recebendo ids de turma (o painel é por turma), mas agrega cada oferta
+separadamente com o rótulo "Turma — Curso". Linhas legadas com
+`turma_curso_id` NULL não entram na agregação — a lista fica em
+`scripts/verificar_onda4_d5.py` até a resolução manual antes da D5.5.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Iterable
 
-from app.models import ConselhoClasse, ConselhoResposta, PerguntaConselho
+from sqlalchemy.orm import joinedload
+
+from app.models import ConselhoClasse, ConselhoResposta, PerguntaConselho, TurmaCurso
+from app.services.conselho_leitura import rotulo_oferta
+
+
+def _bloco_vazio() -> dict:
+    return {
+        "inicial": {"total": 0, "respondidos": 0},
+        "percurso": {"total": 0, "respondidos": 0},
+        "final": {"total": 0, "respondidos": 0},
+        "respostas": defaultdict(
+            lambda: {"inicial": defaultdict(int), "percurso": defaultdict(int)}
+        ),
+        "perguntas": {},
+    }
+
+
+def _aplicar(bloco: dict, cons, respostas: list, perguntas: dict[str, str]) -> None:
+    etapa = (cons.etapa or "").lower()
+    if etapa not in ("inicial", "percurso", "final"):
+        return
+    bloco[etapa]["total"] += 1
+    if respostas:
+        bloco[etapa]["respondidos"] += 1
+    for r in respostas:
+        if r.pergunta_id is None:
+            continue
+        bloco["perguntas"][r.pergunta_id] = perguntas.get(
+            r.pergunta_id, f"Pergunta {r.pergunta_id}"
+        )
+        opcao = (r.resposta or "").strip() or "—"
+        if etapa in ("inicial", "percurso"):
+            bloco["respostas"][r.pergunta_id][etapa][opcao] += 1
+
+
+def _serializar(bloco: dict) -> dict:
+    return {
+        "inicial": bloco["inicial"],
+        "percurso": bloco["percurso"],
+        "final": bloco["final"],
+        "respostas": {
+            pid: {
+                "inicial": dict(etapas["inicial"]),
+                "percurso": dict(etapas["percurso"]),
+            }
+            for pid, etapas in bloco["respostas"].items()
+        },
+        "perguntas": bloco["perguntas"],
+    }
 
 
 def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
@@ -14,7 +70,8 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
         return {}
 
     conselhos = ConselhoClasse.query.filter(
-        ConselhoClasse.turma_id.in_(turmas_ids)
+        ConselhoClasse.turma_id.in_(turmas_ids),
+        ConselhoClasse.turma_curso_id.is_not(None),
     ).all()
     if not conselhos:
         return {}
@@ -30,9 +87,11 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
         r.pergunta_id for lst in respostas_por_conselho.values()
         for r in lst if r.pergunta_id
     }
+    # D5.4: `PerguntaConselho` tem `texto` (o antigo `p.enunciado` estourava
+    # AttributeError sempre que havia respostas registradas).
     perguntas = (
         {
-            p.id: p.enunciado
+            p.id: p.texto
             for p in PerguntaConselho.query.filter(
                 PerguntaConselho.id.in_(perguntas_ids)
             ).all()
@@ -40,51 +99,45 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
         if perguntas_ids else {}
     )
 
-    turma_map: dict[int, dict] = defaultdict(
-        lambda: {
-            "inicial": {"total": 0, "respondidos": 0},
-            "percurso": {"total": 0, "respondidos": 0},
-            "final": {"total": 0, "respondidos": 0},
-            "respostas": defaultdict(
-                lambda: {"inicial": defaultdict(int), "percurso": defaultdict(int)}
-            ),
-            "perguntas": {},
-        }
-    )
+    ofertas: dict[int, TurmaCurso] = {
+        o.id: o
+        for o in TurmaCurso.query.options(
+            joinedload(TurmaCurso.curso), joinedload(TurmaCurso.turma)
+        )
+        .filter(TurmaCurso.id.in_({c.turma_curso_id for c in conselhos}))
+        .all()
+    }
+
+    turma_map: dict[int, dict] = defaultdict(_bloco_vazio)
+    por_oferta: dict[tuple[int, int], dict] = defaultdict(_bloco_vazio)
 
     for cons in conselhos:
-        etapa = (cons.etapa or "").lower()
-        bloco = turma_map[cons.turma_id]
-        if etapa not in bloco:
-            continue
-        bloco[etapa]["total"] += 1
         respostas = respostas_por_conselho.get(cons.id, [])
-        if respostas:
-            bloco[etapa]["respondidos"] += 1
-        for r in respostas:
-            if r.pergunta_id is None:
-                continue
-            bloco["perguntas"][r.pergunta_id] = perguntas.get(
-                r.pergunta_id, f"Pergunta {r.pergunta_id}"
-            )
-            opcao = (r.resposta or "").strip() or "—"
-            if etapa in ("inicial", "percurso"):
-                bloco["respostas"][r.pergunta_id][etapa][opcao] += 1
+        _aplicar(turma_map[cons.turma_id], cons, respostas, perguntas)
+        _aplicar(
+            por_oferta[(cons.turma_id, cons.turma_curso_id)],
+            cons,
+            respostas,
+            perguntas,
+        )
 
-    return {
-        tid: {
-            "inicial": bloco["inicial"],
-            "percurso": bloco["percurso"],
-            "final": bloco["final"],
-            "respostas": {
-                pid: {"inicial": dict(e["inicial"]),
-                      "percurso": dict(e["percurso"])}
-                for pid, e in bloco["respostas"].items()
-            },
-            "perguntas": bloco["perguntas"],
-        }
-        for tid, bloco in turma_map.items()
-    }
+    saida: dict[int, dict] = {}
+    for tid, bloco in turma_map.items():
+        ofertas_view = []
+        for (turma_id, oferta_id), bloco_oferta in por_oferta.items():
+            if turma_id != tid:
+                continue
+            oferta = ofertas.get(oferta_id)
+            ofertas_view.append(
+                {
+                    "turma_curso_id": oferta_id,
+                    "rotulo": rotulo_oferta(oferta),
+                    **_serializar(bloco_oferta),
+                }
+            )
+        ofertas_view.sort(key=lambda item: (item["rotulo"], item["turma_curso_id"]))
+        saida[tid] = {**_serializar(bloco), "ofertas": ofertas_view}
+    return saida
 
 
 def etapas(cons: dict) -> list[dict]:

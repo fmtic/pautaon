@@ -12,6 +12,9 @@
     >
       <h2 class="fw-bold">
         <i class="bi bi-mortarboard me-2"></i>Conselho da Turma - Fechamento
+        {% if oferta %}
+        <span class="fs-6 fw-normal text-muted ms-2">| Curso: {{ oferta.curso.nome }}</span>
+        {% endif %}
       </h2>
       <div>
         <button onclick="prepararImpressao()" class="btn btn-dark">
@@ -59,11 +62,34 @@
       </div>
     </div>
 
+    {# D5.2 (M1): fechamento por OFERTA — com 2+ cursos ativos exige escolha
+       antes de listar qualquer aluno; com 0 a rota recusa com flash. #}
+    {% if exigir_escolha %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h5 class="fw-bold mb-3">
+          <i class="bi bi-exclamation-triangle text-warning me-2"></i>Selecione o curso (oferta)
+        </h5>
+        <form method="GET" class="row g-2 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label small fw-bold text-secondary">Curso (oferta)</label>
+            <select name="oferta_sel" class="form-select" onchange="this.form.submit()">
+              <option value="">Selecione o curso...</option>
+              {% for o in ofertas %}
+              <option value="{{ o.id }}">{{ o.curso.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% else %}
     <div class="card shadow-sm border-0">
       <div class="table-responsive">
         <table
           id="tabelaFechamento"
           class="table table-hover align-middle mb-0"
+          data-oferta-id="{{ oferta.id }}"
         >
           <thead class="table-dark">
             <tr class="small text-center">
@@ -78,7 +104,7 @@
           </thead>
           <tbody>
             {% for item in dados %}
-            <tr>
+            <tr data-aluno-id="{{ item.obj.id }}">
               <td class="ps-3">
                 <div class="d-flex align-items-center">
                   <img
@@ -114,32 +140,33 @@
               <td class="text-center fw-bold text-danger">{{ item.falta }}%</td>
 
               {# Situação Final: select visível na tela, span visível na
-              impressão #}
+              impressão. D5.2b: value = VALOR do enum SituacaoFinal
+              (app/models/enums.py) — nada fora dele. #}
               <td class="text-center">
                 <select
                   class="form-select form-select-sm border-primary d-print-none situacao-select"
                 >
-                  <option value="APROVADO">Aprovado</option>
-                  <option value="PARTICIPANTE">Participante</option>
-                  <option value="REPROVADO_POR_FALTA">
-                    Reprovado por Falta
-                  </option>
-                  <option value="EVADIDO">Evadido</option>
-                  <option value="DESISTENTE">Desistente</option>
-                  <option value="EMPREGADO">Empregado</option>
+                  <option value="Aprovado">Aprovado</option>
+                  <option value="Reprovado por Falta">Reprovado por Falta</option>
+                  <option value="Desistente">Desistente</option>
+                  <option value="Evadido">Evadido</option>
+                  <option value="Participação">Participação</option>
+                  <option value="Concluído">Concluído</option>
                 </select>
                 <span class="d-none d-print-inline situacao-texto fw-semibold"
                   >Aprovado</span
                 >
               </td>
 
-              {# Próxima Turma: mesma lógica #}
+              {# Próxima Turma: mesma lógica. D5.2 (Passo 5): o valor é o id
+                 do catálogo OpcaoProximaTurma (era lista hardcoded de nomes). #}
               <td class="text-center">
                 <select
                   class="form-select form-select-sm border-secondary d-print-none proxima-select"
                 >
+                  <option value="">—</option>
                   {% for opt in opcoes_turma %}
-                  <option value="{{ opt }}">{{ opt }}</option>
+                  <option value="{{ opt.id }}">{{ opt.nome }}</option>
                   {% endfor %}
                 </select>
                 <span
@@ -152,6 +179,7 @@
         </table>
       </div>
     </div>
+    {% endif %}
 
     {# Rodapé de auditoria — só aparece na impressão #}
     <div

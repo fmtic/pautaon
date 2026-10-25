@@ -4,27 +4,91 @@
 <div class="container mt-4 mb-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Listagem de Turmas</h2>
-        <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success shadow-sm">
-            <i class="bi bi-plus-lg me-1"></i> Nova Turma
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ url_imprimir_centros }}" target="_blank" class="btn btn-outline-secondary shadow-sm">
+                <i class="bi bi-printer me-1"></i> Imprimir
+            </a>
+            <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success shadow-sm">
+                <i class="bi bi-plus-lg me-1"></i> Nova Turma
+            </a>
+        </div>
     </div>
+
+    {% if anos_badges %}
+    <section class="mb-3" aria-label="Filtrar turmas por período letivo">
+        <div class="d-flex flex-column gap-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small fw-bold text-muted me-1">Ano:</span>
+                {% for grupo in anos_badges %}
+                <a href="{{ grupo.url }}"
+                    class="badge rounded-pill text-decoration-none px-3 py-2 {% if grupo.selecionado %}border border-3 border-dark{% endif %}"
+                    style="background-color: {{ grupo.cor }}; color: {{ grupo.cor_texto }};"
+                    aria-pressed="{{ 'true' if grupo.selecionado else 'false' }}">
+                    {{ grupo.ano }}
+                </a>
+                {% endfor %}
+            </div>
+            {% for grupo in anos_badges %}
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small text-muted me-1">{{ grupo.ano }}:</span>
+                {% for item in grupo.periodos %}
+                <a href="{{ item.url }}"
+                    class="badge rounded-pill text-decoration-none px-3 py-2 {% if item.selecionado %}border border-3 border-dark{% endif %}"
+                    style="background-color: {{ item.cor }}; color: {{ item.cor_texto }};"
+                    aria-pressed="{{ 'true' if item.selecionado else 'false' }}">
+                    {{ item.periodo.nome }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     <!-- Seção de Filtros -->
     <div class="accordion mb-4 shadow-sm" id="accordionFiltros">
         <div class="accordion-item border-0 rounded-3">
             <h2 class="accordion-header" id="headingFiltros">
-                <button class="accordion-button {% if not request.args %}collapsed{% endif %} bg-light fw-semibold rounded-3" type="button"
-                    data-bs-toggle="collapse" data-bs-target="#collapseFiltros"
-                    aria-expanded="{{ 'true' if request.args else 'false' }}"
-                    aria-controls="collapseFiltros">
+                <button
+                    class="accordion-button {% if not filtros_painel_aberto %}collapsed{% endif %} bg-light fw-semibold rounded-3"
+                    type="button" data-bs-toggle="collapse" data-bs-target="#collapseFiltros"
+                    aria-expanded="{{ 'true' if filtros_painel_aberto else 'false' }}" aria-controls="collapseFiltros">
                     <i class="bi bi-funnel-fill me-2 text-primary"></i> Filtros de Busca
                 </button>
             </h2>
-            <div id="collapseFiltros" class="accordion-collapse collapse {% if request.args %}show{% endif %}" aria-labelledby="headingFiltros"
-                data-bs-parent="#accordionFiltros">
+            <div id="collapseFiltros" class="accordion-collapse collapse {% if filtros_painel_aberto %}show{% endif %}"
+                aria-labelledby="headingFiltros" data-bs-parent="#accordionFiltros">
                 <div class="accordion-body border border-top-0 rounded-bottom">
                     <form method="GET" action="{{ url_for('registros.turma') }}">
                         <div class="row g-3">
+                            <!-- Período letivo -->
+                            <div class="col-md-4">
+                                <label for="filtro_periodo" class="form-label small fw-bold text-muted">Período
+                                    letivo</label>
+                                <select class="form-select form-select-sm" id="filtro_periodo" name="periodo_letivo_id">
+                                    <option value="">Todos</option>
+                                    {% for periodo in periodos_filtro %}
+                                    <option value="{{ periodo.id }}" {% if periodo_selecionado==periodo.id %}selected{%
+                                        endif %}>
+                                        {{ periodo.nome }} ({{ periodo.data_inicio.year }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Centro de custo -->
+                            <div class="col-md-4">
+                                <label for="filtro_centro_custo" class="form-label small fw-bold text-muted">Centro de
+                                    custo</label>
+                                <select class="form-select form-select-sm" id="filtro_centro_custo" name="centro_custo">
+                                    <option value="">Todos</option>
+                                    {% for centro in centros_filtro %}
+                                    <option value="{{ centro.id }}" {% if centro_custo_selecionado==centro.id
+                                        %}selected{% endif %}>{{ centro.nome }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
                             <!-- Nome da Turma -->
                             <div class="col-md-4">
                                 <label for="filtro_nome" class="form-label small fw-bold text-muted">Nome da
@@ -32,7 +96,8 @@
                                 <select class="form-select form-select-sm" id="filtro_nome" name="nome">
                                     <option value="">Todos</option>
                                     {% for nome_turma in nomes_turmas|default([]) %}
-                                    <option value="{{ nome_turma }}" {% if request.args.get('nome')==nome_turma %}selected{% endif %}>{{ nome_turma }}</option>
+                                    <option value="{{ nome_turma }}" {% if request.args.get('nome')==nome_turma
+                                        %}selected{% endif %}>{{ nome_turma }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -44,7 +109,8 @@
                                 <select class="form-select form-select-sm" id="filtro_professor" name="professor">
                                     <option value="">Todos</option>
                                     {% for prof in professores|default([]) %}
-                                    <option value="{{ prof.name }}" {% if request.args.get('professor')==prof.name %}selected{% endif %}>{{ prof.name }}</option>
+                                    <option value="{{ prof.name }}" {% if request.args.get('professor')==prof.name
+                                        %}selected{% endif %}>{{ prof.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -165,9 +231,9 @@
                         <th class="ps-4">Nome da Turma</th>
                         <th class="text-center">Professor</th>
                         <th class="text-center">Turno</th>
-                        <th class="text-center">Alunos</th>
-                        <th class="text-center">Freq.</th>
-                        <th class="text-center">Programa</th>
+                        <!-- <th class="text-center">Alunos</th> -->
+                        <th class="text-center">Alunos Freq.</th>
+                        <th class="text-center">C. de Custos</th>
                         <th class="text-center">Dias</th>
                         <th class="text-center">Horário</th>
                         <!-- <th class="text-center">C.H./Aula</th> -->
@@ -188,88 +254,77 @@
                             {% if multi %}
                             <span class="badge bg-info text-dark ms-1">{{ ovas|length }} cursos</span>
                             <button class="btn btn-sm btn-outline-secondary ms-1" type="button"
-                                data-bs-toggle="collapse" data-bs-target="#ofertas-{{ turma.id }}"
-                                aria-expanded="false" aria-controls="ofertas-{{ turma.id }}" title="Ver cursos">
+                                data-bs-toggle="collapse" data-bs-target="#ofertas-{{ turma.id }}" aria-expanded="false"
+                                aria-controls="ofertas-{{ turma.id }}" title="Ver cursos">
                                 <i class="bi bi-chevron-expand"></i>
                             </button>
                             {% endif %}
+                            {% if turma.periodo_letivo_id is none %}
+                            <span class="badge bg-secondary text-white ms-1"
+                                title="Turma sem período letivo vinculado">Sem período</span>
+                            {% endif %}
                         </td>
 
                         <td class="text-center">
-                            {% if multi %}
-                                {% if resumo and resumo.professores %}
-                                    {% for nm in resumo.professores %}
-                                    <span class="small text-dark d-block">{{ nm }}</span>
-                                    {% endfor %}
-                                {% else %}
-                                <span class="text-muted small">Não atribuído</span>
-                                {% endif %}
+                            {% if principal and principal.professor %}
+                            <span class="small text-dark">{{ principal.professor.name }}</span>
+                            {% if multi %}<div class="small text-muted"><span class="small">principal</span></div>{% endif %}
+                            {% elif turma.professor %}
+                            <span class="small text-dark">{{ turma.professor.name }}</span>
                             {% else %}
-                                {% if turma.professor %}
-                                <span class="small text-dark">{{ turma.professor.name }}</span>
-                                {% else %}
-                                <span class="text-muted small">Não atribuído</span>
-                                {% endif %}
+                            <span class="text-muted small">Não atribuído</span>
                             {% endif %}
                         </td>
 
                         <td class="text-center">
                             {% if multi %}
-                                {% if resumo and resumo.turnos %}
-                                    {% for tv in resumo.turnos %}
-                                    <span class="badge bg-light text-dark border">{{ tv }}</span>
-                                    {% endfor %}
-                                {% else %}
-                                <span class="badge bg-light text-dark border">-</span>
-                                {% endif %}
+                            {% if resumo and resumo.turnos %}
+                            {% for tv in resumo.turnos %}
+                            <span class="badge bg-light text-dark border">{{ tv }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="badge bg-light text-dark border">-</span>
+                            {% endif %}
                             {% else %}
                             <span class="badge bg-light text-dark border">{{ turma.turno or '-' }}</span>
                             {% endif %}
+                            {% if multi %}<div class="small text-muted"><span class="small">principal</span></div>{%
+                            endif %}
                         </td>
+
+                        <!-- <td class="text-center">
+                            <span class="badge rounded-pill bg-primary px-3">
+                                {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
+                                turma.alunos|length }}
+                            </span>
+                        </td> -->
 
                         <td class="text-center">
                             <span class="badge rounded-pill bg-primary px-3">
                                 {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
                                 turma.alunos|length }}
                             </span>
-                        </td>
-
-                        <td class="text-center">
-                            {% if multi %}
-                            {% set fp = turma.freq_geral_oferta(principal.id) %}
+                            {% set frequencia_turma = turma.freq_geral %}
                             <span
-                                class="badge {% if fp >= 75 %}bg-success{% elif fp >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
-                                {{ fp }}%</span>
-                            <div class="small text-muted">principal</div>
-                            {% else %}
-                            <span
-                                class="badge {% if turma.freq_geral >= 75 %}bg-success{% elif turma.freq_geral >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
-                                {{ turma.freq_geral }}%
+                                class="badge {% if frequencia_turma >= 75 %}bg-success{% elif frequencia_turma >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
+                                {{ frequencia_turma }}%
                             </span>
-                            {% endif %}
                         </td>
 
                         <td class="text-center">
-                            <span class="badge bg-secondary opacity-75">{{ turma.programa or 'Não definido' }}</span>
+                            <span class="badge bg-secondary opacity-75">{{ principal.centro_custo if principal and
+                                principal.centro_custo else 'Não definido' }}</span>
+                            {% if multi %}<div class="small text-muted"><span class="small">principal</span></div>{%
+                            endif %}
                         </td>
 
                         <td class="text-center">
-                            {% if multi %}
-                                {% if resumo and resumo.dias %}
-                                    {% for dia in resumo.dias %}
-                                    <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
-                                    {% endfor %}
-                                {% else %}
-                                <span class="text-muted">Não informado</span>
-                                {% endif %}
+                            {% if resumo and resumo.dias_abreviados %}
+                            {% for dia in resumo.dias_abreviados %}
+                            <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
+                            {% endfor %}
                             {% else %}
-                                {% if turma.dias_semana %}
-                                {% for dia in turma.dias_semana.split(', ') %}
-                                <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
-                                {% endfor %}
-                                {% else %}
-                                <span class="text-muted">Não informado</span>
-                                {% endif %}
+                            <span class="text-muted">Não informado</span>
                             {% endif %}
                         </td>
 
@@ -277,7 +332,8 @@
                             {% if multi %}
                             {% set hi = principal.hora_inicio or turma.hora_inicio %}
                             {% set hf = principal.hora_fim or turma.hora_fim %}
-                            <i class="bi bi-clock me-1 text-muted"></i>{{ hi.strftime('%H:%M') if hi else '--:--' }} - {{
+                            <i class="bi bi-clock me-1 text-muted"></i>{{ hi.strftime('%H:%M') if hi else '--:--' }} -
+                            {{
                             hf.strftime('%H:%M') if hf else '--:--' }}
                             <div class="small text-muted">principal</div>
                             {% else %}
@@ -294,9 +350,7 @@
                         </td>  -->
 
                         <td class="text-center small fw-semibold">
-                            {{ formatar_ch(principal.carga_horaria_total) if multi else
-                            formatar_ch(turma.carga_horaria_total) }}
-                            {% if multi %}<div class="small text-muted fw-normal">principal</div>{% endif %}
+                            {{ formatar_ch(carga_horaria_total_map.get(turma.id)) }}
                         </td>
 
                         <td class="text-end pe-4">

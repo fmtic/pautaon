@@ -681,13 +681,14 @@ def calcular_metricas_conselho(unidade_id: Optional[int] = None) -> Dict[str, fl
                 "Erro ao calcular progresso de aulas do conselho"
             )
 
-    total_t_q = Turma.query.filter_by(ativo=True)
-    concluidas_q = Turma.query.filter_by(ativo=True, conselho_concluido=True)
-    if unidade_id:
-        total_t_q = total_t_q.filter_by(unidade_id=unidade_id)
-        concluidas_q = concluidas_q.filter_by(unidade_id=unidade_id)
-    total_t = total_t_q.count()
-    concluidas = concluidas_q.count()
+    # D5.3: as reuniões do conselho são contadas por OFERTA — ofertas ativas
+    # de turmas ativas (concluídas × total), respeitando a unidade. Turma sem
+    # oferta ativa não abre conselho e não entra na conta. Import local para
+    # não criar dependência de `app.services` no carregamento de `logica`
+    # (lição do ciclo app.services → app.relatorios).
+    from app.services.turma_curso import contar_ofertas_conselho
+
+    concluidas, total_t = contar_ofertas_conselho(unidade_id)
     prog_reunioes = float(
         round((concluidas / total_t * 100), 1) if total_t > 0 else 0.0
     )

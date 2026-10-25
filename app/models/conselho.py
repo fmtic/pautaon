@@ -17,6 +17,19 @@ NOTAS ONDA 2B
       `ConselhoClasse.etapa` agora são ENUM nativo do Postgres.
     - `ConselhoClasse.situacao_final` continua VARCHAR, mas ganhou CHECK
       constraint restrita ao enum `SituacaoFinal`.
+
+NOTAS ONDA 4 — D5.1 (conselho por oferta; esquema aditivo)
+    - `ConselhoClasse.turma_curso_id` (nullable FK → turma_curso) aponta para
+      a OFERTA avaliada. NULL = conselho legado (pré-D5), preservado.
+    - A UNIQUE antiga `(turma_id, aluno_id, etapa)` saiu do modelo e foi
+      substituída por dois índices ÚNICOS PARCIAIS (padrão
+      uix_freq_legado/uix_freq_oferta da Fase 4):
+        - uix_conselho_legado: (turma_id, aluno_id, etapa)
+          WHERE turma_curso_id IS NULL
+        - uix_conselho_oferta: (turma_curso_id, aluno_id, etapa)
+          WHERE turma_curso_id IS NOT NULL
+      Assim o mesmo aluno pode ter um conselho POR OFERTA na mesma
+      turma/etapa (decisão D5, 24/10/2026).
 ================================================================================
 """
 
@@ -114,7 +127,12 @@ class OpcaoProximaTurma(SoftDeleteMixin, db.Model):
 
 class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     """
-    Resultado do conselho para UM aluno em UMA turma em UMA etapa.
+    Resultado do conselho para UM aluno em UMA OFERTA em UMA etapa.
+
+    Desde D5.1 a unidade do conselho é a oferta (`turma_curso_id`);
+    `turma_id` permanece denormalizado (escopo tenant e checagem de histórico
+    da turma). Desde D5.5 `turma_curso_id` é OBRIGATÓRIO: o conselho legado
+    sem oferta não existe mais.
 
     Campos-chave:
         - `etapa`: INICIAL, PERCURSO ou FINAL (enum nativo).
@@ -123,15 +141,24 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
         - `proxima_turma_id`: destino sugerido após conselho final.
         - `concluido=True` indica que o conselho foi fechado.
 
-    Constraints:
-        - UNIQUE (turma_id, aluno_id, etapa): evita dois conselhos abertos
-          simultaneamente para o mesmo aluno/turma/etapa.
+    Constraints (D5.5):
+        - UNIQUE `uix_conselho_oferta`
+          (turma_curso_id, aluno_id, etapa) — plena, por oferta.
+        - Índice de apoio `ix_conselho_turma_curso`.
         - CHECK (situacao_final): restrita ao enum SituacaoFinal.
     """
     __tablename__ = 'conselho_classe'
     __table_args__ = (
-        db.UniqueConstraint('turma_id', 'aluno_id', 'etapa',
-                            name='uix_conselho_turma_aluno_etapa'),
+        # D5.5: unicidade por oferta (o ramo legado uix_conselho_legado saiu
+        # junto com o NOT NULL de turma_curso_id).
+        db.Index(
+            'uix_conselho_oferta',
+            'turma_curso_id', 'aluno_id', 'etapa',
+            unique=True,
+            postgresql_where=db.text('turma_curso_id IS NOT NULL'),
+            sqlite_where=db.text('turma_curso_id IS NOT NULL'),
+        ),
+        db.Index('ix_conselho_turma_curso', 'turma_curso_id'),
         db.CheckConstraint(
             f"situacao_final IS NULL OR "
             f"situacao_final IN ({_SITUACAO_FINAL_VALUES_SQL})",
@@ -142,6 +169,13 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
     aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False)
+    # D5.5 (Onda 4): oferta avaliada — OBRIGATÓRIA desde o endurecimento.
+    turma_curso_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey('turma_curso.id', ondelete='RESTRICT'),
+        nullable=False,
+        comment='FK → turma_curso (D5.5: obrigatória; conselho legado sem oferta não existe)',
+    )
 
     # Onda 2B: ENUM nativo.
     etapa: EtapaConselho = db.Column(
@@ -171,6 +205,9 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     unidade = db.relationship('Unidade', backref='conselhos_unidade')
 
     respostas = db.relationship('ConselhoResposta', backref='conselho', lazy=True)
+    # Oferta (D5.1): sem backref em TurmaCurso para não alterar academico.py
+    # mais do que o necessário nesta etapa.
+    oferta = db.relationship('TurmaCurso', lazy='joined')
 
 
 class ConselhoResposta(TenantMixin, db.Model):

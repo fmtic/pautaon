@@ -1,20 +1,21 @@
 """
-Testes da Onda 4 — Fase 3: validação de concomitância de horários (§5).
+Testes da Onda 4 — Fase 3: concomitância de horários entre ofertas (§5).
 
-Regra: cursos da mesma turma não podem ter aulas no mesmo dia e horário
-dentro de vigências que se interceptam. Adjacência é permitida.
+Regra (MER §8.10): horários concomitantes entre cursos da mesma turma são
+PERMITIDOS — o sistema detecta a sobreposição de dias, horários e vigência e
+produz um AVISO, mas grava a operação. Adjacência é permitida e não gera aviso.
 
 Cenários cobertos:
-    - Sobreposição total (mesmos dias e mesmos horários).
-    - Sobreposição parcial (mesmos dias, horários que se cruzam).
-    - Adjacência exata (fimA == iniB) → permitido.
-    - Dias diferentes → permitido.
-    - Vigências que não se interceptam → permitido.
+    - Sobreposição total (mesmos dias e mesmos horários) → grava com aviso.
+    - Sobreposição parcial (mesmos dias, horários que se cruzam) → grava com aviso.
+    - Adjacência exata (fimA == iniB) → permitido, sem aviso.
+    - Dias diferentes → permitido, sem aviso.
+    - Vigências que não se interceptam → permitido, sem aviso.
     - Vigência NULL (aberta) → sempre intercepta.
     - Edição que remove a sobreposição → permitido.
-    - Edição que cria sobreposição → bloqueado.
+    - Edição que cria sobreposição → grava com aviso.
     - Sem dados de horário → pula validação.
-    - Rota POST nova com conflito → flash de erro.
+    - Rota POST nova com conflito → flash de aviso e oferta gravada.
 """
 
 from datetime import date, time
@@ -162,57 +163,65 @@ class TestSobreposicaoVigencia:
 
 
 # ---------------------------------------------------------------------------
-# Serviço: adicionar_oferta com conflito
+# Serviço: adicionar_oferta com concomitância → grava com aviso
 # ---------------------------------------------------------------------------
 
-def test_adicionar_oferta_sobreposicao_total_bloqueada(base):
+def test_adicionar_oferta_sobreposicao_total_com_aviso(base):
     turma = _turma(base)
     # Primeira: Segunda/Quarta 08:00–12:00
-    adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+    o1 = adicionar_oferta(
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
-    # Segunda: mesmos dias/horário → conflito
-    with pytest.raises(ValueError, match="concomitante"):
-        adicionar_oferta(
-            turma, curso_id=base["c2"],
-            dias_semana="Segunda, Quarta",
-            hora_inicio=time(8), hora_fim=time(12),
-            data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
-        )
+    assert o1.avisos_horario == []
+    # Segunda: mesmos dias/horário → concomitância permitida, com aviso
+    o2 = adicionar_oferta(
+        turma, curso_id=base["c2"], programa="Teste",
+        dias_semana="Segunda, Quarta",
+        hora_inicio=time(8), hora_fim=time(12),
+        data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
+    )
+    assert o2.id is not None
+    assert TurmaCurso.query.filter_by(turma_id=base["turma_id"], ativo=True).count() == 2
+    assert o2.avisos_horario, "sobreposição total deveria gerar aviso"
+    assert all("concomitante" in a.lower() for a in o2.avisos_horario)
+    assert "Carpintaria" in o2.avisos_horario[0]
 
 
-def test_adicionar_oferta_sobreposicao_parcial_bloqueada(base):
+def test_adicionar_oferta_sobreposicao_parcial_com_aviso(base):
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
-    # 10:00–14:00 na Segunda → parcial sobreposição
-    with pytest.raises(ValueError, match="concomitante"):
-        adicionar_oferta(
-            turma, curso_id=base["c2"],
-            dias_semana="Segunda, Sexta",
-            hora_inicio=time(10), hora_fim=time(14),
-            data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
-        )
+    # 10:00–14:00 na Segunda → sobreposição parcial → grava com aviso
+    o2 = adicionar_oferta(
+        turma, curso_id=base["c2"], programa="Teste",
+        dias_semana="Segunda, Sexta",
+        hora_inicio=time(10), hora_fim=time(14),
+        data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
+    )
+    assert o2.id is not None
+    assert TurmaCurso.query.filter_by(turma_id=base["turma_id"], ativo=True).count() == 2
+    assert o2.avisos_horario, "sobreposição parcial deveria gerar aviso"
+    assert all("concomitante" in a.lower() for a in o2.avisos_horario)
 
 
 def test_adicionar_oferta_adjacencia_permitida(base):
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Adjacente: 12:00–14:00 → permitido
     oferta2 = adicionar_oferta(
-        turma, curso_id=base["c2"],
+        turma, curso_id=base["c2"], programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(12), hora_fim=time(14),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -223,14 +232,14 @@ def test_adicionar_oferta_adjacencia_permitida(base):
 def test_adicionar_oferta_dias_diferentes_permitida(base):
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Terça/Sexta: sem dias em comum → permitido mesmo com horário sobreposto
     oferta2 = adicionar_oferta(
-        turma, curso_id=base["c2"],
+        turma, curso_id=base["c2"], programa="Teste",
         dias_semana="Terça, Sexta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -241,14 +250,14 @@ def test_adicionar_oferta_dias_diferentes_permitida(base):
 def test_adicionar_oferta_vigencia_disjunta_permitida(base):
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Vigência [jul–dez]: não intercepta [jan–jun] → permitido
     oferta2 = adicionar_oferta(
-        turma, curso_id=base["c2"],
+        turma, curso_id=base["c2"], programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 7, 1), data_fim=date(2026, 12, 31),
@@ -260,45 +269,50 @@ def test_adicionar_oferta_sem_horario_pula_validacao(base):
     """Sem dias/horas a checagem de concomitância é pulada."""
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
     )
     # c2 sem dias/horas → permitido
-    oferta2 = adicionar_oferta(turma, curso_id=base["c2"])
+    oferta2 = adicionar_oferta(turma, curso_id=base["c2"], programa="Teste")
     assert oferta2.id is not None
 
 
 # ---------------------------------------------------------------------------
-# Serviço: editar_oferta com/sem conflito
+# Serviço: editar_oferta com/sem concomitância
 # ---------------------------------------------------------------------------
 
-def test_editar_oferta_cria_conflito_bloqueado(base):
+def test_editar_oferta_cria_conflito_com_aviso(base):
     turma = _turma(base)
     o1 = adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
     )
     o2 = adicionar_oferta(
-        turma, curso_id=base["c2"],
+        turma, curso_id=base["c2"], programa="Teste",
         dias_semana="Terça",
         hora_inicio=time(8), hora_fim=time(12),
     )
-    # Editar o2 para "Segunda" → conflita com o1
-    with pytest.raises(ValueError, match="concomitante"):
-        editar_oferta(o2, dias_semana="Segunda")
+    assert o1.avisos_horario == []
+    assert o2.avisos_horario == []
+    # Editar o2 para "Segunda" → conflita com o1: grava e avisa
+    editar_oferta(o2, dias_semana="Segunda")
+    assert o2.dias_semana == "Segunda"
+    assert o2.avisos_horario, "edição que cria sobreposição deveria gerar aviso"
+    assert all("concomitante" in a.lower() for a in o2.avisos_horario)
+    assert TurmaCurso.query.filter_by(turma_id=base["turma_id"], ativo=True).count() == 2
 
 
 def test_editar_oferta_remove_conflito_permite(base):
     turma = _turma(base)
     o1 = adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
     )
     o2 = adicionar_oferta(
-        turma, curso_id=base["c2"],
+        turma, curso_id=base["c2"], programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(12), hora_fim=time(14),
     )
@@ -308,13 +322,13 @@ def test_editar_oferta_remove_conflito_permite(base):
 
 
 # ---------------------------------------------------------------------------
-# Rota: POST com conflito → flash de erro
+# Rota: POST com concomitância → aviso e oferta gravada
 # ---------------------------------------------------------------------------
 
-def test_rota_oferta_nova_conflito_rejeitada(base, app):
+def test_rota_oferta_nova_conflito_com_aviso(base, app):
     turma = _turma(base)
     adicionar_oferta(
-        turma, curso_id=base["c1"], principal=True,
+        turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda, Quarta",
         hora_inicio=time(8), hora_fim=time(12),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -328,6 +342,7 @@ def test_rota_oferta_nova_conflito_rejeitada(base, app):
         f"/turma/{base['turma_id']}/ofertas/nova",
         data={
             "curso_id": base["c2"],
+            "programa": "Teste",
             "dias_semana": ["Segunda", "Quarta"],
             "hora_inicio": "08:00",
             "hora_fim": "12:00",
@@ -339,6 +354,6 @@ def test_rota_oferta_nova_conflito_rejeitada(base, app):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "concomitante" in html.lower()
-    # Não criou segunda oferta ativa
+    # A segunda oferta ativa FOI gravada (concomitância é permitida com aviso)
     ativas = TurmaCurso.query.filter_by(turma_id=base["turma_id"], ativo=True).count()
-    assert ativas == 1
+    assert ativas == 2

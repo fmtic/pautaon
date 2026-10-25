@@ -3,7 +3,7 @@
 > Documento vivo do esquema do banco de dados. **Atualize sempre que criar,
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
-**Última atualização:** 2026-10-23 — Sincronizado com `app/models/` (19 arquivos) e `migrations/versions/` (26 revisões): **Onda 4 — Fases 0–4**: `turma_curso` (§7.32, §8.10), cadastro incremental e regra de principal (Fase 2), concomitância de horários (Fase 3). Heads unificadas em `b02f2051bc1e`; fix `8c4e1f9a7d32` adiciona colunas de auditoria à tabela. **Fase 4** (head `e7f3a1b9c4d5`): `frequencia` e `registro_aula` ganham `turma_curso_id` (§7.19/§7.20, §8.10). **Etapas F, G2 e G3 da Fase 4 (23/10/2026):** oferta criada junto com a turma (`criar_oferta_inicial_da_turma`, §7.32/§8.10), regras de `editar_turma` por número de ofertas ativas (G2) e tela de edição com bloco "Cursos desta turma" e campos somente leitura (G3) — §8.10. Demais ressalvas de §11.1 permanecem. **Etapa I:** `excluir_turma` com exclusão física (sem histórico) ou lógica (com histórico), preservando lançamentos e desativando turma/ofertas/inscrições. **Etapa J2:** contagens do BI consideram apenas turma ativa e inscrição enturmada em oferta ativa (`cond_inscricao_enturmada`). **Etapas K/K2:** C.H. por oferta (`TurmaCurso.carga_horaria_aula/total`) e listagem de turmas filtrada/agregada por oferta (COALESCE oferta→turma). **Centros de custo (23/10/2026):** tabela `centro_custo` (§7.4a, migration `d2e3f4a5b6c7`), catálogo por unidade com backfill a partir das colunas CSV existentes; formulário de períodos passa a criar/editar/inativar/reativar centros via `/centros-custo` com envio de CSRF e sincronização das checkboxes (§8.11). **Programa na oferta (23/10/2026):** coluna `turma_curso.programa` (varchar(50), nullable; migration `a1b2c3d4e5f6`) com backfill a partir de `turma.programa`; head atual `a1b2c3d4e5f6`. Fix de schema drift: DB local aplicado via `flask db upgrade` (coluna existia no modelo/migration, faltava no banco).
+**Última atualização:** 2026-10-25 — Sincronizado com as etapas T1, P1, B1–B7, M1, M1.1, M2, M4, L1, L2 e **D5.0–D5.5**. **Inscrição exige oferta:** `inscricoes.turma_curso_id` NOT NULL (`c3d4e5f6a7b8`, endurecida na B5 com checagens de NULL/duplicata); índice único parcial `uix_inscricao_ativa_aluno_oferta` `(aluno_id, turma_curso_id) WHERE ativo IS TRUE`. **Programa obrigatório:** `turma_curso.programa` NOT NULL (`d4e5f6a7b8c9`, endurecida na B5 com `COALESCE` preservando `turma.programa` e recusa explícita sem programa padrão). **Serviço único de enturmação** (`app/services/enturmacao.py`, M2); desenturmar/transferir/desativar oferta por oferta. **Guarda de desativar oferta** (M4): recusa se houver aluno ativo em período em andamento. **Oferta efetiva** (M4): `cond_oferta_efetiva()` preserva histórico em período encerrado. **Isolamento por unidade** (B3/B4): vale para todos os perfis; Visão Global somente leitura. **Conselho de classe POR OFERTA (D5.1–D5.5, concluído):** `conselho_classe.turma_curso_id` **NOT NULL** (`e5f6a7b8c9d0` + endurecimento `f6a7b8c9d0e1`); `Turma.conselho_concluido` **removida** (encerramento por oferta, turma derivada); histórico, ficha 360°, painel por turma, resultado do conselho e certificado leem por oferta. Suíte: **359 passed**, 0 falhas.
 
 ---
 
@@ -34,7 +34,7 @@ O sistema é um **ERP socioeducativo** multitenant, organizado em torno de
 - Períodos letivos, calendário e conselhos de classe.
 - Alunos, seus perfis estruturados (socioeconômico, diversidade, endereço, responsáveis) e atendimentos.
 
-**Banco:** PostgreSQL (produção) / SQLite (testes locais).
+**Banco:** PostgreSQL (banco local de desenvolvimento/ensaio) / SQLite (testes). Não há ambiente de produção real; o banco local foi restaurado de dump antigo (§12.17).
 **ORM:** SQLAlchemy via Flask-SQLAlchemy.
 **Migrations:** Alembic via Flask-Migrate.
 **Fonte de verdade do código:** `app/models/` (pacote).
@@ -93,9 +93,20 @@ app/services/
 ├── aluno_perfil.py        # Centraliza leitura/escrita dos perfis do Aluno
 │                          # (Onda 3B). Todo acesso a endereço/responsável/
 │                          # socioeconômico/diversidade passa por aqui.
+├── aluno_status.py        # Categorias oficiais de enturmação e status do
+│                          # aluno por data (usa espelho de `cond_oferta_efetiva`).
 ├── auth_service.py
 ├── bootstrap.py
-└── calendar_service.py
+├── calendar_service.py
+├── conselho_leitura.py    # Leitura do conselho POR OFERTA (D5.4): lote por
+│                          # (aluno, oferta, etapa), rótulo "Turma — Curso"
+│                          # e derivados (histórico, ficha, painel, resultado).
+├── enturmacao.py          # Serviço único de criação de inscrição
+│                          # (`enturmar_aluno`; M2). Regras 0/1/2+ ofertas.
+├── maintenance.py         # Toggle de manutenção e indisponibilidade
+└── turma_curso.py         # Regras de aplicação da oferta `TurmaCurso`
+                           # (adicionar/editar/desativar, concomitância,
+                           # guarda de período M4, `_alunos_da_oferta`).
 ```
 
 ### Regras de importação
@@ -130,9 +141,9 @@ Comportamento do listener (conforme o código):
 | **Unidade**              | Tenant do sistema. Fronteira de isolamento de dados.                                                                                                        |
 | **Turma**                | Agrupador lógico de alunos; a oferta acadêmica efetiva fica em `TurmaCurso` (Onda 4).                                                                           |
 | **Oferta (TurmaCurso)**  | Vínculo concreto curso↔turma (`turma_curso`): atribui um curso a uma turma, com professor, turno, horários e vigência próprios.                                  |
-| **Inscrição**            | Vínculo N:N entre Aluno e Turma, com histórico; na transição da Onda 4 aponta também para a oferta (`inscricoes.turma_curso_id`).                                 |
+| **Inscrição**            | Vínculo do aluno a uma oferta concreta (`inscricoes.turma_curso_id`, NOT NULL desde `c3d4e5f6a7b8`), com histórico de ativação/desativação por oferta.                       |
 | **Conceito**             | Código de presença/falta: A/B/C/D (presente), F (falta), J (justificada).                                                                                   |
-| **Conselho de Classe**   | Reunião colegiada que avalia aluno/turma por etapa.                                                                                                         |
+| **Conselho de Classe**   | Reunião colegiada que avalia o aluno **em uma OFERTA** por etapa (`conselho_classe.turma_curso_id` NOT NULL desde a D5.5); o encerramento é manual por oferta e derivado na turma (§8.2). |
 | **Etapa**                | Momento do conselho: INICIAL, PERCURSO, FINAL.                                                                                                              |
 | **Tema de Aula**         | Tópico macro do planejamento pedagógico.                                                                                                                    |
 | **Dia bloqueado**        | Data sem aula em um período letivo (feriado, etc.).                                                                                                         |
@@ -157,6 +168,7 @@ Regras:
 6. As tabelas de perfil do aluno (`endereco_aluno`, `responsavel_aluno`, `perfil_socioeconomico`, `perfil_diversidade`) herdam `unidade_id` do aluno no momento da criação.
 7. `TenantMixin.unidade_id` é **nullable** por padrão (compatibilidade com registros globais/legados). Tabelas que o tornam NOT NULL: `curso`, `transferencia`, `dia_bloqueado` e `periodo_conselho`.
 8. Tabelas **sem** `unidade_id`: `inscricoes`, `conselho_pergunta`, `opcao_proxima_turma`, `agenda_servico_social` e `respostas_formulario`. Quando necessário, o escopo é derivado por join (ex.: `inscricoes.turma_id → turma.unidade_id`).
+9. `conselho_classe` **não** tem dimensão própria de unidade além do `unidade_id` herdado do `TenantMixin` (nullable, espelho da unidade da turma/oferta): não há coluna nem FK composta de unidade na unicidade por oferta (`uix_conselho_oferta` é `turma_curso_id + aluno_id + etapa`). O escopo por unidade é aplicado nas rotas (`assert_unidade_context`) e nas consultas dos leitores — ver §8.2.
 
 ---
 
@@ -213,6 +225,7 @@ erDiagram
     TURMA          ||--o{ REGISTRO_AULA : registra
     TURMA_CURSO    |o--o{ REGISTRO_AULA : oferta
     TEMA_AULA      ||--o{ REGISTRO_AULA : tema
+    TURMA_CURSO    ||--o{ CONSELHO_CLASSE : avalia
 ```
 
 ### 6.3 Alunos, matrículas e frequência
@@ -222,7 +235,7 @@ erDiagram
     ALUNO ||--o| SITUACAO_ESCOLAR : detalha
     ALUNO ||--o{ INSCRICAO : possui
     TURMA ||--o{ INSCRICAO : recebe
-    TURMA_CURSO |o--o{ INSCRICAO : oferta
+    TURMA_CURSO ||--o{ INSCRICAO : oferta
     ALUNO ||--o{ FREQUENCIA : registra
     TURMA ||--o{ FREQUENCIA : pauta
     TURMA_CURSO |o--o{ FREQUENCIA : oferta
@@ -247,6 +260,7 @@ erDiagram
     PERIODO_LETIVO ||--o{ PERIODO_CONSELHO : agenda
     PERIODO_CONSELHO ||--o{ CONSELHO_CLASSE : contem
     TURMA ||--o{ CONSELHO_CLASSE : avalia
+    TURMA_CURSO ||--o{ CONSELHO_CLASSE : oferta
     ALUNO ||--o{ CONSELHO_CLASSE : avaliado
     CONSELHO_CLASSE ||--o{ CONSELHO_RESPOSTA : possui
     PERGUNTA_CONSELHO ||--o{ CONSELHO_RESPOSTA : responde
@@ -409,15 +423,16 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 | periodo_letivo_id   | int              | sim  | —            | FK → periodo_letivo                              |
 | curso_id            | int              | sim  | —            | LEGADO — FK → curso (convive com `turma_curso` até as fases finais da Onda 4) |
 | professor_id        | int              | sim  | —            | FK → user                                        |
-| avaliacao_inicial   | text             | sim  | —            | Parecer                                          |
-| avaliacao_percurso  | text             | sim  | —            | Parecer                                          |
-| avaliacao_final     | text             | sim  | —            | Parecer                                          |
-| conselho_concluido  | bool             | não  | false        | Flag de encerramento                             |
+| avaliacao_inicial   | text             | sim  | —            | **LEGADO** — parecer coletivo agora em `turma_curso.avaliacao_inicial`; remover após conferir o dump autêntico |
+| avaliacao_percurso  | text             | sim  | —            | **LEGADO** — idem (`turma_curso.avaliacao_percurso`) |
+| avaliacao_final     | text             | sim  | —            | **LEGADO** — idem (`turma_curso.avaliacao_final`) |
 | **updated_by_id**   | **int**          | sim  | —            | FK → user, `ON DELETE SET NULL` (AuditoriaMixin) |
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
 
 **Derivados (não persistidos):** `freq_geral` (§8.1); `alunos_ativos_count` (alunos com `Aluno.ativo=True` vinculados via `inscricoes`, sem filtrar `Inscricao.ativo`); `dias_aula_efetivos()` (via `app.utils.logica.calcular_dias_aula_turma`); `carga_horaria_aula` (minutos = `hora_fim − hora_inicio`; `None` se faltar hora ou `hora_fim <= hora_inicio`); `carga_horaria_total` (minutos = `carga_horaria_aula × dias_aula_efetivos()`; `None` se indefinido); `Turma.get_ativas()` (turmas com `ativo=True`, por nome).
+
+**Remoção de `conselho_concluido` (D5.5, `f6a7b8c9d0e1`):** a coluna `turma.conselho_concluido` **não existe mais**. O encerramento é da OFERTA (`turma_curso.conselho_concluido`) e a visão da turma é **derivada na leitura** (`turma_conselho_concluido()` em `app/services/turma_curso.py`: verdadeiro só com ao menos uma oferta ativa e todas concluídas). `Turma.avaliacao_inicial/percurso/final` **permanecem** como legado (parecer coletivo agora é da oferta). Ver §8.2.
 
 ### 7.8 `tema_aula`
 
@@ -601,7 +616,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | id                  | int              | não  | auto         | PK                                               |
 | aluno_id            | int              | não  | —            | FK → aluno                                       |
 | turma_id            | int              | não  | —            | FK → turma                                       |
-| turma_curso_id      | int              | sim  | —            | FK → turma_curso (Onda 4; nullable na transição) |
+| turma_curso_id      | int              | não  | —            | FK → turma_curso (Onda 4; NOT NULL desde `c3d4e5f6a7b8`) |
 | nivel               | varchar(30)      | sim  | —            | Nível na turma                                   |
 | ativo               | bool             | não  | true         | Vínculo atual                                    |
 | data_inicio         | date             | não  | now          | Início                                           |
@@ -611,13 +626,19 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
 
-> Múltiplas linhas com o mesmo (aluno, turma) são permitidas por design —
-> histórico de ativação/desativação.
+> Múltiplas linhas por `(aluno_id, turma_id)` são permitidas por design — cada
+> linha vincula o aluno a uma **oferta concreta** (`turma_curso_id`); linhas
+> históricas inativas (`ativo=false`) coexistem com a ativa atual.
 
-> A matriz de enturmação continua `(aluno, turma)`. `turma_curso_id` é
-> preenchido no backfill e nas novas matrículas para vincular a inscrição à
-> oferta concreta; a exigência de vínculo por oferta (NOT NULL) pertence à
-> Fase 9 da Onda 4 (§8.10).
+> **Índice único parcial:** `uix_inscricao_ativa_aluno_oferta` — UNIQUE
+> `(aluno_id, turma_curso_id) WHERE ativo IS TRUE` (migration
+> `c3d4e5f6a7b8`): impede duas inscrições ativas do mesmo aluno na mesma
+> oferta; múltiplas ofertas ativas na mesma turma para o mesmo aluno são
+> permitidas; inscrições inativas não são bloqueadas pelo índice.
+
+> A exigência NOT NULL por oferta (`c3d4e5f6a7b8`) foi aplicada — o antigo
+> estado `turma_curso_id IS NULL` (fallback da Fase 1–4 transicional) não é
+> mais alcançável no banco.
 
 ### 7.16 `transferencia`
 
@@ -632,6 +653,14 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | data_transferencia | timestamp | não  | now     | —            |
 | observacoes        | text      | sim  | —       | —            |
 | unidade_id         | int       | não  | —       | FK → unidade |
+
+> **Nota (M2):** a transferência é **por oferta** (`turma_curso_id_destino` é
+> obrigatório no POST de `transferir_aluno`; ver §8.10), porém a tabela
+> `transferencia` **não persiste** `turma_curso_id` de origem nem de destino —
+> apenas `turma_origem_id`/`turma_destino_id`. Rastrear qual oferta foi
+> envolvida exige consultar `Inscricao` (motivo `TRANSFERENCIA` na origem e
+> `data_inicio` da inscrição ativa no destino). Decisão pendente (§backlog
+> “Transferencia não registra a oferta de origem/destino”).
 
 ### 7.17 `dia_bloqueado`
 
@@ -745,8 +774,9 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | Coluna              | Tipo             | Nulo | Default      | Descrição                                        |
 |---------------------|------------------|------|--------------|--------------------------------------------------|
 | id                  | int              | não  | auto         | PK                                               |
-| turma_id            | int              | não  | —            | FK → turma                                       |
+| turma_id            | int              | não  | —            | FK → turma (denormalizado da oferta)             |
 | aluno_id            | int              | não  | —            | FK → aluno                                       |
+| **turma_curso_id**  | **int**          | **não** | —         | FK → turma_curso, `ON DELETE RESTRICT` (**D5.5**: obrigatória — conselho sem oferta não existe) |
 | **etapa**           | **enum**         | não  | —            | `etapa_conselho_enum` (Onda 2B)                  |
 | data_inicio         | date             | sim  | —            | —                                                |
 | data_fim            | date             | sim  | —            | —                                                |
@@ -760,8 +790,13 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
 
-**UNIQUE** (`turma_id`, `aluno_id`, `etapa`) via `uix_conselho_turma_aluno_etapa`.
+**UNIQUE por OFERTA (D5.1, plena na D5.5):** `uix_conselho_oferta` = UNIQUE (`turma_curso_id`, `aluno_id`, `etapa`) — um conselho por aluno/etapa em cada oferta; o mesmo aluno pode ter conselho em ofertas diferentes da mesma turma. O índice mantém o predicado `WHERE turma_curso_id IS NOT NULL` (criado na D5.1, quando a coluna era nullable); com o NOT NULL da D5.5 o predicado é **inócuo** e foi preservado por decisão da etapa (nenhum índice novo foi criado).
+**Índice de apoio:** `ix_conselho_turma_curso` (não único) em `turma_curso_id`.
+**Removidos na D5.5 (`f6a7b8c9d0e1`):** a UNIQUE antiga `uix_conselho_turma_aluno_etapa` (`turma_id`, `aluno_id`, `etapa`) — já removida na D5.1 — e o índice parcial do ramo legado `uix_conselho_legado` (`turma_id`, `aluno_id`, `etapa` WHERE `turma_curso_id IS NULL`). Não existe mais conselho sem oferta: `turma_curso_id` NULL é recusado pelo banco.
 **CHECK:** `ck_conselho_situacao_final` — restringe `situacao_final` aos valores de `SituacaoFinal`.
+
+**Leitura:** sempre por (`aluno_id`, `turma_curso_id`, `etapa`) via `app/services/conselho_leitura.py` (§8.2). `turma_id` permanece por compatibilidade/consulta de turma; `situacao_final`/`proxima_turma_id` são por oferta.
+**Migration:** criada em `e5f6a7b8c9d0` (D5.1) e endurecida em `f6a7b8c9d0e1` (D5.5).
 
 ### 7.25 `conselho_resposta`
 
@@ -867,7 +902,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | data_inicio         | date             | sim  | —            | Início da vigência da oferta                     |
 | data_fim            | date             | sim  | —            | Fim da vigência da oferta                        |
 | centro_custo        | varchar(150)     | sim  | —            | Individual; NULL = usa o compartilhado da turma  |
-| programa            | varchar(50)      | sim  | —            | Programa da oferta (backfill a partir de `turma.programa` na migration `a1b2c3d4e5f6`); NULL = segue o da turma |
+| programa            | varchar(50)      | **não** | —         | Programa obrigatório desta oferta; não herda valor da turma |
+| **conselho_concluido** | **bool**       | **não** | false      | Encerramento MANUAL do conselho da **oferta** (D5.1/D5.3; alternado em `alternar_conselho`). A turma é derivada na leitura |
+| **avaliacao_inicial**  | **text**       | sim  | —          | Parecer coletivo da etapa INICIAL (JSON de perguntas tipo TURMA, D5.1/D5.2) |
+| **avaliacao_percurso** | **text**       | sim  | —          | Parecer coletivo da etapa PERCURSO (JSON)        |
+| **avaliacao_final**    | **text**       | sim  | —          | Parecer coletivo da etapa FINAL (JSON)           |
 | created_at          | timestamp        | sim  | now          | —                                                |
 | **updated_by_id**   | **int**          | sim  | —            | FK → user, `ON DELETE SET NULL` (AuditoriaMixin) |
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
@@ -875,7 +914,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 **Relacionamentos:** `turma` (backref `ofertas_curso`, cascade `all, delete-orphan` — apagar a turma remove as ofertas), `curso` (backref `ofertas_turma`), `professor` (`foreign_keys=[professor_id]`, backref `ofertas_como_responsavel`), backref `inscricoes_oferta` a partir de `Inscricao.turma_curso` (**sem** cascade, para proteger histórico de matrícula).
 
-**Migration:** `311d554dfd6e` cria a tabela, os índices, `inscricoes.turma_curso_id` e executa o backfill (uma oferta por turma legada com `curso_id`, copiando professor/turno/dias/horários/datas/centro de custo da turma; `principal=false`; vincula as inscrições à oferta da turma). Verificação pós-deploy: `scripts/verificar_onda4_fase1.py`. **Programa na oferta (23/10/2026):** migration `a1b2c3d4e5f6` adiciona a coluna `programa` (varchar(50), nullable) em `turma_curso` com backfill a partir de `turma.programa`. **Criação da oferta inicial (Fase 4, Etapa F):** toda turma nova **com curso** já nasce com 1 oferta ativa, criada por `criar_oferta_inicial_da_turma` (`app/services/turma_curso.py`) na mesma transação de `criar_turma` — copia professor, turno, dias, horários, datas, centro de custo e unidade da turma; `principal=false`; idempotente. Ver §8.10.
+**Migration:** `311d554dfd6e` cria a tabela, os índices, `inscricoes.turma_curso_id` e executa o backfill. A coluna `programa`, inicialmente preenchida a partir de `turma.programa` por `a1b2c3d4e5f6`, tornou-se obrigatória por `d4e5f6a7b8c9`. `Turma.programa` representa o programa da oferta principal ativa e é atualizado junto às operações de oferta. **Criação da oferta inicial (Fase 4, Etapa F):** toda turma nova com curso já nasce com uma oferta ativa na mesma transação; seu programa é obrigatório. **Conselho por oferta (D5.1/D5.5):** `e5f6a7b8c9d0` acrescenta `conselho_concluido` (NOT NULL default false) e `avaliacao_inicial/percurso/final`; `f6a7b8c9d0e1` torna essas colunas a ÚNICA fonte do encerramento e do parecer coletivo (a flag e os pareceres de `Turma` foram aposentados).
 
 ### 7.33 Enumerações e constantes (`app/models/enums.py`)
 
@@ -902,11 +941,37 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Fórmula: `freq = presentes / (presentes + faltas) * 100`.
 - Implementação (`Turma.freq_geral`): arredonda a 1 casa decimal e retorna `0.0` quando não há registros contáveis; registros com `conceito` nulo (coluna nullable) não entram na conta.
 
-### 8.2 Conselho de Classe
+### 8.2 Conselho de Classe (por OFERTA desde a D5.1–D5.5)
 
-- Etapas: INICIAL, PERCURSO, FINAL.
-- `conselho_final=True` marca o conselho que define situação final.
-- `situacao_final` só deve ser preenchida quando `concluido=True`.
+**Unidade de resultado**
+
+- Etapas: INICIAL, PERCURSO, FINAL (`EtapaConselho`). O mapa etapa→campo do parecer coletivo é `ETAPA_PARA_CAMPO_AVALIACAO` (`app/models/enums.py`), usado em leitura e escrita (`app/conselho.py`).
+- **A unidade de resultado é `(aluno, OFERTA, etapa)`**: `conselho_classe.turma_curso_id` é **NOT NULL** (D5.5) e `uix_conselho_oferta` garante no máximo um conselho por aluno/etapa em cada oferta; `turma_id` é denormalizado da oferta (não há conselho "da turma" sem oferta).
+- `situacao_final` só deve ser preenchida quando `concluido=True`; `ck_conselho_situacao_final` restringe os valores. `situacao_final` e `proxima_turma_id` são **por oferta** (Q4 da D5.0).
+- `PeriodoConselho` continua sendo a janela do conselho **por período letivo e unidade** (§7.21); `conselho_final=True` marca a janela de encerramento do período (é coluna de `periodo_conselho`, não de `ConselhoClasse`).
+
+**Escrita por oferta (D5.2/D5.2b) — padrão M1 (0/1/2+ ofertas ativas)**
+
+- **Lançamento** (`/conselho/lancamento`, `/conselho/salvar`): a oferta vem de `oferta_sel`/`turma_curso_id`, validada contra `ofertas_ativas(turma)`. **1 oferta ativa** é usada direto; **2+** exigem escolha e recusam id inválido/inativo/de outra turma; **0** ofertas recusa com aviso (turma sem oferta ativa não abre conselho). Aluno sem inscrição ativa na oferta não gera conselho; as respostas tipo ALUNO vivem em `conselho_resposta`.
+- **Fechamento** (`/conselho/fechamento/<turma>` e `/conselho/fechamento/<turma>/salvar`): lista apenas os alunos da oferta e grava, por aluno DA OFERTA e etapa FINAL, `situacao_final` (normalizada) e `proxima_turma_id` vindo do catálogo `OpcaoProximaTurma`; validação atômica (situação inválida → rollback, nada é gravado). O POST é JSON e **exige token CSRF** (`<meta name="csrf-token">` do `base.html` + `X-CSRFToken`, ver `static/js/conselho/conselho.js`).
+- **Avaliação coletiva** (`/turma/<id>/avaliacao`): pareceres coletivos (perguntas tipo TURMA) ficam em **`turma_curso.avaliacao_inicial/percurso/final`** (JSON), nunca em `Turma.avaliacao_*`; a mesma política 0/1/2+ escolhe a oferta.
+- **Encerramento MANUAL por oferta** (`POST /turma/<id>/alternar-conselho`, `app/planejamento.py`): alterna `TurmaCurso.conselho_concluido` e **não escreve na turma** (a coluna `turma.conselho_concluido` não existe mais desde a D5.5). Exige oferta ativa da própria turma e isolamento por unidade (B4).
+
+**Encerramento DERIVADO da turma (D5.3)**
+
+- `turma_conselho_concluido()` (`app/services/turma_curso.py`) é verdadeiro somente quando a turma tem **ao menos uma oferta ativa** e **todas** as ativas estão concluídas. Turma sem oferta ativa **não abre conselho** e **não entra nas contagens** (`contar_ofertas_conselho()` conta ofertas ativas de turmas ativas).
+- `PeriodoConselho`/certificado: o encerramento exibido vem do derivado acima (nunca de uma flag da turma).
+
+**Leitura por oferta (D5.4/D5.5)**
+
+- Serviço único de leitura: `app/services/conselho_leitura.py` — `conselho_do_aluno(aluno_id, turma_curso_id, etapa)`, `conselhos_por_oferta(pares_aluno_oferta, etapas)` (**uma** consulta em lote, sem N+1), `mapa_por_aluno_oferta`, `ofertas_do_grupo` e `rotulo_oferta` ("Turma — Curso"). `turma_curso_id=None` nunca é adotado.
+- **Leitores migrados:** histórico do aluno, ficha 360° (com seletor `?oferta_sel=` quando há 2+ inscrições na mesma turma), painel por turma do painel pedagógico (`por_turma`), resultado do conselho e certificado. Todos exibem **uma linha por inscrição (aluno × oferta)** e nunca misturam pareceres de ofertas diferentes.
+- **BI:** `CRU-002` (`alunos_raca_conselho`) conta **aluno distinto** por raça/cor e `CRU-005` (`desempenho_conselho_por_renda`) conta **uma linha por situação**; ambos filtram por `unidade_id` e, opcionalmente, por período/curso/turma/professor **da turma** (decisão da D5.4: BI não foi migrado para oferta).
+
+**Resíduos legados**
+
+- `Turma.avaliacao_inicial/percurso/final` permanecem como **LEGADO** (§7.7) e não são mais lidas nem escritas pelo fluxo do conselho; a remoção depende de conferir o dump autêntico (§12.19).
+- Conselho sem oferta **não existe mais**: a migration `f6a7b8c9d0e1` recusa o upgrade se houver linha NULL (checagem (i)) e o banco recusa o INSERT (§7.24).
 
 ### 8.3 Inscrição
 
@@ -965,26 +1030,39 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 - **Turma é agrupador lógico**; o vínculo acadêmico concreto é a oferta `TurmaCurso` (curso + turma), com professor, turno, dias, horários e vigência próprios.
 - Uma turma pode ofertar **vários cursos distintos** (sem limite fixo; cadastro incremental). Cada curso entra **no máximo uma vez** na mesma turma — `UNIQUE(turma_id, curso_id)`; o mesmo curso pode existir em turmas diferentes.
-- `principal` pertence ao **vínculo turma↔curso**: sem marcação quando há oferta única; com 2+ ofertas ativas deve haver exatamente um. Máximo garantido por índice único parcial (`uix_turma_curso_principal`); obrigatoriedade e troca (swap atômico) validadas em `app/services/turma_curso.py` (Fase 2, rotas `/turma/<id>/ofertas*`).
-- **Proibido** horário concomitante entre cursos da **mesma turma** (adjacência permitida; vigência considerada). Validação implementada na Fase 3 em `_validar_horario_concomitante` (`app/services/turma_curso.py`); chamada por `adicionar_oferta` e `editar_oferta`. Conflito entre turmas diferentes **não** bloqueia matrícula (regra aprovada; sem mecanismo de checagem).
-- A matrícula é por aluno↔turma e convive com o vínculo à oferta (`inscricoes.turma_curso_id`); a exigência NOT NULL por oferta pertence à **Fase 9**. Aluno disponível para enturmação não é excluído por já estar em outro curso da mesma turma.
+- `principal` pertence ao **vínculo turma↔curso**: sem marcação quando há oferta única; com 2+ ofertas ativas deve haver exatamente um. Máximo garantido por índice único parcial (`uix_turma_curso_principal`). Ao criar uma oferta marcada como principal, `adicionar_oferta` desmarca e faz `flush` da oferta principal anterior antes do `INSERT`, na mesma transação. `definir_principal` usa a mesma ordem de troca. Assim, o índice continua sendo a garantia final sem rejeitar uma troca solicitada pelo usuário.
+- **Horários concomitantes entre ofertas da mesma turma são permitidos.** Ao criar ou editar uma oferta, o sistema detecta sobreposição de dias, horários e vigência e mostra um aviso, mas salva a operação. A mesma regra de aviso é aplicada quando a agenda da oferta única é alterada pela edição da turma.
+- A matrícula é por aluno↔turma↔oferta (`inscricoes.turma_curso_id` NOT NULL desde `c3d4e5f6a7b8`). Aluno disponível para enturmação não é excluído por já estar em outro curso da mesma turma.
 - **Compatibilidade legada (§14 da especificação):** as colunas de `Turma` (`curso_id`, `professor_id`, `turno`, `dias_semana`, horários, datas, centro de custo) continuam existindo; o backfill criou uma oferta por turma com curso. Dual-write descontrolado é proibido; remover colunas exige migrar todos os leitores (fases finais).
-- **Programa na oferta (23/10/2026):** `turma_curso.programa` (varchar(50), nullable) é adicionado pela migration `a1b2c3d4e5f6` com backfill a partir de `turma.programa`; `NULL` = segue o programa da turma. `Turma.programa` permanece atributo do agrupador (filtros/listagens continuam por turma). Criação/edição de oferta deve propagar/copiar o programa quando aplicável.
+- **Programa por oferta:** toda `TurmaCurso` exige programa. `Turma.programa` é uma projeção derivada da oferta principal ativa e serve a filtros/listagens de turma; não é editável como dado independente.
 - **Frequência e diário agora por oferta (Fase 4):** `frequencia` e `registro_aula` ganharam `turma_curso_id` (nullable). Ao lançar, `resolver_oferta_lancamento` decide a oferta: **oferta única** é escolhida automaticamente **sem validação extra** de vigência/dia/tema (comportamento anterior); com **2+ ofertas ativas** exige a escolha (`turma_curso`) e **valida** vigência da oferta, dia da grade (`_data_bate_dias_semana`) e tema (recusa tema de outro curso; aceita `curso_id` NULL). `salvar_frequencia` grava/busca RegistroAula e Frequência por (`turma_curso_id`, `data`) quando há oferta e por (`turma_id`, `data`) **com `turma_curso_id IS NULL`** no legado, de modo que o diário/frequência de uma segunda oferta **não sobrescreve** o da primeira no mesmo dia.
-- **Pauta da oferta:** `_alunos_da_oferta` lista os alunos por inscrição na oferta; inscrições `turma_curso_id IS NULL` **entram** na pauta quando há **1 oferta ativa** (fallback) e **ficam de fora** de toda pauta com **2+ ofertas** (a secretaria é avisada pelo contador "sem curso definido", via `count(distinct aluno_id)`). Um aluno com 2 inscrições ativas aparece **uma vez** (consulta com `EXISTS`).
+- **Enturmação por oferta (Serviço único, M2):** `app/services/enturmacao.py` contém `enturmar_aluno(aluno, turma, oferta_id=None, ...)`: resolve ofertas ativas da turma por `ofertas_ativas(turma.id)` — 0 ofertas → recusa com mensagem; exatamente 1 → auto-seleção; 2+ sem `oferta_id` ou com id inválido/inativa → recusa com mensagem de escolha. Chamadores: `enturmar_alunos` (turmas.py) e `transferir_aluno` (alunos.py) delegam a criação da inscrição ao serviço.
+- **Desenturmar por oferta (M2):** `desenturmar_alunos` aceita `turma_curso_id` (via `request.values` — o template envia na query string da action URL); com 2+ inscrições ativas na turma **sem** oferta apontada, recusa com flash; com oferta apontada usa `one_or_none()` e verifica que a oferta pertence à mesma turma.
+- **Transferência por oferta (M2):** `transferir_aluno` exige `turma_curso_id_destino` — o destino é uma oferta concreta; a origem é desativada (`motivo_desativacao="TRANSFERENCIA"`) e a nova inscrição é criada no destino pelo serviço.
+- **Desativar oferta — guarda de período (M4):** `desativar_oferta` aceita o parâmetro keyword-only `verificar_alunos_em_andamento=False`; quando `True` (chamado pela rota `turma_oferta_desativar`), conta alunos ativos em período em andamento (sem período, ou `data_fim >= hoje`) e recusa com mensagem se houver. Oferta inativa em período **encerrado** é permitida.
+- **Oferta efetiva (M4 — BI/status):** `cond_oferta_efetiva()` (`bi_filtros.py`) considera uma oferta efetiva quando está ativa **OU** quando o período da turma está encerrado (`data_fim < hoje`); preserva histórico de oferta inativa em período passado no BI e no status do aluno (`_cond_oferta_efetiva` espelhado em `aluno_status.py` por ciclo de import).
+- **Pauta da oferta:** `_alunos_da_oferta` (`services/turma_curso.py`) lista os alunos pela inscrição na oferta (`Inscricao.turma_curso_id == oferta_id`); um aluno com 2 inscrições ativas em ofertas diferentes aparece em cada pauta separadamente (sem duplicação dentro da mesma oferta — `uix_inscricao_ativa_aluno_oferta`).
 - **Pendência por oferta:** `contar_pendencias_frequencia` e `_aulas_pendentes` (dashboard do professor) com **2+ ofertas** avaliam cada oferta pela sua **própria agenda** (`datas_esperadas_oferta`: vigência + dias herdados da turma quando ausentes) e pela sua própria pauta; com 0/1 oferta o cálculo continua **por turma**, como antes.
-- **Início de oferta em turma em andamento:** `adicionar_oferta`, se `data_inicio` vier vazio, a turma já tiver **outra oferta** (ativa ou desativada) e estiver **em andamento** (`data_inicio <= hoje` e `data_fim` aberto ou `>= hoje`), grava `data_inicio = hoje` (precede a herança); a rota sinaliza com flash. Na primeira oferta, ou com turma encerrada, mantém a herança.
+- **Vigência de nova oferta:** `adicionar_oferta` usa por padrão as datas de início e fim do período letivo vinculado à turma. Datas informadas manualmente prevalecem, desde que permaneçam dentro do período e início não seja posterior ao fim. `resolver_oferta_lancamento` continua validando os lançamentos dentro da vigência da oferta.
 - **Oferta criada junto com a turma (Fase 4, Etapa F):** `criar_turma`, ao gravar uma turma **com curso**, chama `criar_oferta_inicial_da_turma` (`app/services/turma_curso.py`) na **mesma transação** — a turma já nasce com 1 oferta ativa. A função copia `curso_id`, `professor_id`, `turno`, `dias_semana`, `hora_inicio`/`hora_fim`, `data_inicio`/`data_fim`, `centro_custo` e `unidade_id` da turma, marca `principal=false` (é espelho do legado, não novo principal) e é **idempotente** (não duplica se já houver oferta); **não commita** — quem commita é a rota. Turma **sem curso** não gera oferta.
-- **Edição de turma com exatamente 1 oferta ativa (Fase 4, Etapa G2):** `editar_turma` carrega `ofertas_ativas(id)` antes de gravar. Os campos de agenda (`professor_id`, `turno`, `dias_semana`, `hora_inicio`/`hora_fim`, `data_inicio`/`data_fim`, `centro_custo`) são gravados na **turma e espelhados na oferta** numa **transação única**, precedidos de `_validar_horario_concomitante(..., exclude_oferta_id=oferta.id)`; `ValueError` faz **rollback** de turma e oferta antes do flash/redirect. **Trocar o curso é recusado** (flash "Para trocar o curso, desative a oferta e cadastre outra em Cursos da Turma") e nada é gravado.
-- **Edição de turma com 2+ ofertas ativas (Fase 4, Etapa G2):** o servidor **descarta** `curso_id`, professor, turno, dias, horários, datas e centro de custo vindos do formulário; grava **apenas** nome, programa, período e ordenação, com flash informativo de que os dados de oferta se editam em Cursos da Turma. `dados_de_lancamento_alterados` é **forçado a `False`**, de modo que a limpeza de lançamentos **não é disparada** nesse ramo.
+- **Edição de turma com exatamente 1 oferta ativa (Fase 4, Etapa G2):** `editar_turma` carrega `ofertas_ativas(id)` antes de gravar. Os campos de agenda são gravados na turma e espelhados na oferta numa transação única; eventual sobreposição com outra oferta gera aviso, sem bloquear a gravação. Trocar o curso continua sendo recusado; isso é feito em Cursos da Turma.
+- **Edição de turma com 2+ ofertas ativas (Fase 4, Etapa G2):** o servidor descarta os campos da oferta vindos do formulário; grava apenas nome, período e ordenação. O programa é derivado da oferta principal e não é editado no cadastro da turma.
 - **Tela de edição (Fase 4, Etapa G3):** o GET injeta `ofertas` (`ofertas_ativas(id)`) e `n_ofertas`. Com **≥1** oferta aparece o bloco "Cursos desta turma" com botão "Adicionar curso" (→ `registros.turma_ofertas`). Com **1** oferta o curso é exibido **pela oferta ativa** (`ofertas[0]`) e enviado em campo oculto `curso_id` (curso somente leitura); com **2+**, os campos de oferta (curso, professor, turno, dias, horários, datas, centro) ficam **somente leitura** (texto + hidden) com aviso no topo, e `editar.js` não dispara recálculo de C.H. nem confirmação de limpeza (`window.turmaOfertasBloqueadas`). Turma **sem oferta** mantém a tela como era.
 - **Exclusão de turma (Etapa I):** `excluir_turma` usa `turma_tem_historico` (Frequencia, RegistroAula, ConselhoClasse, Transferencia, por turma ou por oferta). Sem histórico: exclusão física de inscrições, ofertas e turma (TemaAula tem `turma_id` liberado) e `LogAcao`. Com histórico: exclusão lógica — turma, ofertas e inscrições ativas viram `ativo=False` (inscrições com `data_desativacao` + motivo `TURMA_DESATIVADA`); lançamentos preservados; aluno permanece ativo e disponível para nova enturmação. Motivo token em CAIXA-ALTA, sem acento, alinhado a `TRANSFERENCIA`.
-- **Contagens do BI (Etapa J2):** helper `cond_inscricao_enturmada` (`app/relatorios/bi_filtros.py`) considera uma inscrição enturmada quando a turma está ativa e a inscrição está ligada a uma oferta ativa (por `turma_curso_id`), ou `turma_curso_id` NULL numa turma com exatamente 1 oferta ativa. BI de alunos, frequência, total de turmas, média de alunos, status de alunos e filtros agregados passam a filtrar turma ativa e usar o helper; `aluno_status` ignora turma desativada na coorte e no histórico, evitando inflar DESENTURMADO.
+- **Contagens do BI (Etapa J2 → B6 → M4):** helper `cond_inscricao_enturmada` (`app/relatorios/bi_filtros.py`) considera uma inscrição enturmada quando a turma está ativa e a inscrição está ligada a uma **oferta efetiva** — ativa, OU em período encerrado (`cond_oferta_efetiva()` desde M4); o antigo ramo `turma_curso_id IS NULL` foi removido na B6. BI de alunos, frequência, total de turmas, média de alunos, status de alunos e filtros agregados usam o helper; `aluno_status` ignora turma desativada na coorte e no histórico.
 - **C.H. por oferta (Etapa K):** `TurmaCurso` ganha `carga_horaria_aula` e `carga_horaria_total` (minutos), herdando `hora_inicio`/`hora_fim` da turma quando a oferta não define os próprios; `datas_aula_oferta` (extraída de `datas_esperadas_oferta`) calcula a agenda da oferta com teto opcional. Pendência de otimização: `Turma.freq_geral_oferta` faz 1 consulta por oferta (N+1 na listagem).
-- **Listagem de turmas por oferta (Etapa K2):** a rota `listar`/`_filtrar_turmas` agrega professores/turnos/dias das ofertas ativas, filtra professor/turno/dia/horário por COALESCE(oferta→turma) com fallback apenas quando a turma não tem oferta ativa, e avalia `min_freq`/`min_ch_aula`/`min_ch_total` sobre a oferta principal com 2+ ofertas. `pos_filtrar_turmas` tolera objetos sem relação `ofertas_curso`. Template exibe selo/sub-linha só com 2+ ofertas.
-- **Filtros da listagem (selects):** os campos "Nome da Turma" e "Professor" passaram de texto livre para `<select>`, com opções derivadas das turmas atualmente exibidas (`nomes_turmas`, `professores`), mantendo coerência com o resultado filtrado. Programa já era select.
-- **Conselho, ficha do aluno, BI e transferências ainda leem por `turma_id`** (D3b-2 pendente); **D5 (conselho por oferta) permanece pendente** de decisão do usuário.
+- **Listagem de turmas por oferta (Etapa K2):** a rota `turma` (`/turma`) usa `aplicar_filtros_turmas`/`pos_filtrar_turmas`, agrega professores/turnos/dias das ofertas ativas, filtra professor/turno/dia/horário por COALESCE(oferta→turma) com fallback apenas quando a turma não tem oferta ativa, e avalia `min_freq`/`min_ch_aula`/`min_ch_total` sobre a oferta principal com 2+ ofertas. `pos_filtrar_turmas` tolera objetos sem relação `ofertas_curso`. Template exibe selo/sub-linha só com 2+ ofertas.
+- **Filtros da listagem (selects):** "Período letivo" e "Centro de custo" filtram a turma por `periodo_letivo_id` e pela associação de centro de custo em oferta ativa. "Nome da Turma" e "Professor" são `<select>` com opções de todas as turmas/ofertas ativas da unidade, independentes do resultado filtrado; para professor, considera-se o docente efetivo da oferta, com fallback para o professor da turma. Centros vêm do catálogo ativo da unidade. Programa já era select.
+- **Navegação por período na listagem:** por padrão, a tela filtra pelo ano atual (ano de `get_local_now()`); as badges rápidas mostram esse ano e o anterior quando houver períodos cadastrados. Os períodos aparecem sob o ano de início e compartilham sua cor. O seletor permite consultar qualquer período cadastrado, inclusive histórico ou futuro.
+- **Impressão da listagem:** `/turmas/centros-custo/imprimir` (template `turmas/imprimir_listar_turma.html`) respeita os filtros da listagem e organiza registros ativos em centro de custo → turma → ofertas. A turma pode aparecer sob cada centro associado às suas ofertas, exibindo em cada grupo somente as ofertas daquele centro. O cabeçalho informa o período selecionado, todos os períodos do ano filtrado ou "Todos" quando não há filtro de período, além do usuário e data/hora de emissão.
+- **Impressão da pauta mensal:** `imprimir_pauta` gera uma folha por mês. Cada folha contém a oferta, logo secundária, nome da unidade e período letivo, grade de presença e alunos da oferta; também apresenta idade e informações de acompanhamento/medicação/instruções ao professor conforme os dados cadastrados. A lista de alunos e a indicação da oferta principal ou das demais ofertas enturmadas variam conforme o modo solicitado. É comportamento de apresentação; não altera o modelo de frequência.
+- **Conselho de classe concluído (D5, 24–25/10):** escrito e lido por OFERTA (§8.2) — lançamento, fechamento, avaliação coletiva, encerramento, histórico, ficha 360°, painel por turma, resultado do conselho e certificado. `Turma.conselho_concluido` foi removida (`f6a7b8c9d0e1`).
+- **O que ainda lê/agrega por `turma_id` (D3b-2/J3, aberto):** frequência e diário no ramo legado (`app/utils/logica.py`, `app/utils/frequencia.py`); `Turma.freq_geral` (property que soma as ofertas da turma); `agregar_por_turma` do painel pedagógico (`app/relatorios/painel_pedagogico/frequencia.py`); BI de frequência (`frequencia_por_turma`/`frequencia_por_curso` e vizinhos em `app/relatorios/bi_alunos.py`); `calcular_frequencias_relatorio` dos relatórios (`app/relatorios/geral.py`); e os indicadores de conselho do BI (CRU-002/CRU-005 filtram pela turma). Histórico do aluno, ficha 360° e certificado já são por inscrição/oferta (D5.4).
+- **Transferências:** o POST exige oferta de destino (M2), mas a tabela `transferencia` **não persiste** oferta de origem/destino (§7.16) — decisão pendente.
+- **Painel pedagógico, visão por período (B7):** `_montar_turma_linha` **nunca existiu** desde `1c8604c` (a visão respondia `NameError`) e foi implementada na B7; a visão por período **omite turma sem nenhuma frequência lançada** (§12.21).
+- **Dívida corrigida na D5.4:** ficha 360° e painel por turma/resultado do conselho tinham HTTP 500 latentes (atributo `inscricao.status_aluno` inexistente, `pres_acum/falt_acum` não definidos, `map(attribute="isoformat")` no template e `ConselhoClasse.aluno` inexistente) — corrigidos e cobertos por testes.
 - `TurmaCurso` **não** é excluído em cascata por desativação; apagar a **turma** fisicamente remove suas ofertas (cascade do relacionamento `turma`); apagar oferta **não** apaga inscrições (histórico protegido).
+- **Isolamento por unidade (B3/B4):** vale para **TODOS** os perfis, inclusive ADMIN e GERENCIA — eles escolhem a unidade após o login; a Visão Global é **somente leitura**. Em rotas de escrita, `assert_unidade_context` é incondicional (recusa `unidade_id=None` e mismatch com 403).
 
 ### 8.11 Centros de custo (catálogo por unidade)
 
@@ -1028,6 +1106,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 ---
 
 ## 10. Histórico de ondas
+
+### Ajustes de interface — 2026-10-24
+
+- Impressão mensal da pauta: uma folha por mês, com logo secundária, unidade e período letivo, alunos e informações de apoio pedagógico cadastradas. A pauta pode identificar, conforme a opção escolhida, a oferta principal ou as demais ofertas do aluno. Nenhuma tabela ou coluna foi alterada nesta entrega.
+- Painel geral: os quatro indicadores (períodos ativos, turmas ativas, alunos ativos e professores) ficam agrupados em duas colunas; períodos ativos é o primeiro card.
 
 ### Onda 1 — Modularização + integridade + JSONB
 
@@ -1112,12 +1195,12 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - Testes: `tests/test_turma_curso.py` (7 cenários: unicidade da oferta, principal por turma via índice parcial, inscrições↔oferta). Fixados fixtures obsoletos de `tests/test_carga_horaria.py` e `formatar_ch` para valores negativos.
 - Verificação pós-deploy: `scripts/verificar_onda4_fase1.py` (estrutura, backfill, órfãs, duplicatas, principal, divergência com legado).
 - **Fase 2:** criado `app/services/turma_curso.py` (regras de aplicação: cadastro incremental, principal obrigatório com 2+ ofertas — máximo já garantido pelo índice parcial —, swap atômico de principal, soft delete com guarda, `UNIQUE` pleno inclusive para ofertas desativadas) e rotas `/turma/<id>/ofertas*` em `app/registros/turmas.py` com a tela `turmas/ofertas.html`; acesso por novo botão na ficha da turma. Espelhamento legado apenas em turma sem curso legado com oferta única (situação nova); turmas do backfill mantêm as colunas congeladas.
-- **Fase 3:** validação de concomitância de horários (`_validar_horario_concomitante`): sobreposição proibida entre ofertas ativas da mesma turma quando compartilham dia + intersecção estrita de horário + vigências interceptam; adjacência permitida. Chamada em `adicionar_oferta` e `editar_oferta`. Migration corretiva `8c4e1f9a7d32` adiciona as colunas de auditoria (`updated_by_id`/`name`/`at`) que faltavam em `turma_curso` no PostgreSQL.
-- **Fase 4:** frequência e diário por oferta. Migration `e7f3a1b9c4d5` adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos parciais `uix_freq_legado`/`uix_freq_oferta`, cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (escolha + validação de vigência/dia/tema com 2+ ofertas), `datas_esperadas_oferta`/`_dias_efetivos_da_oferta` (agenda por oferta) e `_alunos_da_oferta` (movida para services para evitar ciclo de import; usa `EXISTS`, sem duplicar aluno). Leitores/escritores adaptados em `app/utils/logica.py` (`salvar_frequencia`, `carregar_frequencias` — busca legada agora filtra `turma_curso_id IS NULL`), `app/utils/frequencia.py` (`frequencias_lancadas`, `contar_pendencias_frequencia`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`imprimir_pauta`, `ver_observacoes`, `turmas/detalhe.html`, `frequencia/lancar.html`, `dashboard/professor.html`). Regra "turma em andamento" em `adicionar_oferta`. Testes: `tests/test_turma_curso_fase4.py` e `tests/test_turma_curso_fase4_dash.py`; verificação `scripts/verificar_onda4_fase4.py`.
-- **Fase 4 — Etapas F, G2 e G3 (23/10/2026):** Etapa F — `criar_oferta_inicial_da_turma` faz a turma nova com curso nascer já com 1 oferta na mesma transação (espelho do legado, `principal=false`, idempotente); checagem "turma ativa com curso e sem oferta" (aviso) em `scripts/verificar_onda4_fase4.py`. Etapa G2 — `editar_turma` bifurca por número de ofertas ativas (0: fluxo atual; 1: grava na turma e espelha na oferta com validação de concomitância e transação única, recusando troca de curso; 2+: descarta campos de oferta, grava só nome/programa/período/ordenação sem disparar limpeza); correção do ramo sem oferta (curso vazio não apaga o `curso_id` da turma) e rollback antes do flash quando a concomitância falha. Etapa G3 — tela de edição com bloco "Cursos desta turma" (+ botão "Adicionar curso"), curso exibido/enviado pela oferta ativa com 1 oferta e campos somente leitura com 2+; `editar.js` não pede confirmação de limpeza com 2+ ofertas. Testes: `tests/test_turma_curso_edicao.py`. Suíte completa: **174 aprovados**, apenas as 2 falhas preexistentes de `/cursos`.
-- Pendentes: **D3b-2** (ficha do aluno, BI de frequência/diário, `freq_geral` na listagem de turmas e no BI, relatórios, certificados e histórico ainda leem por `turma_id`); Fases 5–9 (autorização por professor ofertada §8, centro de custo §9, transferências §10, **D5 conselho**, certificados/indicadores, NOT NULL final). Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). Colunas legadas de `Turma` permanecem (§8.10). **Exclusão de turma (Etapa I, implementada):** `excluir_turma` verifica `turma_tem_historico` (Frequencia, RegistroAula, ConselhoClasse, Transferencia, por turma ou oferta). **Sem histórico:** exclusão física de inscrições, ofertas e turma (liberando TemaAula por `turma_id` nulo) e `LogAcao`. **Com histórico:** exclusão lógica — turma, ofertas e inscrições ativas viram `ativo=False` (inscrições com `data_desativacao` + motivo `TURMA_DESATIVADA`); lançamentos/diário/conselho/transferências preservados; aluno permanece ativo e disponível para nova enturmação. **Etapa J2:** contagens do BI filtram turma ativa e usam `cond_inscricao_enturmada` (inscrição ativa em oferta ativa, ou NULL numa turma com exatamente 1 oferta ativa); `status_alunos` ignora turma desativada. **Etapas K/K2:** `TurmaCurso` ganha `carga_horaria_aula`/`carga_horaria_total` (herdando horários da turma quando a oferta não define os próprios) e a listagem de turmas agrega professores/turnos/dias das ofertas, filtra por COALESCE(oferta→turma) e avalia C.H./freq. sobre a oferta principal com 2+ ofertas. Pendências restantes inalteradas: D3b-2, Fases 5–9, D5 conselho. **Turma sem oferta que lança frequência e depois ganha a primeira oferta:** registros com `turma_curso_id` NULL deixam de aparecer na tela por oferta e relançar o mesmo dia cria linha duplicada (turmas novas já nascem com oferta, então só afeta turmas sem curso). **Turma que desativa todas as ofertas** deixa de mostrar, na tela legada, o histórico lançado por oferta.
+- **Fase 3:** detecção de concomitância de horários entre ofertas ativas da mesma turma. Quando dias, horários e vigências coincidem, `adicionar_oferta`, `editar_oferta` e a edição de turma com oferta única exibem um aviso, mas permitem salvar. Migration corretiva `8c4e1f9a7d32` adiciona as colunas de auditoria (`updated_by_id`/`name`/`at`) que faltavam em `turma_curso` no PostgreSQL.
+- **Fase 4:** frequência e diário por oferta. Migration `e7f3a1b9c4d5` adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos parciais `uix_freq_legado`/`uix_freq_oferta`, cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (escolha + validação de vigência/dia/tema com 2+ ofertas), `datas_esperadas_oferta`/`_dias_efetivos_da_oferta` (agenda por oferta) e `_alunos_da_oferta` (movida para services para evitar ciclo de import; usa `EXISTS`, sem duplicar aluno). Leitores/escritores adaptados em `app/utils/logica.py` (`salvar_frequencia`, `carregar_frequencias` — busca legada agora filtra `turma_curso_id IS NULL`), `app/utils/frequencia.py` (`frequencias_lancadas`, `contar_pendencias_frequencia`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`imprimir_pauta`, `ver_observacoes`, `turmas/detalhe.html`, `frequencia/lancar.html`, `dashboard/professor.html`). Testes: `tests/test_turma_curso_fase4.py` e `tests/test_turma_curso_fase4_dash.py`; verificação `scripts/verificar_onda4_fase4.py`.
+- **Fase 4 — Etapas F, G2 e G3 (23/10/2026):** Etapa F — `criar_oferta_inicial_da_turma` faz a turma nova com curso nascer já com 1 oferta na mesma transação; Etapa G2 — edição de turma por número de ofertas ativas, sem editar programa da turma; Etapa G3 — tela com bloco "Cursos desta turma" e edição de ofertas dedicada. Com 2+ ofertas, a edição da turma grava apenas nome, período e ordenação.
+- Pendentes: **D3b-2** (frequência, BI de frequência/diário, `freq_geral` na listagem de turmas e no BI e relatórios ainda leem por `turma_id` — a **ficha 360°, o histórico e o certificado passaram a ler por oferta** na D5.4); **Fases 5–7** (autorização por professor ofertada §8, centro de custo §9, transferências §10) — as Fases 8–9 (conselho por oferta, certificados/indicadores) e a NOT NULL final (Fase 9: `c3d4e5f6a7b8` + `d4e5f6a7b8c9`) estão **concluídas**; o conselho por oferta fechou na D5.5 (§8.2, §12.18). Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). Colunas legadas de `Turma` permanecem (§8.10). **Exclusão de turma (Etapa I, implementada):** `excluir_turma` verifica `turma_tem_historico` (Frequencia, RegistroAula, ConselhoClasse, Transferencia, por turma ou oferta). **Sem histórico:** exclusão física de inscrições, ofertas e turma (liberando TemaAula por `turma_id` nulo) e `LogAcao`. **Com histórico:** exclusão lógica — turma, ofertas e inscrições ativas viram `ativo=False` (inscrições com `data_desativacao` + motivo `TURMA_DESATIVADA`); lançamentos/diário/conselho/transferências preservados; aluno permanece ativo e disponível para nova enturmação. **Etapa J2 (histórica; regra vigente em §8.10):** contagens do BI filtram turma ativa e usam `cond_inscricao_enturmada`; a redação inicial admitia NULL numa turma com exatamente 1 oferta ativa — ramo removido na B6 e substituído por `cond_oferta_efetiva()` (M4); `status_alunos` ignora turma desativada. **Etapas K/K2:** `TurmaCurso` ganha `carga_horaria_aula`/`carga_horaria_total` (herdando horários da turma quando a oferta não define os próprios) e a listagem de turmas agrega professores/turnos/dias das ofertas, filtra por COALESCE(oferta→turma) e avalia C.H./freq. sobre a oferta principal com 2+ ofertas. Pendências restantes: D3b-2 (frequência, BI de frequência, `freq_geral` e relatórios), Fases 5–7. **Turma sem oferta que lança frequência e depois ganha a primeira oferta:** registros com `turma_curso_id` NULL deixam de aparecer na tela por oferta e relançar o mesmo dia cria linha duplicada (turmas novas já nascem com oferta, então só afeta turmas sem curso). **Turma que desativa todas as ofertas** deixa de mostrar, na tela legada, o histórico lançado por oferta.
 - **Centros de custo (23/10/2026):** tabela `centro_custo` (§7.4a, migration `d2e3f4a5b6c7`), catálogo por unidade com backfill a partir das colunas CSV existentes; formulário de períodos passa a criar/editar/inativar/reativar centros via `/centros-custo` com envio de CSRF e sincronização das checkboxes (§8.11).
-- **Programa na oferta (23/10/2026):** migration `a1b2c3d4e5f6` adiciona `turma_curso.programa` (varchar(50), nullable) com backfill a partir de `turma.programa`; head atual `a1b2c3d4e5f6`. Fix de schema drift aplicado via `flask db upgrade`.
+- **Programa obrigatório na oferta (24/10/2026):** migration `d4e5f6a7b8c9` torna `turma_curso.programa` NOT NULL. `Turma.programa` é atualizado como projeção da oferta principal ativa.
 
 ---
 
@@ -1130,6 +1213,32 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 ---
 
+### Onda 4 — Pós-Fase 4: reparo, segurança, endurecimento e serviços (24–25/10/2026)
+
+- **T1 (24/10):** Reparo da suíte de testes (120F→10F→210P). Sementes adaptadas para NOT NULL de `turma_curso_id` e `programa`; criado `tests/_helpers.py`; removidos testes que pressupunham estado NULL; 4 bugs reportados no uso manual do banco local (KeyError P2, concomitância P1, editar_turma P3/P4). Novo `tests/test_transferencia_oferta.py` (8 testes).
+- **P1 (25/10):** Ensaio de upgrade sobre dump PostgreSQL scratch (`pautaon_ensaio`). 5 ensaios (A–E) validaram a cadeia `8c4e1f9a7d32 → d4e5f6a7b8c9`; defeitos P-1 (perda silenciosa de `turma.programa`) e P-2 (duplicata revelada só após NULL corrigido) identificados. Criado `scripts/preparar_deploy_onda4.py` (diagnóstico somente-leitura). Dump autêntico inexistente (não há produção real; ver §12.17).
+- **B1 (25/10):** Corrigidos P2 (`periodos_por_ano.get(ano, [])`), P3 (`/turma/nova` exige programa, template com select), P4 (`sincronizar_programa_turma` no ramo 2+ ofertas). Concomitância realinhada ao MER: 4 testes de bloqueio reescritos para "grava + aviso". Criado `_PROGRAMAS_OFERTA`. 218P/3F.
+- **B2 (25/10):** D4 fechado (`test_edicao_duas_ofertas` → projeção correta); removido bloco programa de `nova_turma.html`; falha de carga horária de `/cursos` classificada como premissa obsoleta (Onda 3C). Investigação: falha de isolamento é defeito real da rota `editar_curso`. 220P/1F.
+- **B3 (25/10):** `editar_curso` corrigido — isolamento por unidade vale para todos os perfis; Visão Global é somente leitura. Suíte 100% verde: 221P/0F.
+- **B4 (25/10):** Isolamento estendido a 12 rotas de escrita (itens da auditoria B3: temas, níveis, período, calendário, centros de custo, turma nova, turma editar, alternar-conselho). Novo `tests/test_isolamento_unidade_escrita.py` (36 testes). 257P/0F.
+- **B5 (25/10):** Migrations `c3d4e5f6a7b8` e `d4e5f6a7b8c9` endurecidas: checagens pré-DDL com `RuntimeError`; `COALESCE` preserva `turma.programa`; sem atribuição de programa padrão. Ensaios A–E validados. 257P/0F.
+- **B6 (25/10):** Criar nível na Visão Global recusado; ordem assert×curso.inativo corrigida; D3 implementado (turma sem período na vista padrão com selo); R2 limpo (`programas` removido do render de `nova_turma`); código morto de inscrição NULL removido (`cond_inscricao_enturmada` simplificado, `_alunos_da_oferta` sem `incluir_inscricoes_null`). 5 testes novos. 262P/0F.
+- **M1 (24/10):** Enturmação por oferta. `enturmar_alunos` (turmas.py) passa a gravar `turma_curso_id`; regras 0/1/2+ ofertas (0 recusa; 1 auto-seleciona; 2+ exige escolha validada contra `ofertas_ativas`); duplicidade agora por aluno+turma+oferta; `ver_turma` com seletor `?oferta_sel=&modal=enturmar` e lista de disponíveis filtrada por oferta; selos de curso por aluno na ficha (`cursos_por_aluno`); `adicionar_oferta` vinculava `Inscricao` NULL ativas ao destino inequívoco (1 oferta preexistente → ela; 0 → nova; 2+ → não mexe). 11 testes em `tests/test_enturmacao_oferta.py`; semente de `test_security_regressions` ganhou 1 oferta. 211P/2F.
+- **M1.1 (24/10):** Adoção de `Inscricao` NULL ativa ao enturmar (menor id; `data_inicio` preservado); `scripts/verificar_onda4_m1.py` (somente leitura, ainda presente no repositório); +6 testes → `test_enturmacao_oferta.py` fecha 17. **Poseriormente**: a lógica de adoção/vínculo NULL (rota de enturmar + `adicionar_oferta`) foi tornada obsoleta pelo NOT NULL de `c3d4e5f6a7b8` e **removida** na T1; os 7 testes correspondentes também foram eliminados (restam 13 no arquivo, ver §3 do T1). O script permanece como diagnóstico legado útil antes de novos deploys.
+- **M2 (25/10):** Serviço único `app/services/enturmacao.py`; desenturmar por oferta (2+ exige escolha, `one_or_none()`, guarda oferta∈turma); transferência delega criação ao serviço; template `detalhe.html` com nome do curso no botão. `tests/test_desenturmacao_oferta.py` (16 testes). 278P/0F.
+- **M4 (25/10):** Guarda `verificar_alunos_em_andamento` em `desativar_oferta`; `cond_oferta_efetiva()` no BI/status; oferta inativa em período encerrado preservada. `tests/test_desativar_oferta.py` (13 testes). 291P/0F.
+- **L1 (25/10):** Limpeza: removido `detalhe copy.html` (cópia obsoleta), `_contagem_inscricoes_sem_curso` + bloco "sem curso definido" em `lancar.html` (código morto pós-NOT NULL); comentário rodapé `test_enturmacao_oferta.py` atualizado. A2 (`request.values`) confirmado correto — mantido.
+- **L2 (25/10):** Sincronização de MER/backlog (só documentação): M1/M1.1 restaurados e reescritos, §2 com os serviços atuais, §7.16 com a nota da transferência, "Pendências abertas" reorganizadas. Suíte não executada.
+- **D5.0 (25/10):** Desenho do conselho por oferta (somente leitura): mapa do código (`app/conselho.py`, `app/planejamento.py`, leitores), colunas/UNIQUE propostas, plano de migração em duas etapas (D5-A aditiva, D5-B endurecimento espelhando `c3d4e5f6a7b8`) e decisões Q1/Q4/Q5. 291P.
+- **D5.1 (25/10):** Migration `e5f6a7b8c9d0` (aditiva): `conselho_classe.turma_curso_id` nullable + FK `ON DELETE RESTRICT`; índices únicos **parciais** `uix_conselho_legado`/`uix_conselho_oferta` e `ix_conselho_turma_curso`; removida a UNIQUE antiga `uix_conselho_turma_aluno_etapa`; `turma_curso.conselho_concluido` (NOT NULL default false) e `avaliacao_inicial/percurso/final`; backfill **somente inequívoco** (1 oferta distinta nas inscrições do aluno; cópia da flag/pareceres só com 1 oferta ativa). `tests/test_d5_schema.py` (6), `scripts/verificar_onda4_d5.py` e ensaio A–E em `pautaon_ensaio`. 297P.
+- **D5.2 (25/10):** Escrita por oferta: `lancamento_conselho`/`salvar_conselho`, `salvar_fechamento_data` (JSON, `situacao_final`/`proxima_turma_id` por oferta, catálogo `OpcaoProximaTurma`, validação atômica) e `avaliar_turma` gravando em `turma_curso.avaliacao_*`; política M1 0/1/2+; ponte `Turma.conselho_concluido` em `alternar_conselho`. `tests/test_conselho_oferta.py`. 320P.
+- **D5.2b (25/10):** Quatro defeitos de tela corrigidos: grade aluno×pergunta do lançamento, modal de conselho inerte, POST do fechamento sem token CSRF e `select` de situação fora do enum. `tests/test_conselho_ui.py` (4). 324P.
+- **D5.3 (25/10):** Encerramento e contagens por oferta: `turma_conselho_concluido()` (derivado), `contar_ofertas_conselho()`, painel/informações/métricas e certificado lendo a oferta; turma sem oferta ativa fora das contagens. `tests/test_d5_encerramento.py` (13). 337P.
+- **D5.4 (25/10):** Leitores por oferta: criado `app/services/conselho_leitura.py` (lote, sem N+1); histórico, ficha 360°, painel por turma (`p.texto`), resultado do conselho e certificado por inscrição; 5 bugs latentes pré-existentes corrigidos. `tests/test_d5_leitores.py` (12). 349P.
+- **B7 (25/10):** `_montar_turma_linha` implementada na visão por período do painel pedagógico (função referenciada desde `1c8604c` e nunca criada — a rota respondia `NameError`); `ruff check app --select F821` limpo; `tests/test_painel_periodo.py` (3). 352P.
+- **D5.5 (25/10):** Endurecimento: migration `f6a7b8c9d0e1` com pré-checagens somente-leitura (i)–(iv) num único `RuntimeError`, `turma_curso_id` **NOT NULL**, drop de `uix_conselho_legado`, drop de `turma.conselho_concluido` e downgrade reversível com guarda/repopulação; modelos e ponte de `alternar_conselho` ajustados; `ETAPA_PARA_CAMPO_AVALIACAO` único; órfãos removidos (`static/js/periodos/conselhos.js`, `templates/conselho/relatorio.html`, import `PerguntaConselho`); seção G bloqueante em `scripts/preparar_deploy_onda4.py`; seletor `?oferta_sel=` na ficha 360°; `tests/test_d5_endurecimento.py` (7) e ensaio A–E. 359P.
+
+---
 
 ## 11. Referência cruzada com migrations
 
@@ -1160,7 +1269,13 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `8c4e1f9a7d32` | `311d554dfd6e` | **Onda 4, fix Fase 1**: colunas de auditoria em `turma_curso` (PG) | ✅       |
 | `e7f3a1b9c4d5` | `8c4e1f9a7d32` | **Onda 4, Fase 4**: `turma_curso_id` em `frequencia`/`registro_aula`; UNIQUE legado → índices únicos parciais; backfill oferta única | ✅       |
 | `d2e3f4a5b6c7` | `e7f3a1b9c4d5` | **Centro de custo**: tabela `centro_custo` (catálogo por unidade) + backfill a partir de `periodo_letivo`/`turma`/`turma_curso` | ✅       |
-| `a1b2c3d4e5f6` | `d2e3f4a5b6c7` | **Programa na oferta**: coluna `programa` em `turma_curso` (varchar(50), nullable) + backfill a partir de `turma.programa` | ✅       |
+| `a1b2c3d4e5f6` | `d2e3f4a5b6c7` | Programa inicialmente adicionado em `turma_curso` com backfill | ✅       |
+| `c3d4e5f6a7b8` | `a1b2c3d4e5f6` | `inscricoes.turma_curso_id` obrigatório e unicidade de inscrição ativa por aluno/oferta; **endurecida na B5**: checagens NULL/duplicata com `RuntimeError` antes do DDL | ✅       |
+| `d4e5f6a7b8c9` | `c3d4e5f6a7b8` | Programa obrigatório em `turma_curso`; `COALESCE` preservando `turma.programa`; recusa explícita sem programa padrão (B5); `Turma.programa` deriva da oferta principal ativa | ✅       |
+| `e5f6a7b8c9d0` | `d4e5f6a7b8c9` | **D5.1**: conselho por oferta (aditivo) — `conselho_classe.turma_curso_id` (nullable, FK `ON DELETE RESTRICT`), índices únicos parciais `uix_conselho_legado`/`uix_conselho_oferta`, `ix_conselho_turma_curso`; remove a UNIQUE antiga `uix_conselho_turma_aluno_etapa`; `turma_curso.conselho_concluido` + `avaliacao_inicial/percurso/final`; backfill somente inequívoco | ✅       |
+| `f6a7b8c9d0e1` | `e5f6a7b8c9d0` | **D5.5**: endurecimento do conselho por oferta — pré-checagens (i)–(iv) num único `RuntimeError`, `turma_curso_id` **NOT NULL**, drop de `uix_conselho_legado`, drop de `turma.conselho_concluido`; downgrade reversível com guarda de duplicatas e repopulação derivada (**head atual**) | ✅       |
+
+> **Head atual:** `f6a7b8c9d0e1` (D5.5). As duas etapas do conselho por oferta são as últimas da cadeia; `flask db heads` deve devolver apenas esse hash.
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 
@@ -1175,7 +1290,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 3. **`a9f3c8e2d1b7` inclui `curso`.** Cria as colunas de auditoria em `turma`, `tema_aula`, `registro_aula`, `curso`, `conselho_classe` e `inscricoes`; porém `Curso` não herda `AuditoriaMixin` (pelas migrations, o banco terá três colunas a mais que o modelo). Além disso, o modelo `Aluno` declara a FK `updated_by_id` sem `ondelete`, enquanto a migration cria `ON DELETE SET NULL`. Ação: herdar o mixin em `Curso` (ou dropar as colunas) e alinhar o `ondelete` em `Aluno`.
 4. **`perfil_diversidade.tipo_deficiencia` sem migration.** Em `3b7c9d1e4f20` o `add_column` está comentado, o `downgrade` tenta dropar a coluna e nenhuma outra revisão a cria — modelo e MER a possuem. Ação: nova migration com `add_column` (checando existência).
 5. **`aluno.documentos_entregues` é criado como `JSON`, não `JSONB`.** `29a29fdbc2aa` usa `sa.JSON()` genérico (no SQLite, pula a criação) e nenhuma revisão posterior altera o tipo; o modelo usa `JSONType` (JSONB no PostgreSQL). Ação: migration `alter_column` para JSONB (`postgresql_using="documentos_entregues::jsonb"`).
-6. **Ondas 2A/2B só convertidas em `5a676f37b9a3`.** O `batch_alter_table` de `a1bbf3c29231`/`ef4e5af7e876` não converteu os tipos no PostgreSQL; `5a676f37b9a3` faz `ALTER COLUMN ... TYPE ... USING` (não é idempotente: tende a falhar se as colunas já forem `DATE`/`TIME`) e cria `uix_frequencia_aluno_turma_data` e `uix_conselho_turma_aluno_etapa` com `CREATE UNIQUE INDEX IF NOT EXISTS` — no-op se as constraints de `73f922fd358f` já existirem. Ambas são no-op no SQLite.
+6. **Ondas 2A/2B só convertidas em `5a676f37b9a3`.** O `batch_alter_table` de `a1bbf3c29231`/`ef4e5af7e876` não converteu os tipos no PostgreSQL; `5a676f37b9a3` faz `ALTER COLUMN ... TYPE ... USING` (não é idempotente: tende a falhar se as colunas já forem `DATE`/`TIME`) e cria `uix_frequencia_aluno_turma_data` e `uix_conselho_turma_aluno_etapa` com `CREATE UNIQUE INDEX IF NOT EXISTS` — no-op se as constraints de `73f922fd358f` já existirem. A segunda foi removida na D5.1 (`e5f6a7b8c9d0`). Ambas são no-op no SQLite.
 7. **`47ae52f8da90` não consta em `versions/`.** A linha "Ajustes de auditoria em Turma/TemaAula" listada em revisões anteriores deste MER foi removida; a migration de auditoria registrada é `a9f3c8e2d1b7`. Se algum banco tiver `47ae52f8da90` em `alembic_version`, o Alembic não localizará a revisão.
 8. **Alterações de modelo sem migration.** Nenhuma revisão altera `periodo_letivo`: a mudança de `unidade_id` para nullable via `TenantMixin` (§12.10) não tem migration, nem as alterações de `comment=` das colunas dos mixins.
 9. **Inconsistências de cabeçalho (sem efeito na cadeia).** `b2c3d4e5` documenta `Revises: a1b2c3d4`, mas o `down_revision` real é `7aa724d05691`; `7aa724d05691` tem nome de arquivo "add google_id and google_email", porém ajusta `atendimento` e o tamanho de `google_id` (`google_email` é criado em `6a8df39d`). Não existe migration-base: o schema inicial é anterior ao Alembic.
@@ -1260,6 +1375,80 @@ tabela estruturada, e não duplicados nesse JSON.
 **Impacto:** dois heads impedem `flask db upgrade`; `e1e3a5b2c333` quebra a criação de bancos novos; `tipo_deficiencia`, o tipo de `documentos_entregues` e as colunas de auditoria de `curso` divergem entre modelo e banco.
 **Plano:** executar as ações do §11.1 (merge dos heads, idempotência de `e1e3a5b2c333`, migrations corretivas) antes da Onda 3C de remoção dos JSONs.
 **Parcialmente resolvido (22/10/2026):** merge dos heads concluído (`b02f2051bc1e`) e `5a676f37b9a3` idempotente. Permanecem: `e1e3a5b2c333` não idempotente, `tipo_deficiencia` sem migration, `documentos_entregues` como JSON e o drift das colunas de auditoria de `curso` — o autogenerate de `311d554dfd6e` propôs dropá-las; a proposta foi descartada e uma revision de sincronia modelo × banco fica no backlog.
+
+### 12.13 Duplicação do predicado `cond_oferta_efetiva` (M4)
+
+**Onde:** `app/relatorios/bi_filtros.py` (`cond_oferta_efetiva`) vs `app/services/aluno_status.py` (`_cond_oferta_efetiva`).
+**Causa:** ciclo de import (`app.services` → `app.relatorios.__init__` → `bi_alunos` → `aluno_status`).
+**Plano:** mover o helper para módulo neutro (ex.: `app/models/` ou `app/utils/`) quando for possível reorganizar imports.
+
+### 12.14 Lista de programas embutida em `ofertas.html` (B1/D6)
+
+**Onde:** `app/templates/turmas/ofertas.html` (L141–147 e L268–273).
+**Impacto:** a lista literal de programas (`Profissionalizante`, `Esporte`, etc.) está duplicada no template em vez de vir da constante `_PROGRAMAS_OFERTA` passando pelo contexto.
+**Plano:** passar `programas` via `render_template` da rota `turma_ofertas` e iterar no template.
+
+### 12.15 `TurmaCurso.avisos_horario` transiente (B1/D7)
+
+**Onde:** `app/services/turma_curso.py` (`adicionar_oferta`/`editar_oferta`).
+**Impacto:** `oferta.avisos_horario` é atributo Python efêmero (não persistido); some após refresh. Os testes dependem dele, mas a tela não exibe avisos de concomitância após reload.
+**Plano:** considerar persistência ou exibição via flash na rota.
+
+### 12.16 Conftest único para a harness de testes (T1/P7)
+
+**Onde:** `tests/` (cada arquivo cria seu próprio `app`/`client`).
+**Impacto:** repetição de boilerplate; risco de vazamento de AppContext entre testes (armadilha §5.6 do T1); dificuldade de evolução da harness.
+**Plano:** criar `tests/conftest.py` centralizado.
+
+### 12.17 Deploy: script de preparação e observabilidade da CLI Alembic (B5-P1) — CAUSA CONFIRMADA
+
+**Onde:** `scripts/preparar_deploy_onda4.py`; `migrations/env.py`; CLI `flask db upgrade` / `flask_migrate.upgrade()`.
+**Causa (confirmada na D5.5, ensaio A–E):** tanto `flask db upgrade` quanto `flask_migrate.upgrade()` passam por `catch_errors`, que registra a exceção num logger e chama `sys.exit(1)`; o `fileConfig(config.config_file_name)` do `migrations/env.py` roda com `disable_existing_loggers=True` e **desabilita** o logger do Flask-Migrate, de modo que a mensagem do `RuntimeError` (as checagens de bloqueio) desaparece — o operador só vê o exit code 1.
+**Impacto:** durante o ensaio, a mensagem única só foi capturada chamando `alembic.command.upgrade` diretamente (`instance/backups/ensaio_d55/msg_upgrade.py`); o dump autêntico inexistente (B5-P2) impede repetir os ensaios com dados reais.
+**Plano:** corrigir `migrations/env.py` com `fileConfig(..., disable_existing_loggers=False)` (etapa de preparação do deploy, junto de P1/B5) e repetir os ensaios A–E com dump autêntico.
+
+### 12.18 D5 — Conselho de classe por oferta (CONCLUÍDO — 24–25/10/2026)
+
+**Decisão:** o conselho de classe passou a ser por **oferta** (`turma_curso_id`).
+**Status:** **implementado e encerrado na D5.5.** `conselho_classe.turma_curso_id` é NOT NULL; `uix_conselho_oferta` é a unicidade plena; `Turma.conselho_concluido` foi removida; escrita, encerramento e leitores operam por oferta. Regras vigentes em §8.2; histórico das etapas em §10; migrations em §11 (`e5f6a7b8c9d0` + `f6a7b8c9d0e1`).
+**Resíduos:** `Turma.avaliacao_*` (legado, §12.19) e `turma_conselho_concluido()` sem leitor no código de aplicação (§12.20).
+
+### 12.19 `Turma.avaliacao_inicial/percurso/final` (LEGADO — remover após conferir o dump autêntico)
+
+**Onde:** `app/models/academico.py` (`Turma.avaliacao_*`), colunas `text` nullable em `turma`.
+**Contexto:** desde a D5.2 o parecer coletivo vive em `turma_curso.avaliacao_*`; nenhum leitor/escritor do conselho usa mais os campos da turma.
+**Bloqueio:** só remover depois de conferir o **dump autêntico** — se houver parecer legado (turma com 2+ ofertas não copiável), ele se perde. O modelo já traz o comentário "LEGADO: parecer coletivo agora em turma_curso.avaliacao_*; remover após conferir dump autêntico".
+**Plano:** diagnóstico somente-leitura no dump → migration `drop_column` (batch no SQLite) → atualizar §7.7.
+
+### 12.20 `turma_conselho_concluido()` sem leitor no código de aplicação (só testes)
+
+**Onde:** `app/services/turma_curso.py:57`.
+**Contexto:** é o derivado oficial do encerramento da turma (§8.2) e cobre `test_d5_encerramento.py`, mas **nenhuma rota** a chama — os leitores montam o derivado pelas próprias consultas (`contar_ofertas_conselho`, `leitura` do certificado, painel).
+**Plano:** ou passar a usá-la nos leitores (evita regra duplicada), ou removê-la com os testes. Decidir junto da limpeza do §12.19.
+
+### 12.21 Painel pedagógico (visão por período) omite turma sem frequência lançada
+
+**Onde:** `app/relatorios/painel_pedagogico/periodo.py` (`if not info: continue`) — implementado assim na B7.
+**Impacto:** turma do período sem nenhuma linha de `frequencia` não aparece na tabela "Frequência por turma e semana" nem no comparativo; o KPI de conselho também não a conta.
+**Plano:** decidir se a turma deve aparecer com 0% (e "sem lançamento") em vez de sumir.
+
+### 12.22 `agregar_por_turma` agrega por `turma_id` (soma as ofertas)
+
+**Onde:** `app/relatorios/painel_pedagogico/frequencia.py:26`.
+**Impacto:** a frequência exibida no painel pedagógico (visão por período e por turma) é a da TURMA, somando todas as ofertas; não há quebra por oferta nem `turma_curso_id` no filtro.
+**Plano:** mesma decisão do D3b-2 (§8.10): agregar por (`turma_id`, `turma_curso_id`) e exibir por oferta quando houver 2+.
+
+### 12.23 N+1 residual no histórico do aluno
+
+**Onde:** `app/registros/alunos.py` (`historico_aluno`) — D5.4.
+**Contexto:** os conselhos vão em lote (`conselhos_por_oferta`), mas a **frequência** do histórico é consultada uma vez por inscrição (poucas por aluno: aceito na D5.4).
+**Plano:** agregação única por `(aluno_id, turma_id, turma_curso_id)` se o volume crescer.
+
+### 12.24 CSRF e UX do fechamento do conselho exigem teste manual no navegador
+
+**Onde:** `/conselho/fechamento/<turma>` + `static/js/conselho/conselho.js` + `templates/conselho/fechamento.html`.
+**Contexto:** a suíte roda com `WTF_CSRF_ENABLED=False`; o token é coberto por `tests/test_conselho_ui.py` (extrai o `<meta>` e reenvia), mas a experiência real (seletor de oferta, grade, envio com token e mensagens) **não** tem cobertura automatizada de navegador.
+**Plano:** roteiro manual no navegador (também para relatórios/painel) antes do deploy; considerar um teste de ponta a ponta futuro.
 
 ---
 

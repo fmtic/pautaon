@@ -6,12 +6,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from app import db
 from app.models import Inscricao, PeriodoLetivo, Turma
 from app.models.enums import StatusAluno
 
-from . import coorte, conselho, frequencia
+from . import conselho, coorte, frequencia
 from .formatacao import (
     celulas_semanais,
     classe_tendencia,
@@ -32,6 +33,7 @@ from .regras import (
     MIN_TURMAS_QUEDA_COMUM,
     QUEDA_SEMANAL_PP,
 )
+
 # Removemos a importação de ContextoSinaisPeriodo e sinais_periodo
 # pois agora vamos gerar os sinais customizados abaixo.
 
@@ -148,11 +150,58 @@ def _gerar_sinais_e_entradas(acum: _Acumulado, turmas_dados: list, semanas_queda
 
 
 # =============================================================================
+# Linha do comparativo de turmas
+# =============================================================================
+def _montar_turma_linha(
+    turma: Turma,
+    info: frequencia.FrequenciaTurma,
+    cons_turma: dict,
+    semanas: list,
+) -> dict:
+    """Linha de UMA turma no comparativo da visão por período (B7).
+
+    Devolve apenas as chaves que `relatorios/painel_pedagogico.html` lê em
+    `vp.turmas` (mais `pct_turma`/`nome`, usados pelo próprio `montar` na
+    ordenação e nos sinais). Nenhuma consulta nova: frequência, conselho e
+    semanas chegam prontos de `montar`, e o professor vem por `joinedload`.
+
+    Conselho: usa os agregados de PERCURSO no nível da turma (D5.4 mantém
+    esses agregados somando as ofertas); o detalhe por oferta fica em
+    `cons_turma["ofertas"]` e não é exibido nesta visão.
+    """
+    fx = faixas_alunos(info.por_aluno_pct)
+    semanais = frequencia.semanal(info.por_aluno, semanas)
+    tend = tendencia(semanais)
+    f_t = faixa(info.pct_turma)
+    perc = (cons_turma or {}).get("percurso", {})
+
+    return {
+        "id": turma.id,
+        "nome": turma.nome,
+        "programa": turma.programa or "—",
+        "turno": turma.turno or "—",
+        "professor": turma.professor.name if turma.professor else "—",
+        "alunos": len(info.por_aluno),
+        "pct_turma": info.pct_turma,
+        "pct_turma_str": fmt_pct(info.pct_turma),
+        "faixa_meta": faixa_meta(f_t),
+        "em_risco": fx["lo"],
+        "em_risco_pct_str": fmt_pct(pct(fx["lo"], fx["total"])),
+        "tendencia_str": fmt_diff(tend),
+        "tendencia_classe": classe_tendencia(tend),
+        "semanais_celulas": celulas_semanais(semanais),
+        "conselho_percurso_ok": perc.get("respondidos", 0),
+        "conselho_percurso_total": perc.get("total", 0),
+    }
+
+
+# =============================================================================
 # Orquestração
 # =============================================================================
 def montar(periodo: PeriodoLetivo, unidade_id: int | None) -> dict:
     turmas = (
         Turma.query.filter_by(periodo_letivo_id=periodo.id, ativo=True)
+        .options(joinedload(Turma.professor))
         .order_by(Turma.nome)
         .all()
     )

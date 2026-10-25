@@ -7,6 +7,7 @@
   // ------------------------------------------------------------
   const form       = document.getElementById('transferForm');
   const destino    = document.getElementById('turma_destino');
+  const data       = document.getElementById('data_transferencia');
   const obs        = document.getElementById('observacoes');
   const btnAbrir   = document.getElementById('btnAbrirModal');
   const btnOk      = document.getElementById('confirmarTransferenciaBtn');
@@ -14,7 +15,7 @@
   const modalDest  = document.getElementById('modalTurmaDestino');
   const modalObs   = document.getElementById('modalObservacoes');
 
-  if (!form || !destino || !obs || !btnAbrir || !modalEl) {
+  if (!form || !destino || !data || !obs || !btnAbrir || !modalEl) {
     console.error('transferir.js: elementos obrigatórios ausentes no HTML.');
     return;
   }
@@ -30,8 +31,13 @@
   // ------------------------------------------------------------
   function validar() {
     if (!destino.value) {
-      alert('Selecione a turma de destino.');
+      alert('Selecione a oferta de destino.');
       destino.focus();
+      return false;
+    }
+    if (!data.value) {
+      alert('Informe a data da transferência.');
+      data.focus();
       return false;
     }
     if (!obs.value.trim()) {
@@ -61,7 +67,7 @@
   // ------------------------------------------------------------
   btnOk?.addEventListener('click', () => {
     modal.hide();
-    form.submit();
+    HTMLFormElement.prototype.submit.call(form);
   });
 
   // ------------------------------------------------------------

@@ -3,16 +3,18 @@ from datetime import date, datetime
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.database import db
 from app.models import (
     Aluno,
+    CentroCusto,
     Curso,
     Frequencia,
     Inscricao,
     Nivel,
-    PerguntaConselho,
+    PerfilDiversidade,
     PeriodoLetivo,
     RegistroAula,
     Turma,
@@ -20,20 +22,23 @@ from app.models import (
     User,
 )
 from app.models.enums import UserRole
+from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
     definir_principal,
     desativar_oferta,
+    datas_aula_oferta,
     editar_oferta,
     ofertas_ativas,
+    sincronizar_programa_turma,
     turma_tem_historico,
     _alunos_da_oferta,
-    _validar_horario_concomitante,
+    _conflitos_horario_concomitante,
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.formatters import formatar_ch
-from app.utils.logica import carregar_contexto_turma, get_unidade_id
+from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
 from app.utils.timezone import get_local_now
 from app.services.auth_service import register_security_log
 
@@ -86,6 +91,11 @@ def _parse_float_arg(value):
 _ORDEM_DIAS = (
     "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo",
 )
+_ABREVIACAO_DIAS = {
+    "Segunda": "Seg.", "Terça": "Ter.", "Quarta": "Qua.",
+    "Quinta": "Qui.", "Sexta": "Sex.", "Sábado": "Sáb.",
+    "Domingo": "Dom.",
+}
 
 
 def _ofertas_ativas_da_turma(turma):
@@ -130,6 +140,36 @@ def _existe_oferta_que(cond_oferta):
     )
 
 
+def _csv_token_match(coluna, valor):
+    """Compara um nome com um token de campo CSV sem casar nomes parciais."""
+    normalizada = func.replace(func.coalesce(coluna, ""), " ", "")
+    token = func.replace(func.coalesce(valor, ""), " ", "")
+    token = func.replace(func.replace(func.replace(token, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
+    return or_(
+        normalizada == token,
+        normalizada.like(token + ",%", escape="\\"),
+        normalizada.like("%," + token + ",%", escape="\\"),
+        normalizada.like("%," + token, escape="\\"),
+    )
+
+
+def _tokens_centro_custo(valor: str | None) -> set[str]:
+    return {token.strip() for token in (valor or "").split(",") if token.strip()}
+
+
+_PALETA_BADGES_ANO = (
+    ("#0d6efd", "#ffffff"), ("#198754", "#ffffff"),
+    ("#dc3545", "#ffffff"), ("#6f42c1", "#ffffff"),
+    ("#0dcaf0", "#102a43"), ("#fd7e14", "#212529"),
+    ("#d63384", "#ffffff"), ("#20c997", "#102a43"),
+    ("#6c757d", "#ffffff"), ("#ffc107", "#212529"),
+)
+
+# Programas aceitos na oferta (mesma lista da tela "Cursos da Turma"). A
+# coluna Turma.programa é projeção da oferta principal ativa (MER §8.10).
+_PROGRAMAS_OFERTA = ("Profissionalizante", "Esporte", "Meio Ambiente", "Outros")
+
+
 def _filtro_por_oferta(cond_oferta, cond_turma):
     """Casa se QUALQUER oferta ativa casa (via COALESCE) OU, só quando a turma
     não tem oferta ativa, se a coluna congelada da turma casa."""
@@ -158,20 +198,86 @@ def _resumo_ofertas(turma):
         for d in (x.strip() for x in dias_str.split(",")):
             if d:
                 dias_set.add(d)
+    if not ativas and turma.dias_semana:
+        dias_set.update(d.strip() for d in turma.dias_semana.split(",") if d.strip())
     dias = [d for d in _ORDEM_DIAS if d in dias_set]
-    return {"professores": professores, "turnos": turnos, "dias": dias}
+    dias_abreviados = [_ABREVIACAO_DIAS[d] for d in dias]
+    return {
+        "professores": professores,
+        "turnos": turnos,
+        "dias": dias,
+        "dias_abreviados": dias_abreviados,
+    }
 
 
-def aplicar_filtros_turmas(stmt, args):
+def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
     """Aplica filtros persistidos (SQL) sobre o select de Turma.
 
-    professor/turno/dia/horario_inicio: a turma casa se QUALQUER oferta ativa
+    periodo_letivo_id e ano_periodo restringem o período da turma; centro_custo
+    usa o catálogo ativo da unidade e os centros associados às ofertas. Para
+    professor/turno/dia/horario_inicio, a turma casa se QUALQUER oferta ativa
     casar usando COALESCE(coluna da oferta, coluna da turma); sem oferta ativa,
-    valem as colunas da turma (como antes). nome/programa seguem na turma.
+    valem as colunas da turma. nome e programa seguem na turma.
+
+    incluir_turmas_sem_periodo: na vista padrão (sem período/ano escolhidos,
+    quando a rota injeta o ano vigente) turmas com periodo_letivo_id NULL
+    continuam visíveis — exibidas com o selo "Sem período". Quando o usuário
+    escolhe período/ano explicitamente o filtro permanece estrito (flag False).
     """
     nome = (args.get("nome") or "").strip()
     if nome:
         stmt = stmt.where(Turma.nome.ilike(f"%{nome}%"))
+
+    periodo_letivo_id = _parse_int_arg(args.get("periodo_letivo_id"))
+    if periodo_letivo_id:
+        stmt = stmt.where(
+            Turma.periodo_letivo_id.in_(
+                select(PeriodoLetivo.id).where(
+                    PeriodoLetivo.id == periodo_letivo_id,
+                    PeriodoLetivo.unidade_id == Turma.unidade_id,
+                )
+            )
+        )
+    ano_periodo = _parse_int_arg(args.get("ano_periodo"))
+    if ano_periodo:
+        por_ano = Turma.periodo_letivo_id.in_(
+            select(PeriodoLetivo.id).where(
+                PeriodoLetivo.unidade_id == Turma.unidade_id,
+                func.extract("year", PeriodoLetivo.data_inicio) == ano_periodo
+            )
+        )
+        if incluir_turmas_sem_periodo:
+            # Vista padrão: turma sem período letivo não é ocultada pelo ano
+            # vigente injetado automaticamente (D3).
+            por_ano = or_(por_ano, Turma.periodo_letivo_id.is_(None))
+        stmt = stmt.where(por_ano)
+
+    centro_custo_id = _parse_int_arg(args.get("centro_custo"))
+    if centro_custo_id:
+        oferta_no_centro = (
+            select(TurmaCurso.id)
+            .join(
+                CentroCusto,
+                and_(
+                    CentroCusto.id == centro_custo_id,
+                    CentroCusto.unidade_id == Turma.unidade_id,
+                    CentroCusto.ativo.is_(True),
+                ),
+            )
+            .where(
+                TurmaCurso.turma_id == Turma.id,
+                TurmaCurso.ativo.is_(True),
+                _csv_token_match(
+                    func.coalesce(
+                        func.nullif(TurmaCurso.centro_custo, ""),
+                        Turma.centro_custo,
+                    ),
+                    CentroCusto.nome,
+                ),
+            )
+            .exists()
+        )
+        stmt = stmt.where(oferta_no_centro)
 
     professor = (args.get("professor") or "").strip()
     if professor:
@@ -201,7 +307,7 @@ def aplicar_filtros_turmas(stmt, args):
             )
         )
 
-    # programa: permanece atributo da turma (inalterado).
+    # Programa da turma é projeção da oferta principal.
     programa = (args.get("programa") or "").strip()
     if programa:
         stmt = stmt.where(Turma.programa == programa)
@@ -288,20 +394,31 @@ def turma():
         abort(403)
 
     unidade_id = get_unidade_id()
-    stmt = select(Turma).where(Turma.ativo == True)
+    stmt_base = select(Turma).where(Turma.ativo == True)
     if unidade_id:
-        stmt = stmt.where(Turma.unidade_id == unidade_id)
+        stmt_base = stmt_base.where(Turma.unidade_id == unidade_id)
 
     # Eager loading (sem N+1): professor da turma + ofertas com curso e
     # professor. O filtro `ativo` das ofertas é feito no helper (Python), sobre
     # a relação já carregada — sem query por linha.
-    stmt = stmt.options(
+    stmt_base = stmt_base.options(
         joinedload(Turma.professor),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
     )
 
-    stmt = aplicar_filtros_turmas(stmt, request.args)
+    filtros = request.args.to_dict(flat=True)
+    periodo_selecionado = _parse_int_arg(filtros.get("periodo_letivo_id"))
+    ano_atual = get_local_now().year
+    # Sem período exato ou ano informado, a listagem abre no ano vigente.
+    vista_padrao = not periodo_selecionado and not _parse_int_arg(filtros.get("ano_periodo"))
+    if vista_padrao:
+        filtros["ano_periodo"] = str(ano_atual)
+    filtros_rapidos = {"centro_custo", "ano_periodo", "periodo_letivo_id"}
+    filtros_painel_aberto = any(chave not in filtros_rapidos for chave in filtros)
+    stmt = aplicar_filtros_turmas(
+        stmt_base, filtros, incluir_turmas_sem_periodo=vista_padrao
+    )
     turmas = (
         db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome))
         .unique()
@@ -310,33 +427,269 @@ def turma():
     )
     turmas = pos_filtrar_turmas(turmas, request.args)
 
+    # Centros disponíveis para o filtro do formulário.
+    stmt_centros_catalogo = select(CentroCusto).where(CentroCusto.ativo.is_(True))
+    if unidade_id:
+        stmt_centros_catalogo = stmt_centros_catalogo.where(
+            CentroCusto.unidade_id == unidade_id
+        )
+    centros_catalogo = db.session.execute(
+        stmt_centros_catalogo.order_by(CentroCusto.nome, CentroCusto.unidade_id)
+    ).scalars().all()
+    centro_custo_selecionado = _parse_int_arg(filtros.get("centro_custo"))
+    periodo_selecionado = _parse_int_arg(filtros.get("periodo_letivo_id"))
+    ano_selecionado = _parse_int_arg(filtros.get("ano_periodo"))
+
+    # O seletor inclui períodos históricos e futuros. As badges rápidas ficam
+    # limitadas ao ano atual e ao anterior, agrupadas pelo ano de início.
+    stmt_periodos = select(PeriodoLetivo)
+    if unidade_id:
+        stmt_periodos = stmt_periodos.where(PeriodoLetivo.unidade_id == unidade_id)
+    periodos_filtro = db.session.execute(
+        stmt_periodos.order_by(PeriodoLetivo.data_inicio.desc(), PeriodoLetivo.nome)
+    ).scalars().all()
+    periodos_por_ano = {}
+    for periodo in periodos_filtro:
+        if periodo.data_inicio:
+            periodos_por_ano.setdefault(periodo.data_inicio.year, []).append(periodo)
+    anos_periodos = [ano_atual]
+    if ano_atual - 1 in periodos_por_ano:
+        anos_periodos.append(ano_atual - 1)
+    if periodo_selecionado and ano_selecionado is None:
+        periodo_escolhido = next(
+            (p for p in periodos_filtro if p.id == periodo_selecionado), None
+        )
+        if periodo_escolhido and periodo_escolhido.data_inicio:
+            ano_periodo_escolhido = periodo_escolhido.data_inicio.year
+            if ano_periodo_escolhido in anos_periodos:
+                ano_selecionado = ano_periodo_escolhido
+    cores_por_ano = {
+        ano: _PALETA_BADGES_ANO[idx % len(_PALETA_BADGES_ANO)]
+        for idx, ano in enumerate(anos_periodos)
+    }
+    filtros_sem_periodo = dict(filtros)
+    filtros_sem_periodo.pop("periodo_letivo_id", None)
+    filtros_sem_periodo.pop("ano_periodo", None)
+    periodos_badges = []
+    anos_badges = []
+    for idx, ano in enumerate(anos_periodos):
+        cor, cor_texto = cores_por_ano[ano]
+        params_ano = dict(filtros_sem_periodo)
+        params_ano["ano_periodo"] = ano
+        anos_badges.append({
+            "ano": ano,
+            "cor": cor,
+            "cor_texto": cor_texto,
+            "url": url_for("registros.turma", **params_ano),
+            "selecionado": ano == ano_selecionado,
+            "periodos": [],
+        })
+        # O ano corrente é sempre oferecido como etiqueta visual; quando a
+        # unidade ainda não cadastrou período nele, `periodos_por_ano` não tem
+        # a chave — daí o .get() (defeito P2: KeyError → 500 na virada de ano).
+        for periodo in periodos_por_ano.get(ano, []):
+            params_periodo = dict(filtros_sem_periodo)
+            params_periodo["periodo_letivo_id"] = periodo.id
+            item = {
+                "periodo": periodo,
+                "ano": ano,
+                "cor": cor,
+                "cor_texto": cor_texto,
+                "url": url_for("registros.turma", **params_periodo),
+                "selecionado": periodo.id == periodo_selecionado,
+            }
+            periodos_badges.append(item)
+            anos_badges[-1]["periodos"].append(item)
+
     # Vistas por turma para o template (evita recomputar e chama de método na Jinja).
     ofertas_map = {t.id: _ofertas_ativas_da_turma(t) for t in turmas}
     principal_map = {t.id: _oferta_principal(t) for t in turmas}
-    resumo_map = {
-        t.id: _resumo_ofertas(t) for t in turmas if len(ofertas_map[t.id]) >= 2
-    }
-
-    # Listas auxiliares para os filtros em formato de select, derivadas das
-    # turmas atualmente exibidas (mantém as opções coerentes com o resultado).
-    nomes_turmas = sorted({t.nome for t in turmas if t.nome})
-    professores_filtro = set()
+    resumo_map = {t.id: _resumo_ofertas(t) for t in turmas}
+    carga_horaria_total_map = {}
     for t in turmas:
-        if t.professor is not None:
-            professores_filtro.add(t.professor)
-        for oferta in ofertas_map.get(t.id, []):
-            if getattr(oferta, "professor", None) is not None:
-                professores_filtro.add(oferta.professor)
-    professores_filtro = sorted(professores_filtro, key=lambda u: getattr(u, "name", ""))
+        ofertas_turma = ofertas_map[t.id]
+        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
+        if cargas:
+            carga_horaria_total_map[t.id] = (
+                sum(cargas) if all(carga is not None for carga in cargas) else None
+            )
+        else:
+            carga_horaria_total_map[t.id] = t.carga_horaria_total
+
+    # Nome da turma e professor vêm de todas as turmas ativas da unidade, sem
+    # depender do ano/período ou dos demais filtros atualmente selecionados.
+    stmt_turmas_opcoes = select(Turma).where(Turma.ativo.is_(True))
+    if unidade_id:
+        stmt_turmas_opcoes = stmt_turmas_opcoes.where(Turma.unidade_id == unidade_id)
+    stmt_turmas_opcoes = stmt_turmas_opcoes.options(
+        joinedload(Turma.professor),
+        selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+    )
+    turmas_opcoes = (
+        db.session.execute(stmt_turmas_opcoes.order_by(Turma.nome))
+        .unique()
+        .scalars()
+        .all()
+    )
+    nomes_turmas = sorted({t.nome for t in turmas_opcoes if t.nome})
+    professores_por_nome = {}
+    for t in turmas_opcoes:
+        ofertas_opcoes = _ofertas_ativas_da_turma(t)
+        professores_efetivos = (
+            [oferta.professor or t.professor for oferta in ofertas_opcoes]
+            if ofertas_opcoes else [t.professor]
+        )
+        for professor_opcao in professores_efetivos:
+            if professor_opcao is not None:
+                professores_por_nome.setdefault(
+                    professor_opcao.name, professor_opcao
+                )
+    professores_filtro = [
+        professores_por_nome[nome] for nome in sorted(professores_por_nome)
+    ]
     return render_template(
         "turmas/listar.html",
         turmas=turmas,
         ofertas_map=ofertas_map,
         principal_map=principal_map,
         resumo_map=resumo_map,
+        carga_horaria_total_map=carga_horaria_total_map,
         formatar_ch=formatar_ch,
         nomes_turmas=nomes_turmas,
         professores=professores_filtro,
+        centros_filtro=centros_catalogo,
+        centro_custo_selecionado=centro_custo_selecionado,
+        periodo_selecionado=periodo_selecionado,
+        periodos_filtro=periodos_filtro,
+        ano_selecionado=ano_selecionado,
+        anos_badges=anos_badges,
+        periodos_badges=periodos_badges,
+        filtros_painel_aberto=filtros_painel_aberto,
+        url_imprimir_centros=url_for(
+            "registros.imprimir_centros_custo_turmas", **filtros
+        ),
+    )
+
+
+@bp.route("/turmas/centros-custo/imprimir")
+@login_required
+def imprimir_centros_custo_turmas():
+    """Imprime centros, turmas e ofertas ativas, respeitando os filtros recebidos."""
+    if current_user.role not in [
+        "admin", "pedagogico", "secretaria", "gerencia", "professor",
+    ]:
+        abort(403)
+
+    from app.models import Unidade
+
+    unidade_id = get_unidade_id()
+    filtros = request.args.to_dict(flat=True)
+    periodo_id_filtro = _parse_int_arg(filtros.get("periodo_letivo_id"))
+    ano_filtro = _parse_int_arg(filtros.get("ano_periodo"))
+    periodo_relatorio = "Todos"
+    if periodo_id_filtro:
+        stmt_periodo_relatorio = select(PeriodoLetivo).where(
+            PeriodoLetivo.id == periodo_id_filtro
+        )
+        if unidade_id:
+            stmt_periodo_relatorio = stmt_periodo_relatorio.where(
+                PeriodoLetivo.unidade_id == unidade_id
+            )
+        periodo_obj_relatorio = db.session.execute(
+            stmt_periodo_relatorio
+        ).scalar_one_or_none()
+        if periodo_obj_relatorio:
+            ano_inicio = (
+                f" ({periodo_obj_relatorio.data_inicio.year})"
+                if periodo_obj_relatorio.data_inicio else ""
+            )
+            periodo_relatorio = f"{periodo_obj_relatorio.nome}{ano_inicio}"
+        else:
+            periodo_relatorio = f"Período selecionado (ID {periodo_id_filtro})"
+    elif ano_filtro:
+        periodo_relatorio = f"Todos os períodos de {ano_filtro}"
+
+    centros = CentroCusto.query.filter(CentroCusto.ativo.is_(True))
+    turmas_query = select(Turma).where(Turma.ativo.is_(True))
+    if unidade_id:
+        centros = centros.filter_by(unidade_id=unidade_id)
+        turmas_query = turmas_query.where(Turma.unidade_id == unidade_id)
+    centro_custo_id = _parse_int_arg(filtros.get("centro_custo"))
+    if centro_custo_id:
+        centros = centros.filter(CentroCusto.id == centro_custo_id)
+    centros = centros.order_by(CentroCusto.nome, CentroCusto.unidade_id).all()
+    turmas_query = aplicar_filtros_turmas(turmas_query, filtros)
+    turmas = (
+        db.session.execute(
+            turmas_query.options(
+                joinedload(Turma.professor),
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+            ).order_by(Turma.ordenacao, Turma.nome)
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    turmas = pos_filtrar_turmas(turmas, filtros)
+
+    centros_por_chave = {
+        (centro.unidade_id, centro.nome): centro for centro in centros
+    }
+    turmas_por_centro = {centro.id: [] for centro in centros}
+    for turma_item in turmas:
+        ofertas_turma = _ofertas_ativas_da_turma(turma_item)
+        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
+        ch_total_turma = (
+            sum(cargas)
+            if cargas and all(carga is not None for carga in cargas)
+            else (turma_item.carga_horaria_total if not ofertas_turma else None)
+        )
+        principal = next(
+            (oferta for oferta in ofertas_turma if oferta.principal),
+            ofertas_turma[0] if len(ofertas_turma) == 1 else None,
+        )
+
+        ofertas_por_centro = {}
+        if ofertas_turma:
+            for oferta in ofertas_turma:
+                nomes_centros = _tokens_centro_custo(
+                    oferta.centro_custo or turma_item.centro_custo
+                )
+                for nome_centro in nomes_centros:
+                    centro = centros_por_chave.get((turma_item.unidade_id, nome_centro))
+                    if centro:
+                        ofertas_por_centro.setdefault(centro.id, []).append(oferta)
+        else:
+            for nome_centro in _tokens_centro_custo(turma_item.centro_custo):
+                centro = centros_por_chave.get((turma_item.unidade_id, nome_centro))
+                if centro:
+                    ofertas_por_centro.setdefault(centro.id, [])
+
+        for centro_id, ofertas_centro in ofertas_por_centro.items():
+            ofertas_centro.sort(key=lambda oferta: (oferta.id != getattr(principal, "id", None), oferta.id))
+            turmas_por_centro[centro_id].append({
+                "turma": turma_item,
+                "ofertas": ofertas_centro,
+                "principal_id": getattr(principal, "id", None),
+                "carga_horaria_total": ch_total_turma,
+            })
+
+    if any(filtros.values()) and not centro_custo_id:
+        centros = [centro for centro in centros if turmas_por_centro[centro.id]]
+
+    unidade = db.session.get(Unidade, unidade_id) if unidade_id else None
+    return render_template(
+        "turmas/imprimir_listar_turma.html",
+        centros=centros,
+        turmas_por_centro=turmas_por_centro,
+        unidade_id=unidade_id,
+        unidade_nome=unidade.nome if unidade else None,
+        periodo_relatorio=periodo_relatorio,
+        url_retorno=url_for("registros.turma", **filtros),
+        filtros_aplicados=any(filtros.values()),
+        agora=get_local_now(),
+        formatar_ch=formatar_ch,
     )
 
 
@@ -362,6 +715,10 @@ def nova_turma():
         abort(403)
 
     unidade_id = get_unidade_id()
+    if request.method == "POST" and unidade_id is None:
+        # ETAPA B4: Visão Global é somente leitura — sem unidade efetiva a
+        # rota recusa (403) em vez de criar Turma com unidade_id NULL (item 11).
+        abort(403)
     if request.method == "POST":
         nome_turma = request.form.get("turma")
         if not nome_turma or not nome_turma.strip():
@@ -381,13 +738,18 @@ def nova_turma():
             if periodo_letivo_id and periodo_letivo_id.isdigit()
             else None
         )
+        if periodo_letivo_id is None:
+            flash("Vincule a turma a um período letivo.", "warning")
+            return redirect(url_for("registros.nova_turma"))
         turno = request.form.get("turno")
         centro_custo = request.form.get("centro_custo") or None
         periodo_obj = None
 
         if periodo_letivo_id:
             periodo_obj = db.session.get(PeriodoLetivo, periodo_letivo_id)
-            if not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id):
+            # ETAPA B4: guard incondicional por unidade (o `unidade_id and`
+            # anterior era pulado na Visão Global).
+            if not periodo_obj or periodo_obj.unidade_id != unidade_id:
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.nova_turma"))
 
@@ -399,7 +761,7 @@ def nova_turma():
                 or (
                     periodo_letivo_id and professor.unidade_id != periodo_obj.unidade_id
                 )
-                or (unidade_id and professor.unidade_id != unidade_id)
+                or professor.unidade_id != unidade_id
             ):
                 flash(
                     "Professor inválido para esta unidade ou período letivo.", "warning"
@@ -461,9 +823,17 @@ def nova_turma():
                 )
                 return redirect(url_for("registros.nova_turma"))
 
+        # Toda oferta exige programa (MER §8.10). A oferta inicial é criada a
+        # partir da turma, então o programa precisa chegar antes dela.
+        programa = (request.form.get("programa") or "").strip() or None
+        if curso_id is not None and not programa:
+            flash("Selecione o programa da oferta.", "warning")
+            return redirect(url_for("registros.nova_turma"))
+
         nova = Turma(
             nome=nome_turma,
-            programa=request.form.get("programa"),
+            # Turma sem curso não tem oferta: a projeção continua NULL.
+            programa=programa if curso_id is not None else None,
             turno=turno,
             centro_custo=centro_custo,
             professor_id=professor_id,
@@ -485,8 +855,11 @@ def nova_turma():
             db.session.flush()  # garante turma.id para vincular a oferta inicial
             criar_oferta_inicial_da_turma(nova)
             db.session.commit()
-            flash(f"A Turma '{nome_turma}' foi cadastrada com sucesso!", "success")
-            return redirect(url_for("registros.turma"))
+            flash(
+                f"A turma '{nome_turma}' foi cadastrada. Agora inclua os cursos que serão ofertados.",
+                "success",
+            )
+            return redirect(url_for("registros.turma_ofertas", id=nova.id))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao salvar turma.")
@@ -511,12 +884,6 @@ def nova_turma():
         if unidade_id
         else []
     )
-    periodos_centros = {
-        str(p.id): (
-            [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []
-        )
-        for p in periodos
-    }
     # Intervalo de datas de cada período, usado pelo front para exibir o range
     # herdado e restringir as datas específicas do curso.
     periodos_datas = {
@@ -526,13 +893,16 @@ def nova_turma():
         }
         for p in periodos
     }
+    # ETAPA B6 (R2): o programa é projeção da oferta principal e não é mais
+    # solicitado no cadastro da turma; nova_turma.html não consome `programas`,
+    # então o contexto órfão foi removido daqui. `_PROGRAMAS_OFERTA` segue em
+    # uso por editar_turma.
     return render_template(
         "turmas/nova_turma.html",
         professores=professores,
         periodos=periodos,
         periodo_ativo=None,
         cursos=cursos,
-        periodos_centros=periodos_centros,
         periodos_datas=periodos_datas,
     )
 
@@ -549,6 +919,32 @@ def ver_turma(id):
     ):
         abort(403)
 
+    # Etapa M1: turma vem das ofertas ATIVAS (salvar antes do ctx, que agita
+    # a sessão via carregar_contexto_turma). Modal: 0 ofertas = aviso e envio
+    # bloqueado; 1 = tela como hoje; 2+ = seletor de curso e lista filtrada
+    # pela oferta escolhida (?oferta_sel=).
+    ofertas_lista = ofertas_ativas(id)
+    ofertas_lista.sort(key=lambda oferta: (not oferta.principal, oferta.id))
+    ofertas_todas = (
+        TurmaCurso.query.options(
+            joinedload(TurmaCurso.curso), joinedload(TurmaCurso.professor)
+        )
+        .filter_by(turma_id=id)
+        .order_by(TurmaCurso.principal.desc(), TurmaCurso.ativo.desc(), TurmaCurso.id)
+        .all()
+    )
+    oferta_principal = next(
+        (oferta for oferta in ofertas_lista if oferta.principal),
+        ofertas_lista[0] if len(ofertas_lista) == 1 else None,
+    )
+    ofertas_todas.sort(
+        key=lambda oferta: (
+            oferta.id != (oferta_principal.id if oferta_principal else None),
+            not oferta.ativo,
+            oferta.id,
+        )
+    )
+
     try:
         ctx = carregar_contexto_turma(id, pauta_impressa=True)
     except Exception:
@@ -558,16 +954,38 @@ def ver_turma(id):
         )
         return redirect(url_for("registros.turma"))
 
-    alunos_disponiveis = Aluno.query.filter(
-        Aluno.ativo == True,
-        ~Aluno.inscricoes.any((Inscricao.turma_id == id) & (Inscricao.ativo == True)),
-    )
-    if turma_obj.unidade_id:
-        alunos_disponiveis = alunos_disponiveis.filter(
-            Aluno.unidade_id == turma_obj.unidade_id
+    # O join da pauta pode repetir o aluno quando ele está em mais de uma
+    # oferta. A ficha da turma lista a pessoa uma vez e mostra cada vínculo.
+    ctx["alunos"] = list({aluno.id: aluno for aluno in ctx.get("alunos", [])}.values())
+
+    if len(ofertas_lista) == 1:
+        oferta_sel = ofertas_lista[0]
+    elif len(ofertas_lista) >= 2:
+        sel_id = request.args.get("oferta_sel", type=int)
+        oferta_sel = next(
+            (o for o in ofertas_lista if o.id == sel_id), None
         )
-    alunos_disponiveis = alunos_disponiveis.order_by(Aluno.nome).all()
-    perguntas = PerguntaConselho.query.order_by(PerguntaConselho.id).all()
+    else:
+        oferta_sel = None
+
+    if oferta_sel is not None:
+        # Disponível para a oferta = sem inscrição ATIVA naquela oferta
+        # (pode ter inscrição ativa em outra oferta da mesma turma).
+        alunos_disponiveis = Aluno.query.filter(
+            Aluno.ativo.is_(True),
+            ~Aluno.inscricoes.any(
+                (Inscricao.turma_id == id)
+                & (Inscricao.turma_curso_id == oferta_sel.id)
+                & (Inscricao.ativo.is_(True))
+            ),
+        )
+        if turma_obj.unidade_id:
+            alunos_disponiveis = alunos_disponiveis.filter(
+                Aluno.unidade_id == turma_obj.unidade_id
+            )
+        alunos_disponiveis = alunos_disponiveis.order_by(Aluno.nome).all()
+    else:
+        alunos_disponiveis = []
     alunos_ativos_count = (
         Aluno.query.join(Inscricao)
         .filter(Inscricao.turma_id == id, Inscricao.ativo == True, Aluno.ativo == True)
@@ -585,13 +1003,28 @@ def ver_turma(id):
         .order_by(Nivel.nome)
         .all()
     )
+    # Lista de alunos agrupada pela oferta; a ficha mantém cada vínculo como
+    # linha própria dentro do painel recolhível do curso correspondente.
+    alunos_por_oferta = {oferta.id: [] for oferta in ofertas_todas}
+    for inscricao in (
+        Inscricao.query.options(joinedload(Inscricao.aluno))
+        .join(TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id)
+        .filter(Inscricao.turma_id == id, Inscricao.ativo.is_(True))
+        .order_by(TurmaCurso.id, Inscricao.id)
+        .all()
+    ):
+        alunos_por_oferta.setdefault(inscricao.turma_curso_id, []).append(inscricao)
     return render_template(
         "turmas/detalhe.html",
-        perguntas=perguntas,
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
         niveis_cadastrados=niveis_cadastrados,
-        ofertas=ofertas_ativas(id),
+        ofertas=ofertas_lista,
+        ofertas_todas=ofertas_todas,
+        oferta_principal=oferta_principal,
+        oferta_sel=oferta_sel,
+        alunos_por_oferta=alunos_por_oferta,
+        abrir_modal_enturmar=request.args.get("modal") == "enturmar",
         **ctx,
     )
 
@@ -610,6 +1043,35 @@ def enturmar_alunos(turma_id):
     unidade_id = get_unidade_id()
     turma_obj = Turma.query.get_or_404(turma_id)
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
+
+    # Etapa M1: aluno só é enturmado em curso (oferta). A oferta destino é
+    # resolvida pela contagem de ofertas ativas da turma.
+    ofertas = ofertas_ativas(turma_obj.id)
+    if not ofertas:
+        flash(
+            "Esta turma ainda não tem curso. Cadastre um curso em "
+            "Cursos da Turma antes de enturmar alunos.",
+            "warning",
+        )
+        return redirect(url_for("registros.ver_turma", id=turma_id))
+
+    if len(ofertas) == 1:
+        # Oferta única: grava nela, sem exigir escolha na tela.
+        oferta_sel = ofertas[0]
+        oferta_id = oferta_sel.id
+    else:
+        # 2+ ofertas: turma_curso_id é obrigatório no POST e precisa apontar
+        # para oferta ativa da própria turma (a unidade já foi validada na
+        # turma; ofertas_ativas só devolve ofertas ativas dela).
+        oferta_id = request.form.get("turma_curso_id", type=int)
+        oferta_sel = next((o for o in ofertas if o.id == oferta_id), None)
+        if oferta_sel is None:
+            flash(
+                "Selecione o curso (oferta) em que os alunos serão enturmados.",
+                "warning",
+            )
+            return redirect(url_for("registros.ver_turma", id=turma_id))
+
     aluno_ids = request.form.getlist("aluno_ids[]")
 
     aluno_ids_int = [int(x) for x in aluno_ids if str(x).isdigit()]
@@ -627,26 +1089,28 @@ def enturmar_alunos(turma_id):
                 if nivel_form:
                     aluno.nivel = nivel_val
 
-                inscricao_existente = Inscricao.query.filter_by(
-                    aluno_id=aluno.id, turma_id=turma_obj.id, ativo=True
-                ).first()
-                if inscricao_existente:
+                # ETAPA M2: duplicidade e criação concentradas no serviço
+                # único de enturmação. Duplicata ativa na mesma oferta segue
+                # como salto silencioso (sem flash), como antes; em outra
+                # oferta da turma, o aluno pode ter nova inscrição ativa.
+                try:
+                    enturmar_aluno(
+                        aluno,
+                        turma_obj,
+                        oferta_id,
+                        nivel=nivel_val,
+                        data_inicio=date.today(),
+                    )
+                except ValueError as e:
+                    if str(e) != MSG_JA_ENTURMADO:
+                        raise
                     continue
-
-                nova_inscricao = Inscricao(
-                    aluno_id=aluno.id,
-                    turma_id=turma_obj.id,
-                    nivel=nivel_val,
-                    ativo=True,
-                    # Usa fuso local em vez de UTC, alinhado com o default do modelo.
-                    data_inicio=date.today(),
-                )
-                db.session.add(nova_inscricao)
                 enturmados += 1
 
             db.session.commit()
             flash(
-                f"{enturmados} aluno(s) inscrito(s) na turma {turma_obj.nome}!",
+                f"{enturmados} aluno(s) inscrito(s) em {oferta_sel.curso.nome} "
+                f"na turma {turma_obj.nome}!",
                 "success",
             )
         except Exception:
@@ -667,9 +1131,10 @@ def editar_turma(id):
     turma_obj = db.session.get(Turma, id)
     unidade_id = get_unidade_id()
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
-    programas = ["Profissionalizante", "Esporte", "Meio Ambiente", "Outros"]
+    programas = list(_PROGRAMAS_OFERTA)
 
     if request.method == "POST":
+        avisos_horario = []
         try:
             limpar_lancamentos = request.form.get("limpar_lancamentos") == "1"
             novo_data_inicio_raw = request.form.get("data_inicio") or ""
@@ -743,7 +1208,6 @@ def editar_turma(id):
                 dados_de_lancamento_alterados = False
 
                 turma_obj.nome = request.form.get("turma")
-                turma_obj.programa = request.form.get("programa")
 
                 original_periodo_id = turma_obj.periodo_letivo_id
                 novo_periodo_id = request.form.get("periodo_letivo_id")
@@ -759,8 +1223,7 @@ def editar_turma(id):
                     else turma_obj.periodo_letivo
                 )
                 if novo_periodo_id and (
-                    not periodo_obj
-                    or (unidade_id and periodo_obj.unidade_id != unidade_id)
+                    not periodo_obj or periodo_obj.unidade_id != unidade_id
                 ):
                     flash(
                         "Período letivo inválido para a unidade selecionada.",
@@ -769,6 +1232,11 @@ def editar_turma(id):
                     return redirect(url_for("registros.editar_turma", id=id))
                 if original_periodo_id != novo_periodo_id or not turma_obj.ordenacao:
                     turma_obj.ordenacao = obter_proximo_ordenacao(novo_periodo_id)
+
+                # Turma.programa é projeção da oferta principal ativa (MER
+                # §8.10) e não é editável de forma independente: reprojeta em
+                # vez de ler o campo do formulário (defeito P4).
+                sincronizar_programa_turma(turma_obj)
 
                 db.session.commit()
                 flash(
@@ -799,7 +1267,6 @@ def editar_turma(id):
                     return redirect(url_for("registros.editar_turma", id=id))
 
             turma_obj.nome = request.form.get("turma")
-            turma_obj.programa = request.form.get("programa")
             turma_obj.turno = novo_turno
             turma_obj.data_inicio = novo_data_inicio_date
             turma_obj.data_fim = novo_data_fim_date
@@ -825,7 +1292,7 @@ def editar_turma(id):
                 else turma_obj.periodo_letivo
             )
             if novo_periodo_id and (
-                not periodo_obj or (unidade_id and periodo_obj.unidade_id != unidade_id)
+                not periodo_obj or periodo_obj.unidade_id != unidade_id
             ):
                 flash("Período letivo inválido para a unidade selecionada.", "warning")
                 return redirect(url_for("registros.editar_turma", id=id))
@@ -892,11 +1359,10 @@ def editar_turma(id):
                 turma_obj.curso_id = novo_curso_id
 
             # REGRA 3 (1 oferta ativa): espelha na oferta exatamente o que foi
-            # gravado na turma e valida concomitância ANTES do commit único.
-            # Qualquer ValueError/IntegrityError cai no except → rollback dos
-            # dois (turma e oferta ficam como estavam).
+            # gravado na turma. Conflitos de horário geram apenas aviso; não
+            # impedem a gravação transacional de turma e oferta.
             if oferta_única is not None:
-                _validar_horario_concomitante(
+                avisos_horario = _conflitos_horario_concomitante(
                     id,
                     dias_semana=turma_obj.dias_semana,
                     hora_inicio=turma_obj.hora_inicio,
@@ -914,8 +1380,13 @@ def editar_turma(id):
                 oferta_única.data_fim = turma_obj.data_fim
                 oferta_única.centro_custo = turma_obj.centro_custo
 
-                oferta_única.programa = turma_obj.programa
+                sincronizar_programa_turma(turma_obj)
+            else:
+                sincronizar_programa_turma(turma_obj)
             db.session.commit()
+
+            for aviso in avisos_horario:
+                flash(aviso, "warning")
 
             # Verificar inconsistências após salvar
             ch_total = turma_obj.carga_horaria_total
@@ -1006,7 +1477,7 @@ def editar_turma(id):
 
 def _turma_para_ofertas(id):
     """Carrega a turma validando papel e unidade (padrão das rotas de turmas)."""
-    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria", "gerencia"]:
         abort(403)
     turma_obj = db.session.get(Turma, id)
     if turma_obj is None:
@@ -1032,6 +1503,9 @@ def _dados_oferta_form(form, turma_obj):
                 "A data de término não pode ser posterior ao fim do período letivo."
             )
     centro_custo = form.get("centro_custo") or None
+    programa = (form.get("programa") or "").strip()
+    if not programa:
+        raise ValueError("Selecione o programa da oferta.")
     if centro_custo and periodo_obj and periodo_obj.centro_custo:
         centros_disponiveis = [
             c.strip() for c in periodo_obj.centro_custo.split(",")
@@ -1049,7 +1523,7 @@ def _dados_oferta_form(form, turma_obj):
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "centro_custo": centro_custo,
-        "programa": form.get("programa") or None,
+        "programa": programa,
     }
 
 
@@ -1103,18 +1577,19 @@ def turma_oferta_nova(id):
     except ValueError as erro:
         flash(str(erro), "warning")
         return redirect(url_for("registros.turma_ofertas", id=id))
-
-    if getattr(oferta, "inicio_ajustado_para_hoje", False) and oferta.data_inicio:
+    except IntegrityError:
+        db.session.rollback()
         flash(
-            "Início da oferta definido como hoje "
-            f"({oferta.data_inicio.strftime('%d/%m/%Y')}) porque a turma já "
-            "está em andamento. Edite a oferta se aulas anteriores devem ser "
-            "cobradas.",
-            "info",
+            "A oferta conflitou com outra alteração da turma. Recarregue a "
+            "página e tente novamente.",
+            "warning",
         )
+        return redirect(url_for("registros.turma_ofertas", id=id))
+
+    for aviso in getattr(oferta, "avisos_horario", []):
+        flash(aviso, "warning")
     flash(
-        f"Curso '{nome_curso}' adicionado à turma. "
-        "Deseja adicionar outro curso?",
+        f"Curso '{nome_curso}' adicionado à turma.",
         "success",
     )
     return redirect(url_for("registros.turma_ofertas", id=id))
@@ -1134,6 +1609,8 @@ def turma_oferta_editar(oferta_id):
         if dados["curso_id"] is None:
             raise ValueError("A oferta precisa estar vinculada a um curso.")
         editar_oferta(oferta, **dados)
+        for aviso in getattr(oferta, "avisos_horario", []):
+            flash(aviso, "warning")
     except ValueError as erro:
         flash(str(erro), "warning")
         return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
@@ -1169,7 +1646,10 @@ def turma_oferta_desativar(oferta_id):
         abort(404)
     turma_obj = _turma_para_ofertas(oferta.turma_id)
     try:
-        desativar_oferta(oferta)
+        # ETAPA M4: a guarda de alunos ativos em período em andamento vale
+        # apenas para este caminho de rota; excluir_turma e demais fluxos
+        # internos não passam por aqui (ou usam o padrão False).
+        desativar_oferta(oferta, verificar_alunos_em_andamento=True)
     except ValueError as erro:
         flash(str(erro), "warning")
         return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
@@ -1605,21 +2085,105 @@ def imprimir_pauta(id):
         return redirect(url_for("registros.ver_turma", id=id))
 
     if oferta is not None and len(ofertas) >= 2:
-        # Pauta da oferta com a regra de fallback da D2: com 2+ ofertas,
-        # inscrições NULL são ambíguas e ficam de fora.
+        # Pauta da oferta (multi-oferta): inscrição sempre apontada para a
+        # oferta — Inscricao.turma_curso_id é NOT NULL desde a Onda 4.
         ctx["alunos"] = _alunos_da_oferta(
-            id, oferta.id, incluir_inscricoes_null=False,
+            id, oferta.id,
         )
 
+    if oferta is not None:
+        # A agenda da impressão segue a vigência e os dias próprios da oferta,
+        # incluindo datas futuras e respeitando os dias bloqueados do período.
+        ctx["datas"] = [
+            data_aula.strftime("%Y-%m-%d")
+            for data_aula in datas_aula_oferta(
+                oferta, blocked=_blocked_dates_str(ctx["turma"])
+            )
+        ]
+
+    alunos_ids = [aluno.id for aluno in ctx["alunos"]]
+    outras_ofertas_por_aluno = {aluno_id: [] for aluno_id in alunos_ids}
+    if alunos_ids:
+        stmt_ofertas_alunos = (
+            select(Inscricao.aluno_id, TurmaCurso.id, Curso.nome)
+            .join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
+            .join(Curso, TurmaCurso.curso_id == Curso.id)
+            .where(
+                Inscricao.turma_id == id,
+                Inscricao.ativo.is_(True),
+                TurmaCurso.ativo.is_(True),
+                Inscricao.aluno_id.in_(alunos_ids),
+            )
+            .order_by(Curso.nome)
+        )
+        for aluno_id, oferta_id, nome_curso in db.session.execute(
+            stmt_ofertas_alunos
+        ):
+            if oferta is not None and oferta_id == oferta.id:
+                continue
+            if nome_curso and nome_curso not in outras_ofertas_por_aluno[aluno_id]:
+                outras_ofertas_por_aluno[aluno_id].append(nome_curso)
+
+    perfis_diversidade = {}
+    if alunos_ids:
+        perfis_diversidade = {
+            perfil.aluno_id: perfil
+            for perfil in db.session.execute(
+                select(PerfilDiversidade).where(
+                    PerfilDiversidade.aluno_id.in_(alunos_ids)
+                )
+            ).scalars()
+        }
+    dados_alunos_impressao = {}
+    for aluno in ctx["alunos"]:
+        perfil = perfis_diversidade.get(aluno.id)
+        dados_alunos_impressao[aluno.id] = {
+            "idade": aluno.idade if aluno.data_nascimento else None,
+            "acompanhante": (
+                aluno.acompanhante_aulas
+                if aluno.vai_acompanhado_aulas else None
+            ),
+            "medicacao": (
+                perfil.saude_medicamento_nome or "Sim"
+                if perfil and perfil.saude_medicacao == "Sim"
+                else None
+            ),
+            "informacoes_professor": (
+                perfil.informacoes_para_professor.strip()
+                if perfil and perfil.informacoes_para_professor
+                else None
+            ),
+            "outras_ofertas": outras_ofertas_por_aluno.get(aluno.id, []),
+        }
+
+    nomes_meses = {
+        "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+        "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+        "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
+    }
     mes_selecionado = request.args.get("mes")
     if mes_selecionado:
         ctx["datas"] = [data for data in ctx["datas"] if f"-{mes_selecionado}-" in data]
-        nomes_meses = {
-            "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
-            "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
-            "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
-        }
         ctx["mes_nome"] = nomes_meses.get(mes_selecionado, mes_selecionado)
+
+    # A pauta completa é dividida por mês para evitar que as colunas de todo o
+    # ano sejam cortadas pela área rolável do navegador ao imprimir.
+    datas_por_mes_map = {}
+    for data_aula in sorted(ctx["datas"]):
+        numero_mes = data_aula[5:7]
+        chave_mes = data_aula[:7]
+        grupo_mes = datas_por_mes_map.setdefault(
+            chave_mes,
+            {"ano": data_aula[:4], "numero": numero_mes, "datas": []},
+        )
+        grupo_mes["datas"].append(data_aula)
+    datas_por_mes = [
+        {
+            **grupo_mes,
+            "nome": nomes_meses.get(grupo_mes["numero"], grupo_mes["numero"]),
+        }
+        for grupo_mes in datas_por_mes_map.values()
+    ]
 
     # Onda 2A: Frequencia.data é `date`, mas ctx["datas"] é list[str].
     # Converter para date antes do IN, senão nunca casa.
@@ -1660,6 +2224,8 @@ def imprimir_pauta(id):
         "frequencia/imprimir_pauta.html",
         **ctx,
         frequencias=frequencias,
-        oferta_atual=oferta if len(ofertas) >= 2 else None,
+        datas_por_mes=datas_por_mes,
+        oferta_atual=oferta,
+        dados_alunos_impressao=dados_alunos_impressao,
         now=datetime.now(),
     )

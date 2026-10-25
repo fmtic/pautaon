@@ -11,12 +11,10 @@ A tabela `inscricoes` é referenciada como `secondary` em `Aluno.turmas`.
 Mantê-la neste módulo é seguro porque o `secondary` usa o NOME DA TABELA,
 não o nome da classe.
 
-NOTA ONDA 4 (Fase 1, múltiplos cursos por turma):
-    `turma_curso_id` referencia a oferta concreta (TurmaCurso). É anulável
-    apenas durante a transição: a camada de serviço já escreve o vínculo
-    obrigatoriamente em matrículas novas, e o contrato NOT NULL vem no
-    fechamento da onda (Fase 9). Matrículas legadas sem curso na turma
-    permanecem NULL — nenhuma oferta fictícia é criada.
+NOTA ONDA 4 (múltiplos cursos por turma):
+    `turma_curso_id` referencia obrigatoriamente a oferta concreta
+    (TurmaCurso). Cada linha representa o vínculo do aluno com uma oferta;
+    um aluno pode ter inscrições ativas em várias ofertas da mesma turma.
 ================================================================================
 """
 
@@ -29,10 +27,11 @@ class Inscricao(SoftDeleteMixin, AuditoriaMixin, db.Model):
     Vínculo entre Aluno e Turma (N:N com histórico).
 
     Possui PK própria (`id`) para permitir MÚLTIPLAS inscrições do mesmo aluno
-    na mesma turma, permitindo desativar e reativar sem perder histórico.
+    na mesma turma, uma por oferta, e preservar desativações no histórico.
 
     Regras:
-        - `ativo=True` indica o vínculo atual.
+        - `ativo=True` indica o vínculo atual com a oferta.
+        - Só pode existir uma inscrição ativa por aluno e oferta.
         - Ao desativar: preencher `data_desativacao` e `motivo_desativacao`.
         - `nivel` sobrescreve o nível geral do aluno para esta turma.
         - `data_inicio` é DATE (não DATETIME) e usa o fuso local da aplicação.
@@ -42,16 +41,23 @@ class Inscricao(SoftDeleteMixin, AuditoriaMixin, db.Model):
     __tablename__ = "inscricoes"
     __table_args__ = (
         db.Index("ix_inscricoes_turma_curso_id", "turma_curso_id"),
+        db.Index(
+            "uix_inscricao_ativa_aluno_oferta",
+            "aluno_id",
+            "turma_curso_id",
+            unique=True,
+            postgresql_where=db.text("ativo IS TRUE"),
+            sqlite_where=db.text("ativo = 1"),
+        ),
     )
 
     id: int = db.Column(db.Integer, primary_key=True)
     aluno_id: int = db.Column(db.Integer, db.ForeignKey("aluno.id"), nullable=False)
     turma_id: int = db.Column(db.Integer, db.ForeignKey("turma.id"), nullable=False)
 
-    # Onda 4: oferta concreta (TurmaCurso) do curso em que o aluno está
-    # matriculado. Nullable apenas na transição (ver docstring do módulo).
+    # Oferta concreta (TurmaCurso) em que o aluno está matriculado.
     turma_curso_id: int = db.Column(
-        db.Integer, db.ForeignKey("turma_curso.id"), nullable=True
+        db.Integer, db.ForeignKey("turma_curso.id"), nullable=False
     )
 
     nivel: str = db.Column(db.String(30))

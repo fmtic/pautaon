@@ -13,12 +13,10 @@ Cobre:
     - Impressão da ficha
 """
 
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta
 
 from flask import (
     abort,
-    current_app,
     flash,
     jsonify,
     redirect,
@@ -39,6 +37,7 @@ from app.models import (
     Inscricao,
     SituacaoEscolar,
     Turma,
+    TurmaCurso,
     Unidade,
 )
 from app.models.base import get_local_now
@@ -50,8 +49,11 @@ from app.services.aluno_perfil import (
     upsert_perfil_socioeconomico,
     upsert_responsavel,
 )
+from app.services.conselho_leitura import conselhos_por_oferta
+from app.services.enturmacao import enturmar_aluno
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+
 from . import bp
 from .shared import (
     _get_upload_root,
@@ -742,31 +744,62 @@ def desenturmar_alunos(id):
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
     if turma:
         assert_unidade_context(turma.unidade_id, get_unidade_id())
-        inscricao = Inscricao.query.filter_by(
+        turma_curso_id = request.values.get("turma_curso_id", type=int)
+        inscricoes_ativas = Inscricao.query.filter_by(
             aluno_id=aluno.id, turma_id=turma.id, ativo=True
-        ).first()
+        )
+        # ETAPA M2: com 2+ inscrições ativas do aluno na turma a escolha da
+        # oferta é obrigatória; nunca se usa .first() para "escolher".
+        # Com turma_curso_id informado, a busca é sempre escopada em
+        # aluno+turma+ativo e espera NO MÁXIMO uma linha (índice único
+        # parcial uix_inscricao_ativa_aluno_oferta), via one_or_none().
+        inscricao = None
+        if turma_curso_id:
+            inscricao = inscricoes_ativas.filter_by(
+                turma_curso_id=turma_curso_id
+            ).one_or_none()
+            if inscricao is not None:
+                # A oferta apontada precisa pertencer à mesma turma —
+                # impede desenturmar por oferta de outra turma (e, por
+                # transitividade, de outra unidade: a turma já foi
+                # validada no assert_unidade_context acima).
+                oferta_alvo = inscricao.turma_curso
+                if oferta_alvo is None or oferta_alvo.turma_id != turma.id:
+                    inscricao = None
+        else:
+            opcoes = inscricoes_ativas.order_by(Inscricao.id).all()
+            inscricao = opcoes[0] if len(opcoes) == 1 else None
+            if len(opcoes) > 1:
+                flash("Selecione a oferta da qual deseja desenturmar o aluno.", "warning")
+                return redirect(url_for("registros.ver_turma", id=turma.id))
         if not inscricao:
-            flash("Aluno não está enturmado nesta turma.", "warning")
+            flash("Aluno não está enturmado nesta oferta.", "warning")
             return redirect(url_for("registros.ver_turma", id=turma.id))
+
+        oferta_id = inscricao.turma_curso_id
+        curso_nome = inscricao.turma_curso.curso.nome
 
         frequencia_existente = Frequencia.query.filter(
             Frequencia.aluno_id == aluno.id,
             Frequencia.turma_id == turma.id,
+            Frequencia.turma_curso_id == inscricao.turma_curso_id,
             Frequencia.conceito.isnot(None),
         ).first()
         try:
             if frequencia_existente:
                 inscricao.ativo = False
+                inscricao.data_desativacao = get_local_now()
+                inscricao.motivo_desativacao = "DESENTURMADO"
                 db.session.commit()
                 flash(
-                    f"Aluno {aluno.nome} inativado na turma {turma.nome}.",
+                    f"Aluno {aluno.nome} desenturmado do curso {curso_nome}.",
                     "info",
                 )
             else:
                 db.session.delete(inscricao)
                 db.session.commit()
                 flash(
-                    f"Aluno {aluno.nome} removido da turma {turma.nome}.",
+                    f"Aluno {aluno.nome} removido do curso {curso_nome}.",
                     "success",
                 )
         except Exception:
@@ -775,7 +808,13 @@ def desenturmar_alunos(id):
                 "Falha ao processar a associação do aluno com a turma.",
                 "danger",
             )
-        return redirect(url_for("registros.ver_turma", id=turma.id))
+        return redirect(
+            url_for(
+                "registros.ver_turma",
+                id=turma.id,
+                oferta_sel=oferta_id,
+            )
+        )
 
     flash("Turma não informada para remoção.", "warning")
     return redirect(url_for("registros.gerenciar_alunos"))
@@ -789,8 +828,6 @@ def desenturmar_alunos(id):
 @bp.route("/aluno/<int:aluno_id>/historico")
 @login_required
 def historico_aluno(aluno_id):
-    from app.models import ConselhoClasse
-
     allowed_roles = {
         UserRole.ADMIN,
         UserRole.PEDAGOGICO,
@@ -825,46 +862,72 @@ def historico_aluno(aluno_id):
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
+    # D5.4: uma linha por INSCRIÇÃO (aluno × oferta). O status de cada etapa
+    # vem do conselho da OFERTA, buscado em lote (uma consulta; sem N+1).
+    # Linhas legadas (turma_curso_id NULL) não são exibidas.
     inscricoes = Inscricao.query.filter_by(aluno_id=aluno_id).all()
+    conselhos = conselhos_por_oferta(
+        (insc.aluno_id, insc.turma_curso_id) for insc in inscricoes
+    )
     dados = []
     for insc in inscricoes:
         turma = insc.turma
         if not turma:
             continue
+        oferta = insc.turma_curso
+        oferta_id = insc.turma_curso_id
 
-        freqs = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id).all()
+        # Frequência da INSCRIÇÃO: com oferta filtra pela oferta; sem oferta
+        # (legado) cai em turma + turma_curso_id NULL para não misturar turmas.
+        freqs = Frequencia.query.filter_by(
+            aluno_id=aluno_id, turma_id=insc.turma_id, turma_curso_id=oferta_id
+        ).all()
         estatisticas = calcular_estatisticas_frequencia(freq.conceito for freq in freqs)
 
-        def get_conselho(etapa):
-            return ConselhoClasse.query.filter_by(
-                turma_id=turma.id, aluno_id=aluno_id, etapa=etapa
-            ).first()
+        c_inicial = conselhos.get((aluno_id, oferta_id, "INICIAL"))
+        c_percurso = conselhos.get((aluno_id, oferta_id, "PERCURSO"))
+        c_final = conselhos.get((aluno_id, oferta_id, "FINAL"))
 
-        c_inicial = get_conselho("INICIAL")
-        c_percurso = get_conselho("PERCURSO")
-        c_final = get_conselho("FINAL")
+        # Oferta é a fonte do curso/professor/agenda; a turma é o fallback
+        # legado (turmas criadas antes das ofertas).
+        professor = (
+            oferta.professor if oferta and oferta.professor else turma.professor
+        )
+        hora_inicio = oferta.hora_inicio if oferta and oferta.hora_inicio else turma.hora_inicio
+        hora_fim = oferta.hora_fim if oferta and oferta.hora_fim else turma.hora_fim
+        data_inicio = oferta.data_inicio if oferta and oferta.data_inicio else turma.data_inicio
+        data_fim = oferta.data_fim if oferta and oferta.data_fim else turma.data_fim
 
         # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
         horario = (
-            f"{turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--'}"
+            f"{hora_inicio.strftime('%H:%M') if hora_inicio else '--:--'}"
             f" às "
-            f"{turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--'}"
+            f"{hora_fim.strftime('%H:%M') if hora_fim else '--:--'}"
         )
 
         dados.append(
             {
                 "turma": turma.nome,
-                "curso": turma.curso.nome if turma.curso else "—",
-                "programa": turma.programa or "—",
-                "professor": turma.professor.name if turma.professor else "—",
+                "curso": (
+                    oferta.curso.nome if oferta and oferta.curso
+                    else (turma.curso.nome if turma.curso else "—")
+                ),
+                "programa": (
+                    oferta.programa if oferta and oferta.programa
+                    else (turma.programa or "—")
+                ),
+                "professor": professor.name if professor else "—",
                 "periodo": (turma.periodo_letivo.nome_exibicao if turma.periodo_letivo else "—"),
-                "dias": turma.dias_semana or "—",
+                "dias": (
+                    oferta.dias_semana if oferta and oferta.dias_semana
+                    else (turma.dias_semana or "—")
+                ),
                 "horario": horario,
                 "data_inicio": (
-                    turma.data_inicio.strftime("%d/%m/%Y") if turma.data_inicio else "—"
+                    data_inicio.strftime("%d/%m/%Y") if data_inicio else "—"
                 ),
                 "data_fim": (
-                    turma.data_fim.strftime("%d/%m/%Y") if turma.data_fim else "—"
+                    data_fim.strftime("%d/%m/%Y") if data_fim else "—"
                 ),
                 "nivel": insc.nivel or aluno.nivel or "—",
                 "total_aulas": estatisticas["total"],
@@ -888,6 +951,7 @@ def historico_aluno(aluno_id):
         aluno=aluno,
         dados=dados,
         data_cadastro=data_cadastro,
+        agora=get_local_now(),
     )
 
 
@@ -941,128 +1005,165 @@ def transferir_aluno(aluno_id):
 
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
-    turma_origem_id = request.args.get("turma_origem_id", type=int)
-    if not turma_origem_id and request.method == "POST":
-        turma_origem_id = request.form.get("turma_origem_id", type=int)
+    inscricao_origem_id = request.values.get("inscricao_origem_id", type=int)
+    if inscricao_origem_id:
+        inscricao_escolhida = Inscricao.query.filter_by(
+            id=inscricao_origem_id, aluno_id=aluno.id, ativo=True
+        ).first()
+        if inscricao_escolhida:
+            request_turma_origem_id = inscricao_escolhida.turma_id
+            request_oferta_origem_id = inscricao_escolhida.turma_curso_id
+        else:
+            request_turma_origem_id = request.values.get("turma_origem_id", type=int)
+            request_oferta_origem_id = request.values.get("turma_curso_id", type=int)
+    else:
+        request_turma_origem_id = request.values.get("turma_origem_id", type=int)
+        request_oferta_origem_id = request.values.get("turma_curso_id", type=int)
 
-    if not turma_origem_id:
-        flash("Turma de origem não informada.", "danger")
-        return redirect(url_for("registros.gerenciar_alunos"))
+    if not request_turma_origem_id or not request_oferta_origem_id:
+        opcoes_origem = Inscricao.query.filter_by(aluno_id=aluno.id, ativo=True)
+        if request_turma_origem_id:
+            opcoes_origem = opcoes_origem.filter_by(turma_id=request_turma_origem_id)
+        opcoes_origem = opcoes_origem.order_by(Inscricao.id).all()
+        if len(opcoes_origem) == 1:
+            request_turma_origem_id = opcoes_origem[0].turma_id
+            request_oferta_origem_id = opcoes_origem[0].turma_curso_id
+        elif opcoes_origem:
+            return render_template(
+                "alunos/selecionar_oferta_transferencia.html",
+                aluno=aluno,
+                inscricoes=opcoes_origem,
+            )
+        else:
+            flash("O aluno não possui uma inscrição ativa para transferir.", "danger")
+            return redirect(url_for("registros.gerenciar_alunos"))
+
+    turma_origem_id = request_turma_origem_id
+    oferta_origem_id = request_oferta_origem_id
 
     inscricao_origem = Inscricao.query.filter_by(
-        aluno_id=aluno.id, turma_id=turma_origem_id, ativo=True
+        aluno_id=aluno.id,
+        turma_id=turma_origem_id,
+        turma_curso_id=oferta_origem_id,
+        ativo=True,
     ).first()
-    if not inscricao_origem:
-        flash("Aluno não está ativo na turma de origem informada.", "danger")
+    oferta_origem = TurmaCurso.query.filter_by(
+        id=oferta_origem_id, turma_id=turma_origem_id
+    ).first()
+    if not inscricao_origem or not oferta_origem:
+        flash("O aluno não está ativo na oferta de origem selecionada.", "danger")
         return redirect(url_for("registros.gerenciar_alunos"))
 
-    # --- GET: formulário ---
+    turma_origem = oferta_origem.turma
+    assert_unidade_context(turma_origem.unidade_id, unidade_id)
+
+    ofertas_destino = (
+        TurmaCurso.query.join(Turma, Turma.id == TurmaCurso.turma_id)
+        .filter(
+            TurmaCurso.ativo.is_(True),
+            Turma.ativo.is_(True),
+            Turma.id != turma_origem_id,
+            Turma.unidade_id == unidade_id,
+        )
+        .order_by(Turma.nome, TurmaCurso.curso_id, TurmaCurso.turno)
+        .all()
+    )
+
     if request.method == "GET":
-        query = Turma.query.filter(Turma.ativo == True, Turma.id != turma_origem_id)
-        if unidade_id is not None:
-            query = query.filter(Turma.unidade_id == unidade_id)
-        turmas_destino = query.order_by(Turma.nome).all()
-
-        if not turmas_destino:
-            flash(
-                "Não há outras turmas ativas disponíveis para transferência.",
-                "warning",
-            )
-
+        if not ofertas_destino:
+            flash("Não há ofertas ativas em outras turmas para transferência.", "warning")
         return render_template(
             "alunos/transferir.html",
             aluno=aluno,
-            turma_origem=inscricao_origem.turma,
-            turmas_destino=turmas_destino,
-            hoje=datetime.now().date(),
+            turma_origem=turma_origem,
+            oferta_origem=oferta_origem,
+            ofertas_destino=ofertas_destino,
+            hoje=get_local_now().date(),
         )
 
-    # --- POST: processa a transferência ---
-    turma_destino_id = request.form.get("turma_destino_id", type=int)
+    oferta_destino_id = request.form.get("turma_curso_id_destino", type=int)
     data_transferencia_str = request.form.get("data_transferencia")
     observacoes = request.form.get("observacoes", "").strip()
+    endpoint_args = {
+        "aluno_id": aluno_id,
+        "turma_origem_id": turma_origem_id,
+        "turma_curso_id": oferta_origem_id,
+    }
 
-    if not turma_destino_id or not data_transferencia_str:
-        flash(
-            "Selecione a turma de destino e a data da transferência.",
-            "warning",
-        )
-        return redirect(
-            url_for(
-                "registros.transferir_aluno",
-                aluno_id=aluno_id,
-                turma_origem_id=turma_origem_id,
-            )
-        )
+    if not oferta_destino_id or not data_transferencia_str or not observacoes:
+        flash("Selecione a oferta de destino, a data e informe as observações.", "warning")
+        return redirect(url_for("registros.transferir_aluno", **endpoint_args))
 
     try:
-        data_transferencia = datetime.strptime(
-            data_transferencia_str, "%Y-%m-%d"
-        ).date()
+        data_transferencia = datetime.strptime(data_transferencia_str, "%Y-%m-%d").date()
     except ValueError:
         flash("Data inválida.", "danger")
-        return redirect(
-            url_for(
-                "registros.transferir_aluno",
-                aluno_id=aluno_id,
-                turma_origem_id=turma_origem_id,
-            )
-        )
+        return redirect(url_for("registros.transferir_aluno", **endpoint_args))
 
-    turma_destino = db.get_or_404(Turma, turma_destino_id)
+    oferta_destino = next(
+        (oferta for oferta in ofertas_destino if oferta.id == oferta_destino_id),
+        None,
+    )
+    if oferta_destino is None:
+        flash("A oferta de destino é inválida ou não está ativa.", "danger")
+        return redirect(url_for("registros.transferir_aluno", **endpoint_args))
 
-    # Onda 2A: turma_destino.data_inicio já é `date`.
-    if turma_destino.data_inicio and data_transferencia < turma_destino.data_inicio:
+    turma_destino = oferta_destino.turma
+    inicio_destino = oferta_destino.data_inicio or turma_destino.data_inicio
+    if inicio_destino and data_transferencia < inicio_destino:
         flash(
             f"A data de transferência não pode ser anterior ao início da "
-            f"turma ({turma_destino.data_inicio.strftime('%d/%m/%Y')}).",
+            f"oferta ({inicio_destino.strftime('%d/%m/%Y')}).",
             "warning",
         )
-        return redirect(
-            url_for(
-                "registros.transferir_aluno",
-                aluno_id=aluno_id,
-                turma_origem_id=turma_origem_id,
-            )
-        )
+        return redirect(url_for("registros.transferir_aluno", **endpoint_args))
+
+    duplicada = Inscricao.query.filter_by(
+        aluno_id=aluno.id,
+        turma_id=turma_destino.id,
+        turma_curso_id=oferta_destino.id,
+        ativo=True,
+    ).first()
+    if duplicada:
+        flash("O aluno já está inscrito nessa oferta de destino.", "warning")
+        return redirect(url_for("registros.transferir_aluno", **endpoint_args))
 
     try:
         inscricao_origem.ativo = False
         inscricao_origem.data_desativacao = datetime.combine(
-            data_transferencia - timedelta(days=1),
-            datetime.min.time(),
+            data_transferencia - timedelta(days=1), datetime.min.time()
         )
         inscricao_origem.motivo_desativacao = "TRANSFERENCIA"
 
-        nova_inscricao = Inscricao(
-            aluno_id=aluno.id,
-            turma_id=turma_destino_id,
+        # ETAPA M2: criação da inscrição de destino concentrada no serviço
+        # único de enturmação (valida oferta/duplicidade e não commita).
+        # A checagem de duplicidade acima preserva o flash original.
+        enturmar_aluno(
+            aluno,
+            turma_destino,
+            oferta_destino.id,
             nivel=inscricao_origem.nivel,
             data_inicio=data_transferencia,
-            ativo=True,
-            data_desativacao=None,
-            motivo_desativacao=None,
         )
-        db.session.add(nova_inscricao)
 
         from app.models import Transferencia
 
-        transferencia = Transferencia(
-            aluno_id=aluno.id,
-            turma_origem_id=inscricao_origem.turma_id,
-            turma_destino_id=turma_destino_id,
-            data_transferencia=datetime.combine(
-                data_transferencia, datetime.min.time()
-            ),
-            observacoes=observacoes,
-            unidade_id=unidade_id,
+        db.session.add(
+            Transferencia(
+                aluno_id=aluno.id,
+                turma_origem_id=turma_origem_id,
+                turma_destino_id=turma_destino.id,
+                data_transferencia=datetime.combine(
+                    data_transferencia, datetime.min.time()
+                ),
+                observacoes=observacoes,
+                unidade_id=unidade_id,
+            )
         )
-        db.session.add(transferencia)
-
         db.session.commit()
         flash(
-            f"Aluno {aluno.nome} transferido para a turma "
-            f"{turma_destino.nome} com sucesso!",
+            f"Aluno {aluno.nome} transferido de {oferta_origem.curso.nome} "
+            f"para {oferta_destino.curso.nome} na turma {turma_destino.nome}.",
             "success",
         )
     except Exception as e:
@@ -1071,7 +1172,13 @@ def transferir_aluno(aluno_id):
         db.session.rollback()
         flash_and_log(e, location="registros.transferir_aluno", hint="db")
 
-    return redirect(url_for("registros.ver_turma", id=turma_origem_id))
+    return redirect(
+        url_for(
+            "registros.ver_turma",
+            id=turma_origem_id,
+            oferta_sel=oferta_origem_id,
+        )
+    )
 
 
 # =============================================================================

@@ -10,7 +10,7 @@
     <!-- Cabeçalho -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
-            <h2 class="mb-1 fw-bold">Primeira Vista</h2>
+            <h2 class="mb-1 fw-bold">Resumo - Primeira Vista</h2>
             <p class="text-muted small mb-0">Visão consolidada de indicadores e métricas acadêmicas.</p>
         </div>
         <div class="d-print-none d-flex gap-2 flex-wrap">
@@ -79,14 +79,14 @@
                     </div>
                     <div>
                         <div class="d-flex justify-content-between mb-1 small text-muted">
-                            <span>Turmas Avaliadas</span>
+                            <span>Ofertas Avaliadas</span>
                             <span class="fw-bold text-dark">{{ conselho.progresso_reunioes }}%</span>
                         </div>
                         <div class="progress" style="height: 6px;">
                             <div class="progress-bar bg-warning" style="width: {{ conselho.progresso_reunioes }}%"></div>
                         </div>
                         <small class="mt-2 d-block text-muted text-center" style="font-size: 0.75rem;">
-                            {{ conselho.turmas_concluidas }} de {{ conselho.total_turmas }} turmas finalizadas
+                            {{ conselho.turmas_concluidas }} de {{ conselho.total_turmas }} ofertas finalizadas
                         </small>
                     </div>
                 </div>

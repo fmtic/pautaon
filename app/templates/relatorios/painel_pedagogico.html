@@ -403,7 +403,7 @@
       <div class="card-header fw-semibold"><i class="bi bi-graph-up text-primary me-2"></i>Frequência acumulada</div>
       <div class="card-body">
         <div class="pt-chart">
-          <canvas id="chFreqTurma" data-labels='{{ vt.semanas|map(attribute="isoformat")|list|tojson }}' data-serie-turma='{{ vt.serie_turma|tojson }}' data-media-periodo="{{ vt.media_periodo or 0 }}"></canvas>
+          <canvas id="chFreqTurma" data-labels='{{ vt.semanas_iso|tojson }}' data-serie-turma='{{ vt.serie_turma|tojson }}' data-media-periodo="{{ vt.media_periodo or 0 }}"></canvas>
         </div>
       </div>
     </div></div>
@@ -452,11 +452,19 @@
       <div class="card-header fw-semibold"><i class="bi bi-clipboard-check text-primary me-2"></i>Conselho de classe</div>
       <div class="card-body">
         <ol class="list-unstyled mb-0">
-          {% for e in vt.conselho_etapas %}
+          {# D5.4: uma seção por OFERTA (rótulo "Turma — Curso"). #}
+          {% for of in vt.conselho_ofertas %}
           <li class="mb-3">
-            <div class="d-flex justify-content-between small"><span class="fw-semibold">{{ e.nome }}</span><span class="pt-num">{{ e.respondidos }} de {{ e.total }}</span></div>
-            <div class="progress" style="height:.5rem"><div class="progress-bar {{ 'bg-success' if e.total and e.respondidos == e.total else '' }}" style="width:{{ (e.respondidos / e.total * 100) if e.total else 0 }}%"></div></div>
+            <div class="small fw-bold text-secondary mb-2"><i class="bi bi-journal-text me-1"></i>{{ of.rotulo }}</div>
+            {% for e in of.etapas %}
+            <div class="mb-2">
+              <div class="d-flex justify-content-between small"><span class="fw-semibold">{{ e.nome }}</span><span class="pt-num">{{ e.respondidos }} de {{ e.total }}</span></div>
+              <div class="progress" style="height:.5rem"><div class="progress-bar {{ 'bg-success' if e.total and e.respondidos == e.total else '' }}" style="width:{{ (e.respondidos / e.total * 100) if e.total else 0 }}%"></div></div>
+            </div>
+            {% endfor %}
           </li>
+          {% else %}
+          <li class="small text-muted">Sem conselho registrado.</li>
           {% endfor %}
         </ol>
       </div>
@@ -465,22 +473,29 @@
     <div class="col-lg-8"><div class="card shadow-sm border-0 h-100">
       <div class="card-header fw-semibold"><i class="bi bi-journal-check text-primary me-2"></i>Respostas do conselho</div>
       <div class="card-body">
-        {% if vt.conselho_agregado %}
-          {% for p in vt.conselho_agregado %}
-          <div class="mb-3">
-            <div class="small fw-semibold mb-1">{{ p.pergunta }}</div>
-            {% for chave, rotulo in [('inicial','Inicial'), ('percurso','Percurso')] %}
-              {% set dist = p[chave] %}
-              {% if dist %}
-              <div class="d-flex align-items-center gap-2 mb-1">
-                <span class="small text-muted" style="width:4.2rem">{{ rotulo }}</span>
-                <div class="flex-grow-1">
-                  <div class="pt-stack">{% for item in dist %}<span style="width:{{ item.pct }}%; background:var(--bs-secondary)" title="{{ item.rotulo }}: {{ item.qtd }}"></span>{% endfor %}</div>
+        {% if vt.conselho_ofertas %}
+          {% for of in vt.conselho_ofertas %}
+          <div class="small fw-bold text-secondary mb-2"><i class="bi bi-journal-text me-1"></i>{{ of.rotulo }}</div>
+          {% if of.agregado %}
+            {% for p in of.agregado %}
+            <div class="mb-3">
+              <div class="small fw-semibold mb-1">{{ p.pergunta }}</div>
+              {% for chave, rotulo in [('inicial','Inicial'), ('percurso','Percurso')] %}
+                {% set dist = p[chave] %}
+                {% if dist %}
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <span class="small text-muted" style="width:4.2rem">{{ rotulo }}</span>
+                  <div class="flex-grow-1">
+                    <div class="pt-stack">{% for item in dist %}<span style="width:{{ item.pct }}%; background:var(--bs-secondary)" title="{{ item.rotulo }}: {{ item.qtd }}"></span>{% endfor %}</div>
+                  </div>
                 </div>
-              </div>
-              {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
             {% endfor %}
-          </div>
+          {% else %}
+            <div class="small text-muted mb-3">Sem respostas registradas nesta oferta.</div>
+          {% endif %}
           {% endfor %}
         {% else %}
           <div class="small text-muted">Sem respostas registradas.</div>

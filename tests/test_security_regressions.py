@@ -4,7 +4,7 @@ from werkzeug.exceptions import Forbidden
 
 from app import create_app
 from app.database import db
-from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, Unidade, User
+from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, Unidade, User
 from app.registros.shared import assert_unidade_context
 from config import Config
 
@@ -163,7 +163,20 @@ def test_perfis_autorizados_podem_desenturmar_na_propria_unidade(client, app, ro
         db.session.add_all([user, aluno, turma])
         db.session.flush()
 
-        inscricao = Inscricao(aluno_id=aluno.id, turma_id=turma.id, ativo=True)
+        curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+            ativo=True, principal=True, programa="Teste",
+        )
+        db.session.add(oferta)
+        db.session.flush()
+
+        inscricao = Inscricao(
+            aluno_id=aluno.id, turma_id=turma.id,
+            turma_curso_id=oferta.id, ativo=True,
+        )
         db.session.add(inscricao)
         db.session.commit()
         user_id = user.id
@@ -210,7 +223,20 @@ def test_professor_nao_pode_desenturmar_na_propria_unidade(client, app):
         db.session.add_all([professor, aluno, turma])
         db.session.flush()
 
-        inscricao = Inscricao(aluno_id=aluno.id, turma_id=turma.id, ativo=True)
+        curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+            ativo=True, principal=True, programa="Teste",
+        )
+        db.session.add(oferta)
+        db.session.flush()
+
+        inscricao = Inscricao(
+            aluno_id=aluno.id, turma_id=turma.id,
+            turma_curso_id=oferta.id, ativo=True,
+        )
         db.session.add(inscricao)
         db.session.commit()
         professor_id = professor.id
@@ -254,6 +280,18 @@ def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role)
         )
         turma = Turma(nome="1 - Natação", ativo=True, unidade_id=unidade.id)
         db.session.add_all([user, aluno, turma])
+        db.session.flush()
+        # Etapa M1: só se enturma em curso (oferta). A semente passa a ter
+        # 1 oferta ativa para manter a intenção do teste (perfis autorizados
+        # conseguem enturmar na própria unidade) sob a nova regra.
+        curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+        db.session.add(TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id,
+            unidade_id=unidade.id, ativo=True, principal=True,
+            programa="Teste",
+        ))
         db.session.commit()
         user_id = user.id
         aluno_id = aluno.id
@@ -457,7 +495,13 @@ def test_cursos_exigem_unidade_e_isolam_cursos_de_outra_unidade(client, app):
     assert client.post(f"/cursos/{curso_a_id}/inativar").status_code == 403
 
 
-def test_curso_criar_editar_inativar_e_validar_carga_horaria(client, app):
+def test_curso_criar_editar_inativar(client, app):
+    # ETAPA B2: este teste cobrava "validação de carga horária" (400 para
+    # carga inválida e chave carga_horaria na resposta do editar), mas a
+    # Onda 3C removeu Curso.carga_horaria do modelo e do banco (migration
+    # d1e2f3a4b5c6; MER: "Curso não possui carga horária" — a C.H. é
+    # calculada por turma/oferta). A rota trata só nome/descrição e ignora
+    # o campo extra; a asserção abaixo trava esse contrato.
     curso_a_id, _ = _criar_admin_cursos(client, app)
 
     response = client.post(
@@ -466,12 +510,10 @@ def test_curso_criar_editar_inativar_e_validar_carga_horaria(client, app):
     )
     assert response.status_code == 200
     curso_novo_id = response.json["id"]
-
-    response = client.post(
-        "/cursos/novo",
-        json={"nome": "Carga inválida", "carga_horaria": "inválida"},
-    )
-    assert response.status_code == 400
+    with app.app_context():
+        # carga_horaria não é mais atributo de Curso: o campo do payload
+        # é descartado, não validado nem persistido.
+        assert not hasattr(db.session.get(Curso, curso_novo_id), "carga_horaria")
 
     response = client.post(
         f"/cursos/{curso_a_id}/editar",
@@ -479,7 +521,7 @@ def test_curso_criar_editar_inativar_e_validar_carga_horaria(client, app):
     )
     assert response.status_code == 200
     assert response.json["nome"] == "Curso editado"
-    assert response.json["carga_horaria"] == 60
+    assert response.json["success"] is True
 
     response = client.post(f"/cursos/{curso_a_id}/inativar")
     assert response.status_code == 200

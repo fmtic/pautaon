@@ -75,6 +75,41 @@
         </div>
     </div>
 
+    {% if exigir_escolha %}
+    {# D5.4 (M1): turma com 2+ ofertas ativas exige a escolha do curso. #}
+    <div class="card filter-card shadow-sm mb-4 no-print">
+        <div class="card-body p-4">
+            <div class="alert alert-warning small mb-3">{{ mensagem }}</div>
+            <form method="get" action="{{ url_for('relatorios.resultado_conselho') }}" class="row g-3 align-items-end">
+                <input type="hidden" name="periodo_letivo_id" value="{{ selected_periodo_id }}">
+                {% if selected_all_turmas %}
+                <input type="hidden" name="turmas_all" value="1">
+                {% else %}
+                {% for tid in selected_turma_ids %}
+                <input type="hidden" name="turmas" value="{{ tid }}">
+                {% endfor %}
+                {% endif %}
+                <div class="col-lg-8">
+                    <label class="form-label fw-bold text-uppercase small text-muted">Curso (oferta)</label>
+                    <select class="form-select" name="oferta_sel" onchange="this.form.submit()">
+                        <option value="">Selecione o curso…</option>
+                        {% for o in ofertas_disponiveis %}
+                        <option value="{{ o.id }}" {{ 'selected' if o.id == selected_oferta_id }}>
+                            {{ o.turma.nome }} — {{ o.curso.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <button type="submit" class="btn btn-primary w-100">Ver</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% elif mensagem %}
+    <div class="alert alert-warning no-print">{{ mensagem }}</div>
+    {% endif %}
+
     {% if periodo_selecionado %}
     <div class="row g-3 mb-4">
         <div class="col-lg-3">
@@ -99,9 +134,9 @@
         </div>
         <div class="col-lg-3">
             <div class="card status-card shadow-sm p-3 h-100">
-                <small class="label-secondary text-uppercase">Turmas</small>
+                <small class="label-secondary text-uppercase">Ofertas</small>
                 <h5 class="fw-bold mb-1">{{ turma_count }}</h5>
-                <p class="mb-0 small text-muted">Turmas selecionadas</p>
+                <p class="mb-0 small text-muted">Cursos (ofertas) no escopo</p>
             </div>
         </div>
         <div class="col-lg-3">
@@ -158,7 +193,9 @@
                     <tbody>
                         {% for linha in registros %}
                         <tr>
-                            <td class="px-3 py-2 fw-semibold">{{ linha.turma }}</td>
+                            <td class="px-3 py-2 fw-semibold">{{ linha.turma }}
+                                <br><small class="text-muted">{{ linha.curso }}</small>
+                            </td>
                             <td class="px-3 py-2 small text-muted">{{ linha.programa }}</td>
                             <td class="px-3 py-2 small">{{ linha.professor }}</td>
                             <td class="px-3 py-2">{{ linha.aluno }}</td>
@@ -190,8 +227,8 @@
                 {% else %}
                 <div class="p-5 text-center text-muted">
                     <i class="bi bi-search fs-1 mb-3 d-block"></i>
-                    <p class="mb-0">Nenhum registro encontrado para o período e turmas selecionados.</p>
-                    <small>Verifique se o fechamento do conselho foi salvo para as turmas deste período.</small>
+                    <p class="mb-0">Nenhum registro encontrado para o período e ofertas selecionados.</p>
+                    <small>Verifique se o fechamento do conselho foi salvo para as ofertas deste período.</small>
                 </div>
                 {% endif %}
             </div>
