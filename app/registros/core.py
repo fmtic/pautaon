@@ -27,7 +27,6 @@ from app.models import (
     Frequencia,
     RegistroAula,
     TemaAula,
-    PerguntaConselho,
     User,
     ConfiguracaoSistema,
     PeriodoLetivo,

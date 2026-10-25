@@ -6,9 +6,11 @@ from datetime import date
 
 from flask import abort, render_template, request
 from flask_login import current_user, login_required
+from sqlalchemy.orm import joinedload
 
 from app.models import Aluno, Inscricao, PeriodoLetivo, Turma
 from app.services.aluno_status import periodos_de_referencia_bi
+from app.services.conselho_leitura import rotulo_oferta
 from app.utils.logica import get_unidade_id
 
 from .. import bp_relatorios
@@ -179,6 +181,36 @@ def busca_alunos():
 # Ficha 360° do aluno
 # Endpoint: relatorios.ficha_aluno_view
 # -----------------------------------------------------------------------------
+def _inscricoes_da_turma(aluno_id: int, turma_id: int) -> list[Inscricao]:
+    """Inscrições ATIVAS do aluno na turma, em ordem estável (D5.5)."""
+    return (
+        Inscricao.query.options(joinedload(Inscricao.turma_curso))
+        .filter_by(aluno_id=aluno_id, turma_id=turma_id, ativo=True)
+        .order_by(Inscricao.id)
+        .all()
+    )
+
+
+def _resolver_oferta(
+    candidatas: list[Inscricao],
+    atual: Inscricao | None,
+    oferta_sel: int | None,
+) -> Inscricao | None:
+    """Escolhe a inscrição (aluno × oferta) que a ficha retrata (D5.5/M1).
+
+    Com uma inscrição por turma o comportamento anterior não muda; com 2+
+    ofertas, `?oferta_sel=` decide e só vale se casar com uma inscrição do
+    aluno naquela turma. Sem escolha válida, mantém a inscrição entregue.
+    """
+    if len(candidatas) <= 1:
+        return atual or (candidatas[0] if candidatas else None)
+    if oferta_sel is not None:
+        for candidata in candidatas:
+            if candidata.turma_curso_id == oferta_sel:
+                return candidata
+    return atual or candidatas[0]
+
+
 @bp_relatorios.route("/alunos/<int:aluno_id>/ficha")
 @login_required
 def ficha_aluno_view(aluno_id):
@@ -192,19 +224,18 @@ def ficha_aluno_view(aluno_id):
         unidade_id=unidade_id,
     ).first_or_404()
 
+    oferta_sel = request.args.get("oferta_sel", type=int)
     turma_id = request.args.get("turma_id", type=int)
     if turma_id:
         turma = Turma.query.filter_by(id=turma_id, unidade_id=unidade_id).first_or_404()
-        insc = Inscricao.query.filter_by(
-            aluno_id=aluno.id,
-            turma_id=turma.id,
-            ativo=True,
-        ).first()
-        if not insc:
+        candidatas = _inscricoes_da_turma(aluno.id, turma.id)
+        if not candidatas:
             abort(404, "Aluno não inscrito nesta turma.")
+        insc = _resolver_oferta(candidatas, None, oferta_sel)
     else:
         insc = (
-            Inscricao.query.filter_by(aluno_id=aluno.id, ativo=True)
+            Inscricao.query.options(joinedload(Inscricao.turma_curso))
+            .filter_by(aluno_id=aluno.id, ativo=True)
             .order_by(Inscricao.data_inicio.desc())
             .first()
         )
@@ -215,8 +246,19 @@ def ficha_aluno_view(aluno_id):
                 "a ficha de uma turma anterior.",
             )
         turma = insc.turma
+        candidatas = _inscricoes_da_turma(aluno.id, turma.id)
+        insc = _resolver_oferta(candidatas, insc, oferta_sel)
 
     ctx = ficha_aluno_svc.montar(aluno, turma, insc)
+    # D5.5: seletor de oferta — só aparece com 2+ inscrições na mesma turma.
+    ctx["ofertas_disponiveis"] = [
+        {
+            "turma_curso_id": candidata.turma_curso_id,
+            "rotulo": rotulo_oferta(candidata.turma_curso, turma),
+        }
+        for candidata in candidatas
+    ]
+    ctx["oferta_sel"] = insc.turma_curso_id if insc is not None else None
 
     ctx["contexto_restrito"]["permitido"] = current_user.role in {
         "admin",

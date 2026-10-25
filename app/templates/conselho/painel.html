@@ -42,70 +42,108 @@
                 </div>
             </div>
             <div class="col-md-5 text-end">
-                <small class="text-muted">Mostrando {{ turmas|length }} turmas ativas</small>
+                <small class="text-muted">Mostrando {{ ofertas|length }} ofertas ativas</small>
             </div>
         </form>
     </div>
 </div>
 
+{# D5.3: o conselho é POR OFERTA — uma linha por oferta ativa de turma ativa.
+   Turma sem oferta ativa não abre conselho e não entra na lista/contagens. #}
+{% if turmas_sem_oferta %}
+<div class="alert alert-light border small py-2 mb-3">
+    <i class="bi bi-info-circle me-2 text-muted"></i>
+    {{ turmas_sem_oferta }} turma(s) ativa(s) sem curso (oferta) ativa não aparecem aqui —
+    o conselho é lançado por oferta.
+</div>
+{% endif %}
+
 <div class="row">
-    {# LOOP ÚNICO: Cria um card completo por turma #}
-    {% for turma in turmas %}
+    {% for item in ofertas %}
+    {% set turma = item.turma %}
+    {% set oferta = item.oferta %}
     <div class="col-md-4 mb-4">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body">
-                <h5 class="fw-bold text-primary mb-3">{{turma.ordenacao}}. {{ turma.nome }}</h5>
+                <div class="d-flex justify-content-between align-items-start mb-1">
+                    <h5 class="fw-bold text-primary mb-0">{{ turma.ordenacao }}. {{ turma.nome }}</h5>
+                    {% if item.concluida %}
+                    <span class="badge bg-success">Concluído</span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark">Pendente</span>
+                    {% endif %}
+                </div>
+                <p class="small fw-semibold text-secondary mb-3">
+                    <i class="bi bi-mortarboard me-1"></i> {{ item.curso.nome }}
+                </p>
 
                 <div class="mb-4">
                     <p class="small text-muted mb-1">
-                        <i class="bi bi-tag me-1"></i> {{ turma.programa or 'Programa não definido' }}
-                        <span class="badge bg-light text-primary border ms-2">{{ turma.turno or '-' }}</span>
+                        <i class="bi bi-tag me-1"></i> {{ item.programa or 'Programa não definido' }}
+                        <span class="badge bg-light text-primary border ms-2">{{ item.turno or '-' }}</span>
                     </p>
                     <p class="small text-muted mb-1">
-                        <i class="bi bi-person-badge me-1"></i> Prof: {{ turma.professor.name if
-                        turma.professor.name else
+                        <i class="bi bi-person-badge me-1"></i> Prof: {{ item.professor.name if item.professor else
                         'Não atribuído' }}
                     </p>
                     <p class="small text-muted mb-1">
-                        <i class="bi bi-calendar-event me-1"></i> {{ turma.dias_semana or 'N/A' }}
+                        <i class="bi bi-calendar-event me-1"></i> {{ oferta.dias_semana or turma.dias_semana or 'N/A' }}
                         <span class="mx-2 text-black-50">|</span>
                         <i class="bi bi-clock me-1"></i>
-                        {% if turma.horario %}
-                        {{ turma.horario }}
+                        {% if oferta.hora_inicio and oferta.hora_fim %}
+                        {{ oferta.hora_inicio }} às {{ oferta.hora_fim }}
+                        {% elif oferta.hora_inicio %}
+                        {{ oferta.hora_inicio }}
                         {% elif turma.hora_inicio and turma.hora_fim %}
                         {{ turma.hora_inicio }} às {{ turma.hora_fim }}
-                        {% elif turma.hora_inicio %}
-                        {{ turma.hora_inicio }}
+                        {% elif turma.horario %}
+                        {{ turma.horario }}
                         {% else %}
                         Horário não definido
                         {% endif %}
                     </p>
                     <p class="small text-muted mb-0">
-                        <i class="bi bi-people me-1"></i> <strong>{{ turma.alunos_ativos_count if
-                            turma.alunos_ativos_count is not none else turma.alunos|length }}</strong> alunos
+                        <i class="bi bi-people me-1"></i> <strong>{{ item.alunos_ativos }}</strong> alunos
                     </p>
                 </div>
 
                 <div class="d-grid gap-2">
-                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='INICIAL') }}"
+                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='INICIAL', oferta_sel=oferta.id) }}"
                         class="btn btn-sm btn-outline-info text-start">
                         <i class="bi bi-1-circle me-2"></i> Lançar Inicial
                     </a>
-                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='PERCURSO') }}"
+                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='PERCURSO', oferta_sel=oferta.id) }}"
                         class="btn btn-sm btn-outline-info text-start">
                         <i class="bi bi-2-circle me-2"></i> Lançar Percurso
                     </a>
-                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='FINAL') }}"
+                    <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa='FINAL', oferta_sel=oferta.id) }}"
                         class="btn btn-sm btn-outline-info text-start">
                         <i class="bi bi-3-circle me-2"></i> Lançar Final
                     </a>
-                    <a href="{{ url_for('conselho.fechamento_turma', turma_id=turma.id) }}"
+                    <a href="{{ url_for('conselho.fechamento_turma', turma_id=turma.id, oferta_sel=oferta.id) }}"
                         class="btn btn-sm btn-primary text-start shadow-sm mt-2">
                         <i class="bi bi-mortarboard-fill me-2"></i> Situação Final do Aluno
                     </a>
                 </div>
             </div>
             <div class="card-footer bg-transparent border-0 text-center pb-3">
+                {# Encerramento MANUAL e por OFERTA (TurmaCurso.conselho_concluido);
+                   o status da turma é derivado (todas as ofertas ativas). #}
+                <form method="POST"
+                    action="{{ url_for('planejamento.alternar_conselho', turma_id=turma.id) }}"
+                    class="d-grid mb-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}">
+                    {% if item.concluida %}
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-counterclockwise me-2"></i> Reabrir conselho da oferta
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-check2-circle me-2"></i> Encerrar conselho da oferta
+                    </button>
+                    {% endif %}
+                </form>
                 <a href="{{ url_for('registros.ver_turma', id=turma.id) }}"
                     class="small text-decoration-none text-muted">
                     Ver detalhes da turma
@@ -116,7 +154,7 @@
     {% else %}
     <div class="col-12 text-center py-5">
         <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-        <p class="text-muted mt-3">Nenhuma turma ativa encontrada para avaliação.</p>
+        <p class="text-muted mt-3">Nenhuma oferta ativa em turma ativa encontrada para avaliação.</p>
     </div>
     {% endfor %}
 </div>

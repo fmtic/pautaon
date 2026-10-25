@@ -110,6 +110,9 @@
               <td class="text-center"><strong>{{ h.pct_presenca }}%</strong></td>
               <td class="text-center">
                 <strong>{{ h.situacao_final if h.situacao_final != '—' else '—' }}</strong>
+                {% if h.status_inicial != '—' or h.status_percurso != '—' %}
+                <br><small class="text-muted">I: {{ h.status_inicial }} · P: {{ h.status_percurso }}</small>
+                {% endif %}
                 {% if not h.ativo %}<br><small class="inativo-label">Desligado</small>{% endif %}
               </td>
             </tr>

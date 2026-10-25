@@ -130,9 +130,9 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     Resultado do conselho para UM aluno em UMA OFERTA em UMA etapa.
 
     Desde D5.1 a unidade do conselho é a oferta (`turma_curso_id`);
-    `turma_id` permanece denormalizado (escopo tenant, joins legados e
-    checagem de histórico da turma), e linhas com `turma_curso_id` NULL são
-    o estado legado (pré-D5), ainda aceitas até o endurecimento (D5.5).
+    `turma_id` permanece denormalizado (escopo tenant e checagem de histórico
+    da turma). Desde D5.5 `turma_curso_id` é OBRIGATÓRIO: o conselho legado
+    sem oferta não existe mais.
 
     Campos-chave:
         - `etapa`: INICIAL, PERCURSO ou FINAL (enum nativo).
@@ -141,23 +141,16 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
         - `proxima_turma_id`: destino sugerido após conselho final.
         - `concluido=True` indica que o conselho foi fechado.
 
-    Constraints (D5.1):
-        - Índice único parcial `uix_conselho_legado`
-          (turma_id, aluno_id, etapa) WHERE turma_curso_id IS NULL.
-        - Índice único parcial `uix_conselho_oferta`
-          (turma_curso_id, aluno_id, etapa) WHERE turma_curso_id IS NOT NULL.
+    Constraints (D5.5):
+        - UNIQUE `uix_conselho_oferta`
+          (turma_curso_id, aluno_id, etapa) — plena, por oferta.
+        - Índice de apoio `ix_conselho_turma_curso`.
         - CHECK (situacao_final): restrita ao enum SituacaoFinal.
     """
     __tablename__ = 'conselho_classe'
     __table_args__ = (
-        # D5.1: unicidade por oferta, com ramo legado próprio (padrão Fase 4).
-        db.Index(
-            'uix_conselho_legado',
-            'turma_id', 'aluno_id', 'etapa',
-            unique=True,
-            postgresql_where=db.text('turma_curso_id IS NULL'),
-            sqlite_where=db.text('turma_curso_id IS NULL'),
-        ),
+        # D5.5: unicidade por oferta (o ramo legado uix_conselho_legado saiu
+        # junto com o NOT NULL de turma_curso_id).
         db.Index(
             'uix_conselho_oferta',
             'turma_curso_id', 'aluno_id', 'etapa',
@@ -176,12 +169,12 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     turma_id: int = db.Column(db.Integer, db.ForeignKey('turma.id'), nullable=False)
     aluno_id: int = db.Column(db.Integer, db.ForeignKey('aluno.id'), nullable=False)
-    # D5.1 (Onda 4): oferta avaliada. NULL = conselho legado (pré-D5).
+    # D5.5 (Onda 4): oferta avaliada — OBRIGATÓRIA desde o endurecimento.
     turma_curso_id: int = db.Column(
         db.Integer,
         db.ForeignKey('turma_curso.id', ondelete='RESTRICT'),
-        nullable=True,
-        comment='FK → turma_curso (D5.1; NULL = conselho legado pré-oferta)',
+        nullable=False,
+        comment='FK → turma_curso (D5.5: obrigatória; conselho legado sem oferta não existe)',
     )
 
     # Onda 2B: ENUM nativo.

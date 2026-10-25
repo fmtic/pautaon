@@ -1,25 +1,25 @@
-"""Etapa D5.1 — Esquema aditivo do conselho por oferta (schema, SQLite).
+"""Etapa D5.1—D5.5 — Esquema do conselho por oferta (schema, SQLite).
 
-Regras do responsável (decisão D5, 24/10/2026):
-    - Conselho de classe passa a ter OFERTA própria: `conselho_classe.turma_curso_id`.
-    - A UNIQUE antiga (turma_id, aluno_id, etapa) foi substituída por dois
-      índices ÚNICOS PARCIAIS:
-        uix_conselho_legado (turma_id, aluno_id, etapa) WHERE turma_curso_id IS NULL
-        uix_conselho_oferta (turma_curso_id, aluno_id, etapa) WHERE turma_curso_id IS NOT NULL
+Regras do responsável (decisões D5/D5.5, 24-25/10/2026):
+    - Conselho de classe tem OFERTA própria e OBRIGATÓRIA:
+      `conselho_classe.turma_curso_id` é NOT NULL (D5.5).
+    - A UNIQUE antiga (turma_id, aluno_id, etapa) não existe: `uix_conselho_oferta`
+      (turma_curso_id, aluno_id, etapa) é a única unicidade, POR OFERTA.
+    - O ramo legado `uix_conselho_legado` saiu junto com o NULL (D5.5).
     - O mesmo aluno pode ter um conselho POR OFERTA na mesma turma/etapa.
     - `turma_curso` ganha conselho_concluido (NOT NULL default false) e os
-      pareceres avaliacao_inicial/percurso/final (nullable), espelhando Turma.
+      pareceres avaliacao_inicial/percurso/final (nullable) — `turma` NÃO tem
+      mais `conselho_concluido` (derivada das ofertas na leitura).
 
 Cobertura:
-    1. Colunas novas e defaults (oferta e conselho); NULL em turma_curso_id é
-       aceito (estado legado).
+    1. Colunas novas e defaults; `turma_curso_id` NOT NULL + FK RESTRICT;
+       conselho sem oferta é RECUSADO pelo banco.
     2. Mesmo aluno, mesma turma/etapa, DUAS ofertas diferentes → permitido.
     3. Duplicata na MESMA oferta/etapa → recusada (uix_conselho_oferta).
-    4. Duplicata legada (turma_curso_id NULL) → recusada (uix_conselho_legado).
-    5. Conselho legado (NULL) e conselho de oferta COEXISTEM na mesma
-       turma/aluno/etapa.
-    6. Os dois índices parciais e ix_conselho_turma_curso existem na schema
-       SQLite gerada pelos modelos, e a UNIQUE antiga não está na tabela.
+    4. Conselho sem oferta → recusado (NOT NULL).
+    5. `turma` não tem a coluna `conselho_concluido`; a flag vive só na oferta.
+    6. O índice único por oferta e ix_conselho_turma_curso existem na schema
+       SQLite gerada pelos modelos; o ramo legado não volta.
 
 Um usuário por teste (nenhum login/rota; schema pura em SQLite in-memory).
 """
@@ -111,11 +111,17 @@ def _seed(nome_user="Resp D5"):
     }
 
 
-def _conselho(i, etapa=EtapaConselho.INICIAL, turma_curso_id=None):
+def _conselho(i, etapa=EtapaConselho.INICIAL, turma_curso_id="o1"):
+    """Cria um conselho na OFERTA indicada (por padrão a oferta `o1`).
+
+    D5.5: `turma_curso_id` é obrigatório — a única forma de pedir NULL é
+    passar `turma_curso_id=None`, que o banco recusa.
+    """
+    alvo = i[turma_curso_id] if isinstance(turma_curso_id, str) else turma_curso_id
     cc = ConselhoClasse(
         turma_id=i["turma"], aluno_id=i["aluno"],
         etapa=etapa, unidade_id=i["unidade"],
-        turma_curso_id=turma_curso_id,
+        turma_curso_id=alvo,
     )
     db.session.add(cc)
     db.session.flush()
@@ -141,16 +147,18 @@ def test_colunas_novas_e_defaults(app):
     assert TurmaCurso.__table__.c.conselho_concluido.nullable is False
     assert TurmaCurso.__table__.c.avaliacao_inicial.nullable is True
 
-    # ConselhoClasse.turma_curso_id: nullable + FK RESTRICT.
+    # ConselhoClasse.turma_curso_id: NOT NULL (D5.5) + FK RESTRICT.
     col = ConselhoClasse.__table__.c.turma_curso_id
-    assert col.nullable is True
+    assert col.nullable is False
     fk = next(iter(col.foreign_keys))
     assert fk.target_fullname == "turma_curso.id"
     assert fk.ondelete == "RESTRICT"
 
-    # Estado legado: conselho sem oferta é aceito (NULL).
-    cc = _conselho(i)
-    assert cc.turma_curso_id is None
+    # Conselho sem oferta deixou de existir: o banco recusa.
+    with pytest.raises(IntegrityError):
+        _conselho(i, turma_curso_id=None)
+        db.session.commit()
+    db.session.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -191,57 +199,66 @@ def test_duplicata_mesma_oferta_recusada(app):
 
 
 # ---------------------------------------------------------------------------
-# 4. Duplicata legada (turma_curso_id NULL) → recusada
+# 4. Conselho sem oferta → recusado (D5.5)
 # ---------------------------------------------------------------------------
 
-def test_duplicata_legada_recusada(app):
+def test_conselho_sem_oferta_recusado(app):
     i = _seed()
-    _conselho(i)  # NULL = legado
+    _conselho(i, turma_curso_id=i["o1"])
     db.session.commit()
 
     with pytest.raises(IntegrityError):
-        _conselho(i)
+        _conselho(i, etapa=EtapaConselho.PERCURSO, turma_curso_id=None)
         db.session.commit()
     db.session.rollback()
 
+    assert ConselhoClasse.query.filter_by(turma_curso_id=None).count() == 0
+
 
 # ---------------------------------------------------------------------------
-# 5. Legado (NULL) e oferta coexistem
+# 5. `turma` sem a flag; o encerramento vive só na oferta
 # ---------------------------------------------------------------------------
 
-def test_legado_e_oferta_coexistem(app):
+def test_turma_sem_flag_e_oferta_com_flag(app):
     i = _seed()
-    _conselho(i)  # legado
-    _conselho(i, turma_curso_id=i["o1"])  # oferta — mesma turma/aluno/etapa
+    assert "conselho_concluido" not in Turma.__table__.c
+
+    oferta = db.session.get(TurmaCurso, i["o1"])
+    oferta.conselho_concluido = True
     db.session.commit()
+    assert db.session.get(TurmaCurso, i["o1"]).conselho_concluido is True
+    assert db.session.get(TurmaCurso, i["o2"]).conselho_concluido is False
 
-    rows = ConselhoClasse.query.filter_by(
-        turma_id=i["turma"], aluno_id=i["aluno"], etapa=EtapaConselho.INICIAL,
-    ).all()
-    assert len(rows) == 2
-    assert {r.turma_curso_id for r in rows} == {None, i["o1"]}
+    # As duas ofertas da mesma turma/etapa convivem para o mesmo aluno.
+    _conselho(i, turma_curso_id=i["o1"])
+    _conselho(i, turma_curso_id=i["o2"])
+    db.session.commit()
+    assert ConselhoClasse.query.filter_by(
+        turma_id=i["turma"], aluno_id=i["aluno"],
+        etapa=EtapaConselho.INICIAL,
+    ).count() == 2
 
 
 # ---------------------------------------------------------------------------
-# 6. Schema: índices parciais presentes, UNIQUE antiga ausente
+# 6. Schema: UNIQUE por oferta presente, ramo legado ausente
 # ---------------------------------------------------------------------------
 
-def test_schema_indices_parciais(app):
+def test_schema_indice_unico_por_oferta(app):
     idx = {x["name"]: x for x in inspect(db.engine).get_indexes("conselho_classe") if x.get("name")}
 
-    for nome in ("uix_conselho_legado", "uix_conselho_oferta"):
-        assert nome in idx, f"índice parcial {nome} ausente na schema SQLite"
-        assert idx[nome]["unique"]
+    assert "uix_conselho_oferta" in idx
+    assert idx["uix_conselho_oferta"]["unique"]
 
     assert "ix_conselho_turma_curso" in idx
     assert not idx["ix_conselho_turma_curso"]["unique"]
 
-    # A UNIQUE antiga não pode voltar pela create_all dos modelos.
+    # D5.5: o ramo legado não pode voltar pela create_all dos modelos.
+    assert "uix_conselho_legado" not in idx
     assert "uix_conselho_turma_aluno_etapa" not in idx
     unicos = {u["name"] for u in inspect(db.engine).get_unique_constraints("conselho_classe") if u.get("name")}
     assert "uix_conselho_turma_aluno_etapa" not in unicos
 
-    # SQLite: os WHERE parciais devem estar na DDL dos índices.
+    # SQLite: o WHERE parcial continua na DDL do índice (inócuo com NOT NULL).
     with db.engine.connect() as conn:
         ddl = dict(conn.execute(
             text(
@@ -249,5 +266,4 @@ def test_schema_indices_parciais(app):
                 "AND tbl_name='conselho_classe'"
             )
         ).fetchall())
-    assert "turma_curso_id IS NULL" in ddl["uix_conselho_legado"]
     assert "turma_curso_id IS NOT NULL" in ddl["uix_conselho_oferta"]

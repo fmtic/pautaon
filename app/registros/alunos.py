@@ -13,12 +13,10 @@ Cobre:
     - Impressão da ficha
 """
 
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta
 
 from flask import (
     abort,
-    current_app,
     flash,
     jsonify,
     redirect,
@@ -51,9 +49,11 @@ from app.services.aluno_perfil import (
     upsert_perfil_socioeconomico,
     upsert_responsavel,
 )
+from app.services.conselho_leitura import conselhos_por_oferta
 from app.services.enturmacao import enturmar_aluno
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+
 from . import bp
 from .shared import (
     _get_upload_root,
@@ -828,8 +828,6 @@ def desenturmar_alunos(id):
 @bp.route("/aluno/<int:aluno_id>/historico")
 @login_required
 def historico_aluno(aluno_id):
-    from app.models import ConselhoClasse
-
     allowed_roles = {
         UserRole.ADMIN,
         UserRole.PEDAGOGICO,
@@ -864,46 +862,72 @@ def historico_aluno(aluno_id):
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, unidade_id)
 
+    # D5.4: uma linha por INSCRIÇÃO (aluno × oferta). O status de cada etapa
+    # vem do conselho da OFERTA, buscado em lote (uma consulta; sem N+1).
+    # Linhas legadas (turma_curso_id NULL) não são exibidas.
     inscricoes = Inscricao.query.filter_by(aluno_id=aluno_id).all()
+    conselhos = conselhos_por_oferta(
+        (insc.aluno_id, insc.turma_curso_id) for insc in inscricoes
+    )
     dados = []
     for insc in inscricoes:
         turma = insc.turma
         if not turma:
             continue
+        oferta = insc.turma_curso
+        oferta_id = insc.turma_curso_id
 
-        freqs = Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id).all()
+        # Frequência da INSCRIÇÃO: com oferta filtra pela oferta; sem oferta
+        # (legado) cai em turma + turma_curso_id NULL para não misturar turmas.
+        freqs = Frequencia.query.filter_by(
+            aluno_id=aluno_id, turma_id=insc.turma_id, turma_curso_id=oferta_id
+        ).all()
         estatisticas = calcular_estatisticas_frequencia(freq.conceito for freq in freqs)
 
-        def get_conselho(etapa):
-            return ConselhoClasse.query.filter_by(
-                turma_id=turma.id, aluno_id=aluno_id, etapa=etapa
-            ).first()
+        c_inicial = conselhos.get((aluno_id, oferta_id, "INICIAL"))
+        c_percurso = conselhos.get((aluno_id, oferta_id, "PERCURSO"))
+        c_final = conselhos.get((aluno_id, oferta_id, "FINAL"))
 
-        c_inicial = get_conselho("INICIAL")
-        c_percurso = get_conselho("PERCURSO")
-        c_final = get_conselho("FINAL")
+        # Oferta é a fonte do curso/professor/agenda; a turma é o fallback
+        # legado (turmas criadas antes das ofertas).
+        professor = (
+            oferta.professor if oferta and oferta.professor else turma.professor
+        )
+        hora_inicio = oferta.hora_inicio if oferta and oferta.hora_inicio else turma.hora_inicio
+        hora_fim = oferta.hora_fim if oferta and oferta.hora_fim else turma.hora_fim
+        data_inicio = oferta.data_inicio if oferta and oferta.data_inicio else turma.data_inicio
+        data_fim = oferta.data_fim if oferta and oferta.data_fim else turma.data_fim
 
         # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
         horario = (
-            f"{turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--'}"
+            f"{hora_inicio.strftime('%H:%M') if hora_inicio else '--:--'}"
             f" às "
-            f"{turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--'}"
+            f"{hora_fim.strftime('%H:%M') if hora_fim else '--:--'}"
         )
 
         dados.append(
             {
                 "turma": turma.nome,
-                "curso": turma.curso.nome if turma.curso else "—",
-                "programa": turma.programa or "—",
-                "professor": turma.professor.name if turma.professor else "—",
+                "curso": (
+                    oferta.curso.nome if oferta and oferta.curso
+                    else (turma.curso.nome if turma.curso else "—")
+                ),
+                "programa": (
+                    oferta.programa if oferta and oferta.programa
+                    else (turma.programa or "—")
+                ),
+                "professor": professor.name if professor else "—",
                 "periodo": (turma.periodo_letivo.nome_exibicao if turma.periodo_letivo else "—"),
-                "dias": turma.dias_semana or "—",
+                "dias": (
+                    oferta.dias_semana if oferta and oferta.dias_semana
+                    else (turma.dias_semana or "—")
+                ),
                 "horario": horario,
                 "data_inicio": (
-                    turma.data_inicio.strftime("%d/%m/%Y") if turma.data_inicio else "—"
+                    data_inicio.strftime("%d/%m/%Y") if data_inicio else "—"
                 ),
                 "data_fim": (
-                    turma.data_fim.strftime("%d/%m/%Y") if turma.data_fim else "—"
+                    data_fim.strftime("%d/%m/%Y") if data_fim else "—"
                 ),
                 "nivel": insc.nivel or aluno.nivel or "—",
                 "total_aulas": estatisticas["total"],

@@ -21,6 +21,7 @@ from app.models import (
     PeriodoLetivo,
     TemaAula,
     Turma,
+    TurmaCurso,
     Unidade,
     User,
 )
@@ -108,13 +109,13 @@ def _setup(app, role="admin"):
             nome="Turma A", turno="Manhã", data_inicio=DATA_INI,
             data_fim=DATA_FIM, dias_semana="Segunda",
             periodo_letivo_id=periodo_a.id, unidade_id=un_a.id,
-            ativo=True, conselho_concluido=False,
+            ativo=True,
         )
         turma_b = Turma(
             nome="Turma B", turno="Manhã", data_inicio=DATA_INI,
             data_fim=DATA_FIM, dias_semana="Segunda",
             periodo_letivo_id=periodo_b.id, unidade_id=un_b.id,
-            ativo=True, conselho_concluido=False,
+            ativo=True,
         )
         db.session.add_all([tema_a, tema_b, dia_a, dia_b, turma_a, turma_b])
         db.session.commit()
@@ -655,7 +656,9 @@ def test_admin_nao_alterna_conselho_de_turma_de_outra_unidade(client, app):
     r = client.post(f"/turma/alternar-conselho/{ids['turma_b']}")
     assert r.status_code == 403
     with app.app_context():
-        assert db.session.get(Turma, ids["turma_b"]).conselho_concluido is False
+        assert TurmaCurso.query.filter_by(
+            turma_id=ids["turma_b"], conselho_concluido=True
+        ).count() == 0
 
 
 def test_admin_sem_unidade_nao_alterna_conselho(client, app):
@@ -665,17 +668,31 @@ def test_admin_sem_unidade_nao_alterna_conselho(client, app):
     r = client.post(f"/turma/alternar-conselho/{ids['turma_a']}")
     assert r.status_code == 403
     with app.app_context():
-        assert db.session.get(Turma, ids["turma_a"]).conselho_concluido is False
+        assert TurmaCurso.query.filter_by(
+            turma_id=ids["turma_a"], conselho_concluido=True
+        ).count() == 0
 
 
 def test_admin_alterna_conselho_da_turma_correta(client, app):
     ids = _setup(app)
     _loga(client, ids, unidade_id=ids["un_a"])
 
+    # ETAPA D5.2: o encerramento do conselho passou a ser da OFERTA e turma
+    # sem oferta ativa é recusada. A finalidade B4 (isolamento) permanece a
+    # mesma — só se dá à turma a oferta única que o fluxo novo exige.
+    from _helpers import nova_oferta
+
+    with app.app_context():
+        oferta = nova_oferta(ids["turma_a"], ids["curso_a"], ids["un_a"])
+        db.session.commit()
+        oferta_id = oferta.id
+
     r = client.post(f"/turma/alternar-conselho/{ids['turma_a']}")
     assert r.status_code == 302
     with app.app_context():
-        assert db.session.get(Turma, ids["turma_a"]).conselho_concluido is True
+        # D5.5: a flag vive SÓ na oferta — a turma não tem mais a coluna.
+        assert db.session.get(TurmaCurso, oferta_id).conselho_concluido is True
+        assert not hasattr(db.session.get(Turma, ids["turma_a"]), "conselho_concluido")
 
 
 # ---------------------------------------------------------------------------

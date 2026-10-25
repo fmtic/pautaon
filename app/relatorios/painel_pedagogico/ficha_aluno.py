@@ -17,7 +17,7 @@ Acesso a perfis (endereço/socioeconômico) SEMPRE via
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from sqlalchemy import case, func
@@ -28,23 +28,23 @@ from app.models import (
     Aluno,
     Atendimento,
     ConselhoClasse,
-    ConselhoResposta,
     Frequencia,
     Inscricao,
     PerguntaConselho,
-    PeriodoConselho,
     PeriodoLetivo,
     Turma,
 )
 from app.models.enums import (
     ConceitoFrequencia,
     EtapaConselho,
+    SituacaoFinal,
     StatusAluno,
 )
 from app.services import aluno_perfil
+from app.services.aluno_status import status_alunos
+from app.services.conselho_leitura import conselho_do_aluno
 
 from .formatacao import (
-    classe_tendencia,
     faixa_meta,
     fmt_diff,
     fmt_pct,
@@ -71,8 +71,34 @@ class _Acumulado:
         return pct(self.presencas, self.total_contabil)
 
 
-def _identidade(aluno: Aluno, turma: Turma | None, inscricao: Inscricao | None) -> dict:
-    status = (inscricao.status_aluno if inscricao else None) or StatusAluno.NOVO
+# Situações finais consideradas favoráveis (valores de SituacaoFinal).
+_SITUACOES_FAVORAVEIS = {
+    SituacaoFinal.APROVADO.value,
+    SituacaoFinal.PARTICIPACAO.value,
+    SituacaoFinal.CONCLUIDO.value,
+}
+
+
+def _situacao_mais_recente(conselho: dict) -> str | None:
+    """Situação final mais recente DA OFERTA (FINAL > PERCURSO > INICIAL)."""
+    etapas = {item.get("etapa"): item for item in conselho.get("etapas", [])}
+    for chave in ("FINAL", "PERCURSO", "INICIAL"):
+        item = etapas.get(chave)
+        if item and item.get("situacao_final"):
+            return item["situacao_final"]
+    return None
+
+
+def _identidade(
+    aluno: Aluno,
+    turma: Turma | None,
+    inscricao: Inscricao | None,
+    status: StatusAluno | None = None,
+) -> dict:
+    # D5.4: `Inscricao` não guarda status — ele é derivado por
+    # `services.aluno_status.status_alunos` (antes `inscricao.status_aluno`
+    # levantava AttributeError).
+    status = status or StatusAluno.NOVO
     idade = aluno.idade
     return {
         "id": aluno.id,
@@ -128,9 +154,21 @@ def _dias_horario(turma: Turma) -> str:
 # =============================================================================
 # Frequência
 # =============================================================================
-def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
+def _frequencia(aluno_id: int, turma: Turma, semanas: list, oferta=None) -> dict:
+    """Frequência do aluno na OFERTA (D5.4).
+
+    Com oferta, aluno e agregado da turma são filtrados por `turma_curso_id`
+    — a ficha é por inscrição e não mistura ofertas da mesma turma. Sem
+    oferta (vínculo legado) cai no filtro por turma.
+    """
+    filtro_aluno = {"aluno_id": aluno_id}
+    if oferta is not None:
+        filtro_aluno["turma_curso_id"] = oferta.id
+    else:
+        filtro_aluno["turma_id"] = turma.id
+
     rows = (
-        Frequencia.query.filter_by(aluno_id=aluno_id, turma_id=turma.id)
+        Frequencia.query.filter_by(**filtro_aluno)
         .order_by(Frequencia.data)
         .all()
     )
@@ -145,7 +183,8 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
     turma_data = dict(
         db.session.query(Frequencia.data, func.count(Frequencia.id))
         .filter(
-            Frequencia.turma_id == turma.id,
+            *([] if oferta is None else [Frequencia.turma_curso_id == oferta.id]),
+            *([Frequencia.turma_id == turma.id] if oferta is None else []),
             Frequencia.conceito.in_(
                 [
                     ConceitoFrequencia.A,
@@ -161,7 +200,8 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
     turma_total = dict(
         db.session.query(Frequencia.data, func.count(Frequencia.id))
         .filter(
-            Frequencia.turma_id == turma.id,
+            *([] if oferta is None else [Frequencia.turma_curso_id == oferta.id]),
+            *([Frequencia.turma_id == turma.id] if oferta is None else []),
             Frequencia.conceito.in_(
                 [
                     ConceitoFrequencia.A,
@@ -189,10 +229,8 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list) -> dict:
             ConceitoFrequencia.D,
         ):
             acum.presencas += 1
-            pres_acum += 1
         elif f.conceito == ConceitoFrequencia.F:
             acum.faltas += 1
-            falt_acum += 1
         elif f.conceito == ConceitoFrequencia.J:
             acum.justificadas += 1
             continue
@@ -274,12 +312,20 @@ def _maior_sequencia_faltas(rows: list) -> int:
 # =============================================================================
 # Conselho
 # =============================================================================
-def _conselho(aluno_id: int, turma: Turma, periodo: PeriodoLetivo | None) -> dict:
+def _conselho(aluno_id: int, oferta=None) -> dict:
+    """Conselho do aluno NA OFERTA (D5.4).
+
+    A unidade é (aluno, oferta, etapa): o mesmo aluno em 2 ofertas da mesma
+    turma tem conselhos independentes e eles nunca se misturam aqui. Sem
+    oferta (vínculo legado) o conselho não é exibido.
+    """
     conselhos = (
         ConselhoClasse.query.options(joinedload(ConselhoClasse.respostas))
-        .filter_by(aluno_id=aluno_id, turma_id=turma.id)
+        .filter_by(aluno_id=aluno_id, turma_curso_id=oferta.id)
         .order_by(ConselhoClasse.etapa)
         .all()
+        if oferta is not None
+        else []
     )
     por_etapa = {c.etapa: c for c in conselhos}
 
@@ -356,6 +402,19 @@ def _conselho(aluno_id: int, turma: Turma, periodo: PeriodoLetivo | None) -> dic
 # =============================================================================
 def _sinais(freq: dict, conselho: dict, atendimentos_count: int) -> list[dict]:
     sinais: list[dict] = []
+    situacao = _situacao_mais_recente(conselho)
+    if situacao and situacao not in _SITUACOES_FAVORAVEIS:
+        sinais.append(
+            {
+                "nivel": "bad",
+                "icone": "clipboard-x",
+                "titulo": f"Situação final na oferta: {situacao}",
+                "detalhe": (
+                    "Vem do conselho FINAL desta oferta; as demais ofertas "
+                    "do aluno têm situação própria."
+                ),
+            }
+        )
     if freq["maior_seq_faltas"] >= 2:
         sinais.append(
             {
@@ -539,11 +598,17 @@ def _percurso(aluno_id: int, turma_atual_id: int) -> list[dict]:
         else:
             tot = pres = cont = 0
         p = pct(pres, cont)
-        situacao = _situacao_por_turma(aluno_id, t.id)
+        situacao = _situacao_por_oferta(aluno_id, insc.turma_curso_id)
+        curso = (
+            insc.turma_curso.curso.nome
+            if insc.turma_curso is not None and insc.turma_curso.curso
+            else "—"
+        )
         out.append(
             {
                 "periodo": t.periodo_letivo.nome if t.periodo_letivo else "—",
                 "turma": t.nome,
+                "curso": curso,
                 "nivel": insc.nivel or "—",
                 "aulas": tot,
                 "pct": p,
@@ -554,22 +619,26 @@ def _percurso(aluno_id: int, turma_atual_id: int) -> list[dict]:
     return out
 
 
-def _situacao_por_turma(aluno_id: int, turma_id: int) -> dict:
-    c = ConselhoClasse.query.filter_by(
-        aluno_id=aluno_id, turma_id=turma_id, etapa=EtapaConselho.FINAL
-    ).first()
-    if not c:
-        return {"label": "Em andamento", "classe": "primary"}
-    if not c.situacao_final:
-        return {"label": "Em andamento", "classe": "primary"}
-    from app.models.enums import SituacaoFinal
+def _situacao_por_oferta(aluno_id: int, turma_curso_id: int | None) -> dict:
+    """Situação do conselho FINAL da OFERTA (D5.4).
 
-    s = c.situacao_final
-    if s == SituacaoFinal.APROVADO:
+    Linhas legadas (oferta NULL) não são exibidas: caem em "Em andamento",
+    nunca herdando situação de outra oferta.
+    """
+    c = conselho_do_aluno(aluno_id, turma_curso_id, EtapaConselho.FINAL)
+    if not c or not c.situacao_final:
+        return {"label": "Em andamento", "classe": "primary"}
+
+    s = str(c.situacao_final)
+    if s == SituacaoFinal.APROVADO.value:
         return {"label": "Aprovado", "classe": "success"}
-    if s == SituacaoFinal.REPROVADO:
-        return {"label": "Reprovado", "classe": "danger"}
-    return {"label": str(s), "classe": "secondary"}
+    if s in (
+        SituacaoFinal.REPROVADO_POR_FALTA.value,
+        SituacaoFinal.EVADIDO.value,
+        SituacaoFinal.DESISTENTE.value,
+    ):
+        return {"label": s, "classe": "danger"}
+    return {"label": s, "classe": "secondary"}
 
 
 # =============================================================================
@@ -578,9 +647,12 @@ def _situacao_por_turma(aluno_id: int, turma_id: int) -> dict:
 def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
     periodo = turma.periodo_letivo
     semanas = semanas_do_periodo(periodo) if periodo else []
+    # D5.4/D5.5: a ficha é da INSCRIÇÃO (aluno × oferta) já resolvida na rota
+    # pelo seletor `?oferta_sel=` (M1) — aqui não há nova escolha.
+    oferta = inscricao.turma_curso if inscricao is not None else None
 
-    freq = _frequencia(aluno.id, turma, semanas)
-    cons = _conselho(aluno.id, turma, periodo)
+    freq = _frequencia(aluno.id, turma, semanas, oferta=oferta)
+    cons = _conselho(aluno.id, oferta=oferta)
 
     atendimentos = (
         Atendimento.query.filter_by(aluno_id=aluno.id)
@@ -593,12 +665,19 @@ def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
     endereco = perfil.get("endereco") or {}
     socio = perfil.get("socioeconomico") or {}
 
+    status = None
+    if periodo is not None:
+        status = status_alunos(
+            periodo_id=periodo.id, aluno_ids=[aluno.id]
+        ).get(aluno.id)
+
     return {
         "aluno": aluno,
         "turma": turma,
         "inscricao": inscricao,
+        "oferta": oferta,
         "periodo": periodo,
-        "identidade": _identidade(aluno, turma, inscricao),
+        "identidade": _identidade(aluno, turma, inscricao, status=status),
         "frequencia": freq,
         "conselho": cons,
         "atendimentos": atendimentos,

@@ -204,9 +204,28 @@ function exportTableToCSV(filename) {
     downloadLink.click();
 }
 
+// Token CSRF exposto pelo base.html (mesma fonte dos demais fetch do projeto).
+// Sem ele o POST JSON do fechamento leva 400 do CSRFProtect.
+function tokenCsrf() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? (meta.getAttribute('content') || '') : '';
+}
+
 // Salvar fechamento via AJAX
 function salvarFechamento() {
-    const rows = document.querySelectorAll("#tabelaDados tbody tr");
+    // D5.2: a tabela do fechamento é #tabelaFechamento (o seletor antigo
+    // #tabelaDados não existia na tela e o POST saía vazio) e o salvamento é
+    // POR OFERTA — a oferta em uso vem de data-oferta-id na própria tabela.
+    const tabela = document.getElementById('tabelaFechamento');
+    if (!tabela) return;
+
+    const ofertaId = tabela.getAttribute('data-oferta-id');
+    if (!ofertaId) {
+        alert("Selecione o curso (oferta) antes de salvar o fechamento.");
+        return;
+    }
+
+    const rows = tabela.querySelectorAll('tbody tr');
     const dadosParaSalvar = [];
 
     rows.forEach(row => {
@@ -229,10 +248,18 @@ function salvarFechamento() {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
+            "X-CSRFToken": tokenCsrf(),
         },
-        body: JSON.stringify({ dados: dadosParaSalvar })
+        body: JSON.stringify({ oferta_id: parseInt(ofertaId, 10), dados: dadosParaSalvar })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(response.status === 400
+                ? "Sessão expirada ou token de segurança inválido. Recarregue a página e tente novamente."
+                : "Erro HTTP " + response.status);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             alert("✅ Fechamento salvo com sucesso!");
@@ -242,6 +269,6 @@ function salvarFechamento() {
     })
     .catch(error => {
         console.error("Erro:", error);
-        alert("Erro na conexão com o servidor.");
+        alert("Erro ao salvar o fechamento: " + error.message);
     });
 }

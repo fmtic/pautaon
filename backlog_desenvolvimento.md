@@ -13,29 +13,37 @@
 - **M2:** `app/services/enturmacao.py`; desenturmar por oferta; `test_desenturmacao_oferta.py` (16). 278P.
 - **M4:** Guarda desativar_oferta; `cond_oferta_efetiva()`; `test_desativar_oferta.py` (13). 291P.
 - **L1:** Limpeza: `detalhe copy.html`, `_contagem_inscricoes_sem_curso`, “sem curso definido”, rodapé teste. A2 mantido. Sync MER + backlog.
+- **L2 (só docs):** M1/M1.1 restaurados e reescritos; MER §2 com os serviços atuais, §7.16 com a nota da transferência; “Pendências abertas” reorganizadas.
+- **D5.0:** Desenho do conselho por oferta (somente leitura): mapa do código, colunas/UNIQUE propostas, plano em duas migrations (D5-A aditiva, D5-B endurecimento) e decisões Q1/Q4/Q5. 291P.
+- **D5.1:** Migration `e5f6a7b8c9d0` (aditiva): `conselho_classe.turma_curso_id` nullable + FK RESTRICT; `uix_conselho_legado`/`uix_conselho_oferta` (parciais) e `ix_conselho_turma_curso`; remove a UNIQUE antiga; `turma_curso.conselho_concluido` + `avaliacao_*`; backfill só inequívoco. `tests/test_d5_schema.py` (6), `scripts/verificar_onda4_d5.py`, ensaio A–E. 297P.
+- **D5.2:** Escrita por oferta (lançamento, fechamento JSON com `situacao_final`/`proxima_turma_id` e catálogo `OpcaoProximaTurma`, avaliação coletiva em `turma_curso.avaliacao_*`); padrão M1 0/1/2+; ponte `Turma.conselho_concluido` em `alternar_conselho`. `tests/test_conselho_oferta.py`. 320P.
+- **D5.2b:** Quatro defeitos de tela (grade de lançamento, modal inerte, fechamento sem CSRF, select fora do enum). `tests/test_conselho_ui.py` (4). 324P.
+- **D5.3:** Encerramento/contagens por oferta: `turma_conselho_concluido()` (derivado), `contar_ofertas_conselho()`, painel/informações/métricas e certificado por oferta. `tests/test_d5_encerramento.py` (13). 337P.
+- **D5.4:** Leitores por oferta: `app/services/conselho_leitura.py` (lote, sem N+1); histórico, ficha 360°, painel por turma (`p.texto`), resultado do conselho e certificado; 5 bugs latentes pré-existentes corrigidos. `tests/test_d5_leitores.py` (12). **As leituras passaram a fechar por oferta — a restrição de publicação aberta na D5.2 foi encerrada aqui** (o relatório D5.4 ainda registrava “só fecha na D5.5”; com a D5.5 aplicada, escrita e leitura estão integralmente por oferta). 349P.
+- **B7:** `_montar_turma_linha` implementada na visão por período do painel pedagógico — a função era chamada desde `1c8604c` e **nunca existiu** (a rota respondia `NameError`); `ruff check app --select F821` limpo; `tests/test_painel_periodo.py` (3). 352P.
+- **D5.5:** Endurecimento: `f6a7b8c9d0e1` (pré-checagens (i)–(iv) num único `RuntimeError`, `turma_curso_id` NOT NULL, drop `uix_conselho_legado`, drop `turma.conselho_concluido`, downgrade com guarda/repopulação); modelos e ponte removidos; `ETAPA_PARA_CAMPO_AVALIACAO` único; órfãos (`periodos/conselhos.js`, `conselho/relatorio.html`, import `PerguntaConselho`); seção G bloqueante em `preparar_deploy_onda4.py`; seletor `?oferta_sel=` na ficha 360°; `tests/test_d5_endurecimento.py` (7); ensaio A–E. 359P.
 
-**Estado da suíte ao final de L1: 291 passed, 0 falhas.**
+**Estado da suíte ao final de L1: 291 passed, 0 falhas** (histórico). **Ao final da D5.5: 359 passed, 0 falhas.**
 
-### Pendências abertas (pós-L2)
+### Pendências abertas (pós-L3)
 
-- D5 conselho por oferta (decidido 24/10; implementação pendente; ver §12.18 do MER).
-- D3b-2/J3: leitores ainda por `turma_id` (ficha, BI freq, relatórios, certificados); J3 ainda não aplica `cond_inscricao_enturmada` em ALU-009/ALU-010 e o BI ainda lê `Turma.programa` em vez de `turma_curso.programa`.
-- Fases 5–7 Onda 4 (autorização por professor por oferta, centro de custo por oferta, transferências avançadas). Fases 8–9 e NOT NULL final (c3d4/d4e5) **concluídas**.
-- `turma_lixeira`: GET `/turmas/lixeira` renderiza `turma_lixeira.html` inexistente; não há rota para **reativar** turma desativada.
-- Onda 3C: dropar JSONs legados de `Aluno`.
-- Dívidas de migrations §11.1 (itens 2–6, 8).
-- Dump autêntico de produção para novo ensaio P1/B5 (B5-P2).
-- Duplicação `cond_oferta_efetiva` (M4 §12.13).
-- `ofertas.html` com lista de programas embutida (D6 §12.14).
-- `TurmaCurso.avisos_horario` transiente (D7 §12.15).
-- `conftest.py` único (P7 §12.16).
-- CLI Alembic pode não exibir mensagem do bloqueio em deploy (B5-P1 §12.17).
-- Turma sem oferta que lança frequência e depois ganha a **primeira oferta**: registros com `turma_curso_id` NULL deixam de aparecer na tela por oferta; relançar o mesmo dia cria **linha duplicada** (turmas novas já nascem com oferta — Etapa F; só afeta turmas sem curso).
-- Turma que **desativa todas as ofertas** deixa de mostrar, na tela legada, o histórico lançado por oferta.
-- Estatísticas do GET `/frequencia` (`core.py` ~L396–400) agregam oferta e legado **sem separar por oferta**.
-- `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
-- `Transferencia` (MER §7.16) **não registra a oferta de origem nem a de destino** — apenas `turma_origem_id`/`turma_destino_id`; decisão pendente sobre adicionar colunas `turma_curso_id_origem`/`_destino` ou manter rastreamento via `Inscricao`.
-- Frequencia/RegistroAula legados com `turma_curso_id IS NULL` ainda existem em produção (coluna nullable); backfill definitivo só na Fase 9 (fora do alcance das rotas atuais de leitura, que preservam `IS NULL` de propósito).
+- **D3b-2/J3 — frequência e relatórios ainda por `turma_id`:** frequência/diário do ramo legado (`app/utils/logica.py`, `app/utils/frequencia.py`), `Turma.freq_geral` (property que soma as ofertas), `Frequencia.agregar_por_turma` (painel pedagógico), BI de frequência (`frequencia_por_turma`/`frequencia_por_curso` e vizinhos em `bi_alunos.py`), `calcular_frequencias_relatorio` (relatórios) e `freq_geral` na listagem de turmas/BI. ALU-009/ALU-010 ainda não aplicam `cond_inscricao_enturmada`; o BI ainda lê `Turma.programa` (projeção) em vez de `turma_curso.programa`.
+  - Estatísticas do GET `/frequencia` (`app/registros/core.py`) agregam oferta e legado **sem separar por oferta**.
+  - `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
+- **Fases 5–7 da Onda 4 (a redefinir):** autorização por professor da oferta, turno e centro de custo por oferta, transferências avançadas. Fases 8–9 e NOT NULL final (`c3d4e5f6a7b8` + `d4e5f6a7b8c9`) **concluídas**.
+- **`Transferencia`:** decidir se a tabela passa a registrar a oferta de origem/destino (hoje só `turma_origem_id`/`turma_destino_id`; rastrear exige `Inscricao`).
+- **`turma_lixeira`:** GET `/turmas/lixeira` renderiza `turma_lixeira.html` inexistente; não há rota para **reativar** turma desativada.
+- **Frequencia/RegistroAula legados com `turma_curso_id IS NULL`:** backfill definitivo **sem fase designada** (a antiga Fase 9 tratava só do NOT NULL de `inscricoes`); as rotas atuais preservam `IS NULL` de propósito. Consequências: turma sem oferta que lança frequência e depois ganha a primeira oferta perde a visão por oferta e relançar o dia cria linha duplicada; turma que desativa todas as ofertas deixa de mostrar o histórico por oferta na tela legada.
+- **Dívida de migrations (§11.1, itens 2–6 e 8 do MER).**
+- **Dump autêntico** para um novo ensaio P1/B5 (não há produção real; o banco local veio de dump antigo — B5-P2).
+- **B5-P1 — corrigir `migrations/env.py`:** `flask db upgrade`/`flask_migrate.upgrade()` **engolem** o `RuntimeError` das checagens (passam por `catch_errors`, que faz `sys.exit(1)`) e o `fileConfig` do `env.py` desabilita os loggers; pendente `fileConfig(..., disable_existing_loggers=False)`. Até lá, a mensagem só aparece chamando `alembic.command.upgrade` direto (helper do ensaio D5.5).
+- **Teste manual no navegador:** fluxos de conselho (lançamento, fechamento com CSRF, avaliação coletiva, seletor de oferta da ficha 360°) e relatórios/painel — a suíte roda com CSRF desligado.
+- **`conftest.py` único (P7, MER §12.16).**
+- **Duplicação de `cond_oferta_efetiva` (M4, MER §12.13).**
+- **`ofertas.html` com lista de programas embutida (D6, MER §12.14).**
+- **`TurmaCurso.avisos_horario` transiente (D7, MER §12.15).**
+- **Onda 3C:** dropar os JSONs legados de `Aluno` (MER §10).
+- **Resíduos do conselho (MER §12.19–§12.24):** `Turma.avaliacao_*` (legado, remover após conferir dump autêntico), `turma_conselho_concluido()` sem leitor no código de aplicação, painel por período omite turma sem frequência lançada, `agregar_por_turma` agrega por `turma_id`, N+1 residual do histórico e CSRF/UX do fechamento sem teste de navegador.
 
 ---
 
@@ -228,7 +236,7 @@
 - **Fase 4 — frequência e diário por oferta:** migration `e7f3a1b9c4d5` (down_revision `8c4e1f9a7d32`) adiciona `turma_curso_id` (nullable FK) a `frequencia` e `registro_aula`, **substitui** o UNIQUE legado `uix_frequencia_aluno_turma_data` pelos índices únicos **parciais** `uix_freq_legado` (`aluno_id`,`turma_id`,`data` WHERE `turma_curso_id IS NULL`) e `uix_freq_oferta` (`aluno_id`,`turma_curso_id`,`data` WHERE NOT NULL), cria `ix_frequencia_turma_curso_data`/`ix_registro_aula_turma_curso_data` e faz backfill apenas em turmas com oferta única. Em `app/services/turma_curso.py`: `resolver_oferta_lancamento` (oferta única escolhida sem validação extra; 2+ ofertas exige escolha e valida vigência/dia/tema), `datas_esperadas_oferta` (agenda por oferta) e `_alunos_da_oferta` (pauta por oferta com `EXISTS`, sem duplicar aluno). Leitores/escritores em `app/utils/logica.py` (`salvar_frequencia`/`carregar_frequencias`), `app/utils/frequencia.py` (`contar_pendencias_frequencia`/`_pendencias_por_ofertas`), `app/main/dashboard_professor.py` (`_aulas_pendentes`) e rotas/templates (`core.py`, `turmas.py`, `lancar.html`, `imprimir_pauta.html`, `detalhe.html`, `professor.html`). Regra "turma em andamento" em `adicionar_oferta` (grava hoje quando a 2ª+ oferta entra em turma já iniciada e viva; flash na rota). "Hoje" local via `get_local_now().date()` nos caminhos novos.
 - **Fase 4 — correção do caminho legado:** `salvar_frequencia` e `carregar_frequencias`, no ramo legado (`turma_curso_id IS NULL`), passaram a filtrar `turma_curso_id IS NULL` em `Frequencia` e `RegistroAula`; assim um lançamento legado (turma sem oferta ativa) não reaproveita/sobrescreve a linha de uma oferta (mesmo `turma_id`/`data`). O ramo por oferta permanece inalterado.
 - **Fase 4 — testes e verificação:** `tests/test_turma_curso_fase4.py` (cenários a–i: resolver sem validação na oferta única, segunda oferta não sobrescreve, legado não duplica/não confunde com oferta, `_data_bate_dias_semana` com acento/variante, vigência/dia/tema no resolver, filtro de aluno fora da pauta, inscrições NULL com 1 vs 2+ ofertas) e `tests/test_turma_curso_fase4_dash.py`; `scripts/verificar_onda4_fase4.py` (só leitura, exit 0/1: colunas, índices únicos parciais, ausência do UNIQUE antigo, FKs, ofertas inconsistentes, turmas 2+ sem principal). Suíte completa: **155 aprovados**, apenas as 2 falhas preexistentes de `/cursos`.
-- **Pendências da Onda 4 (registro histórico de 22/10; status atualizado na L2):** Fases 5–7 — autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), certificados/indicadores (§12). **Fases 8–9 e NOT NULL final em `inscricoes.turma_curso_id` aplicadas** (`c3d4e5f6a7b8` T1 + `d4e5f6a7b8c9` B5). **D5 conselho — decidido em 24/10/2026** (implementação pendente; ver §12.18 do MER). **D3b-2:** ficha do aluno, BI de frequência/diário, `freq_geral` (listagem de turmas e BI), relatórios e histórico ainda leem por `turma_id`. Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). **Consequência da correção do legado:** `carregar_frequencias` no caminho legado passou a filtrar `turma_curso_id IS NULL`; registros de ofertas desativadas não aparecem na tela legada. Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
+- **Pendências da Onda 4 (registro histórico de 22/10; status atualizado na L3):** Fases 5–7 — autorização por professor ofertado (§8), turno por curso e centro de custo compartilhado/individual (§9), transferências por oferta (§10), certificados/indicadores (§12). **Fases 8–9 e NOT NULL final em `inscricoes.turma_curso_id` aplicadas** (`c3d4e5f6a7b8` T1 + `d4e5f6a7b8c9` B5). **D5 conselho — CONCLUÍDO (D5.1–D5.5, 24–25/10/2026)**; ver §8.2/§12.18 do MER. **D3b-2 (reduzido):** ficha do aluno e histórico já são por oferta (D5.4); permanecem por `turma_id` a frequência/diário do ramo legado, o BI de frequência, `freq_geral` (listagem de turmas e BI) e os relatórios. Com 2+ ofertas a ficha da turma deixou de oferecer a **pauta mensal** (só "Pauta Completa" por oferta). Resta um `date.today()` em `app/main/dashboard_professor.py` (~linha 123, `render_dashboard_professor`). **Consequência da correção do legado:** `carregar_frequencias` no caminho legado passou a filtrar `turma_curso_id IS NULL`; registros de ofertas desativadas não aparecem na tela legada. Colunas legadas de `Turma` mantidas com compatibilidade controlada (§14).
 
 ### Arquivos principais
 
@@ -338,7 +346,7 @@ Implementação completa da exibição de carga horária calculada em tempo real
 ### Correção de bug — Colunas de auditoria ausentes em `inscricoes`, `curso` e `conselho_classe`
 
 - **Sintoma:** `sqlalchemy.exc.ProgrammingError: coluna inscricoes.updated_by_id não existe` ao tentar enturmar um aluno.
-- **Causa raiz:** A migration `a9f3c8e2d1b7` (`add_audit_columns_core_tables`) nunca foi executada contra o banco de dados restaurado do dump de produção. O registro em `alembic_version` apontava para `c4d5e6f7a8b9` (filho de `a9f3c8e2d1b7`), fazendo o Alembic acreditar que a migration já estava aplicada — mas as colunas não existiam de fato.
+- **Causa raiz:** A migration `a9f3c8e2d1b7` (`add_audit_columns_core_tables`) nunca foi executada contra o banco de dados restaurado de dump antigo. O registro em `alembic_version` apontava para `c4d5e6f7a8b9` (filho de `a9f3c8e2d1b7`), fazendo o Alembic acreditar que a migration já estava aplicada — mas as colunas não existiam de fato.
 - **Diagnóstico:** Inspecionadas as colunas reais da tabela `inscricoes` via `SQLAlchemy.inspect`; confirmado que `updated_by_id`, `updated_by_name` e `updated_at` estavam ausentes. Mesma situação detectada em `curso` e `conselho_classe`; `turma`, `tema_aula` e `registro_aula` já estavam corretas.
 - **Correção aplicada:** Script pontual executou `ALTER TABLE … ADD COLUMN` diretamente no banco para as três tabelas afetadas, replicando exatamente o DDL da migration:
   - `updated_by_id INTEGER REFERENCES "user"(id) ON DELETE SET NULL`
@@ -381,7 +389,7 @@ Refatoração visual da interface, ajustes no planejamento pedagógico e criaç�
 
 `app/main/home.py`, `app/templates/termos/termos_servico.html`, `app/templates/termos/politica_privacidade.html`, `app/templates/login.html`, `app/templates/admin/painel_admin.html`, `app/templates/dashboard/{index,professor,secretaria}.html`, `app/templates/relatorios/{geral,relatorio_alunos}.html`, `app/templates/conselho/perguntas.html`, `app/planejamento` (templates/JS/CSS de planejamento e impressão de temas), `app/registros/core.py` e `app/registros/periodos.py`.
 
-### Injeção do backup de produção no ambiente local (operação)
+### Injeção do backup antigo no ambiente local (operação)
 
 - Restaurado o dump `backup_20261020_204018.sql` (pg_dump 17.2) no PostgreSQL local (servidor 18.6), banco `pautaon`.
 - Como o dump não traz `DROP`/`CREATE DATABASE`, o banco foi recriado vazio antes do import (`DROP`/`CREATE DATABASE pautaon`), executado com `ON_ERROR_STOP=1` e seguido de `ANALYZE`.
@@ -424,7 +432,7 @@ Refatoração visual da interface, ajustes no planejamento pedagógico e criaç�
 - Sucesso no envio também é registrado em `LogAcao` com `acao="Disparo de E-mail"`.
 - Rota de teste criada: `GET /main/teste-email?para=...` (`app/main/rota_disparo_email.py`) para validar a integração SMTP fora do fluxo de cadastro/reset, respondendo em JSON.
 - O contexto do usuário atual (`id`/`nome`/`unidade_id`/IP) é capturado ANTES de abrir a thread (dentro do request ativo), pois `current_user`/`request` não existem fora do contexto de requisição — evita repetir o mesmo tipo de erro já documentado no listener de auditoria.
-- Pendência de deploy: `Flask-Mail==0.10.0` está instalado no `.venv` local, mas ainda não foi adicionado ao `requirements.txt` — precisa entrar antes de um novo deploy em produção, senão o `import flask_mail` falhará no servidor.
+- Pendência de deploy: `Flask-Mail==0.10.0` está instalado no `.venv` local, mas ainda não foi adicionado ao `requirements.txt` — precisa entrar antes de um novo deploy, senão o `import flask_mail` falhará no servidor.
 - Status: ainda não commitado (working tree) — `app/utils/disparo_email.py`, `app/main/rota_disparo_email.py` e `app/templates/emails/` constam como não rastreados no `git status`; `app/auth.py`, `config.py`, `app/extensions.py`, `app/__init__.py` e `app/main/__init__.py` estão modificados aguardando commit.
 
 ### Arquivos principais (neste acréscimo)
@@ -470,7 +478,7 @@ Esta atualização inclui:
 
 Este complemento resolve a pendência descrita acima e acrescenta ajustes de paridade/robustez encontrados durante a revisão. Para aplicar em outro repositório, siga os passos abaixo após conferir se os arquivos daquele repositório já receberam a primeira parte da funcionalidade.
 
-### Corrigido no repositório em produção
+### Corrigido no repositório (checkout local)
 
 A correção aplicada neste checkout foi a seguinte:
 

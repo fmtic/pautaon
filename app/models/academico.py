@@ -96,7 +96,9 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
 
     Regras:
         - `dias_semana` é uma string CSV (ex.: "Segunda,Quarta,Sexta").
-        - `conselho_concluido` é o flag que libera o encerramento da turma.
+        - O encerramento do conselho NÃO vive na turma: desde a D5.5 ele é da
+          OFERTA (`turma_curso.conselho_concluido`) e a turma é DERIVADA em
+          leitura.
         - `carga_horaria_aula` e `carga_horaria_total` são inteiros em MINUTOS.
           Use `formatar_ch()` de `app.utils.formatters` para exibição legível.
     """
@@ -130,10 +132,11 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         'User', foreign_keys=[professor_id], backref='turmas_vinculadas'
     )
 
+    # LEGADO: parecer coletivo agora em turma_curso.avaliacao_*; remover após
+    # conferir dump autêntico (decisão D5.5 — nenhuma leitura/escrita nova).
     avaliacao_inicial: str = db.Column(db.Text)
     avaliacao_percurso: str = db.Column(db.Text)
     avaliacao_final: str = db.Column(db.Text)
-    conselho_concluido: bool = db.Column(db.Boolean, default=False, nullable=False)
 
     conselhos = db.relationship('ConselhoClasse', backref='turma', lazy=True)
 

@@ -1,4 +1,4 @@
-"""Diagnóstico de PREPARAÇÃO DE DEPLOY — Onda 4 (c3d4e5f6a7b8 + d4e5f6a7b8c9).
+"""Diagnóstico de PREPARAÇÃO DE DEPLOY — Onda 4 (c3d4e5f6a7b8 + d4e5f6a7b8c9 + f6a7b8c9d0e1).
 
 Uso:
     python scripts/preparar_deploy_onda4.py
@@ -31,6 +31,13 @@ O que é medido (o enunciado do ensaio de upgrade):
         a criação do índice único parcial `uix_inscricao_ativa_aluno_oferta`.
     E. Inscrições apontando para oferta de OUTRA turma (inconsistência que a
         migration não corrige, mas que quebra os leitores por oferta).
+    F. Conselho × oferta (D5.1) — informativo.
+    G. Endurecimento D5.5 (f6a7b8c9d0e1) — BLOQUEIA enquanto a migration não
+        foi aplicada: (i) conselho sem oferta (turma_curso_id NULL);
+        (ii) duplicatas (turma_curso_id, aluno_id, etapa); (iii) conselho com
+        turma_id divergente da turma da oferta; (iv) turma com o flag legado
+        `conselho_concluido = true` e ofertas ativas pendentes. Depois de
+        aplicada, a seção G só confirma o estado final.
 
 Padrão copied from scripts/verificar_onda4_fase4.py.
 """
@@ -78,6 +85,17 @@ def _colunas_insp(insp, tabela: str) -> set[str]:
         return set()
 
 
+def _nullable_insp(insp, tabela: str, coluna: str) -> bool | None:
+    """NULLABLE da coluna (True/False) ou None se tabela/coluna não existem."""
+    try:
+        for c in insp.get_columns(tabela):
+            if c["name"] == coluna:
+                return bool(c.get("nullable"))
+    except Exception:
+        return None
+    return None
+
+
 def _tabula(titulo: str) -> None:
     print(f"    {titulo}")
 
@@ -89,7 +107,7 @@ def _fmt(row, chaves) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Diagnóstico somente-leitura de preparação para as "
-        "migrations c3d4e5f6a7b8 e d4e5f6a7b8c9.",
+        "migrations c3d4e5f6a7b8, d4e5f6a7b8c9 e f6a7b8c9d0e1.",
     )
     parser.add_argument("--db", help="nome do banco (mantém credenciais/host do .env)")
     parser.add_argument("--dsn", help="URL SQLAlchemy completa do banco-alvo")
@@ -547,10 +565,170 @@ def main() -> int:
                     else:
                         _linha("OK", "nenhum conselho com turma_curso_id NULL")
 
+            # ------------------------------------------------------------------
+            # G. Endurecimento D5.5 (f6a7b8c9d0e1) — BLOQUEIA enquanto a
+            #    migration não foi aplicada. Depois de aplicada, só confirma o
+            #    estado final (turma_curso_id NOT NULL e sem a coluna da turma).
+            # ------------------------------------------------------------------
+            print("\n--- G. endurecimento D5.5 (f6a7b8c9d0e1) — bloqueio ---")
+            if "conselho_classe" not in tabelas:
+                _linha("AVISO", "tabela conselho_classe ausente; checagem pulada")
+            else:
+                cols_cc_g = _colunas_insp(insp, "conselho_classe")
+                cols_turma_g = _colunas_insp(insp, "turma")
+                nullable_cc = _nullable_insp(
+                    insp, "conselho_classe", "turma_curso_id"
+                )
+                if "turma_curso_id" not in cols_cc_g:
+                    _linha(
+                        "AVISO",
+                        "conselho_classe.turma_curso_id ausente — e5f6a7b8c9d0 "
+                        "ainda não aplicada; nada a bloquear nesta seção",
+                    )
+                elif nullable_cc is False and "conselho_concluido" not in cols_turma_g:
+                    _linha(
+                        "OK",
+                        "D5.5 aplicada (turma_curso_id NOT NULL e sem "
+                        "turma.conselho_concluido) — nenhum bloqueio de endurecimento",
+                    )
+                else:
+                    # (i) conselho sem oferta
+                    n_null = conn.execute(
+                        text(
+                            "SELECT count(*) FROM conselho_classe "
+                            "WHERE turma_curso_id IS NULL"
+                        )
+                    ).scalar() or 0
+                    if n_null:
+                        n_concl_null = conn.execute(
+                            text(
+                                "SELECT count(*) FROM conselho_classe "
+                                "WHERE turma_curso_id IS NULL AND "
+                                "(concluido OR situacao_final IS NOT NULL)"
+                            )
+                        ).scalar() or 0
+                        ids_null = [
+                            str(row[0]) for row in conn.execute(
+                                text(
+                                    "SELECT id FROM conselho_classe "
+                                    "WHERE turma_curso_id IS NULL "
+                                    "ORDER BY id LIMIT 20"
+                                )
+                            )
+                        ]
+                        bloqueios += _linha(
+                            "FALHA",
+                            f"(i) {n_null} conselho(s) sem oferta "
+                            f"({n_concl_null} concluído(s)/com situação) — "
+                            f"primeiros ids: {', '.join(ids_null)} "
+                            "(detalhe: scripts/verificar_onda4_d5.py)",
+                        )
+                    else:
+                        _linha("OK", "(i) nenhum conselho sem oferta")
+
+                    # (ii) duplicatas por (oferta, aluno, etapa)
+                    dup = conn.execute(
+                        text(
+                            "SELECT turma_curso_id, aluno_id, etapa, count(*) AS n "
+                            "FROM conselho_classe WHERE turma_curso_id IS NOT NULL "
+                            "GROUP BY turma_curso_id, aluno_id, etapa "
+                            "HAVING count(*) > 1 "
+                            "ORDER BY turma_curso_id, aluno_id, etapa"
+                        )
+                    ).mappings().all()
+                    if dup:
+                        chaves = "; ".join(
+                            f"(oferta={r['turma_curso_id']}, aluno={r['aluno_id']}, "
+                            f"etapa={r['etapa']}) x{r['n']}"
+                            for r in dup[:MAX_LINHAS]
+                        )
+                        bloqueios += _linha(
+                            "FALHA",
+                            f"(ii) {len(dup)} grupo(s) (turma_curso_id, aluno_id, "
+                            f"etapa) com conselhos duplicados: {chaves}",
+                        )
+                    else:
+                        _linha("OK", "(ii) nenhuma duplicata por (oferta, aluno, etapa)")
+
+                    # (iii) turma do conselho ≠ turma da oferta
+                    cruz_cc = conn.execute(
+                        text(
+                            "SELECT cc.id, cc.aluno_id, cc.turma_id, "
+                            "  cc.turma_curso_id, tc.turma_id AS turma_da_oferta "
+                            "FROM conselho_classe cc "
+                            "JOIN turma_curso tc ON tc.id = cc.turma_curso_id "
+                            "WHERE tc.turma_id <> cc.turma_id ORDER BY cc.id"
+                        )
+                    ).mappings().all()
+                    if cruz_cc:
+                        chaves = "; ".join(
+                            f"conselho={r['id']} (turma={r['turma_id']} × "
+                            f"oferta {r['turma_curso_id']} da turma "
+                            f"{r['turma_da_oferta']})"
+                            for r in cruz_cc[:MAX_LINHAS]
+                        )
+                        bloqueios += _linha(
+                            "FALHA",
+                            f"(iii) {len(cruz_cc)} conselho(s) com turma_id "
+                            f"divergente da turma da oferta: {chaves}",
+                        )
+                    else:
+                        _linha(
+                            "OK",
+                            "(iii) todo conselho aponta para oferta da própria turma",
+                        )
+
+                    # (iv) flag legado da turma sem equivalente por oferta
+                    if "conselho_concluido" in cols_turma_g:
+                        div = conn.execute(
+                            text(
+                                "SELECT t.id, t.nome, "
+                                "  (SELECT count(*) FROM turma_curso tc "
+                                "     WHERE tc.turma_id = t.id AND tc.ativo) AS ativas, "
+                                "  (SELECT count(*) FROM turma_curso tc "
+                                "     WHERE tc.turma_id = t.id AND tc.ativo "
+                                "       AND tc.conselho_concluido) AS concluidas "
+                                "FROM turma t "
+                                "WHERE t.conselho_concluido IS TRUE "
+                                "  AND EXISTS (SELECT 1 FROM turma_curso tc "
+                                "              WHERE tc.turma_id = t.id AND tc.ativo) "
+                                "  AND EXISTS (SELECT 1 FROM turma_curso tc "
+                                "              WHERE tc.turma_id = t.id AND tc.ativo "
+                                "                AND NOT tc.conselho_concluido) "
+                                "ORDER BY t.id"
+                            )
+                        ).mappings().all()
+                        if div:
+                            chaves = "; ".join(
+                                f"turma={r['id']} ({r['nome']}: "
+                                f"{r['concluidas']}/{r['ativas']} ofertas ativas "
+                                "concluídas)"
+                                for r in div[:MAX_LINHAS]
+                            )
+                            bloqueios += _linha(
+                                "FALHA",
+                                f"(iv) {len(div)} turma(s) com "
+                                f"conselho_concluido=true e ofertas pendentes: {chaves}",
+                            )
+                        else:
+                            _linha(
+                                "OK",
+                                "(iv) nenhuma turma com flag legado divergente das ofertas",
+                            )
+                    else:
+                        _linha(
+                            "OK",
+                            "(iv) coluna turma.conselho_concluido já removida; "
+                            "não se aplica",
+                        )
+
     if bloqueios:
         print(f"\n{bloqueios} checagem(ns) com FALHA — há limpeza obrigatória antes do upgrade.")
         return 1
-    print("\nOK: nenhum bloqueio para c3d4e5f6a7b8 e d4e5f6a7b8c9 neste banco.")
+    print(
+        "\nOK: nenhum bloqueio para c3d4e5f6a7b8, d4e5f6a7b8c9 e "
+        "f6a7b8c9d0e1 neste banco."
+    )
     return 0
 
 

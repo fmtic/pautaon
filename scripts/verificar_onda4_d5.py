@@ -1,5 +1,5 @@
 """
-Verificação da Onda 4 — D5.1 (esquema aditivo do conselho por oferta).
+Verificação da Onda 4 — conselho por oferta (D5.1 → D5.5).
 
 Uso (com o banco de destino ativo via .env):
     python scripts/verificar_onda4_d5.py
@@ -8,26 +8,33 @@ Uso (com o banco de destino ativo via .env):
 Somente LEITURA: nenhum INSERT/UPDATE/DELETE. Uma linha OK/FALHA/AVISO por
 checagem. Exit code 0 = estrutura íntegra e nenhuma inconsistência grave;
 1 = falha estrutural, duplicatas (c) ou vínculo cruzado (g). Checagens
-marcadas como AVISO (a/b/d/e/f) não impactam o código de saída.
+marcadas como AVISO (a/b/d/e/f e o estado intermediário D5.1) não impactam o
+código de saída.
 
-Depois de `flask db upgrade` (head e5f6a7b8c9d0), confere:
-    1. Estrutura: colunas novas (conselho_classe.turma_curso_id;
-       turma_curso.conselho_concluido/avaliacao_*), FK PG, índices únicos
-       parciais uix_conselho_legado/uix_conselho_oferta, ix_conselho_turma_curso
-       e a AUSÊNCIA da constraint antiga uix_conselho_turma_aluno_etapa.
+Funciona ANTES e DEPOIS de `flask db upgrade` (head f6a7b8c9d0e1):
+    Estrutura (D5.1 → D5.5):
+      - colunas `conselho_classe.turma_curso_id` e
+        `turma_curso.conselho_concluido/avaliacao_*`;
+      - FK PG, índice de apoio ix_conselho_turma_curso e o índice único
+        uix_conselho_oferta;
+      - `turma_curso_id` NULLABLE (D5.5 pendente) × NOT NULL (D5.5 aplicada);
+      - `uix_conselho_legado` e `turma.conselho_concluido` PRESENTES (estado
+        D5.1) × AUSENTES (estado D5.5);
+      - ausência da constraint antiga `uix_conselho_turma_aluno_etapa`.
     Dados (itens do desenho D5.0/D5.1):
-       (a) conselhos com turma_curso_id NULL, classificados em
-           "2+ OFERTAS" (aluno inscrito em 2+ ofertas da turma),
-           "TURMA SEM OFERTA" e "SEM INSCRICAO" (AVISO);
-       (b) quantos desses estão concluídos ou com situacao_final
-           (prioridade máxima de revisão manual) (AVISO);
-       (c) duplicatas que violariam uix_conselho_oferta (FALHA);
-       (d) divergência turma.conselho_concluido × ofertas (AVISO);
-       (e) turmas com 2+ ofertas ativas e avaliacao_* legado preenchido
-           (parecer coletivo sem dono por oferta) (AVISO);
-       (f) ConselhoResposta com aluno_id NULL (respostas coletivas legadas):
-           quantidade por turma e etapa (AVISO, quantifica);
-       (g) conselhos cujo turma_id difere do turma_id da oferta (FALHA).
+      (a) conselhos com turma_curso_id NULL, classificados em
+          "2+ OFERTAS" (aluno inscrito em 2+ ofertas da turma),
+          "TURMA SEM OFERTA" e "SEM INSCRICAO" (AVISO; bloqueia a D5.5);
+      (b) quantos desses estão concluídos ou com situacao_final
+          (prioridade máxima de revisão manual) (AVISO);
+      (c) duplicatas que violariam uix_conselho_oferta (FALHA);
+      (d) divergência turma.conselho_concluido × ofertas (AVISO; só roda
+          enquanto a coluna da turma existir);
+      (e) turmas com 2+ ofertas ativas e avaliacao_* legado preenchido
+          (parecer coletivo sem dono por oferta) (AVISO);
+      (f) ConselhoResposta com aluno_id NULL (respostas coletivas legadas):
+          quantidade por turma e etapa (AVISO, quantifica);
+      (g) conselhos cujo turma_id difere do turma_id da oferta (FALHA).
 
 Padrão copied from scripts/verificar_onda4_fase4.py; --db/--dsn de
 scripts/preparar_deploy_onda4.py.
@@ -112,6 +119,21 @@ def main() -> int:
 
             if "turma_curso_id" in cols_cc:
                 _linha("OK", "coluna conselho_classe.turma_curso_id presente")
+                nullable_cc = next(
+                    c.get("nullable") for c in insp.get_columns("conselho_classe")
+                    if c["name"] == "turma_curso_id"
+                )
+                if nullable_cc:
+                    _linha(
+                        "AVISO",
+                        "conselho_classe.turma_curso_id ainda é NULLABLE — "
+                        "f6a7b8c9d0e1 (D5.5) não aplicada (estado D5.1)",
+                    )
+                else:
+                    _linha(
+                        "OK",
+                        "conselho_classe.turma_curso_id NOT NULL (D5.5 aplicada)",
+                    )
             else:
                 falhas += _linha(
                     "FALHA", "coluna conselho_classe.turma_curso_id AUSENTE "
@@ -124,21 +146,33 @@ def main() -> int:
                 else:
                     falhas += _linha("FALHA", f"coluna turma_curso.{nome} AUSENTE")
 
+            cols_turma = {c["name"] for c in insp.get_columns("turma")}
+            if "conselho_concluido" in cols_turma:
+                _linha(
+                    "AVISO",
+                    "coluna turma.conselho_concluido presente — f6a7b8c9d0e1 "
+                    "(D5.5) ainda não aplicada (será removida)",
+                )
+            else:
+                _linha(
+                    "OK",
+                    "coluna turma.conselho_concluido removida (D5.5 aplicada)",
+                )
+
             idx_cc = {i["name"]: i for i in insp.get_indexes("conselho_classe") if i.get("name")}
-            for nome in ("uix_conselho_legado", "uix_conselho_oferta"):
-                info = idx_cc.get(nome)
-                if info and info.get("unique"):
-                    extra = ""
-                    if is_pg and nome == "uix_conselho_legado":
-                        d = conn.execute(
-                            text("SELECT indexdef FROM pg_indexes WHERE tablename='conselho_classe' "
-                                 "AND indexname='uix_conselho_legado'")
-                        ).scalar() or ""
-                        if "where" not in d.lower():
-                            extra = " (AVISO: sem WHERE parcial?)"
-                    _linha("OK", f"{nome} presente e único{extra}")
-                else:
-                    falhas += _linha("FALHA", f"{nome} ausente ou não-único")
+            info = idx_cc.get("uix_conselho_oferta")
+            if info and info.get("unique"):
+                _linha("OK", "uix_conselho_oferta presente e único (UNIQUE por oferta)")
+            else:
+                falhas += _linha("FALHA", "uix_conselho_oferta ausente ou não-único")
+            if "uix_conselho_legado" in idx_cc:
+                _linha(
+                    "AVISO",
+                    "uix_conselho_legado presente — f6a7b8c9d0e1 (D5.5) ainda "
+                    "não aplicada (será removido)",
+                )
+            else:
+                _linha("OK", "uix_conselho_legado ausente (ramo legado encerrado)")
 
             if "ix_conselho_turma_curso" in idx_cc:
                 _linha("OK", "ix_conselho_turma_curso presente")
@@ -263,8 +297,9 @@ def main() -> int:
             # (d) divergência turma.conselho_concluido × ofertas
             # ---------------------------------------------------------------
             print("\n--- (d) turma.conselho_concluido × ofertas ativas ---")
-            div = conn.execute(
-                text(
+            div = (
+                conn.execute(
+                    text(
                     "SELECT t.id, t.nome, t.conselho_concluido, "
                     "  (SELECT count(*) FROM turma_curso tc "
                     "     WHERE tc.turma_id = t.id AND tc.ativo) AS ofertas_ativas, "
@@ -278,8 +313,11 @@ def main() -> int:
                     "       AND NOT EXISTS (SELECT 1 FROM turma_curso tc "
                     "        WHERE tc.turma_id = t.id AND tc.ativo AND NOT tc.conselho_concluido)) "
                     "ORDER BY t.id"
-                )
-            ).mappings().all()
+                    )
+                ).mappings().all()
+                if "conselho_concluido" in cols_turma
+                else []
+            )
             if div:
                 _linha(
                     "AVISO",
@@ -294,7 +332,17 @@ def main() -> int:
                             f"{r['ofertas_ativas']} | {r['ofertas_concluidas']}"
                         )
             else:
-                _linha("OK", "flag legado × ofertas das turmas consistentes (ou ambos falsos)")
+                if "conselho_concluido" in cols_turma:
+                    _linha(
+                        "OK",
+                        "flag legado × ofertas das turmas consistentes (ou ambos falsos)",
+                    )
+                else:
+                    _linha(
+                        "OK",
+                        "coluna turma.conselho_concluido removida (D5.5 "
+                        "aplicada); sem flag legado a comparar",
+                    )
 
             # ---------------------------------------------------------------
             # (e) turmas 2+ ofertas com avaliacao_* legado preenchido
@@ -393,7 +441,7 @@ def main() -> int:
     if falhas:
         print(f"\n{falhas} checagem(ens) com FALHA.")
         return 1
-    print("\nOK: estrutura e integridade do esquema D5.1 íntegros.")
+    print("\nOK: estrutura e integridade do conselho por oferta (D5.1/D5.5) íntegras.")
     return 0
 
 

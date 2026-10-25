@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-
 from app.models import Aluno, Inscricao, Turma
 
-from . import coorte, conselho, frequencia
-from .frequencia import FrequenciaTurma
+from . import conselho, frequencia
 from .formatacao import (
     celulas_semanais,
     classe_tendencia,
@@ -16,6 +13,7 @@ from .formatacao import (
     fmt_pct,
     larguras_faixas,
 )
+from .frequencia import FrequenciaTurma
 from .helpers import (
     faixa,
     faixas_alunos,
@@ -62,6 +60,7 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
             "conselho": {},
             "conselho_etapas": [],
             "conselho_agregado": {},
+            "conselho_ofertas": [],
         }
 
     semanas = semanas_do_periodo(periodo)
@@ -132,6 +131,15 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
         "conselho": cons,
         "conselho_etapas": conselho.etapas(cons),
         "conselho_agregado": conselho.agregar_respostas(cons),
+        # D5.4: conselho agregado POR OFERTA (rótulo "Turma — Curso").
+        "conselho_ofertas": [
+            {
+                "rotulo": oferta_bloco["rotulo"],
+                "etapas": conselho.etapas(oferta_bloco),
+                "agregado": conselho.agregar_respostas(oferta_bloco),
+            }
+            for oferta_bloco in cons.get("ofertas", [])
+        ],
     }
 
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_
+from sqlalchemy.orm import joinedload
 
 from app.database import db
 from app.models import (
@@ -51,6 +52,127 @@ def ofertas_ativas(turma_id: int):
         .order_by(TurmaCurso.id)
         .all()
     )
+
+
+def turma_conselho_concluido(turma_ou_id) -> bool:
+    """Encerramento DERIVADO do conselho da turma (D5.3).
+
+    Verdadeiro somente quando a turma tem **ao menos uma oferta ativa** e
+    **todas** as ofertas ativas estão com `TurmaCurso.conselho_concluido`.
+    O encerramento é manual e por oferta (`alternar_conselho`); a turma é
+    derivada. Turma sem oferta ativa não abre conselho e não é considerada
+    concluída (fica fora das contagens). Não lê `Turma.conselho_concluido` —
+    a coluna permanece apenas como ponte de escrita até a D5.5.
+    """
+    turma_id = turma_ou_id.id if isinstance(turma_ou_id, Turma) else turma_ou_id
+    if turma_id is None:
+        return False
+    flags = [
+        bool(flag)
+        for (flag,) in (
+            db.session.query(TurmaCurso.conselho_concluido)
+            .filter(
+                TurmaCurso.turma_id == turma_id,
+                TurmaCurso.ativo.is_(True),
+            )
+            .all()
+        )
+    ]
+    return bool(flags) and all(flags)
+
+
+def contar_ofertas_conselho(unidade_id=None) -> tuple[int, int]:
+    """(concluídas, total) de ofertas ativas de turmas ativas (D5.3).
+
+    Turma sem oferta ativa não entra em nenhum dos dois lados; a unidade é
+    aplicada quando informada (mesma regra dos demais contadores).
+    """
+    query = (
+        db.session.query(TurmaCurso.conselho_concluido)
+        .join(Turma, Turma.id == TurmaCurso.turma_id)
+        .filter(TurmaCurso.ativo.is_(True), Turma.ativo.is_(True))
+    )
+    if unidade_id:
+        query = query.filter(Turma.unidade_id == unidade_id)
+    flags = [bool(flag) for (flag,) in query.all()]
+    return sum(flags), len(flags)
+
+
+def alunos_ativos_por_oferta(oferta_ids) -> dict[int, int]:
+    """Contagem de alunos ativos por oferta em uma única consulta."""
+    ids = [oferta_id for oferta_id in oferta_ids if oferta_id is not None]
+    if not ids:
+        return {}
+    linhas = (
+        db.session.query(
+            Inscricao.turma_curso_id,
+            func.count(func.distinct(Inscricao.aluno_id)),
+        )
+        .filter(
+            Inscricao.turma_curso_id.in_(ids),
+            Inscricao.ativo.is_(True),
+        )
+        .group_by(Inscricao.turma_curso_id)
+        .all()
+    )
+    return {oferta_id: total for oferta_id, total in linhas}
+
+
+def ofertas_do_painel_conselho(
+    unidade_id=None,
+    *,
+    programa=None,
+    turno=None,
+    professor_id=None,
+) -> list[dict]:
+    """Uma entrada por OFERTA ativa de turma ativa para o painel do conselho.
+
+    Cada item traz `oferta`, `turma`, `curso`, `professor`, `programa`,
+    `turno`, `concluida` (flag da OFERTA) e `alunos_ativos`. Turma sem oferta
+    ativa simplesmente não aparece. Turma, curso e professor vêm por
+    `joinedload` e a contagem de alunos em uma única agregação — sem N+1 na
+    listagem.
+    """
+    query = (
+        TurmaCurso.query
+        .join(Turma, Turma.id == TurmaCurso.turma_id)
+        .join(Curso, Curso.id == TurmaCurso.curso_id)
+        .options(
+            joinedload(TurmaCurso.turma),
+            joinedload(TurmaCurso.curso),
+            joinedload(TurmaCurso.professor),
+        )
+        .filter(TurmaCurso.ativo.is_(True), Turma.ativo.is_(True))
+    )
+    if unidade_id:
+        query = query.filter(Turma.unidade_id == unidade_id)
+    if programa and programa != "Todos":
+        query = query.filter(Turma.programa == programa)
+    if turno and turno != "Todos":
+        query = query.filter(Turma.turno == turno)
+    if professor_id:
+        query = query.filter(
+            or_(
+                TurmaCurso.professor_id == professor_id,
+                Turma.professor_id == professor_id,
+            )
+        )
+
+    ofertas = query.order_by(Turma.ordenacao, Turma.nome, TurmaCurso.id).all()
+    contagens = alunos_ativos_por_oferta([oferta.id for oferta in ofertas])
+    return [
+        {
+            "oferta": oferta,
+            "turma": oferta.turma,
+            "curso": oferta.curso,
+            "professor": oferta.professor or oferta.turma.professor,
+            "programa": oferta.programa or oferta.turma.programa,
+            "turno": oferta.turno or oferta.turma.turno,
+            "concluida": bool(oferta.conselho_concluido),
+            "alunos_ativos": contagens.get(oferta.id, 0),
+        }
+        for oferta in ofertas
+    ]
 
 
 def turma_tem_historico(turma_id: int) -> bool:

@@ -14,7 +14,6 @@ from app.models import (
     Frequencia,
     Inscricao,
     Nivel,
-    PerguntaConselho,
     PerfilDiversidade,
     PeriodoLetivo,
     RegistroAula,
@@ -987,7 +986,6 @@ def ver_turma(id):
         alunos_disponiveis = alunos_disponiveis.order_by(Aluno.nome).all()
     else:
         alunos_disponiveis = []
-    perguntas = PerguntaConselho.query.order_by(PerguntaConselho.id).all()
     alunos_ativos_count = (
         Aluno.query.join(Inscricao)
         .filter(Inscricao.turma_id == id, Inscricao.ativo == True, Aluno.ativo == True)
@@ -1018,7 +1016,6 @@ def ver_turma(id):
         alunos_por_oferta.setdefault(inscricao.turma_curso_id, []).append(inscricao)
     return render_template(
         "turmas/detalhe.html",
-        perguntas=perguntas,
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
         niveis_cadastrados=niveis_cadastrados,
