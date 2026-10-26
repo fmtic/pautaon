@@ -225,12 +225,21 @@ def gerar_datas(
     if not turma or not turma.data_inicio or not turma.data_fim:
         return datas
 
-    mapa_dias = {
-        'Segunda': 0, 'Terça': 1, 'Quarta': 2, 'Quinta': 3,
-        'Sexta': 4, 'Sábado': 5, 'Domingo': 6,
-        'Segunda-feira': 0, 'Terça-feira': 1, 'Quarta-feira': 2,
-        'Quinta-feira': 3, 'Sexta-feira': 4, 'Sábado-feira': 5,
-    }
+    # H3a: os dias da turma são DERIVADOS da grade das ofertas ativas (uma
+    # consulta). Sem grade (turma 100% legado, sem ofertas), cai no CSV da
+    # turma via conversor único — a projeção segue válida até o H5.
+    from app.services.turma_curso_horario import dias_da_turma
+    from app.utils.dias_semana import csv_para_weekdays, csv_tokens_desconhecidos
+
+    dias_permitidos = dias_da_turma(turma.id)
+    if not dias_permitidos:
+        desconhecidos = csv_tokens_desconhecidos(turma.dias_semana)
+        if desconhecidos:
+            current_app.logger.warning(
+                "Turma %s sem grade: CSV de dias tem tokens desconhecidos %s "
+                "(descartados na geração de datas).", turma.id, desconhecidos,
+            )
+        dias_permitidos = set(csv_para_weekdays(turma.dias_semana))
 
     inicio = datetime.combine(turma.data_inicio, time.min)
     fim = datetime.combine(turma.data_fim, time.min)
@@ -240,12 +249,6 @@ def gerar_datas(
     else:
         hoje = datetime.now()
         data_limite = min(fim, hoje)
-
-    dias_permitidos = [
-        mapa_dias[d.strip()]
-        for d in (turma.dias_semana or "").split(',')
-        if d.strip() in mapa_dias
-    ]
 
     atual = inicio
     while atual <= data_limite:

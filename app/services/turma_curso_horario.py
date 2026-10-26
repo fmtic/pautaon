@@ -86,6 +86,43 @@ def grades_em_lote(oferta_ids: list[int] | tuple[int, ...]) -> dict[int, list[Li
     return resultado
 
 
+def dias_da_oferta(oferta_id: int) -> set[int]:
+    """Dias (weekday 0-5) agendados para a oferta, em UMA consulta.
+
+    Fonte canônica dos dias da oferta é a grade ``turma_curso_horario``
+    (decisão 5/H2). Reaproveita ``grades_em_lote`` (uma consulta por lote).
+    """
+    return {l.dia_semana for l in grades_em_lote([oferta_id]).get(oferta_id, [])}
+
+
+def dias_por_ofertas(
+    ids: list[int] | tuple[int, ...],
+) -> dict[int, set[int]]:
+    """Dias de várias ofertas em UMA consulta (sem N+1).
+
+    Toda oferta pedida aparece no resultado; as sem grade recebem set vazio.
+    """
+    grades = grades_em_lote(list(ids))
+    return {oid: {l.dia_semana for l in linhas} for oid, linhas in grades.items()}
+
+
+def dias_da_turma(turma_id: int) -> set[int]:
+    """União dos dias das ofertas ATIVAS da turma, em UMA consulta.
+
+    Decisão H3a: a Turma passa a DERIVAR seus dias da grade das ofertas ativas,
+    sem ler ``Turma.dias_semana``. Retorna set vazio quando a turma não tem
+    nenhuma oferta com grade — o chamador decide o fallback legado.
+    """
+    linhas = (
+        db.session.query(TurmaCursoHorario.dia_semana)
+        .join(TurmaCurso, TurmaCurso.id == TurmaCursoHorario.turma_curso_id)
+        .filter(TurmaCurso.turma_id == turma_id, TurmaCurso.ativo == True)  # noqa: E712
+        .distinct()
+        .all()
+    )
+    return {d for (d,) in linhas}
+
+
 def duracao_do_dia(oferta: TurmaCurso, dia: int) -> int | None:
     """Duração em MINUTOS do `dia`; ``None`` se o dia não existe na grade ou
     existe mas está sem horário."""

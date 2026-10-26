@@ -25,6 +25,7 @@ quem chama (rotas) converter em `flash`.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_
@@ -45,7 +46,11 @@ from app.models.base import get_local_now
 from app.services.turma_curso_horario import (
     definir_grade,
     grade_a_partir_do_legado,
+    grade_da_oferta,
 )
+from app.utils.dias_semana import csv_para_weekdays, csv_tokens_desconhecidos
+
+logger = logging.getLogger(__name__)
 
 # Mensagem única usada quando a agenda enviada está incompleta (H2: toda
 # oferta precisa de ao menos um dia e horário completo início+fim).
@@ -201,7 +206,13 @@ def turma_tem_historico(turma_id: int) -> bool:
 
 
 def _parse_dias(dias_semana: str | None) -> set[str]:
-    """Converte CSV de dias ('Segunda, Quarta') em set normalizado (lowerstrip)."""
+    """Converte CSV de dias ('Segunda, Quarta') em set normalizado (lowerstrip).
+
+    PONTE (H3a): desde a migração dos leitores de agenda, só é usado por
+    ``_conflitos_horario_concomitante`` (leitor de concomitância, ainda por
+    dia — grupo concomitância do H3). Será removido quando a concomitância
+    passar a comparar a grade por dia.
+    """
     if not dias_semana:
         return set()
     return {d.strip().lower() for d in dias_semana.split(",") if d.strip()}
@@ -698,21 +709,36 @@ def desativar_oferta(
 # RESOLUÇÃO DA OFERTA DE LANÇAMENTO (Onda 4 — Fase 4, §7)
 # =============================================================================
 
-_NOMES_DIA_SEMANA = (
-    'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo',
-)
+def _dias_set_da_oferta(oferta: TurmaCurso) -> set[int]:
+    """Dias (weekday 0-5) em que a oferta tem aula (H3a).
 
-
-def _data_bate_dias_semana(dias_semana: str | None, data: date) -> bool:
-    """True se `data` cai em um dos dias definidos para a oferta. Oferta sem
-    `dias_semana` definido não impõe restrição (True). Aceita a variante
-    'Segunda-feira' além de 'Segunda'.
+    Fonte canônica: a grade ``turma_curso_horario`` (lida da relação já
+    carregada — sem consulta por data/oferta). Sem grade (linha 100% legado,
+    anterior ao backfill), cai no CSV projetado via conversor único — a
+    projeção segue correta até o H5, então o fallback preserva o resultado.
     """
-    dias = _parse_dias(dias_semana)
+    dias = {linha.dia_semana for linha in grade_da_oferta(oferta)}
+    if dias:
+        return dias
+    csv = _dias_efetivos_da_oferta(oferta)
+    desconhecidos = csv_tokens_desconhecidos(csv)
+    if desconhecidos:
+        logger.warning(
+            "Oferta %s sem grade: CSV de dias legado tem tokens desconhecidos %s "
+            "(descartados na leitura de agenda).", oferta.id, desconhecidos,
+        )
+    return set(csv_para_weekdays(csv))
+
+
+def _data_bate_dias_semana(oferta: TurmaCurso, data: date) -> bool:
+    """True se `data` cai em um dos dias da grade da oferta. Oferta sem dias
+    definidos não impõe restrição (True). H3a: lê a grade (weekday 0-5), não
+    mais o CSV via ``_parse_dias``.
+    """
+    dias = _dias_set_da_oferta(oferta)
     if not dias:
         return True
-    nome = _NOMES_DIA_SEMANA[data.weekday()]
-    return nome in dias or f"{nome}-feira" in dias
+    return data.weekday() in dias
 
 
 def _formatar_vigencia(oferta: TurmaCurso) -> str:
@@ -788,7 +814,7 @@ def resolver_oferta_lancamento(
                 f"A data {data:%d/%m/%Y} está depois da vigência da oferta "
                 f"'{_nome_curso(oferta)}' ({_formatar_vigencia(oferta)})."
             )
-        if not _data_bate_dias_semana(oferta.dias_semana, data):
+        if not _data_bate_dias_semana(oferta, data):
             raise ValueError(
                 f"A data {data:%d/%m/%Y} não cai em um dia de aula da oferta "
                 f"'{_nome_curso(oferta)}' ({oferta.dias_semana})."
@@ -907,14 +933,14 @@ def datas_aula_oferta(
     if inicio > limite_efetivo:
         return []
 
-    dias = _dias_efetivos_da_oferta(oferta)
-    if not _parse_dias(dias):
+    dias = _dias_set_da_oferta(oferta)
+    if not dias:
         return []
 
     datas: list[date] = []
     atual = inicio
     while atual <= limite_efetivo:
-        if _data_bate_dias_semana(dias, atual) and atual.strftime('%Y-%m-%d') not in blocked:
+        if atual.weekday() in dias and atual.strftime('%Y-%m-%d') not in blocked:
             datas.append(atual)
         atual += timedelta(days=1)
     return datas

@@ -597,17 +597,27 @@ def test_frequencia_legada_nao_confundida_com_oferta():
 
 
 # --- d) dias_semana com acento/espaço e variante -feira --------------------
-def test_data_bate_dias_semana_acento_espace_variante():
+def test_data_bate_dias_semana_acento_espace_variante(base):
+    """H3a: `_data_bate_dias_semana` passou a LER A GRADE da oferta (weekday
+    0–5), não mais o CSV de texto. A tolerância a acentos/espaços/variante
+    '-feira' migrou para o conversor único `csv_para_weekdays` (coberta em
+    test_dias_semana.py); aqui ancora-se o contrato novo por grade."""
+    from datetime import time as _time
+
     from app.services.turma_curso import _data_bate_dias_semana
+    from app.services.turma_curso_horario import definir_grade
+
+    definir_grade(
+        base["oferta"],
+        [(1, _time(9), _time(10)), (3, _time(9), _time(10))],
+    )
 
     ter = _data_weekday(1)
     qui = _data_weekday(3)
     seg = _data_weekday(0)
-    assert _data_bate_dias_semana("Terça, Quinta", ter) is True
-    assert _data_bate_dias_semana("Terça, Quinta", qui) is True
-    assert _data_bate_dias_semana("Terça, Quinta", seg) is False
-    assert _data_bate_dias_semana("Terça-feira", ter) is True
-    assert _data_bate_dias_semana("Terça-feira", seg) is False
+    assert _data_bate_dias_semana(base["oferta"], ter) is True
+    assert _data_bate_dias_semana(base["oferta"], qui) is True
+    assert _data_bate_dias_semana(base["oferta"], seg) is False
 
 
 # --- e1) oferta informada: data fora da vigência é recusada ----------------
