@@ -1,11 +1,11 @@
 # MER — Modelo Entidade-Relacionamento
 
-**Complemento de 26/10/2026:** incluída a relação `registro_aula_tema` e a migration `a8b9c0d1e2f3` para múltiplos temas por aula.
+**Complemento de 26/10/2026:** incluída a relação `registro_aula_tema` e a migration `a8b9c0d1e2f3` para múltiplos temas por aula. **Complemento H1 (26/10/2026):** criada a grade `turma_curso_horario` (migration `5730d7c594ba`, head atual), o serviço `app/services/turma_curso_horario.py` e o conversor único `app/utils/dias_semana.py`; as colunas de agenda de `turma_curso` viraram projeção transitória (§7.32a, §8.10, §12.25).
 
 > Documento vivo do esquema do banco de dados. **Atualize sempre que criar,
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
-**Última atualização:** 2026-10-25 — Sincronizado com as etapas T1, P1, B1–B7, M1, M1.1, M2, M4, L1, L2 e **D5.0–D5.5**. **Inscrição exige oferta:** `inscricoes.turma_curso_id` NOT NULL (`c3d4e5f6a7b8`, endurecida na B5 com checagens de NULL/duplicata); índice único parcial `uix_inscricao_ativa_aluno_oferta` `(aluno_id, turma_curso_id) WHERE ativo IS TRUE`. **Programa obrigatório:** `turma_curso.programa` NOT NULL (`d4e5f6a7b8c9`, endurecida na B5 com `COALESCE` preservando `turma.programa` e recusa explícita sem programa padrão). **Serviço único de enturmação** (`app/services/enturmacao.py`, M2); desenturmar/transferir/desativar oferta por oferta. **Guarda de desativar oferta** (M4): recusa se houver aluno ativo em período em andamento. **Oferta efetiva** (M4): `cond_oferta_efetiva()` preserva histórico em período encerrado. **Isolamento por unidade** (B3/B4): vale para todos os perfis; Visão Global somente leitura. **Conselho de classe POR OFERTA (D5.1–D5.5, concluído):** `conselho_classe.turma_curso_id` **NOT NULL** (`e5f6a7b8c9d0` + endurecimento `f6a7b8c9d0e1`); `Turma.conselho_concluido` **removida** (encerramento por oferta, turma derivada); histórico, ficha 360°, painel por turma, resultado do conselho e certificado leem por oferta. Suíte: **359 passed**, 0 falhas.
+**Última atualização:** 2026-10-26 — Sincronizado com as etapas T1, P1, B1–B7, M1, M1.1, M2, M4, L1, L2, **D5.0–D5.5** e **H1**. **Inscrição exige oferta:** `inscricoes.turma_curso_id` NOT NULL (`c3d4e5f6a7b8`, endurecida na B5 com checagens de NULL/duplicata); índice único parcial `uix_inscricao_ativa_aluno_oferta` `(aluno_id, turma_curso_id) WHERE ativo IS TRUE`. **Programa obrigatório:** `turma_curso.programa` NOT NULL (`d4e5f6a7b8c9`, endurecida na B5 com `COALESCE` preservando `turma.programa` e recusa explícita sem programa padrão). **Serviço único de enturmação** (`app/services/enturmacao.py`, M2); desenturmar/transferir/desativar oferta por oferta. **Guarda de desativar oferta** (M4): recusa se houver aluno ativo em período em andamento. **Oferta efetiva** (M4): `cond_oferta_efetiva()` preserva histórico em período encerrado. **Isolamento por unidade** (B3/B4): vale para todos os perfis; Visão Global somente leitura. **Conselho de classe POR OFERTA (D5.1–D5.5, concluído):** `conselho_classe.turma_curso_id` **NOT NULL** (`e5f6a7b8c9d0` + endurecimento `f6a7b8c9d0e1`); `Turma.conselho_concluido` **removida** (encerramento por oferta, turma derivada); histórico, ficha 360°, painel por turma, resultado do conselho e certificado leem por oferta. **H1 (26/10):** grade de horário por dia na oferta (§7.32a) criada por `5730d7c594ba` com backfill da herança campo a campo (COALESCE oferta→turma); serviço `turma_curso_horario` (leitura/escrita/projeção) e conversor `dias_semana`; nenhum comportamento visível alterado — leitores/escritores da grade chegam em H2–H5 (§12.25). Suíte: **458 passed**, 0 falhas. **Head Alembic:** `5730d7c594ba`.
 
 ---
 
@@ -73,7 +73,8 @@ app/models/
 ├── organizacao.py         # Unidade, ConfiguracaoSistema
 ├── usuarios.py            # User
 ├── pedagogico.py          # Curso, Nivel, CentroCusto
-├── academico.py           # PeriodoLetivo, Turma, TurmaCurso, TemaAula
+├── academico.py           # PeriodoLetivo, Turma, TurmaCurso, TurmaCursoHorario,
+│                          # TemaAula
 ├── pessoas.py             # Aluno, SituacaoEscolar
 ├── perfis.py              # EnderecoAluno, ResponsavelAluno,
 │                          # PerfilSocioeconomico, PerfilDiversidade
@@ -106,9 +107,17 @@ app/services/
 ├── enturmacao.py          # Serviço único de criação de inscrição
 │                          # (`enturmar_aluno`; M2). Regras 0/1/2+ ofertas.
 ├── maintenance.py         # Toggle de manutenção e indisponibilidade
-└── turma_curso.py         # Regras de aplicação da oferta `TurmaCurso`
-                           # (adicionar/editar/desativar, concomitância,
-                           # guarda de período M4, `_alunos_da_oferta`).
+├── turma_curso.py         # Regras de aplicação da oferta `TurmaCurso`
+│                          # (adicionar/editar/desativar, concomitância,
+│                          # guarda de período M4, `_alunos_da_oferta`).
+└── turma_curso_horario.py # Grade de horário por dia da oferta (H1): leitura
+                           # (`grade_da_oferta`, `grades_em_lote` sem N+1),
+                           # escrita atômica (`definir_grade`), derivados
+                           # (`duracao_do_dia`, `grade_uniforme`, `resumo_grade`)
+                           # e `sincronizar_projecao_horario` — o ÚNICO ponto
+                           # que escreve a projeção escalar de `turma_curso`
+                           # a partir do H2. Usa o conversor único
+                           # `app/utils/dias_semana.py`. Nenhuma função commita.
 ```
 
 ### Regras de importação
@@ -229,6 +238,7 @@ erDiagram
     REGISTRO_AULA  ||--o{ REGISTRO_AULA_TEMA : possui
     TEMA_AULA      ||--o{ REGISTRO_AULA_TEMA : vincula
     TURMA_CURSO    ||--o{ CONSELHO_CLASSE : avalia
+    TURMA_CURSO    ||--o{ TURMA_CURSO_HORARIO : agenda_por_dia
 ```
 
 ### 6.3 Alunos, matrículas e frequência
@@ -417,7 +427,7 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 | **data_fim**        | **date**         | sim  | —            | Fim (Onda 2A)                                    |
 | **hora_inicio**     | **time**         | sim  | —            | Hora (Onda 2A)                                   |
 | **hora_fim**        | **time**         | sim  | —            | Hora (Onda 2A)                                   |
-| dias_semana         | varchar(20)      | sim  | —            | CSV (ex.: "Segunda,Quarta")                      |
+| dias_semana         | varchar(80)      | sim  | —            | CSV (ex.: "Segunda, Quarta"); ampliado por `5730d7c594ba` (H1)    |
 | programa            | varchar(50)      | sim  | —            | Esporte, Profissionalizante…                     |
 | turno               | varchar(20)      | sim  | —            | Manhã, Tarde, Noite                              |
 | centro_custo        | varchar(150)     | sim  | —            | —                                                |
@@ -910,9 +920,9 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | principal           | bool             | não  | false        | Curso principal da **turma** (é marca do vínculo, não do curso nem do aluno) |
 | professor_id        | int              | sim  | —            | FK → user; professor responsável pela oferta     |
 | turno               | varchar(20)      | sim  | —            | Manhã, Tarde, Noite (por oferta)                 |
-| dias_semana         | varchar(20)      | sim  | —            | CSV (legado: era de `turma`)                     |
-| hora_inicio         | time             | sim  | —            | Início do horário da oferta                      |
-| hora_fim            | time             | sim  | —            | Fim do horário da oferta                         |
+| dias_semana         | varchar(80)      | sim  | —            | **PROJEÇÃO transitória** (H1): CSV canônico derivado de `turma_curso_horario`; fonte real até o H3, removida no H5 |
+| hora_inicio         | time             | sim  | —            | **PROJEÇÃO transitória** (H1): só tem valor se a grade é uniforme com horário; removida no H5 |
+| hora_fim            | time             | sim  | —            | **PROJEÇÃO transitória** (H1): idem `hora_inicio` |
 | data_inicio         | date             | sim  | —            | Início da vigência da oferta                     |
 | data_fim            | date             | sim  | —            | Fim da vigência da oferta                        |
 | centro_custo        | varchar(150)     | sim  | —            | Individual; NULL = usa o compartilhado da turma  |
@@ -926,9 +936,26 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
 
-**Relacionamentos:** `turma` (backref `ofertas_curso`, cascade `all, delete-orphan` — apagar a turma remove as ofertas), `curso` (backref `ofertas_turma`), `professor` (`foreign_keys=[professor_id]`, backref `ofertas_como_responsavel`), backref `inscricoes_oferta` a partir de `Inscricao.turma_curso` (**sem** cascade, para proteger histórico de matrícula).
+**Relacionamentos:** `turma` (backref `ofertas_curso`, cascade `all, delete-orphan` — apagar a turma remove as ofertas), `curso` (backref `ofertas_turma`), `professor` (`foreign_keys=[professor_id]`, backref `ofertas_como_responsavel`), `horarios` (lista de `TurmaCursoHorario`, `order_by=dia_semana`, `lazy="selectin"`, cascade `all, delete-orphan`, `passive_deletes=True` — H1), backref `inscricoes_oferta` a partir de `Inscricao.turma_curso` (**sem** cascade, para proteger histórico de matrícula).
 
-**Migration:** `311d554dfd6e` cria a tabela, os índices, `inscricoes.turma_curso_id` e executa o backfill. A coluna `programa`, inicialmente preenchida a partir de `turma.programa` por `a1b2c3d4e5f6`, tornou-se obrigatória por `d4e5f6a7b8c9`. `Turma.programa` representa o programa da oferta principal ativa e é atualizado junto às operações de oferta. **Criação da oferta inicial (Fase 4, Etapa F):** toda turma nova com curso já nasce com uma oferta ativa na mesma transação; seu programa é obrigatório. **Conselho por oferta (D5.1/D5.5):** `e5f6a7b8c9d0` acrescenta `conselho_concluido` (NOT NULL default false) e `avaliacao_inicial/percurso/final`; `f6a7b8c9d0e1` torna essas colunas a ÚNICA fonte do encerramento e do parecer coletivo (a flag e os pareceres de `Turma` foram aposentados).
+**Migration:** `311d554dfd6e` cria a tabela, os índices, `inscricoes.turma_curso_id` e executa o backfill. A coluna `programa`, inicialmente preenchida a partir de `turma.programa` por `a1b2c3d4e5f6`, tornou-se obrigatória por `d4e5f6a7b8c9`. `Turma.programa` representa o programa da oferta principal ativa e é atualizado junto às operações de oferta. **Criação da oferta inicial (Fase 4, Etapa F):** toda turma nova com curso já nasce com uma oferta ativa na mesma transação; seu programa é obrigatório. **Conselho por oferta (D5.1/D5.5):** `e5f6a7b8c9d0` acrescenta `conselho_concluido` (NOT NULL default false) e `avaliacao_inicial/percurso/final`; `f6a7b8c9d0e1` torna essas colunas a ÚNICA fonte do encerramento e do parecer coletivo (a flag e os pareceres de `Turma` foram aposentados). **Grade por dia (H1):** `5730d7c594ba` amplia `dias_semana` para varchar(80) (em `turma` e `turma_curso`), cria `turma_curso_horario` (§7.32a) e materializa o legado nas colunas escalares, que passam a PROJEÇÃO transitória escrita apenas por `sincronizar_projecao_horario` a partir do H2 (§8.10, §12.25).
+
+### 7.32a `turma_curso_horario` (H1 — grade de horário por dia da oferta)
+
+**Mixins:** nenhum — sem `unidade_id` (o escopo vem da oferta), sem `ativo`, sem `AuditoriaMixin` (mesma filosofia de `inscricoes` quanto ao vínculo puro).
+
+**Constraints:** `uix_turma_curso_horario_dia` = UNIQUE (`turma_curso_id`, `dia_semana`) — a coluna líder também cobre o lookup da FK, sem índice extra; `ck_tch_dia` CHECK `dia_semana` entre 0 e 6; `ck_tch_par` CHECK par de horas ambos NULL ou ambos NOT NULL; `ck_tch_fim_maior` CHECK `hora_fim > hora_inicio` quando preenchidas. FK `turma_curso_id` → `turma_curso.id` com `ON DELETE CASCADE`.
+
+| Coluna         | Tipo        | Nulo | Default | Descrição                                              |
+|----------------|-------------|------|---------|--------------------------------------------------------|
+| id             | int (serial)| não  | auto    | PK                                                     |
+| turma_curso_id | int         | não  | —       | FK → turma_curso, `ON DELETE CASCADE`                  |
+| dia_semana     | smallint    | não  | —       | `date.weekday()`: 0 = segunda … 6 = domingo            |
+| hora_inicio    | time        | sim  | —       | Início da aula no dia; NULL = dia sem horário          |
+| hora_fim       | time        | sim  | —       | Fim da aula no dia; NULL junto com `hora_inicio`       |
+| created_at     | timestamp   | sim  | —       | —                                                      |
+
+**Regras (decisões fechadas da H1):** linha com `hora_inicio` e `hora_fim` ambos NULL é válida (dia sem horário); apenas um extremo preenchido é inválido; com ambos, `fim > início` no mesmo dia (sem virar meia-noite). A UI segue segunda–sábado, mas o domínio da tabela é 0–6. A grade vale **retroativamente** para todo o período da oferta (sem versionar). A migration `5730d7c594ba` materializa a herança campo a campo (oferta → turma, COALESCE por campo); depois disso a oferta é autossuficiente e esta tabela é a **fonte dos dias e dos horários** da oferta. Camada de acesso: `app/services/turma_curso_horario.py` (H1-P4); tradução de texto pelo conversor único `app/utils/dias_semana.py` (H1-P1). Nenhum leitor/escritor existente usa a grade ainda (H2–H5, §12.25).
 
 ### 7.33 Enumerações e constantes (`app/models/enums.py`)
 
@@ -1048,6 +1075,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - **Horários concomitantes entre ofertas da mesma turma são permitidos.** Ao criar ou editar uma oferta, o sistema detecta sobreposição de dias, horários e vigência e mostra um aviso, mas salva a operação. A mesma regra de aviso é aplicada quando a agenda da oferta única é alterada pela edição da turma.
 - A matrícula é por aluno↔turma↔oferta (`inscricoes.turma_curso_id` NOT NULL desde `c3d4e5f6a7b8`). Aluno disponível para enturmação não é excluído por já estar em outro curso da mesma turma.
 - **Compatibilidade legada (§14 da especificação):** as colunas de `Turma` (`curso_id`, `professor_id`, `turno`, `dias_semana`, horários, datas, centro de custo) continuam existindo; o backfill criou uma oferta por turma com curso. Dual-write descontrolado é proibido; remover colunas exige migrar todos os leitores (fases finais).
+- **Grade de horário por dia (H1, 26/10):** a fonte dos dias e horários da oferta é `turma_curso_horario` (§7.32a) — um linha por dia, com ou sem horário. `turma_curso.dias_semana`/`hora_inicio`/`hora_fim` viraram **projeção transitória**: a partir do H2 só `sincronizar_projecao_horario` (`app/services/turma_curso_horario.py`) as escreve — CSV canônico dos dias (NULL se grade vazia) e o par de horas somente quando a grade é uniforme COM horário (senão NULL). A herança oferta→turma foi **materializada** pela migration `5730d7c594ba` (COALESCE campo a campo); depois dela a oferta é autossuficiente. A grade vale retroativamente para todo o período da oferta (sem versionar). `dia_semana` = `date.weekday()` (0 = segunda … 6 = domingo); a tradução com o texto dos formulários passa pelo conversor único `app/utils/dias_semana.py`. Validas: dia 0–6, sem duplicata por oferta, par completo, `fim > início` — garantidas no schema (UNIQUE/CHECKs) e recusada por `definir_grade` com `ValueError` em português e grade anterior preservada. Comportamento visível INALTERADO até o H3: nenhum leitor/escritor existente usa a grade ainda (`_sincronizar_legado` continua copiando oferta→Turma; deve ler a grade pelo serviço a partir do H3). Dívida e plano H2–H5 em §12.25.
 - **Programa por oferta:** toda `TurmaCurso` exige programa. `Turma.programa` é uma projeção derivada da oferta principal ativa e serve a filtros/listagens de turma; não é editável como dado independente.
 - **Frequência e diário agora por oferta (Fase 4):** `frequencia` e `registro_aula` ganharam `turma_curso_id` (nullable). Ao lançar, `resolver_oferta_lancamento` decide a oferta: **oferta única** é escolhida automaticamente **sem validação extra** de vigência/dia/tema (comportamento anterior); com **2+ ofertas ativas** exige a escolha (`turma_curso`) e **valida** vigência da oferta, dia da grade (`_data_bate_dias_semana`) e tema (recusa tema de outro curso; aceita `curso_id` NULL). `salvar_frequencia` grava/busca RegistroAula e Frequência por (`turma_curso_id`, `data`) quando há oferta e por (`turma_id`, `data`) **com `turma_curso_id IS NULL`** no legado, de modo que o diário/frequência de uma segunda oferta **não sobrescreve** o da primeira no mesmo dia.
 - **Enturmação por oferta (Serviço único, M2):** `app/services/enturmacao.py` contém `enturmar_aluno(aluno, turma, oferta_id=None, ...)`: resolve ofertas ativas da turma por `ofertas_ativas(turma.id)` — 0 ofertas → recusa com mensagem; exatamente 1 → auto-seleção; 2+ sem `oferta_id` ou com id inválido/inativa → recusa com mensagem de escolha. Chamadores: `enturmar_alunos` (turmas.py) e `transferir_aluno` (alunos.py) delegam a criação da inscrição ao serviço.
@@ -1255,6 +1283,19 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 ---
 
+### H1 — Horário por dia na oferta: modelo, migration, serviço e conversor (26/10/2026)
+
+- **P0a (B5-P1 corrigido):** `migrations/env.py` chama `fileConfig(..., disable_existing_loggers=False)`; provado no scratch com migration descartável que levanta `RuntimeError` — a mensagem aparece no `flask db upgrade` (§12.17).
+- **P0b:** removido `app/templates/turmas/listar copy.html` (grep: zero referências).
+- **P1:** conversor único `app/utils/dias_semana.py` (weekday 0–6; nomes canônicos com acento; formas `-feira`; abreviações; com/sem acento; desconhecido → `None`, nunca adivinha). Parsers antigos (`_parse_dias` etc.) intocados até o H3. 15 testes.
+- **P2:** modelo `TurmaCursoHorario` (§7.32a) com UNIQUE/CHECKs/FK CASCADE; relação `TurmaCurso.horarios` (selectin, passive_deletes); `dias_semana` → `String(80)` em `Turma`/`TurmaCurso`.
+- **P3:** migration `5730d7c594ba` (aditiva, head única): pré-checagens (i)–(v) somente-leitura num único `RuntimeError` + informativo (vi); ALTER varchar(80) (batch no SQLite); criação da grade; backfill Python idempotente com herança campo a campo (COALESCE oferta→turma); downgrade recusa grade não uniforme, recompõe as colunas a partir da grade e NÃO reduz o varchar.
+- **P4:** serviço `app/services/turma_curso_horario.py` — `grade_da_oferta`, `grades_em_lote` (uma consulta), `definir_grade` (átomo, `ValueError` em português, sem violar UNIQUE no flush), `duracao_do_dia`, `grade_uniforme`, `resumo_grade`, `sincronizar_projecao_horario` (único ponto de projeção a partir do H2). Nenhuma função commita.
+- **P5:** 43 testes novos (`test_turma_curso_horario_schema.py` 9, `test_turma_curso_horario_servico.py` 20, `test_turma_curso_horario_migration.py` 14) + helper `grade_a_partir_do_legado` em `tests/_helpers.py` (para H2/H3). Suíte: **458 passed**, 0 falhas.
+- **P6:** ensaio A–E no scratch `pautaon_ensaio` (recriado do dump do banco local): A upgrade limpo ok; B upgrade com dados reais — 5 ofertas, 8 linhas na grade, **0 divergências** `resumo_grade` × colunas antigas, `max(length(dias_semana))` = 15 (turma e turma_curso); C cada checagem (i)–(v) derruba o upgrade com mensagem visível (B5-P1 funcionando); D downgrade com grades uniformes recompõe colunas intactas e re-upgrade ok; E stamp+upgrade duas vezes não duplica (8 linhas antes e depois). A migration **não** foi aplicada no banco principal.
+
+---
+
 ## 11. Referência cruzada com migrations
 
 | Hash           | Revises        | Descrição                                                    | Estado  |
@@ -1288,9 +1329,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `c3d4e5f6a7b8` | `a1b2c3d4e5f6` | `inscricoes.turma_curso_id` obrigatório e unicidade de inscrição ativa por aluno/oferta; **endurecida na B5**: checagens NULL/duplicata com `RuntimeError` antes do DDL | ✅       |
 | `d4e5f6a7b8c9` | `c3d4e5f6a7b8` | Programa obrigatório em `turma_curso`; `COALESCE` preservando `turma.programa`; recusa explícita sem programa padrão (B5); `Turma.programa` deriva da oferta principal ativa | ✅       |
 | `e5f6a7b8c9d0` | `d4e5f6a7b8c9` | **D5.1**: conselho por oferta (aditivo) — `conselho_classe.turma_curso_id` (nullable, FK `ON DELETE RESTRICT`), índices únicos parciais `uix_conselho_legado`/`uix_conselho_oferta`, `ix_conselho_turma_curso`; remove a UNIQUE antiga `uix_conselho_turma_aluno_etapa`; `turma_curso.conselho_concluido` + `avaliacao_inicial/percurso/final`; backfill somente inequívoco | ✅       |
-| `f6a7b8c9d0e1` | `e5f6a7b8c9d0` | **D5.5**: endurecimento do conselho por oferta — pré-checagens (i)–(iv) num único `RuntimeError`, `turma_curso_id` **NOT NULL**, drop de `uix_conselho_legado`, drop de `turma.conselho_concluido`; downgrade reversível com guarda de duplicatas e repopulação derivada (**head atual**) | ✅       |
+| `f6a7b8c9d0e1` | `e5f6a7b8c9d0` | **D5.5**: endurecimento do conselho por oferta — pré-checagens (i)–(iv) num único `RuntimeError`, `turma_curso_id` **NOT NULL**, drop de `uix_conselho_legado`, drop de `turma.conselho_concluido`; downgrade reversível com guarda de duplicatas e repopulação derivada | ✅       |
+| `a8b9c0d1e2f3` | `f6a7b8c9d0e1` | **Múltiplos temas por aula**: tabela associativa `registro_aula_tema` + backfill dos vínculos únicos | ✅       |
+| `5730d7c594ba` | `a8b9c0d1e2f3` | **H1**: grade por dia `turma_curso_horario` (UNIQUE/CHECKs/FK CASCADE); `dias_semana` → varchar(80) em `turma`/`turma_curso` (batch no SQLite); pré-checagens (i)–(v) num único `RuntimeError` + informativo (vi); backfill herança campo a campo idempotente; downgrade com guarda de grade não uniforme, sem redução do varchar (**head atual**) | ✅       |
 
-> **Head atual:** `f6a7b8c9d0e1` (D5.5). As duas etapas do conselho por oferta são as últimas da cadeia; `flask db heads` deve devolver apenas esse hash.
+> **Head atual:** `5730d7c594ba` (H1). `flask db heads` devolve apenas esse hash; `a8b9c0d1e2f3` é a revisão imediatamente anterior.
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 
@@ -1350,9 +1393,10 @@ tabela estruturada, e não duplicados nesse JSON.
 
 ### 12.5 `Turma.dias_semana` como CSV
 
-**Onde:** coluna `varchar(20)` com nomes separados por vírgula.
+**Onde:** coluna `varchar(80)` (ampliada por `5730d7c594ba`, H1) com nomes separados por vírgula.
 **Impacto:** dificulta "quantas turmas têm aula na sexta".
-**Plano futuro:** tabela `turma_dia_semana (turma_id, dia)`.
+**Status parcial (H1):** para a OFERTA o problema está resolvido na fonte — grade `turma_curso_horario` (§7.32a); o CSV de `turma_curso` é projeção transitória removida no H5. Para a TURMA ainda é CSV puro.
+**Plano futuro:** tabela `turma_dia_semana (turma_id, dia)` ou derivação a partir das ofertas; leitura de dias por oferta passa pelo conversor único `app/utils/dias_semana.py` no H3.
 
 ### 12.6 `AgendaServicoSocial.participantes_emails` como CSV
 
@@ -1465,6 +1509,17 @@ tabela estruturada, e não duplicados nesse JSON.
 **Onde:** `/conselho/fechamento/<turma>` + `static/js/conselho/conselho.js` + `templates/conselho/fechamento.html`.
 **Contexto:** a suíte roda com `WTF_CSRF_ENABLED=False`; o token é coberto por `tests/test_conselho_ui.py` (extrai o `<meta>` e reenvia), mas a experiência real (seletor de oferta, grade, envio com token e mensagens) **não** tem cobertura automatizada de navegador.
 **Plano:** roteiro manual no navegador (também para relatórios/painel) antes do deploy; considerar um teste de ponta a ponta futuro.
+
+### 12.25 H1 — grade por dia criada, mas ninguém a lê ainda (H2–H5 pendentes)
+
+**Onde:** `turma_curso_horario` (§7.32a), `app/services/turma_curso_horario.py`, `app/utils/dias_semana.py`, migration `5730d7c594ba`.
+**Contexto:** a H1 é puramente aditiva: modelo, migration (backfill ensaiado A–E no scratch, NÃO aplicada ao banco principal) e serviço. Nenhum escritor/leitor/rota/template/JS existente usa a grade; `turma_curso.dias_semana/hora_inicio/hora_fim` ainda são a fonte real das telas e continuam sendo escritas pelos fluxos atuais (`_sincronizar_legado` inalterado). O conversor novo coexiste com os parsers antigos (`_parse_dias`, `_data_bate_dias_semana`, `calcular_dias_aula_turma`, splits das listagens).
+**Plano:**
+- **H2** — escritores de oferta (formulários/rotas) passam a definir a grade via `definir_grade`; `sincronizar_projecao_horario` torna-se o único ponto que escreve as três colunas escalares.
+- **H3** — leitores (carga horária, pendências, validação de dia de lançamento) passam a ler a grade pelo serviço; parsers antigos substituídos pelo conversor único; entra em vigor a regra do C.H. total `None` quando a grade tem dia sem horário misturado a dias completos (decisão 3).
+- **H4** — UI de horário por dia (segunda–sábado) nos formulários.
+- **H5** — remoção das colunas de projeção `turma_curso.dias_semana/hora_inicio/hora_fim` (e dos espelhos em `Turma`, a decidir).
+**Detalhes conhecidos:** o downgrade de `5730d7c594ba` NÃO reduz o varchar(80) de volta (evita truncar); aplicar a migration no banco principal exige backup + autorização; a aplicação no principal ainda NÃO foi feita (scratch apenas).
 
 ---
 

@@ -191,10 +191,10 @@ def _checar_antes_de_alterar(bind) -> None:
                 f"{', '.join(it['duplicados'])}"
             )
         if (it["ini"] is None) != (it["fim"] is None):
-            lado = "fim" if it["ini"] is not None else "início"
+            tem, falta = ("início", "fim") if it["ini"] is not None else ("fim", "início")
             partes.append(
                 f"(iii) oferta {oid}: par de horas incompleto após COALESCE "
-                f"(tem {lado}, falta o outro extremo)"
+                f"(tem {tem}, falta {falta})"
             )
         elif it["ini"] is not None and it["fim"] is not None and it["fim"] <= it["ini"]:
             partes.append(

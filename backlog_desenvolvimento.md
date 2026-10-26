@@ -1060,3 +1060,15 @@ Esta atualização inclui:
 - Migration `a8b9c0d1e2f3` aplicada ao PostgreSQL local: revisão atualizada de `f6a7b8c9d0e1` para `a8b9c0d1e2f3`. A tabela associativa foi criada; a conferência encontrou 0 registros antigos com tema sem vínculo migrado (o banco continha 0 associações a migrar).
 - Testes focados: `tests/test_turma_curso_fase4.py` e `tests/test_pauta_professor.py` — **26 aprovados**. Incluído teste de integração com dois temas no mesmo registro.
 
+
+### Alterações do dia — 26/10/2026 (H1 — horário por dia na oferta)
+
+- **H1-P0a (B5-P1):** `migrations/env.py` agora chama `fileConfig(..., disable_existing_loggers=False)` — provado no scratch com migration descartável: o `flask db upgrade` exibe o `RuntimeError` das checagens (antes engolia só com exit 1). MER §12.17 atualizado.
+- **H1-P0b:** removido `app/templates/turmas/listar copy.html` (grep sem referências).
+- **H1-P1:** conversor único `app/utils/dias_semana.py` (weekday 0–6, nomes canônicos, `-feira`, abreviações, com/sem acento; desconhecido → `None`). Parsers antigos intocados até o H3. `tests/test_dias_semana.py` (15).
+- **H1-P2/P3:** modelo `TurmaCursoHorario` (`turma_curso_horario`: UNIQUE oferta+dia, CHECKs domínio 0–6/par/`fim>início`, FK CASCADE) + migration `5730d7c594ba` (aditiva; `dias_semana` → varchar(80); pré-checagens (i)–(v) num único `RuntimeError`; backfill herança campo a campo COALESCE oferta→turma, idempotente; downgrade recusa grade não uniforme e não reduz o varchar).
+- **H1-P4:** serviço `app/services/turma_curso_horario.py` — `grade_da_oferta`, `grades_em_lote` (sem N+1), `definir_grade` (átomo, mensagens em português), `duracao_do_dia`, `grade_uniforme`, `resumo_grade`, `sincronizar_projecao_horario` (único ponto de projeção a partir do H2). Nenhuma função commita.
+- **H1-P5:** `test_turma_curso_horario_schema.py` (9), `test_turma_curso_horario_servico.py` (20), `test_turma_curso_horario_migration.py` (14) + helper `grade_a_partir_do_legado` em `tests/_helpers.py` (será usado no H2/H3).
+- **H1-P6:** ensaio A–E no scratch `pautaon_ensaio` (dump do banco local): upgrade limpo; dados reais 5 ofertas → 8 linhas, 0 divergências `resumo_grade` × colunas antigas, `max(length(dias_semana))`=15; checagens (i)–(v) cada uma em falha visível; downgrade uniforme + re-upgrade; idempotência. **Migration NÃO aplicada no banco principal** (aguarda backup + autorização).
+- **Comportamento visível:** NENHUM — etapa puramente aditiva (H2–H5 pendentes; MER §12.25).
+- Suíte ao final da H1: **458 passed**, 0 falhas; head única `5730d7c594ba`; `ruff check app --select F821` limpo.
