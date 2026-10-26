@@ -13,8 +13,9 @@ uniforme preservada, defaults/conflito pela grade real, herança só para turma
 sem grade, mensagens citando os dias da grade.
 """
 
-from datetime import date, time
+import logging
 import re
+from datetime import date, time
 
 import pytest
 
@@ -113,8 +114,8 @@ def _norm(html: str) -> str:
 def _grade(oferta):
     db.session.expire_all()
     return [
-        (l.dia_semana, l.hora_inicio, l.hora_fim)
-        for l in grade_da_oferta(db.session.get(type(oferta), oferta.id))
+        (linha.dia_semana, linha.hora_inicio, linha.hora_fim)
+        for linha in grade_da_oferta(db.session.get(type(oferta), oferta.id))
     ]
 
 
@@ -231,3 +232,212 @@ class TestCaracterizacao:
         assert resp.status_code == 200
         html = _norm(resp.get_data(as_text=True))
         assert "Curso A — Manhã 08:00" in html
+
+
+# ---------------------------------------------------------------------------
+# PASSO 4 — Contrato DEPOIS da migração: a grade é a fonte da verdade
+# ---------------------------------------------------------------------------
+
+class TestEditarOfertaGradeNaoUniforme:
+    """`editar_oferta` com grade NÃO uniforme preserva a grade quando só a
+    vigência ou o nome mudam — não regrava uniforme a partir de NULL."""
+
+    def _oferta_nao_uniforme(self, ids):
+        oferta = _turma_oferta(ids, dias="Segunda")
+        definir_grade(
+            oferta,
+            [(0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0))],
+        )
+        db.session.commit()
+        return oferta
+
+    def test_so_vigencia_preserva_grade_nao_uniforme(self, app):
+        ids = _base(app)
+        oferta = self._oferta_nao_uniforme(ids)
+        antes = _grade(oferta)
+        editar_oferta(oferta, data_fim=date(2026, 10, 30))
+        assert _grade(oferta) == antes == [
+            (0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0)),
+        ]
+
+    def test_so_nome_preserva_grade_nao_uniforme(self, app):
+        ids = _base(app)
+        oferta = self._oferta_nao_uniforme(ids)
+        antes = _grade(oferta)
+        editar_oferta(oferta, programa="Programa Novo")
+        assert _grade(oferta) == antes
+
+    def test_campos_null_nao_regravam_uniforme(self, app):
+        """Formulário atual (H4 pendente) manda a triple com NULL sobre grade
+        não uniforme: recusa e grade intacta — nunca regrava uniforme."""
+        ids = _base(app)
+        oferta = self._oferta_nao_uniforme(ids)
+        antes = _grade(oferta)
+        with pytest.raises(ValueError, match="ao menos um dia"):
+            editar_oferta(
+                oferta,
+                dias_semana=None, hora_inicio=None, hora_fim=None,
+                data_fim=date(2026, 10, 30),
+            )
+        db.session.rollback()
+        assert _grade(oferta) == antes
+
+    def test_default_de_agenda_omissa_vem_da_grade_nao_da_projecao(self, app):
+        """Projeção envenenada (dias escalares trocados à mão, grade intacta):
+        editar sem campos de agenda não toca a grade; a checagem usa a grade
+        real — a projeção não interfere."""
+        ids = _base(app)
+        oferta = _turma_oferta(ids, dias="Segunda")
+        db.session.expire_all()
+        recarregada = db.session.get(type(oferta), oferta.id)
+        recarregada.dias_semana = "Sexta"  # espelho quebrado de propósito
+        db.session.commit()
+        editar_oferta(recarregada, programa="Outro")
+        assert _grade(recarregada) == [(0, time(8, 0), time(12, 0))]
+
+
+class TestConflitoUsaGradeReal:
+    """Aviso de concomitância na edição com grade não uniforme cita os
+    segmentos por dia da grade (não o CSV+par da projeção)."""
+
+    def test_aviso_por_dia_na_edicao_de_vigencia(self, app):
+        ids = _base(app)
+        o1 = _turma_oferta(
+            ids, dias="Segunda", ini=time(8), fim=time(10),
+            data_ini=date(2026, 1, 1), data_fim=date(2026, 6, 30),
+        )
+        # 1ª oferta vira NÃO uniforme: Segunda 08–10 + Terça 14–16
+        definir_grade(
+            o1,
+            [(0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0))],
+        )
+        db.session.commit()
+        o2 = _turma_oferta(
+            ids, curso="cB", dias="Quarta", ini=time(20), fim=time(21),
+            principal=False,
+            data_ini=date(2026, 1, 1), data_fim=date(2026, 6, 30),
+        )
+        # grade não uniforme com Segunda 09:00–11:00 (conflitante com a 1ª)
+        definir_grade(
+            o2,
+            [(2, time(20, 0), time(21, 0)), (0, time(9, 0), time(11, 0))],
+        )
+        db.session.commit()
+        editar_oferta(o2, data_fim=date(2026, 12, 15))
+        # o aviso cita o(s) dia(s) em conflito com o par DO DIA na grade da
+        # outra oferta (segmento por dia, estilo H3b) — não o CSV+par escalar
+        assert o2.avisos_horario == [
+            "Horário concomitante com 'Curso A' "
+            "(Segunda 08:00–10:00). A oferta foi salva."
+        ]
+
+    def test_mensagem_dia_fora_cita_dias_da_grade_com_projecao_trocada(self, app):
+        """Projeção envenenada: a mensagem do resolutor sai da GRADE."""
+        ids = _base(app)
+        oferta = _turma_oferta(ids, dias="Segunda, Quarta")
+        db.session.expire_all()
+        recarregada = db.session.get(type(oferta), oferta.id)
+        recarregada.dias_semana = "Sexta"  # espelho quebrado de propósito
+        db.session.commit()
+        with pytest.raises(ValueError) as exc:
+            resolver_oferta_lancamento(
+                ids["turma"], date(2026, 3, 3), turma_curso_id=recarregada.id,
+            )
+        msg = str(exc.value)
+        assert "não cai em um dia de aula" in msg
+        assert "(Segunda, Quarta)" in msg  # dias da grade, não "Sexta"
+
+
+class TestHerancaSoParaTurmaSemGrade:
+    """Herança da oferta: escalares só são lidos em turma sem grade, com
+    warning; havendo ofertas com grade, a herança vem da grade.
+
+    A UI típica espelha `curso_id` na 1ª oferta (situação-herança da Fase 2
+    congela o bloco); o estado "turma sem vínculo com oferta ativa com grade"
+    é montado à mão — é exatamente a situação de risco que o H3f fecha.
+    """
+
+    def _desvincula(self, turma_id, *, dias="Sexta", ini=time(20), fim=time(21)):
+        """Volta a turma ao estado sem vínculo e envenena os escalares (a
+        leitura correta nunca pode cair neles quando há grade)."""
+        turma = db.session.get(Turma, turma_id)
+        turma.curso_id = None
+        turma.dias_semana = dias
+        turma.hora_inicio = ini
+        turma.hora_fim = fim
+        db.session.commit()
+        return turma
+
+    def test_heranca_vem_da_grade_existente_nao_dos_escalaress(self, app):
+        ids = _base(app)
+        # escalares da turma viram isca Sexta 20–21; a oferta ativa é Quarta 13–15
+        _turma_oferta(ids, dias="Quarta", ini=time(13), fim=time(15))
+        turma = self._desvincula(ids["turma"])
+        o2 = adicionar_oferta(turma, curso_id=ids["cB"], programa="Teste")
+        db.session.commit()
+        # herdou a GRADE da oferta ativa (Quarta 13–15), não os escalares
+        assert _grade(o2) == [(2, time(13, 0), time(15, 0))]
+
+    def test_heranca_preserva_grade_nao_uniforme_da_referencia(self, app):
+        ids = _base(app)
+        o1 = _turma_oferta(ids, dias="Segunda")
+        definir_grade(
+            o1,
+            [(0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0))],
+        )
+        db.session.commit()
+        turma = self._desvincula(ids["turma"])
+        o2 = adicionar_oferta(turma, curso_id=ids["cB"], programa="Teste")
+        db.session.commit()
+        assert _grade(o2) == [
+            (0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0)),
+        ]
+
+    def test_heranca_escalar_so_com_aviso_quando_nao_ha_grade(self, app, caplog):
+        ids = _base(app)
+        db.session.expire_all()
+        turma = db.session.get(Turma, ids["turma"])
+        with caplog.at_level(logging.WARNING):
+            oferta = adicionar_oferta(turma, curso_id=ids["cA"], programa="Teste")
+        db.session.commit()
+        assert _grade(oferta) == [(0, time(9, 0), time(10, 0))]
+        assert any(
+            "sem grade" in r.getMessage() and "escalares" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_seed_legado_avisa_no_logger(self, app, caplog):
+        """Seed a partir da turma legada: caminho explícito, com warning."""
+        ids = _base(app, turma_legada=True)
+        turma = db.session.get(Turma, ids["turma"])
+        with caplog.at_level(logging.WARNING):
+            oferta = criar_oferta_inicial_da_turma(turma)
+        db.session.commit()
+        assert _grade(oferta) == [(0, time(9, 0), time(10, 0))]
+        assert any(
+            "escalares legados" in r.getMessage()
+            for r in caplog.records
+        )
+
+
+class TestRotuloSeletorSoGrade:
+    """detalhe.html:254 — o rótulo usa só a grade: uniforme mostra o par;
+    NÃO uniforme omite a hora (nunca a projeção)."""
+
+    def test_grade_nao_uniforme_omite_hora_no_rotulo(self, app):
+        ids = _base(app)
+        oferta = _turma_oferta(ids, dias="Segunda", turno="Manhã")
+        definir_grade(
+            oferta,
+            [(0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0))],
+        )
+        db.session.commit()
+        client = _loga(app, ids["admin"], ids["unidade"])
+        resp = client.get(f"/turma/{ids['turma']}")
+        assert resp.status_code == 200
+        html = _norm(resp.get_data(as_text=True))
+        # o seletor NÃO pode imprimir hora alguma no rótulo quando a grade é
+        # não uniforme (a projeção escalar está NULL e nem deve ser consultada)
+        assert "Curso A — Manhã" in html
+        assert "Manhã 08:00" not in html
+        assert "Manhã 14:00" not in html
