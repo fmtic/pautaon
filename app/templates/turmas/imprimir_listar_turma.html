@@ -83,8 +83,9 @@
             </thead>
             <tbody>
               {% for oferta in item.ofertas %}
-              {% set hora_inicio = oferta.hora_inicio or turma.hora_inicio %}
-              {% set hora_fim = oferta.hora_fim or turma.hora_fim %}
+              {# H3d: dias, horários e C.H. por aula vêm da GRADE da oferta. #}
+              {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
+              {% set carga_oferta = carga_oferta_map.get(oferta.id) %}
               <tr>
                 <td>
                   {{ oferta.curso.nome if oferta.curso else 'Curso #' ~ oferta.curso_id }}
@@ -94,9 +95,9 @@
                 </td>
                 <td>{{ oferta.professor.name if oferta.professor else (turma.professor.name if turma.professor else 'Não atribuído') }}</td>
                 <td>{{ oferta.turno or turma.turno or '—' }}</td>
-                <td>{{ oferta.dias_semana or turma.dias_semana or '—' }}</td>
-                <td>{{ hora_inicio.strftime('%H:%M') if hora_inicio else '--:--' }}–{{ hora_fim.strftime('%H:%M') if hora_fim else '--:--' }}</td>
-                <td class="text-center">{{ formatar_ch(carga_oferta_map[oferta.id].carga_horaria_aula) }}</td>
+                <td>{{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else '—' }}</td>
+                <td>{% if grade_oferta and grade_oferta.por_dia_texto %}{{ grade_oferta.por_dia_texto }}{% else %}{{ grade_oferta.hora_inicio if grade_oferta and grade_oferta.hora_inicio else '--:--' }}–{{ grade_oferta.hora_fim if grade_oferta and grade_oferta.hora_fim else '--:--' }}{% endif %}</td>
+                <td class="text-center">{% if grade_oferta and grade_oferta.ch_aula_varia %}<span title="{{ grade_oferta.ch_aula_por_dia_texto or '' }}">varia</span>{% else %}{{ formatar_ch(carga_oferta.carga_horaria_aula if carga_oferta else None) }}{% endif %}</td>
               </tr>
               {% endfor %}
             </tbody>

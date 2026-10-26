@@ -330,18 +330,21 @@
                         </td>
 
                         <td class="text-center small">
-                            {% if multi %}
-                            {% set hi = principal.hora_inicio or turma.hora_inicio %}
-                            {% set hf = principal.hora_fim or turma.hora_fim %}
-                            <i class="bi bi-clock me-1 text-muted"></i>{{ hi.strftime('%H:%M') if hi else '--:--' }} -
-                            {{
-                            hf.strftime('%H:%M') if hf else '--:--' }}
-                            <div class="small text-muted">principal</div>
-                            {% else %}
+                            {# H3d: horário da linha-agregado vem da GRADE (principal, se multi; senão da única oferta). #}
+                            {% set oferta_linha = principal if multi else (ovas[0] if ovas else none) %}
+                            {% set grade_linha = grade_oferta_map.get(oferta_linha.id) if oferta_linha else none %}
                             <i class="bi bi-clock me-1 text-muted"></i>
-                            {{ turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--' }} - {{
-                            turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--' }}
+                            {% if grade_linha and grade_linha.por_dia_texto %}
+                            {{ grade_linha.por_dia_texto }}
+                            {% else %}
+                            {% set hora_ini = grade_linha.hora_inicio if grade_linha and grade_linha.hora_inicio else
+                            (turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--') %}
+                            {% set hora_fim_linha = grade_linha.hora_fim if grade_linha and grade_linha.hora_fim else
+                            (turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--') %}
+                            {{ hora_ini }} -
+                            {{ hora_fim_linha }}
                             {% endif %}
+                            {% if multi %}<div class="small text-muted">principal</div>{% endif %}
                         </td>
 
                         <!-- <td class="text-center small fw-semibold">
@@ -394,6 +397,8 @@
                                     </thead>
                                     <tbody>
                                         {% for o in ovas %}
+                                        {# H3d: dias/horários/C.H. por aula da oferta vêm da GRADE. #}
+                                        {% set grade_linha_oferta = grade_oferta_map.get(o.id) %}
                                         <tr class="small">
                                             <td>
                                                 {{ o.curso.nome if o.curso else '-' }}
@@ -403,14 +408,16 @@
                                             <td class="text-center">{{ (o.professor.name if o.professor else
                                                 (turma.professor.name if turma.professor else '-')) }}</td>
                                             <td class="text-center">{{ o.turno or turma.turno or '-' }}</td>
-                                            <td class="text-center">{{ o.dias_semana or turma.dias_semana or '-' }}</td>
+                                            <td class="text-center">{{ grade_linha_oferta.dias_texto if grade_linha_oferta and grade_linha_oferta.dias_texto else '-' }}</td>
                                             <td class="text-center">
-                                                {% set ohi = o.hora_inicio or turma.hora_inicio %}
-                                                {% set ohf = o.hora_fim or turma.hora_fim %}
-                                                {{ ohi.strftime('%H:%M') if ohi else '--:--' }} - {{
-                                                ohf.strftime('%H:%M') if ohf else '--:--' }}
+                                                {% if grade_linha_oferta and grade_linha_oferta.por_dia_texto %}
+                                                {{ grade_linha_oferta.por_dia_texto }}
+                                                {% else %}
+                                                {{ grade_linha_oferta.hora_inicio if grade_linha_oferta and grade_linha_oferta.hora_inicio else '--:--' }} - {{
+                                                grade_linha_oferta.hora_fim if grade_linha_oferta and grade_linha_oferta.hora_fim else '--:--' }}
+                                                {% endif %}
                                             </td>
-                                            <td class="text-center">{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_aula) }}</td>
+                                            <td class="text-center">{% if grade_linha_oferta and grade_linha_oferta.ch_aula_varia %}<span title="{{ grade_linha_oferta.ch_aula_por_dia_texto or '' }}">varia</span>{% else %}{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_aula) }}{% endif %}</td>
                                             <td class="text-center">{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_total) }}</td>
                                             <td class="text-center">{{ turma.freq_geral_oferta(o.id) }}%</td>
                                         </tr>

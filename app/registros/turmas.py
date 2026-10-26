@@ -39,10 +39,19 @@ from app.services.turma_curso import (
 )
 from app.services.turma_curso_horario import (
     definir_grade,
+    filtro_por_dia_horario,
     grade_a_partir_do_legado,
     grade_uniforme,
+    grades_para_exibicao,
+    grades_por_oferta,
 )
 from app.utils.datetime_parse import parse_date, parse_time
+from app.utils.dias_semana import (
+    csv_para_weekdays,
+    token_para_weekday,
+    weekday_para_abrev,
+    weekday_para_nome,
+)
 from app.utils.formatters import formatar_ch
 from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
 from app.utils.timezone import get_local_now
@@ -93,15 +102,8 @@ def _parse_float_arg(value):
         return None
 
 
-# Ordem canônica dos dias para união/exibição (Onda 4, Etapa K).
-_ORDEM_DIAS = (
-    "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo",
-)
-_ABREVIACAO_DIAS = {
-    "Segunda": "Seg.", "Terça": "Ter.", "Quarta": "Qua.",
-    "Quinta": "Qui.", "Sexta": "Sex.", "Sábado": "Sáb.",
-    "Domingo": "Dom.",
-}
+# Ordem canônica dos dias para união/exibição: `date.weekday()` (0 = segunda).
+# A abreviação da listagem mantém o ponto final usado desde a Etapa K.
 
 
 def _ofertas_ativas_da_turma(turma):
@@ -185,9 +187,14 @@ def _filtro_por_oferta(cond_oferta, cond_turma):
     )
 
 
-def _resumo_ofertas(turma):
+def _resumo_ofertas(turma, grades=None):
     """Professores/turnos distintos e união ordenada dos dias das ofertas
-    ativas (COALESCE oferta→turma), para a linha-agregado da lista."""
+    ativas, para a linha-agregado da lista.
+
+    Desde o H3d os **dias** saem da GRADE das ofertas ativas (a decisão é que
+    a Turma DERIVE os dias da união das ofertas). Fallback com o CSV projetado
+    quando a oferta ativa não tem grade ou quando a turma não tem oferta.
+    """
     ativas = _ofertas_ativas_da_turma(turma)
     professores, turnos, dias_set = [], [], set()
     for o in ativas:
@@ -200,14 +207,15 @@ def _resumo_ofertas(turma):
         turno = o.turno or turma.turno
         if turno and turno not in turnos:
             turnos.append(turno)
-        dias_str = o.dias_semana or turma.dias_semana or ""
-        for d in (x.strip() for x in dias_str.split(",")):
-            if d:
-                dias_set.add(d)
-    if not ativas and turma.dias_semana:
-        dias_set.update(d.strip() for d in turma.dias_semana.split(",") if d.strip())
-    dias = [d for d in _ORDEM_DIAS if d in dias_set]
-    dias_abreviados = [_ABREVIACAO_DIAS[d] for d in dias]
+        linhas = (grades or {}).get(o.id) or []
+        if linhas:
+            dias_set.update(linha.dia_semana for linha in linhas)
+        else:
+            dias_set.update(csv_para_weekdays(o.dias_semana or turma.dias_semana))
+    if not ativas:
+        dias_set.update(csv_para_weekdays(turma.dias_semana))
+    dias = [weekday_para_nome(d) for d in sorted(dias_set)]
+    dias_abreviados = [f"{weekday_para_abrev(d)}." for d in sorted(dias_set)]
     return {
         "professores": professores,
         "turnos": turnos,
@@ -318,25 +326,45 @@ def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
     if programa:
         stmt = stmt.where(Turma.programa == programa)
 
+    # Dia e horário leem a GRADE (decisão H3d): a turma casa quando uma oferta
+    # ATIVA tem linha de grade com o weekday e/ou a hora de início — os dois
+    # critérios na MESMA linha, então “dia A + hora do dia B” não casa. Turma
+    # sem oferta ativa com grade mantém o comparador escalar anterior
+    # (COALESCE oferta→turma / coluna da turma).
     dia = (args.get("dia") or "").strip()
-    if dia:
-        stmt = stmt.where(
-            _filtro_por_oferta(
+    horario = parse_time(args.get("horario_inicio"))
+    if dia or horario:
+        cond_escalar = None
+        if dia:
+            cond_escalar = _filtro_por_oferta(
                 func.coalesce(TurmaCurso.dias_semana, Turma.dias_semana).ilike(
                     f"%{dia}%"
                 ),
                 Turma.dias_semana.ilike(f"%{dia}%"),
             )
-        )
-
-    horario = parse_time(args.get("horario_inicio"))
-    if horario:
-        stmt = stmt.where(
-            _filtro_por_oferta(
+        if horario is not None:
+            cond_hora = _filtro_por_oferta(
                 func.coalesce(TurmaCurso.hora_inicio, Turma.hora_inicio) == horario,
                 Turma.hora_inicio == horario,
             )
-        )
+            cond_escalar = (
+                cond_hora
+                if cond_escalar is None
+                else and_(cond_escalar, cond_hora)
+            )
+        dia_semana = token_para_weekday(dia) if dia else None
+        if dia and dia_semana is None:
+            # Token fora do domínio 0–6: mantém estritamente o comparador
+            # antigo (substring do CSV), como antes do H3d.
+            current_app.logger.warning(
+                "Filtro de dia com token desconhecido: %r — usando CSV escalar.",
+                dia,
+            )
+            stmt = stmt.where(cond_escalar)
+        else:
+            stmt = stmt.where(
+                filtro_por_dia_horario(dia_semana, horario, cond_escalar)
+            )
 
     return stmt
 
@@ -346,10 +374,10 @@ def pos_filtrar_turmas(turmas, args):
 
     Com 2+ ofertas ativas, `min_freq` é avaliado sobre a oferta principal.
     A C.H. usa SEMPRE o valor calculado da turma — o mesmo exibido na lista:
-    `min_ch_aula` compara a menor duração semanal da oferta principal e
-    `min_ch_total` compara o tempo físico da turma (união dos intervalos das
-    ofertas ativas), nunca o total de uma oferta isolada. Com 0 ou 1 oferta o
-    resultado é o mesmo de antes. `min_alunos` inalterado.
+    `min_ch_aula` compara a MENOR duração semanal entre todas as ofertas ativas
+    (H3d) e `min_ch_total` compara o tempo físico da turma (união dos
+    intervalos das ofertas ativas), nunca o total de uma oferta isolada. Com 0
+    ou 1 oferta o resultado é o mesmo de antes. `min_alunos` inalterado.
     """
     min_alunos = _parse_int_arg(args.get("min_alunos"))
     min_freq = _parse_float_arg(args.get("min_freq"))
@@ -424,13 +452,14 @@ def turma():
     if unidade_id:
         stmt_base = stmt_base.where(Turma.unidade_id == unidade_id)
 
-    # Eager loading (sem N+1): professor da turma + ofertas com curso e
-    # professor. O filtro `ativo` das ofertas é feito no helper (Python), sobre
-    # a relação já carregada — sem query por linha.
+    # Eager loading (sem N+1): professor da turma + ofertas com curso,
+    # professor e GRADE (H3d). O filtro `ativo` das ofertas é feito no helper
+    # (Python), sobre a relação já carregada — sem query por linha.
     stmt_base = stmt_base.options(
         joinedload(Turma.professor),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+        selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios),
     )
 
     filtros = request.args.to_dict(flat=True)
@@ -460,6 +489,10 @@ def turma():
     carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
     ofertas_carga = [o for t in turmas for o in _ofertas_ativas_da_turma(t)]
     carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_carga)
+    grades_ofertas = grades_por_oferta(ofertas_carga)
+    grade_oferta_map = grades_para_exibicao(
+        ofertas_carga, carga_oferta_map, grades_ofertas
+    )
 
     # Centros disponíveis para o filtro do formulário.
     stmt_centros_catalogo = select(CentroCusto).where(CentroCusto.ativo.is_(True))
@@ -538,7 +571,7 @@ def turma():
     # Vistas por turma para o template (evita recomputar e chama de método na Jinja).
     ofertas_map = {t.id: _ofertas_ativas_da_turma(t) for t in turmas}
     principal_map = {t.id: _oferta_principal(t) for t in turmas}
-    resumo_map = {t.id: _resumo_ofertas(t) for t in turmas}
+    resumo_map = {t.id: _resumo_ofertas(t, grades_ofertas) for t in turmas}
     carga_horaria_total_map = {
         turma.id: carga_turma_map[turma.id].carga_horaria_total
         for turma in turmas
@@ -584,6 +617,7 @@ def turma():
         carga_horaria_total_map=carga_horaria_total_map,
         carga_turma_map=carga_turma_map,
         carga_oferta_map=carga_oferta_map,
+        grade_oferta_map=grade_oferta_map,
         formatar_ch=formatar_ch,
         nomes_turmas=nomes_turmas,
         professores=professores_filtro,
@@ -672,6 +706,8 @@ def imprimir_centros_custo_turmas():
     carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
     ofertas_todas = [o for item in turmas for o in _ofertas_ativas_da_turma(item)]
     carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_todas)
+    # Grade de exibição (H3d): dias/horários vêm da grade, não da projeção.
+    grade_oferta_map = grades_para_exibicao(ofertas_todas, carga_oferta_map)
 
     centros_por_chave = {
         (centro.unidade_id, centro.nome): centro for centro in centros
@@ -723,6 +759,7 @@ def imprimir_centros_custo_turmas():
         periodo_relatorio=periodo_relatorio,
         url_retorno=url_for("registros.turma", **filtros),
         carga_oferta_map=carga_oferta_map,
+        grade_oferta_map=grade_oferta_map,
         filtros_aplicados=any(filtros.values()),
         agora=get_local_now(),
         formatar_ch=formatar_ch,
@@ -968,12 +1005,16 @@ def ver_turma(id):
     ofertas_lista.sort(key=lambda oferta: (not oferta.principal, oferta.id))
     ofertas_todas = (
         TurmaCurso.query.options(
-            joinedload(TurmaCurso.curso), joinedload(TurmaCurso.professor)
+            joinedload(TurmaCurso.curso),
+            joinedload(TurmaCurso.professor),
+            selectinload(TurmaCurso.horarios),
         )
         .filter_by(turma_id=id)
         .order_by(TurmaCurso.principal.desc(), TurmaCurso.ativo.desc(), TurmaCurso.id)
         .all()
     )
+    # Grade de exibição em lote (H3d): um único selectinload acima, sem N+1.
+    grade_oferta_map = grades_para_exibicao(ofertas_todas)
     oferta_principal = next(
         (oferta for oferta in ofertas_lista if oferta.principal),
         ofertas_lista[0] if len(ofertas_lista) == 1 else None,
@@ -1065,6 +1106,7 @@ def ver_turma(id):
         oferta_principal=oferta_principal,
         oferta_sel=oferta_sel,
         alunos_por_oferta=alunos_por_oferta,
+        grade_oferta_map=grade_oferta_map,
         abrir_modal_enturmar=request.args.get("modal") == "enturmar",
         **ctx,
     )

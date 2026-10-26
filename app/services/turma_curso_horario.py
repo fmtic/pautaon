@@ -71,7 +71,8 @@ class CargaOferta:
 class CargaTurma:
     """C.H. de UMA turma: aula/total em minutos, menor aula e nº de ofertas.
 
-    ``carga_horaria_aula``/``min_ch_aula`` vêm da oferta principal;
+    ``carga_horaria_aula`` vem da oferta principal; ``min_ch_aula`` é a MENOR
+    duração semanal entre todas as ofertas ativas (H3d);
     ``carga_horaria_total`` é o tempo físico da turma (união dos intervalos das
     ofertas ativas por data) — o MESMO valor exibido na listagem e usado pelo
     filtro ``min_ch_total``; ``ofertas_ativas`` conta só as ativas.
@@ -716,13 +717,14 @@ def grade_para_exibicao(oferta: TurmaCurso, linhas, carga=None) -> GradeExibicao
     )
 
 
-def grades_para_exibicao(ofertas, cargas=None) -> dict[int, GradeExibicao]:
+def grades_para_exibicao(ofertas, cargas=None, grades=None) -> dict[int, GradeExibicao]:
     """Grade de exibição de várias ofertas em lote (sem N+1).
 
     ``cargas`` é o mapa do H3c (``cargas_horarias_ofertas_em_lote``) quando a
-    tela também mostra a C.H. por aula.
+    tela também mostra a C.H. por aula; ``grades`` evita reler a grade quando a
+    rota já chamou ``grades_por_oferta``.
     """
-    linhas_por_oferta = grades_por_oferta(ofertas)
+    linhas_por_oferta = grades if grades is not None else grades_por_oferta(ofertas)
     resultado: dict[int, GradeExibicao] = {}
     for oferta in ofertas:
         if oferta is None or oferta.id is None:

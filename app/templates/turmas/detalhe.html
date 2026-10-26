@@ -78,6 +78,8 @@
     {% for oferta in ofertas_todas %}
     {% set professor_oferta = oferta.professor or turma.professor %}
     {% set turno_oferta = oferta.turno or turma.turno %}
+    {# H3d: dias e horários vêm da GRADE da oferta (uniforme ou por dia). #}
+    {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
     <div class="col">
     <article class="card h-100 shadow-sm border-0">
       <h6 class="card-header p-0 border-0">
@@ -100,13 +102,17 @@
         <div class="card-body">
           <div class="row g-3 small">
             <div class="col-md-6">
-              <strong>Dias:</strong> {{ oferta.dias_semana or turma.dias_semana or 'Não informados' }}
+              <strong>Dias:</strong> {{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else 'Não informados' }}
             </div>
             <div class="col-md-6">
               <strong>Horários:</strong>
-              {% if oferta.hora_inicio or turma.hora_inicio %}{{ (oferta.hora_inicio or turma.hora_inicio).strftime('%H:%M') }}{% else %}--:--{% endif %}
+              {% if grade_oferta and grade_oferta.por_dia_texto %}
+              {{ grade_oferta.por_dia_texto }}
+              {% else %}
+              {{ grade_oferta.hora_inicio if grade_oferta and grade_oferta.hora_inicio else '--:--' }}
               às
-              {% if oferta.hora_fim or turma.hora_fim %}{{ (oferta.hora_fim or turma.hora_fim).strftime('%H:%M') }}{% else %}--:--{% endif %}
+              {{ grade_oferta.hora_fim if grade_oferta and grade_oferta.hora_fim else '--:--' }}
+              {% endif %}
             </div>
             <div class="col-md-6">
               {% set inicio_oferta = oferta.data_inicio or turma.data_inicio %}
@@ -241,8 +247,11 @@
             <option value="" {% if not oferta_sel %}selected{% endif %}>Selecione um curso</option>
             {% endif %}
             {% for o in ofertas %}
+            {# H3d: a hora do rótulo vem da GRADE; grade não uniforme simplesmente
+               omite a hora em vez de repetir a projeção escalar. #}
+            {% set grade_sel = grade_oferta_map.get(o.id) %}
             <option value="{{ o.id }}" {% if oferta_sel and o.id == oferta_sel.id %}selected{% elif ofertas|length == 1 %}selected{% endif %}>
-              {{ o.curso.nome }}{% if o.turno %} — {{ o.turno }}{% endif %}{% if o.hora_inicio %} {{ o.hora_inicio.strftime('%H:%M') }}{% endif %}
+              {{ o.curso.nome }}{% if o.turno %} — {{ o.turno }}{% endif %}{% if grade_sel and grade_sel.hora_inicio %} {{ grade_sel.hora_inicio }}{% endif %}
             </option>
             {% endfor %}
           </select>
