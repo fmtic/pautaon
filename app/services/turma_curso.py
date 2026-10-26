@@ -913,8 +913,9 @@ def datas_aula_oferta(
 
     - Vigência: janela [data_inicio, data_fim]; NULL nos extremos herda da
       turma; sem início OU fim definíveis → sem datas.
-    - `limite`: teto exclusivo de projeção. `None` vai até a `data_fim`
-      efetiva; quando informado, corta em `min(limite, data_fim)`.
+    - `limite`: teto **inclusivo** de projeção. `None` vai até a `data_fim`
+      efetiva; quando informado, corta em `min(limite, data_fim)` e a data
+      igual ao teto ainda é incluída.
     - Dias da semana: `_data_bate_dias_semana` com os dias efetivos da
       oferta. Sem dias em nenhum dos dois → sem datas.
     - `blocked`: conjunto de strings 'YYYY-MM-DD' (feriados / dias sem aula).
