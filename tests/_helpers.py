@@ -25,6 +25,8 @@ oferta (``turma_curso_id`` obrigatório).
 from app import db
 from app.models import Inscricao, TurmaCurso
 
+from app.utils.dias_semana import csv_para_weekdays
+
 #: Programa padrão usado pelas sementes quando o teste não exige um específico.
 PROGRAMA_PADRAO = "Programa de Teste"
 
@@ -81,3 +83,31 @@ def nova_inscricao(
         db.session.add(inscricao)
         db.session.flush()
     return inscricao
+
+
+def grade_a_partir_do_legado(oferta):
+    """Cria a grade uniforme equivalente às colunas escalares da oferta.
+
+    Lê `oferta.dias_semana` (CSV) e o par `hora_inicio`/`hora_fim`, resolve os
+    dias pelo conversor único e insere uma linha `TurmaCursoHorario` por dia
+    com o mesmo par de horários (grade uniforme = projeção idempotente). Não
+    faz commit. Usado pelos testes de H2/H3 para popular a grade a partir de
+    uma oferta legada já criada.
+
+    Devolve a lista de linhas inseridas.
+    """
+    from app.models import TurmaCursoHorario
+
+    dias = csv_para_weekdays(oferta.dias_semana)
+    linhas = []
+    for dia in sorted(set(dias)):
+        linha = TurmaCursoHorario(
+            turma_curso_id=oferta.id,
+            dia_semana=dia,
+            hora_inicio=oferta.hora_inicio,
+            hora_fim=oferta.hora_fim,
+        )
+        db.session.add(linha)
+        linhas.append(linha)
+    db.session.flush()
+    return linhas
