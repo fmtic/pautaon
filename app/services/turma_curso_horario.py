@@ -26,7 +26,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, time
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 
 from app import db
@@ -37,6 +38,7 @@ from app.utils.dias_semana import (
     weekday_para_nome,
     weekdays_para_csv,
 )
+from app.utils.formatters import formatar_ch
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,36 @@ class CargaTurma:
     carga_horaria_total: int | None
     min_ch_aula: int | None
     ofertas_ativas: int
+
+
+@dataclass(frozen=True)
+class GradeExibicao:
+    """Grade pronta para exibição (listagem, detalhe e impressão).
+
+    ``dias_texto`` usa os nomes canônicos completos ("Segunda, Quarta" — o
+    mesmo texto da projeção CSV). ``uniforme`` indica que todos os dias têm o
+    MESMO par de horas, que vem em ``hora_inicio``/``hora_fim`` já formatado
+    ("08:00"); na grade NÃO uniforme o par é ``None`` e ``por_dia_texto`` traz
+    um segmento por dia no estilo do aviso de concomitância
+    ("Terça 08:00–10:00; Quinta 14:00–16:00"). ``resumo`` é o `resumo_grade`
+    (H1) da oferta. ``ch_aula_min``/``ch_aula_por_dia_texto`` só vêm
+    preenchidos quando a rota passa as cargas do H3c: a C.H. por aula nunca
+    mostra média — ou o valor único, ou a lista por dia.
+    """
+
+    dias_texto: str | None
+    uniforme: bool
+    hora_inicio: str | None
+    hora_fim: str | None
+    por_dia_texto: str | None
+    resumo: str
+    ch_aula_min: int | None = None
+    ch_aula_por_dia_texto: str | None = None
+
+    @property
+    def ch_aula_varia(self) -> bool:
+        """``True`` quando a oferta não tem uma C.H. por aula única."""
+        return self.ch_aula_min is None and bool(self.por_dia_texto)
 
 
 logger = logging.getLogger(__name__)
@@ -126,6 +158,30 @@ def grades_em_lote(oferta_ids: list[int] | tuple[int, ...]) -> dict[int, list[Li
     return resultado
 
 
+def grades_por_oferta(ofertas) -> dict[int, list[Linha]]:
+    """Grade de várias ofertas **sem N+1**.
+
+    Usa a relação ``horarios`` quando já está em memória (``selectinload``) e
+    resolve em **UMA** consulta em lote apenas as ofertas cuja grade ainda não
+    foi carregada. Oferta sem linhas aparece com lista vazia.
+    """
+    resultado: dict[int, list[Linha]] = {}
+    pendentes: list[int] = []
+    for oferta in ofertas:
+        if oferta is None or oferta.id is None:
+            continue
+        if "horarios" in sa_inspect(oferta).unloaded:
+            pendentes.append(oferta.id)
+        else:
+            resultado[oferta.id] = [
+                Linha(linha.dia_semana, linha.hora_inicio, linha.hora_fim)
+                for linha in sorted(oferta.horarios, key=lambda l: l.dia_semana)
+            ]
+    if pendentes:
+        resultado.update(grades_em_lote(pendentes))
+    return resultado
+
+
 def dias_da_oferta(oferta_id: int) -> set[int]:
     """Dias (weekday 0-5) agendados para a oferta, em UMA consulta.
 
@@ -161,6 +217,97 @@ def dias_da_turma(turma_id: int) -> set[int]:
         .all()
     )
     return {d for (d,) in linhas}
+
+
+def dias_das_turmas_em_lote(
+    turmas,
+    grades: dict[int, list[Linha]] | None = None,
+) -> dict[int, set[int]]:
+    """Dias de cada turma (união das ofertas ATIVAS), sem consulta por turma.
+
+    Usa ``turma.ofertas_curso`` já carregado (``selectinload`` na rota) e o mapa
+    ``grades`` (de ``grades_por_oferta``). Fallback com ``logger.warning``:
+    oferta ativa sem grade → CSV projetado da oferta; turma sem nenhuma oferta
+    ativa → CSV da turma. A leitura do texto passa pelo conversor único.
+    """
+    resultado: dict[int, set[int]] = {}
+    for turma in turmas:
+        if turma is None or turma.id is None:
+            continue
+        ativas = [o for o in getattr(turma, "ofertas_curso", ()) if o.ativo]
+        dias: set[int] = set()
+        for oferta in ativas:
+            linhas = (grades or {}).get(oferta.id) or []
+            if linhas:
+                dias.update(linha.dia_semana for linha in linhas)
+                continue
+            logger.warning(
+                "Oferta %s sem grade: dias da listagem usam o CSV projetado.",
+                oferta.id,
+            )
+            dias.update(csv_para_weekdays(oferta.dias_semana or turma.dias_semana))
+        if not ativas:
+            logger.warning(
+                "Turma %s sem oferta ativa: dias da listagem usam o CSV da turma.",
+                turma.id,
+            )
+            dias.update(csv_para_weekdays(turma.dias_semana))
+        resultado[turma.id] = dias
+    return resultado
+
+
+def condicao_turma_com_grade():
+    """EXISTS: a turma tem ao menos UMA oferta ativa com grade.
+
+    Decisão H3d: quando a turma tem grade, os filtros de dia/horário da
+    listagem leem a grade; o comparador escalar antigo fica só para turma sem
+    oferta ativa ou sem nenhuma grade (legado anterior ao backfill).
+    """
+    return (
+        select(TurmaCursoHorario.id)
+        .join(TurmaCurso, TurmaCurso.id == TurmaCursoHorario.turma_curso_id)
+        .where(TurmaCurso.turma_id == Turma.id, TurmaCurso.ativo.is_(True))
+        .exists()
+    )
+
+
+def condicao_grade(dia_semana: int | None = None, hora_inicio: time | None = None):
+    """EXISTS: oferta ATIVA da turma com linha de grade casando o filtro.
+
+    Com ``dia_semana`` e ``hora_inicio`` juntos, exige os dois na **MESMA
+    linha** (mesmo dia) — é isso que impede “dia A + hora do dia B” casar.
+    ``None`` nos dois critérios devolve ``None`` (nenhum filtro).
+    """
+    if dia_semana is None and hora_inicio is None:
+        return None
+    criterios = []
+    if dia_semana is not None:
+        criterios.append(TurmaCursoHorario.dia_semana == dia_semana)
+    if hora_inicio is not None:
+        criterios.append(TurmaCursoHorario.hora_inicio == hora_inicio)
+    return (
+        select(TurmaCursoHorario.id)
+        .join(TurmaCurso, TurmaCurso.id == TurmaCursoHorario.turma_curso_id)
+        .where(
+            TurmaCurso.turma_id == Turma.id,
+            TurmaCurso.ativo.is_(True),
+            *criterios,
+        )
+        .exists()
+    )
+
+
+def filtro_por_dia_horario(dia_semana, hora_inicio, cond_escalar):
+    """Filtro de dia/horário da listagem: grade quando a turma tem grade.
+
+    ``cond_escalar`` é a condição LEGADA (COALESCE oferta→turma / coluna da
+    turma) e só vale para turma SEM oferta ativa com grade, preservando o
+    comportamento anterior nesse caso.
+    """
+    cond = condicao_grade(dia_semana, hora_inicio)
+    if cond is None:
+        return cond_escalar
+    return or_(cond, and_(~condicao_turma_com_grade(), cond_escalar))
 
 
 def duracao_do_dia(oferta: TurmaCurso, dia: int) -> int | None:
@@ -295,8 +442,7 @@ def cargas_horarias_ofertas_em_lote(
 
     if not ofertas:
         return {}
-    ids = [oferta.id for oferta in ofertas]
-    grades = grades_em_lote(ids)
+    grades = grades_por_oferta(ofertas)
     turmas = list({oferta.turma.id: oferta.turma for oferta in ofertas
                    if oferta.turma is not None}.values())
     bloqueados = bloqueios if bloqueios is not None else _bloqueios_em_lote(turmas)
@@ -405,7 +551,14 @@ def cargas_horarias_turmas_em_lote(turmas: list[Turma]) -> dict[int, CargaTurma]
         principal = oferta_principal_da_turma(ativas)
         principal_carga = oferta_cargas.get(principal.id) if principal else None
         aula = principal_carga.carga_horaria_aula if principal_carga else _duracao_turma_escalar(turma)
-        menor = principal_carga.min_ch_aula if principal_carga else _duracao_turma_escalar(turma)
+        # Decisão H3d: a menor aula da turma multi-oferta é o MENOR valor entre
+        # TODAS as ofertas ativas (antes considerava só a principal).
+        menores = [
+            carga.min_ch_aula
+            for carga in (oferta_cargas.get(oferta.id) for oferta in ativas)
+            if carga is not None and carga.min_ch_aula is not None
+        ]
+        menor = min(menores) if menores else _duracao_turma_escalar(turma)
 
         if not ativas:
             logger.warning(
@@ -494,6 +647,92 @@ def resumo_grade(oferta: TurmaCurso) -> str:
                 f"{abrev} {_formatar_hora(l.hora_inicio)}-{_formatar_hora(l.hora_fim)}"
             )
     return " · ".join(segmentos)
+
+
+def _segmento_por_dia(linha: Linha) -> str:
+    """Um dia no estilo do aviso de concomitância: ``"Terça 08:00–10:00"``."""
+    nome = weekday_para_nome(linha.dia_semana)
+    if linha.hora_inicio is None or linha.hora_fim is None:
+        return nome
+    return f"{nome} {_formatar_hora(linha.hora_inicio)}–{_formatar_hora(linha.hora_fim)}"
+
+
+def _ch_por_dia_texto(carga: CargaOferta | None) -> str | None:
+    """C.H. por dia para a coluna "C.H. por aula" (``"Ter 1h; Qui 2h"``)."""
+    if carga is None:
+        return None
+    partes = [
+        f"{weekday_para_abrev(dia)} {formatar_ch(minutos)}"
+        for dia, minutos in sorted(carga.por_dia.items())
+        if minutos
+    ]
+    return "; ".join(partes) or None
+
+
+def grade_para_exibicao(oferta: TurmaCurso, linhas, carga=None) -> GradeExibicao:
+    """Monta a grade de exibição de UMA oferta a partir das linhas já lidas.
+
+    Grade uniforme mantém o par (e o texto) que as telas mostram hoje; grade
+    não uniforme vira um segmento por dia. Oferta **sem grade** (100 % legado)
+    usa as colunas escalares projetadas, com ``logger.warning``.
+    """
+    linhas = list(linhas or [])
+    if linhas:
+        dias = tuple(sorted({linha.dia_semana for linha in linhas}))
+        pares = {(linha.hora_inicio, linha.hora_fim) for linha in linhas}
+        uniforme = len(pares) <= 1
+        inicio, fim = next(iter(pares)) if len(pares) == 1 else (None, None)
+        por_dia = None if uniforme else "; ".join(
+            _segmento_por_dia(linha) for linha in linhas
+        )
+        resumo = resumo_grade(oferta)
+    else:
+        logger.warning(
+            "Oferta %s sem grade: exibição usa a projeção escalar legada.",
+            oferta.id,
+        )
+        inicio, fim = oferta.hora_inicio, oferta.hora_fim
+        dias_csv = oferta.dias_semana
+        # `turma` já vem populada quando a oferta foi lida pela coleção da
+        # turma (listagem/impressão); no detalhe, só oferta legada cai aqui.
+        if oferta.turma is not None:
+            inicio = inicio or oferta.turma.hora_inicio
+            fim = fim or oferta.turma.hora_fim
+            dias_csv = dias_csv or oferta.turma.dias_semana
+        dias = tuple(sorted(set(csv_para_weekdays(dias_csv))))
+        uniforme = True
+        por_dia = None
+        resumo = ""
+
+    return GradeExibicao(
+        dias_texto=weekdays_para_csv(list(dias)),
+        uniforme=uniforme,
+        hora_inicio=_formatar_hora(inicio) or None,
+        hora_fim=_formatar_hora(fim) or None,
+        por_dia_texto=por_dia,
+        resumo=resumo,
+        ch_aula_min=carga.carga_horaria_aula if carga is not None else None,
+        ch_aula_por_dia_texto=_ch_por_dia_texto(carga),
+    )
+
+
+def grades_para_exibicao(ofertas, cargas=None) -> dict[int, GradeExibicao]:
+    """Grade de exibição de várias ofertas em lote (sem N+1).
+
+    ``cargas`` é o mapa do H3c (``cargas_horarias_ofertas_em_lote``) quando a
+    tela também mostra a C.H. por aula.
+    """
+    linhas_por_oferta = grades_por_oferta(ofertas)
+    resultado: dict[int, GradeExibicao] = {}
+    for oferta in ofertas:
+        if oferta is None or oferta.id is None:
+            continue
+        resultado[oferta.id] = grade_para_exibicao(
+            oferta,
+            linhas_por_oferta.get(oferta.id, []),
+            (cargas or {}).get(oferta.id),
+        )
+    return resultado
 
 
 # ---------------------------------------------------------------------------
