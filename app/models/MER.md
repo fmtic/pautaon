@@ -1415,12 +1415,13 @@ tabela estruturada, e não duplicados nesse JSON.
 **Impacto:** repetição de boilerplate; risco de vazamento de AppContext entre testes (armadilha §5.6 do T1); dificuldade de evolução da harness.
 **Plano:** criar `tests/conftest.py` centralizado.
 
-### 12.17 Deploy: script de preparação e observabilidade da CLI Alembic (B5-P1) — CAUSA CONFIRMADA
+### 12.17 Deploy: script de preparação e observabilidade da CLI Alembic (B5-P1) — CAUSA CONFIRMADA, CORREGIDO (H1-P0)
 
 **Onde:** `scripts/preparar_deploy_onda4.py`; `migrations/env.py`; CLI `flask db upgrade` / `flask_migrate.upgrade()`.
 **Causa (confirmada na D5.5, ensaio A–E):** tanto `flask db upgrade` quanto `flask_migrate.upgrade()` passam por `catch_errors`, que registra a exceção num logger e chama `sys.exit(1)`; o `fileConfig(config.config_file_name)` do `migrations/env.py` roda com `disable_existing_loggers=True` e **desabilita** o logger do Flask-Migrate, de modo que a mensagem do `RuntimeError` (as checagens de bloqueio) desaparece — o operador só vê o exit code 1.
-**Impacto:** durante o ensaio, a mensagem única só foi capturada chamando `alembic.command.upgrade` diretamente (`instance/backups/ensaio_d55/msg_upgrade.py`); o dump autêntico inexistente (B5-P2) impede repetir os ensaios com dados reais.
-**Plano:** corrigir `migrations/env.py` com `fileConfig(..., disable_existing_loggers=False)` (etapa de preparação do deploy, junto de P1/B5) e repetir os ensaios A–E com dump autêntico.
+**Correção (H1-P0, 26/10/2026):** `migrations/env.py` passou a chamar `fileConfig(config.config_file_name, disable_existing_loggers=False)`.
+**Prova (banco scratch `pautaon_ensaio`):** com uma migration descartável que levanta `RuntimeError`, o `flask db upgrade` agora exibe `ERROR [flask_migrate] Error: PROVA-B5-P1: ...` (exit 1); revertido o flag, a mesma execução termina em exit 1 **sem nenhuma mensagem** — comportamento antigo reproduzido. A transação da migration falhou e o scratch permaneceu em `f6a7b8c9d0e1`, sem resíduo.
+**Pendente:** repetir os ensaios A–E com dump autêntico (B5-P2 — o dump local não é autêntico).
 
 ### 12.18 D5 — Conselho de classe por oferta (CONCLUÍDO — 24–25/10/2026)
 
