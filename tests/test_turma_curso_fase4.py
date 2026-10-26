@@ -501,6 +501,46 @@ def test_segunda_oferta_mesmo_dia_nao_sobrescreve_a_primeira():
         assert regs[ob].tema_id == tb and regs[ob].observacoes == "obs B"
 
 
+def test_uma_aula_persiste_varios_temas_no_mesmo_registro():
+    from app.models import RegistroAula, TemaAula
+
+    app, ids = _mk_rota([
+        {"curso": "Natação", "alunos": ["Aluno A"], "tema": "Tema A"},
+        {"curso": "Judô", "alunos": ["Aluno B"], "tema": "Tema B"},
+    ])
+    with app.app_context():
+        oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
+        tema_extra = TemaAula(
+            curso_id=oferta.curso_id,
+            unidade_id=ids["unidade"],
+            titulo="Tema A2", ordem=2, ativo=True,
+        )
+        db.session.add(tema_extra)
+        db.session.commit()
+        tema_extra_id = tema_extra.id
+
+    client = _loga(app, ids["resp"])
+    client.post("/frequencia", data={
+        "turma": ids["turma"],
+        "data": DATA_ROTA.isoformat(),
+        "turma_curso": ids["ofertas"][0],
+        f"aluno_{ids['alunos']['Aluno A']}": ConceitoFrequencia.A.value,
+        "tema_ids": [ids["temas"]["Natação"], str(tema_extra_id)],
+        "observacoes": "Dois temas na mesma aula",
+    })
+
+    with app.app_context():
+        registro = RegistroAula.query.filter_by(
+            turma_curso_id=ids["ofertas"][0], data=DATA_ROTA,
+        ).one()
+        assert registro.tema_id == ids["temas"]["Natação"]
+        assert {tema.id for tema in registro.temas} == {
+            ids["temas"]["Natação"], tema_extra_id,
+        }
+        assert registro.observacoes == "Dois temas na mesma aula"
+        assert RegistroAula.query.filter_by(data=DATA_ROTA).count() == 1
+
+
 # --- c1) legado (0 ofertas): lançar 2x no mesmo dia atualiza, não duplica --
 def test_legado_lancar_duas_vezes_atualiza_nao_duplica():
     app, ids = _mk_rota([{"curso": "Natação", "alunos": ["Aluno A"]}])
@@ -619,6 +659,12 @@ def test_resolver_tema_de_outro_curso_recusado_e_null_aceito(app):
     # Tema de outro curso → recusado.
     with pytest.raises(ValueError):
         resolver_oferta_lancamento(d["turma"].id, DATA_ROTA, turma_curso_id=oa.id, tema_id=tema_b.id)
+    # Um conjunto misto também é rejeitado se apenas um tema for de outro curso.
+    with pytest.raises(ValueError):
+        resolver_oferta_lancamento(
+            d["turma"].id, DATA_ROTA, turma_curso_id=oa.id,
+            tema_ids=[tema_null.id, tema_b.id],
+        )
     # Tema sem curso (curso_id NULL) → aceito.
     out = resolver_oferta_lancamento(d["turma"].id, DATA_ROTA, turma_curso_id=oa.id, tema_id=tema_null.id)
     assert out is not None and out.id == oa.id

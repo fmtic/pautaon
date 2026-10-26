@@ -231,8 +231,16 @@ def frequencia():
         # mensagem e retorno sem gravar.
         oferta_raw_post = (request.form.get('turma_curso') or '').strip()
         oferta_id_post = int(oferta_raw_post) if oferta_raw_post.isdigit() else None
-        tema_raw_post = (request.form.get('tema_id') or '').strip()
-        tema_id_post = int(tema_raw_post) if tema_raw_post.isdigit() else None
+        temas_raw_post = request.form.getlist('tema_ids')
+        if not temas_raw_post:
+            tema_raw_post = (request.form.get('tema_id') or '').strip()
+            temas_raw_post = [tema_raw_post] if tema_raw_post else []
+        if any(not valor.isdigit() or int(valor) <= 0 for valor in temas_raw_post):
+            flash('Um ou mais temas selecionados são inválidos.', 'warning')
+            return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
+        tema_ids_post = list(dict.fromkeys(
+            int(valor) for valor in temas_raw_post
+        ))
         data_alvo_post = parse_date(data_post)
 
         redirect_back = {'turma_id': turma_post_id, 'data': data_post}
@@ -249,7 +257,7 @@ def frequencia():
                 oferta_post = resolver_oferta_lancamento(
                     int(turma_post_id), data_alvo_post,
                     turma_curso_id=oferta_id_post if exigir_validacao_oferta else None,
-                    tema_id=tema_id_post,
+                    tema_ids=tema_ids_post,
                 )
             except ValueError as exc:
                 flash(str(exc), 'warning')
@@ -266,7 +274,9 @@ def frequencia():
                     int(turma_post_id), oferta_post.id,
                 )
             }
-            form_data = request.form.to_dict()
+            # Mantém os campos repetidos (`tema_ids`) ao fazer a cópia mutável
+            # usada para remover alunos que não pertencem à pauta da oferta.
+            form_data = request.form.copy()
             if not exigir_validacao_oferta:
                 # Oferta única: retira o id do form para que o resolver
                 # interno de salvar_frequencia reautoescolha a mesma oferta
@@ -329,7 +339,7 @@ def frequencia():
 
     ctx = {}
     freqs = {}
-    tema_sel = None
+    tema_sel = []
     obs = ""
     ofertas = []
     oferta_atual = None

@@ -27,7 +27,16 @@
             </div>
 
             <h6 class="fw-bold text-dark mb-2">
-                Tema: <span class="text-secondary fw-normal">{{ registro.tema.titulo if registro.tema else 'Não informado' }}</span>
+                Temas:
+                <span class="text-secondary fw-normal">
+                    {% if registro.temas %}
+                        {{ registro.temas | map(attribute='titulo') | join(', ') }}
+                    {% elif registro.tema %}
+                        {{ registro.tema.titulo }}
+                    {% else %}
+                        Não informado
+                    {% endif %}
+                </span>
             </h6>
 
             <div class="p-3 bg-light rounded shadow-sm border-0 position-relative">

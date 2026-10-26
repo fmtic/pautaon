@@ -32,6 +32,28 @@ from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.enums import ConceitoFrequencia
 
 
+registro_aula_tema = db.Table(
+    'registro_aula_tema',
+    db.Column(
+        'registro_aula_id', db.Integer,
+        db.ForeignKey(
+            'registro_aula.id', name='fk_registro_aula_tema_registro',
+            ondelete='CASCADE',
+        ),
+        primary_key=True,
+    ),
+    db.Column(
+        'tema_aula_id', db.Integer,
+        db.ForeignKey(
+            'tema_aula.id', name='fk_registro_aula_tema_tema',
+            ondelete='RESTRICT',
+        ),
+        primary_key=True,
+    ),
+    db.Index('ix_registro_aula_tema_tema', 'tema_aula_id'),
+)
+
+
 class Frequencia(TenantMixin, db.Model):
     """
     Registro unitário de presença/falta de um aluno em uma oferta (ou turma
@@ -124,7 +146,7 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     """
     Diário de aula: o que o professor registrou em uma turma/oferta em um dia.
 
-    Guarda o tema trabalhado (`tema_id`), observações livres, e o instrutor
+    Guarda os temas trabalhados, observações livres, e o instrutor
     responsável. É a base para o acompanhamento pedagógico.
 
     Notas:
@@ -154,4 +176,8 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     turma_rel = db.relationship('Turma', backref='diarios')
     turma_curso = db.relationship('TurmaCurso', backref='diarios_oferta')
     tema = db.relationship('TemaAula', foreign_keys=[tema_id])
+    temas = db.relationship(
+        'TemaAula', secondary=registro_aula_tema,
+        order_by='TemaAula.ordem, TemaAula.id', lazy='selectin',
+    )
     instrutor = db.relationship('User', foreign_keys=[instrutor_id])

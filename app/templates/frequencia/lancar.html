@@ -120,17 +120,17 @@
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-secondary">Tema da Aula (Planejamento)</label>
-                        <select name="tema_id" id="select-tema-aula" class="form-select border-primary shadow-sm">
-                            <option value="">-- Selecione o Assunto do Dia --</option>
+                        <label class="form-label fw-bold text-secondary">Temas da Aula (Planejamento)</label>
+                        <div id="select-tema-aula" class="border rounded p-2 bg-white" style="max-height: 12rem; overflow-y: auto;" aria-describedby="ajuda-temas-aula">
                             {% for tema in temas %}
-                            <option value="{{ tema.id }}" {% if tema.id|string==tema_selecionado|string %}selected{%
-                                endif %}>
-                                {{ tema.titulo }}
-                            </option>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="tema_ids" id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado %}checked{% endif %}>
+                                <label class="form-check-label" for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
+                            </div>
                             {% endfor %}
-                        </select>
-                        <small class="text-muted d-block mt-1">Temas cadastrados no módulo de Planejamento.</small>
+                            {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{% endif %}
+                        </div>
+                        <small id="ajuda-temas-aula" class="text-muted d-block mt-1">Marque um ou mais temas trabalhados nesta aula.</small>
                     </div>
                 </div>
 

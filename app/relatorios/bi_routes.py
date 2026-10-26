@@ -115,6 +115,14 @@ def bi_api_dados():
     if unidade_efetiva:
         filtros["unidade_id"] = unidade_efetiva
 
+    # ETAPA D3b.4a: curso/turma/professor tambem sao aceitos pela API.
+    # `type=int` transforma valor invalido em None (o filtro simplesmente
+    # nao e aplicado) — nunca 500.
+    for chave in ("curso_id", "turma_id", "professor_id"):
+        valor = request.args.get(chave, type=int)
+        if valor is not None:
+            filtros[chave] = valor
+
     try:
         funcao = INDICADORES_ALUNOS.get(codigo)
         if funcao and filtros:
@@ -159,6 +167,11 @@ def bi_exportar_xlsx():
         "unidade_id": request.args.get("unidade_id", type=int),
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str) or None,
+        # ETAPA D3b.4a: curso/turma/professor pela OFERTA; `type=int` devolve
+        # None em valor invalido (filtro ignorado) — nunca 500.
+        "curso_id": request.args.get("curso_id", type=int),
+        "turma_id": request.args.get("turma_id", type=int),
+        "professor_id": request.args.get("professor_id", type=int),
     }
     filtros = _escopar_unidade(filtros)
     filtros_limpos = {k: v for k, v in filtros.items() if v is not None}
@@ -291,6 +304,12 @@ def bi_indicador(codigo):
         "unidade_id": request.args.get("unidade_id", type=int),
         "periodo_letivo_id": request.args.get("periodo_letivo_id", type=int),
         "turno": request.args.get("turno", type=str),
+        # ETAPA D3b.4a: curso/turma/professor pela OFERTA; `type=int` devolve
+        # None em valor invalido (filtro ignorado pela limpeza abaixo) —
+        # nunca 500.
+        "curso_id": request.args.get("curso_id", type=int),
+        "turma_id": request.args.get("turma_id", type=int),
+        "professor_id": request.args.get("professor_id", type=int),
     }
     filtros = _escopar_unidade(filtros)
 

@@ -1,0 +1,665 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+    .card-kpi {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-kpi:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
+    }
+    .badge-conceito-a { background-color: #198754; color: #fff; }
+    .badge-conceito-b { background-color: #0dcaf0; color: #000; }
+    .badge-conceito-c { background-color: #ffc107; color: #000; }
+    .badge-conceito-d { background-color: #fd7e14; color: #fff; }
+    .badge-conceito-f { background-color: #dc3545; color: #fff; }
+    .badge-conceito-j { background-color: #6c757d; color: #fff; }
+
+    .chart-container {
+        position: relative;
+        height: 260px;
+        width: 100%;
+    }
+    .avatar-circle {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        font-weight: 600;
+        font-size: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-2 pb-5">
+
+    <!-- Cabeçalho com Abas de Navegação -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Painel do Professor</h2>
+            <p class="text-muted small mb-0">Acompanhamento pedagógico, distribuição de frequência qualitativa e rendimento.</p>
+        </div>
+        <div class="nav nav-pills bg-light p-1 rounded-pill border align-self-start align-self-md-auto">
+            <a class="nav-link text-secondary rounded-pill px-3 py-1 small fw-semibold" href="{{ url_for('main.painel') }}">
+                <i class="bi bi-speedometer2 me-1"></i> Visão Geral
+            </a>
+            <a class="nav-link active rounded-pill px-3 py-1 small fw-semibold shadow-sm" href="{{ url_for('main.painel_pedagogico_professor') }}">
+                <i class="bi bi-diagram-3 me-1"></i> Painel Pedagógico
+            </a>
+        </div>
+    </div>
+
+    <!-- Barra de Seleção de Turma / Oferta -->
+    <div class="card shadow-sm border-0 mb-4 bg-white">
+        <div class="card-body p-3">
+            <form method="get" action="{{ url_for('main.painel_pedagogico_professor') }}" class="row g-3 align-items-center">
+                <div class="col-12 col-md-7 col-lg-6">
+                    <label class="form-label small fw-semibold text-muted mb-1">
+                        <i class="bi bi-mortarboard me-1 text-primary"></i>Turma / Curso Selecionado:
+                    </label>
+                    <select name="turma_selecionada" class="form-select form-select-sm" onchange="navegarTurma(this.value)">
+                        {% for e in entradas %}
+                            {% set val = e.turma.id ~ (':' ~ e.turma_curso_id if e.turma_curso_id else '') %}
+                            {% set sel = (entrada_selecionada and entrada_selecionada.turma.id == e.turma.id and entrada_selecionada.turma_curso_id == e.turma_curso_id) %}
+                            <option value="{{ val }}" {% if sel %}selected{% endif %}>
+                                {{ e.label }} ({{ e.alunos_count }} alunos)
+                            </option>
+                        {% else %}
+                            <option value="">Nenhuma turma vinculada</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-5 col-lg-6 d-flex align-items-center justify-content-md-end gap-2 pt-md-4">
+                    {% if entrada_selecionada %}
+                        {% if entrada_selecionada.turma_curso_id %}
+                            <a href="{{ url_for('registros.frequencia', turma_id=entrada_selecionada.turma.id, turma_curso=entrada_selecionada.turma_curso_id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-pencil-square me-1"></i>Abrir Diário / Pauta
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('registros.frequencia', turma_id=entrada_selecionada.turma.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-pencil-square me-1"></i>Abrir Diário / Pauta
+                            </a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if not entrada_selecionada %}
+        <div class="card shadow-sm border-0 text-center py-5">
+            <div class="card-body">
+                <i class="bi bi-journal-x fs-1 text-muted mb-3 d-block"></i>
+                <h5 class="fw-bold">Nenhuma turma com alunos encontrada</h5>
+                <p class="text-muted small">Você ainda não possui turmas ou ofertas ativas atribuídas ao seu usuário.</p>
+            </div>
+        </div>
+    {% else %}
+
+        <!-- Alertas de Atenção Pedagógica (Busca Ativa e Destaques) -->
+        {% if alertas_busca_ativa %}
+        <div class="alert alert-danger border-0 shadow-sm d-flex align-items-center justify-content-between p-3 mb-4 rounded-3">
+            <div class="d-flex align-items-center gap-3">
+                <div class="bg-danger text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                    <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                </div>
+                <div>
+                    <h6 class="fw-bold text-danger mb-0">Alerta de Busca Ativa / Infrequência Consecutiva</h6>
+                    <div class="small text-danger-emphasis">
+                        {{ alertas_busca_ativa|length }} aluno(s) com 3 ou mais faltas seguidas recentes:
+                        <strong>{% for a in alertas_busca_ativa[:3] %}{{ a.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</strong>
+                        {% if alertas_busca_ativa|length > 3 %} e mais {{ alertas_busca_ativa|length - 3 }}{% endif %}.
+                    </div>
+                </div>
+            </div>
+            <a href="#tabela-alunos" class="btn btn-sm btn-danger px-3 rounded-pill text-nowrap">Ver Alunos</a>
+        </div>
+        {% endif %}
+
+        <!-- CARDS DE RESUMO (KPIs) -->
+        <div class="row g-3 mb-4">
+            <!-- Frequência Média -->
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="card card-kpi h-100 shadow-sm border-0 border-start border-4 {% if resumo_geral.frequencia_media_turma >= 90 %}border-success{% elif resumo_geral.frequencia_media_turma >= 75 %}border-warning{% else %}border-danger{% endif %}">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="text-muted small fw-semibold">Frequência Geral</span>
+                            <div class="badge {% if resumo_geral.frequencia_media_turma >= 90 %}bg-success-subtle text-success{% elif resumo_geral.frequencia_media_turma >= 75 %}bg-warning-subtle text-warning{% else %}bg-danger-subtle text-danger{% endif %} rounded-pill">
+                                {% if resumo_geral.frequencia_media_turma >= 90 %}Ótima{% elif resumo_geral.frequencia_media_turma >= 75 %}Regular{% else %}Crítica{% endif %}
+                            </div>
+                        </div>
+                        <div class="fs-2 fw-bold text-dark lh-1 mb-2">{{ resumo_geral.frequencia_media_turma }}%</div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar {% if resumo_geral.frequencia_media_turma >= 90 %}bg-success{% elif resumo_geral.frequencia_media_turma >= 75 %}bg-warning{% else %}bg-danger{% endif %}" style="width: {{ resumo_geral.frequencia_media_turma }}%"></div>
+                        </div>
+                        <div class="text-muted small mt-2">
+                            {{ resumo_geral.total_presencas }} presenças / {{ resumo_geral.total_faltas }} faltas
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Índice de Qualidade de Rendimento (IQR) -->
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="card card-kpi h-100 shadow-sm border-0 border-start border-4 border-info">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="text-muted small fw-semibold">Rendimento (Conceitos)</span>
+                            <span class="badge bg-info-subtle text-info rounded-pill">Nota {{ resumo_geral.iqr_nota }}/10</span>
+                        </div>
+                        <div class="fs-2 fw-bold text-dark lh-1 mb-2">{{ resumo_geral.pct_alto_rendimento }}%</div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-info" style="width: {{ resumo_geral.pct_alto_rendimento }}%"></div>
+                        </div>
+                        <div class="text-muted small mt-2">
+                            Alunos com alto aproveitamento (A/B)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alunos em Alerta / Risco -->
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="card card-kpi h-100 shadow-sm border-0 border-start border-4 {% if resumo_geral.qtd_criticos > 0 %}border-danger{% else %}border-secondary{% endif %}">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="text-muted small fw-semibold">Alunos em Alerta</span>
+                            <i class="bi bi-person-exclamation text-danger fs-5"></i>
+                        </div>
+                        <div class="fs-2 fw-bold text-dark lh-1 mb-2">
+                            {{ resumo_geral.qtd_criticos }} <span class="fs-6 fw-normal text-muted">crítico(s)</span>
+                        </div>
+                        <div class="d-flex gap-2 text-muted small mt-2">
+                            <span><strong class="text-warning">{{ resumo_geral.qtd_atencao }}</strong> em atenção</span>
+                            <span>•</span>
+                            <span><strong class="text-success">{{ resumo_geral.qtd_otimos }}</strong> em dia</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cumprimento da Pauta -->
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="card card-kpi h-100 shadow-sm border-0 border-start border-4 border-primary">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="text-muted small fw-semibold">Cumprimento da Pauta</span>
+                            <span class="badge bg-primary-subtle text-primary rounded-pill">{{ cobertura_pauta.taxa_cumprimento_pauta }}%</span>
+                        </div>
+                        <div class="fs-2 fw-bold text-dark lh-1 mb-2">
+                            {{ cobertura_pauta.aulas_lancadas }} <span class="fs-6 fw-normal text-muted">de {{ cobertura_pauta.aulas_esperadas }} aulas</span>
+                        </div>
+                        <div class="text-muted small mt-2">
+                            {% if cobertura_pauta.temas_total > 0 %}
+                                {{ cobertura_pauta.temas_ministrados }}/{{ cobertura_pauta.temas_total }} temas do curso trabalhados
+                            {% else %}
+                                {{ cobertura_pauta.aulas_pendentes }} aula(s) a lançar
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GRÁFICOS E ANÁLISES DETALHADAS -->
+        <div class="row g-4 mb-4">
+            <!-- Card Esquerdo: Distribuição Qualitativa de Frequência (A, B, C, D) -->
+            <div class="col-12 col-lg-5">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center justify-content-between">
+                        <h6 class="fw-bold mb-0">
+                            <i class="bi bi-pie-chart-fill me-2 text-primary"></i>Qualitativo da Frequência
+                        </h6>
+                        <span class="text-muted small">{{ qualitativo_conceitos.total_presencas }} registros</span>
+                    </div>
+                    <div class="card-body pt-0">
+                        <!-- Gráfico Doughnut -->
+                        <div class="chart-container mb-3">
+                            <canvas id="chartConceitos"></canvas>
+                        </div>
+
+                        <!-- Barras e Detalhamento dos Conceitos -->
+                        <div class="d-flex flex-column gap-2 small">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge badge-conceito-a me-1 px-2">A</span>
+                                    <strong>Pleno / Excelente</strong>
+                                </div>
+                                <div class="text-end">
+                                    <span class="fw-bold">{{ qualitativo_conceitos.contagem.A }}</span>
+                                    <span class="text-muted">({{ qualitativo_conceitos.percentuais.A }}%)</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge badge-conceito-b me-1 px-2">B</span>
+                                    <strong>Bom / Participativo</strong>
+                                </div>
+                                <div class="text-end">
+                                    <span class="fw-bold">{{ qualitativo_conceitos.contagem.B }}</span>
+                                    <span class="text-muted">({{ qualitativo_conceitos.percentuais.B }}%)</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge badge-conceito-c me-1 px-2">C</span>
+                                    <strong>Regular / Parcial</strong>
+                                </div>
+                                <div class="text-end">
+                                    <span class="fw-bold">{{ qualitativo_conceitos.contagem.C }}</span>
+                                    <span class="text-muted">({{ qualitativo_conceitos.percentuais.C }}%)</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge badge-conceito-d me-1 px-2">D</span>
+                                    <strong>Insuficiente / Passivo</strong>
+                                </div>
+                                <div class="text-end">
+                                    <span class="fw-bold">{{ qualitativo_conceitos.contagem.D }}</span>
+                                    <span class="text-muted">({{ qualitativo_conceitos.percentuais.D }}%)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if resumo_geral.total_justificadas > 0 %}
+                        <div class="mt-3 pt-2 border-top text-muted small">
+                            <i class="bi bi-info-circle me-1"></i>{{ resumo_geral.total_justificadas }} falta(s) abonada(s)/justificada(s) (J).
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card Direito: Evolução Temporal da Frequência na Turma -->
+            <div class="col-12 col-lg-7">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center justify-content-between">
+                        <h6 class="fw-bold mb-0">
+                            <i class="bi bi-graph-up-arrow me-2 text-primary"></i>Evolução de Assiduidade Aula a Aula
+                        </h6>
+                        <span class="badge bg-light text-dark border small">Meta: 75%</span>
+                    </div>
+                    <div class="card-body pt-0">
+                        <div class="chart-container">
+                            <canvas id="chartEvolucao"></canvas>
+                        </div>
+                        <div class="small text-muted text-center mt-2">
+                            Passe o mouse sobre os pontos para visualizar data, tema trabalhado e percentual de presenças.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABELA ANALÍTICA DE ALUNOS -->
+        <div class="card shadow-sm border-0 mb-4" id="tabela-alunos">
+            <div class="card-header bg-white border-bottom py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+                <div>
+                    <h5 class="fw-bold mb-1">
+                        <i class="bi bi-people-fill text-primary me-2"></i>Rendimento e Assiduidade por Aluno
+                    </h5>
+                    <p class="text-muted small mb-0">{{ alunos_rendimento|length }} aluno(s) matriculado(s) nesta turma</p>
+                </div>
+                <!-- Filtros rápidos de tabela -->
+                <div class="d-flex flex-wrap gap-2">
+                    <div class="input-group input-group-sm" style="max-width: 220px;">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="filtroNomeAluno" class="form-control border-start-0" placeholder="Buscar aluno..." onkeyup="filtrarTabelaAlunos()">
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary active" onclick="filtrarCategoria('TODOS', this)">Todos</button>
+                        <button type="button" class="btn btn-outline-success" onclick="filtrarCategoria('ALTO', this)">Alto Rendimento</button>
+                        <button type="button" class="btn btn-outline-warning" onclick="filtrarCategoria('MEDIO', this)">Regular</button>
+                        <button type="button" class="btn btn-outline-danger" onclick="filtrarCategoria('BAIXO', this)">Atenção / Crítico</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="tabelaAlunosPrincipal">
+                        <thead class="table-light text-muted small text-uppercase">
+                            <tr>
+                                <th class="ps-3">Aluno</th>
+                                <th class="text-center">Presença</th>
+                                <th class="text-center">Aulas</th>
+                                <th class="text-center">Faltas</th>
+                                <th class="text-center">Conceitos [A, B, C, D]</th>
+                                <th class="text-center">Perfil de Rendimento</th>
+                                <th class="text-center">Histórico</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in alunos_rendimento %}
+                            <tr class="linha-aluno" data-nome="{{ a.nome|lower }}" data-categoria="{{ a.categoria_rendimento }}" data-faixa="{{ a.faixa_freq }}">
+                                <td class="ps-3">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="avatar-circle bg-primary bg-opacity-10 text-primary">
+                                            {{ a.nome[:1] }}
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold text-dark">{{ a.nome }}</div>
+                                            {% if a.alerta_duplo %}
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.68rem;">
+                                                    <i class="bi bi-exclamation-octagon-fill me-1"></i>Risco Duplo (Infrequente + Baixo Rendimento)
+                                                </span>
+                                            {% elif a.faltas_consecutivas >= 3 %}
+                                                <span class="badge bg-warning-subtle text-dark border border-warning" style="font-size: 0.68rem;">
+                                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ a.faltas_consecutivas }} faltas seguidas
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-{{ a.badge_freq_classe }} px-2 py-1 fs-6">
+                                        {{ a.freq_pct }}%
+                                    </span>
+                                </td>
+                                <td class="text-center small">{{ a.total_aulas }}</td>
+                                <td class="text-center small">
+                                    {% if a.faltas > 0 %}
+                                        <span class="text-danger fw-bold">{{ a.faltas }}</span>
+                                    {% else %}
+                                        <span class="text-muted">0</span>
+                                    {% endif %}
+                                    {% if a.justificadas > 0 %}
+                                        <span class="text-muted" title="{{ a.justificadas }} falta(s) justificada(s)">(+{{ a.justificadas }}J)</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <div class="d-inline-flex gap-1">
+                                        <span class="badge badge-conceito-a" title="Conceito A: {{ a.conceitos.A }} aula(s)">{{ a.conceitos.A }}A</span>
+                                        <span class="badge badge-conceito-b" title="Conceito B: {{ a.conceitos.B }} aula(s)">{{ a.conceitos.B }}B</span>
+                                        <span class="badge badge-conceito-c" title="Conceito C: {{ a.conceitos.C }} aula(s)">{{ a.conceitos.C }}C</span>
+                                        <span class="badge badge-conceito-d" title="Conceito D: {{ a.conceitos.D }} aula(s)">{{ a.conceitos.D }}D</span>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-{{ a.badge_rend_classe }}-subtle text-{{ a.badge_rend_classe }} border border-{{ a.badge_rend_classe }}-subtle px-2 py-1">
+                                        {{ a.rendimento_label }}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            onclick='abrirHistoricoAluno({{ a|tojson|safe }})'
+                                            title="Ver histórico de aulas do aluno">
+                                        <i class="bi bi-clock-history me-1"></i>Histórico
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">Nenhum aluno encontrado para esta turma.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    {% endif %}
+
+</div>
+
+<!-- MODAL DE HISTÓRICO DO ALUNO -->
+<div class="modal fade" id="modalHistoricoAluno" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-light">
+                <div>
+                    <h5 class="modal-title fw-bold" id="modalNomeAluno">Histórico de Aulas do Aluno</h5>
+                    <div class="small text-muted" id="modalSubtituloAluno"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive" style="max-height: 400px;">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light small text-uppercase sticky-top">
+                            <tr>
+                                <th class="ps-3">Data</th>
+                                <th class="text-center">Conceito</th>
+                                <th>Tema Trabalhado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalTbodyHistorico">
+                            <!-- Preenchido via Javascript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+    function navegarTurma(valor) {
+        if (!valor) return;
+        const partes = valor.split(':');
+        const turmaId = partes[0];
+        const turmaCursoId = partes[1] || '';
+        let url = "{{ url_for('main.painel_pedagogico_professor') }}?turma_id=" + encodeURIComponent(turmaId);
+        if (turmaCursoId) {
+            url += "&turma_curso=" + encodeURIComponent(turmaCursoId);
+        }
+        window.location.href = url;
+    }
+
+    // Filtragem em tempo real da tabela de alunos
+    let categoriaAtiva = 'TODOS';
+
+    function filtrarCategoria(cat, btn) {
+        categoriaAtiva = cat;
+        if (btn) {
+            btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+        filtrarTabelaAlunos();
+    }
+
+    function filtrarTabelaAlunos() {
+        const termo = (document.getElementById('filtroNomeAluno').value || '').toLowerCase().trim();
+        const linhas = document.querySelectorAll('.linha-aluno');
+
+        linhas.forEach(linha => {
+            const nome = linha.getAttribute('data-nome') || '';
+            const cat = linha.getAttribute('data-categoria') || '';
+            const faixa = linha.getAttribute('data-faixa') || '';
+
+            let matchNome = !termo || nome.includes(termo);
+            let matchCat = true;
+
+            if (categoriaAtiva === 'ALTO') {
+                matchCat = (cat === 'ALTO');
+            } else if (categoriaAtiva === 'MEDIO') {
+                matchCat = (cat === 'MEDIO');
+            } else if (categoriaAtiva === 'BAIXO') {
+                matchCat = (cat === 'BAIXO' || faixa === 'lo');
+            }
+
+            if (matchNome && matchCat) {
+                linha.style.display = '';
+            } else {
+                linha.style.display = 'none';
+            }
+        });
+    }
+
+    // Modal de Histórico Individual
+    function abrirHistoricoAluno(aluno) {
+        document.getElementById('modalNomeAluno').textContent = aluno.nome;
+        document.getElementById('modalSubtituloAluno').textContent =
+            `Frequência: ${aluno.freq_pct}% | Presenças: ${aluno.presencas} | Faltas: ${aluno.faltas} | Rendimento: ${aluno.rendimento_label}`;
+
+        const tbody = document.getElementById('modalTbodyHistorico');
+        tbody.innerHTML = '';
+
+        if (!aluno.historico || aluno.historico.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">Nenhum registro de aula até o momento.</td></tr>';
+        } else {
+            aluno.historico.forEach(item => {
+                let badgeClass = 'bg-secondary';
+                let label = item.conceito;
+                if (item.conceito === 'A') badgeClass = 'badge-conceito-a';
+                else if (item.conceito === 'B') badgeClass = 'badge-conceito-b';
+                else if (item.conceito === 'C') badgeClass = 'badge-conceito-c';
+                else if (item.conceito === 'D') badgeClass = 'badge-conceito-d';
+                else if (item.conceito === 'F') badgeClass = 'badge-conceito-f';
+                else if (item.conceito === 'J') badgeClass = 'badge-conceito-j';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-3 fw-semibold">${item.data_str || item.data}</td>
+                    <td class="text-center"><span class="badge ${badgeClass} px-2">${label}</span></td>
+                    <td class="text-muted small">${item.tema || '—'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        const modal = new bootstrap.Modal(document.getElementById('modalHistoricoAluno'));
+        modal.show();
+    }
+
+    // Inicialização dos Gráficos via Chart.js
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if entrada_selecionada %}
+            // 1. Gráfico de Rosca (Conceitos A, B, C, D e Faltas F)
+            const ctxConceitos = document.getElementById('chartConceitos');
+            if (ctxConceitos && typeof Chart !== 'undefined') {
+                const dadosConceitos = {{ qualitativo_conceitos.contagem|tojson }};
+                const totalFaltas = {{ resumo_geral.total_faltas|default(0) }};
+
+                new Chart(ctxConceitos, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Conceito A (Pleno)', 'Conceito B (Bom)', 'Conceito C (Regular)', 'Conceito D (Insuficiente)', 'Faltas (F)'],
+                        datasets: [{
+                            data: [
+                                dadosConceitos.A || 0,
+                                dadosConceitos.B || 0,
+                                dadosConceitos.C || 0,
+                                dadosConceitos.D || 0,
+                                totalFaltas
+                            ],
+                            backgroundColor: ['#198754', '#0dcaf0', '#ffc107', '#fd7e14', '#dc3545'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        const val = ctx.raw || 0;
+                                        const dataset = ctx.chart.data.datasets[0];
+                                        const total = dataset.data.reduce((a, b) => a + b, 0);
+                                        const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                                        return ` ${ctx.label}: ${val} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        },
+                        cutout: '65%'
+                    }
+                });
+            }
+
+            // 2. Gráfico de Linha (Evolução Temporal da Turma)
+            const ctxEvolucao = document.getElementById('chartEvolucao');
+            if (ctxEvolucao && typeof Chart !== 'undefined') {
+                const evolucaoDados = {{ evolucao_temporal|tojson }};
+                const labels = evolucaoDados.map(d => d.data);
+                const taxas = evolucaoDados.map(d => d.taxa_presenca);
+                const temas = evolucaoDados.map(d => d.tema || 'Tema não informado');
+
+                new Chart(ctxEvolucao, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: '% Frequência',
+                                data: taxas,
+                                borderColor: '#0d6efd',
+                                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                                pointBackgroundColor: '#0d6efd'
+                            },
+                            {
+                                label: 'Meta (75%)',
+                                data: Array(labels.length).fill(75),
+                                borderColor: '#dc3545',
+                                borderDash: [5, 5],
+                                borderWidth: 1.5,
+                                fill: false,
+                                pointRadius: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                min: 0,
+                                max: 100,
+                                ticks: {
+                                    callback: function(v) { return v + '%'; }
+                                },
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    title: function(items) {
+                                        const idx = items[0].dataIndex;
+                                        return evolucaoDados[idx] ? evolucaoDados[idx].data_completa : '';
+                                    },
+                                    afterLabel: function(item) {
+                                        const idx = item.dataIndex;
+                                        return 'Tema: ' + temas[idx];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        {% endif %}
+    });
+</script>
+{% endblock %}

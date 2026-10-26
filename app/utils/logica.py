@@ -37,6 +37,7 @@ from app.models import (
     RegistroAula,
     TemaAula,
     Turma,
+    TurmaCurso,
     User,
 )
 from app.models.enums import (
@@ -411,7 +412,9 @@ def carregar_frequencias(
     frequencias = {f.aluno_id: f.conceito for f in registros}
 
     if diario:
-        tema_selecionado = diario.tema_id
+        tema_selecionado = [tema.id for tema in diario.temas]
+        if not tema_selecionado and diario.tema_id is not None:
+            tema_selecionado = [diario.tema_id]
         obs_salva = diario.observacoes or ""
 
     return frequencias, tema_selecionado, obs_salva
@@ -441,8 +444,19 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         data_raw = (form.get('data', '') or form.get('data_hidden', '')).strip()
         data_alvo = parse_date(data_raw)
 
-        tema_id_raw = form.get('tema_id', '').strip()
-        tema_id = int(tema_id_raw) if tema_id_raw and tema_id_raw.isdigit() else None
+        if hasattr(form, 'getlist'):
+            temas_raw = form.getlist('tema_ids')
+        else:
+            temas_raw = form.get('tema_ids', [])
+            if isinstance(temas_raw, str):
+                temas_raw = [temas_raw]
+        if not temas_raw:
+            legado_tema = form.get('tema_id', '').strip()
+            temas_raw = [legado_tema] if legado_tema else []
+        if any(not str(valor).strip().isdigit() or int(valor) <= 0 for valor in temas_raw):
+            raise ValueError("Seleção de temas inválida.")
+        tema_ids = list(dict.fromkeys(int(valor) for valor in temas_raw))
+        tema_id = tema_ids[0] if tema_ids else None
         texto_observacoes = form.get('observacoes', '').strip() or None
 
         turma_curso_raw = form.get('turma_curso', '').strip()
@@ -458,7 +472,8 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         # pelo except genérico abaixo → (0, None); na D2 a rota passará a
         # exibir a mensagem específica via flash.
         oferta = resolver_oferta_lancamento(
-            turma_id, data_alvo, turma_curso_id=turma_curso_id, tema_id=tema_id,
+            turma_id, data_alvo, turma_curso_id=turma_curso_id,
+            tema_ids=tema_ids,
         )
         oferta_id = oferta.id if oferta else None
 
@@ -473,17 +488,20 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             ).first()
         if registro:
             registro.observacoes = texto_observacoes
-            registro.tema_id = tema_id
+            registro.tema_id = tema_id  # compatibilidade com leitores legados
+            registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             registro.instrutor_id = current_user.id
         else:
-            db.session.add(RegistroAula(
+            registro = RegistroAula(
                 turma_id=turma_id,
                 turma_curso_id=oferta_id,
                 data=data_alvo,
-                tema_id=tema_id,
+                tema_id=tema_id,  # espelho temporário durante a transição
                 observacoes=texto_observacoes,
                 instrutor_id=current_user.id,
-            ))
+            )
+            registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
+            db.session.add(registro)
 
         # --- Frequência por aluno ---
         alunos_post = (
@@ -590,13 +608,40 @@ def calcular_frequencias_relatorio(
     todas_as_turmas: List[Turma],
     unidade_id: Optional[int] = None,
 ) -> Tuple[float, Dict[str, float], Dict[str, float], Dict[str, float]]:
-    """Retorna (geral, por_programa, por_turma, por_professor), em %."""
+    """Retorna (geral, por_programa, por_turma, por_professor), em %.
+
+    ETAPA D3b.4a (decisões 1, 3 e 4): o percentual vem da regra única do
+    serviço `frequencia_oferta`; `por_turma` agregada em lote
+    (`agregar_por_turma` — todas as linhas da turma, ofertas + legado, como
+    a tela já exibe) e `por_professor` passa a ser o professor DA OFERTA
+    (`TurmaCurso.professor_id`, sem fallback para a turma; as linhas
+    legadas entram pela oferta única ativa da turma — regra D2 — dentro de
+    `agregar_por_oferta`). `por_programa` continua por `Turma.programa`
+    (turno/coorte é D3b.7).
+    """
+    # Import local: mesma lição de `contar_ofertas_conselho` (evita
+    # dependência de `app.services` no carregamento de `logica`).
+    from app.services.frequencia_oferta import (
+        agregar_por_oferta,
+        agregar_por_turma,
+        percentual,
+    )
 
     def calc_pc(query) -> float:
-        estatisticas = calcular_estatisticas_frequencia(
-            registro.conceito for registro in query.all()
+        # D3b.4a (decisão 4): percentual pela regra única do serviço —
+        # presentes/(presentes+faltas), J fora, 1 casa (mesmo resultado do
+        # antigo `calcular_estatisticas_frequencia`, agora fonte única).
+        contagens = (
+            query.filter(Frequencia.conceito.in_(["A", "B", "C", "D", "F"]))
+            .with_entities(Frequencia.conceito, db.func.count(Frequencia.id))
+            .group_by(Frequencia.conceito)
+            .all()
         )
-        return estatisticas['presenca_percentual']
+        presentes = sum(
+            n for conceito, n in contagens if conceito in ("A", "B", "C", "D")
+        )
+        faltas = sum(n for conceito, n in contagens if conceito == "F")
+        return percentual(presentes, faltas)
 
     q_geral = Frequencia.query.join(
         Turma, Frequencia.turma_id == Turma.id
@@ -618,23 +663,43 @@ def calcular_frequencias_relatorio(
         f_prog[prog] = calc_pc(q)
 
     f_turma: Dict[str, float] = {}
-    for t in todas_as_turmas:
-        q = Frequencia.query.filter(Frequencia.turma_id == t.id)
-        f_turma[t.nome] = calc_pc(q)
+    if todas_as_turmas:
+        # D3b.4a: UMA consulta agregada para todas as turmas (sem N+1);
+        # turmas sem frequência ficam com 0.0 (como antes).
+        agregado_turmas = agregar_por_turma(
+            [t.id for t in todas_as_turmas], unidade_id=unidade_id
+        )
+        for t in todas_as_turmas:
+            info = agregado_turmas.get(t.id)
+            f_turma[t.nome] = info.pct_turma if info is not None else 0.0
 
     f_prof: Dict[str, float] = {}
     # Onda 2B (limpeza): usa o enum em vez da string 'professor'.
     prof_query = User.query.filter_by(role=UserRole.PROFESSOR.value)
     if unidade_id:
         prof_query = prof_query.filter_by(unidade_id=unidade_id)
-    for prof in prof_query.all():
-        q = Frequencia.query.join(
-            Turma, Frequencia.turma_id == Turma.id
-        ).filter(Turma.professor_id == prof.id, Turma.ativo == True)
-        if unidade_id:
-            q = q.filter(Turma.unidade_id == unidade_id)
-        if q.count() > 0:
-            f_prof[prof.name] = calc_pc(q)
+    nomes_prof = {prof.id: prof.name for prof in prof_query.all()}
+
+    # D3b.4a (decisão 1): professor DA OFERTA (TurmaCurso.professor_id) em
+    # turmas ativas no escopo; o serviço aplica a regra D2 ao legado.
+    q_ofertas = db.session.query(TurmaCurso.id, TurmaCurso.professor_id).join(
+        Turma, Turma.id == TurmaCurso.turma_id
+    ).filter(Turma.ativo == True)
+    if unidade_id:
+        q_ofertas = q_ofertas.filter(Turma.unidade_id == unidade_id)
+
+    ofertas_por_prof: Dict[int, List[int]] = {}
+    for oferta_id, prof_rel in q_ofertas.all():
+        if prof_rel is None or prof_rel not in nomes_prof:
+            continue
+        ofertas_por_prof.setdefault(prof_rel, []).append(oferta_id)
+
+    for prof_rel, ids in ofertas_por_prof.items():
+        agregado = agregar_por_oferta(ids, unidade_id=unidade_id)
+        presentes = sum(info.presentes for info in agregado.values())
+        faltas = sum(info.faltas for info in agregado.values())
+        if presentes + faltas > 0:
+            f_prof[nomes_prof[prof_rel]] = percentual(presentes, faltas)
 
     return p_geral, f_prog, f_turma, f_prof
 

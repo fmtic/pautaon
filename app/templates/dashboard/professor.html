@@ -4,9 +4,19 @@
 <div class="container mt-2">
 
     <!-- Cabeçalho -->
-    <div class="mb-4">
-        <h2 class="fw-bold mb-1">Painel do Professor</h2>
-        <p class="text-muted small mb-0">Resumo de suas turmas, alunos e rotina acadêmica.</p>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Painel do Professor</h2>
+            <p class="text-muted small mb-0">Resumo de suas turmas, alunos e rotina acadêmica.</p>
+        </div>
+        <div class="nav nav-pills bg-light p-1 rounded-pill border align-self-start align-self-md-auto">
+            <a class="nav-link active rounded-pill px-3 py-1 small fw-semibold shadow-sm" href="{{ url_for('main.painel') }}">
+                <i class="bi bi-speedometer2 me-1"></i> Visão Geral
+            </a>
+            <a class="nav-link text-secondary rounded-pill px-3 py-1 small fw-semibold" href="{{ url_for('main.painel_pedagogico_professor') }}">
+                <i class="bi bi-diagram-3 me-1"></i> Painel Pedagógico
+            </a>
+        </div>
     </div>
 
     <div class="row g-4">

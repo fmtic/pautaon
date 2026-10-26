@@ -2,7 +2,7 @@
 
 from datetime import date, timedelta
 
-from flask import current_app, flash, render_template
+from flask import current_app, flash, render_template, request
 from flask_login import current_user
 
 from app.models import Aluno, DiaBloqueado, Turma, TurmaCurso
@@ -336,6 +336,53 @@ def render_dashboard_professor():
             dias_bloqueados=[],
             aulas_pendentes=[],
         )
+
+
+def render_painel_pedagogico_professor():
+    """Painel Pedagógico do professor: dados estatísticos refinados por turma e aluno.
+
+    Apresenta indicadores quantitativos e qualitativos (conceitos A, B, C, D),
+    classificação por rendimento, acompanhamento de assiduidade e cumprimento da pauta.
+    """
+    from app.services.estatisticas_professor import obter_estatisticas_professor
+
+    try:
+        turma_id_raw = request.args.get("turma_id")
+        turma_id = int(turma_id_raw) if turma_id_raw and turma_id_raw.isdigit() else None
+
+        tc_raw = request.args.get("turma_curso") or request.args.get("turma_curso_id")
+        turma_curso_id = int(tc_raw) if tc_raw and tc_raw.isdigit() else None
+
+        stats = obter_estatisticas_professor(
+            current_user.id,
+            turma_id=turma_id,
+            turma_curso_id=turma_curso_id,
+        )
+
+        return render_template(
+            "dashboard/painel_pedagogico.html",
+            **stats,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "Erro ao carregar o Painel Pedagógico do professor (user_id=%s)",
+            current_user.id,
+        )
+        flash("Erro ao carregar o Painel Pedagógico.", "warning")
+        from app.services.estatisticas_professor import _conceitos_vazio, _cobertura_vazia, _resumo_vazio
+        return render_template(
+            "dashboard/painel_pedagogico.html",
+            entradas=[],
+            entrada_selecionada=None,
+            resumo_geral=_resumo_vazio(),
+            qualitativo_conceitos=_conceitos_vazio(),
+            evolucao_temporal=[],
+            alunos_rendimento=[],
+            cobertura_pauta=_cobertura_vazia(),
+            alertas_busca_ativa=[],
+            alunos_destaque=[],
+        )
+
 
 
 

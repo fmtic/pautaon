@@ -678,6 +678,7 @@ def resolver_oferta_lancamento(
     data: date,
     turma_curso_id: int | None = None,
     tema_id: int | None = None,
+    tema_ids: list[int] | tuple[int, ...] | None = None,
 ) -> TurmaCurso | None:
     """Decide qual oferta (TurmaCurso) deve receber o lançamento de frequência/
     diário de `turma_id` na `data`, validando a escolha informada.
@@ -690,12 +691,29 @@ def resolver_oferta_lancamento(
         - Oferta informada (turma_curso_id): rejeita (ValueError) quando a
           oferta não existe, está inativa, pertence a outra turma, a data está
           fora da vigência (NULL = aberto), o dia da semana não está nos dias
-          da oferta (quando definidos) ou o `tema_id` informado pertence a
+          da oferta (quando definidos) ou algum tema selecionado pertence a
           outro curso que não o da oferta.
 
     Não grava nada — apenas resolve e valida. Levanta ValueError com mensagem
     de usuário (convenção deste módulo; a rota converte em flash).
     """
+    ids_temas = list(dict.fromkeys(
+        tema_ids or ([] if tema_id is None else [tema_id])
+    ))
+    temas_selecionados = (
+        TemaAula.query.filter(TemaAula.id.in_(ids_temas)).all()
+        if ids_temas else []
+    )
+    if len(temas_selecionados) != len(ids_temas):
+        raise ValueError("Um ou mais temas selecionados não existem.")
+
+    def validar_temas_curso(oferta: TurmaCurso) -> None:
+        if any(t.curso_id not in (None, oferta.curso_id) for t in temas_selecionados):
+            raise ValueError(
+                f"Um dos temas selecionados pertence a outro curso, não a "
+                f"'{_nome_curso(oferta)}'. Escolha temas do curso da oferta."
+            )
+
     if turma_curso_id is not None:
         oferta = db.session.get(TurmaCurso, turma_curso_id)
         if oferta is None:
@@ -722,19 +740,22 @@ def resolver_oferta_lancamento(
                 f"A data {data:%d/%m/%Y} não cai em um dia de aula da oferta "
                 f"'{_nome_curso(oferta)}' ({oferta.dias_semana})."
             )
-        if tema_id is not None:
-            tema = db.session.get(TemaAula, tema_id)
-            if tema is not None and tema.curso_id not in (None, oferta.curso_id):
-                raise ValueError(
-                    f"O tema selecionado pertence a outro curso, não a "
-                    f"'{_nome_curso(oferta)}'. Escolha um tema do curso da oferta."
-                )
+        validar_temas_curso(oferta)
         return oferta
 
     ativas = ofertas_ativas(turma_id)
     if not ativas:
+        turma = db.session.get(Turma, turma_id)
+        if turma and any(
+            tema.curso_id not in (None, turma.curso_id)
+            for tema in temas_selecionados
+        ):
+            raise ValueError(
+                "Um dos temas selecionados não pertence ao curso desta turma."
+            )
         return None  # sem oferta ativa → caminho legado (só turma_id)
     if len(ativas) == 1:
+        validar_temas_curso(ativas[0])
         return ativas[0]
     nomes = ", ".join(_nome_curso(o) for o in ativas)
     raise ValueError(

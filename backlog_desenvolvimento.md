@@ -1052,3 +1052,11 @@ Esta atualização inclui:
 - Criação e estruturação dos mixins pendentes: `SoftDeleteMixin` (para a coluna `ativo`) e `TenantMixin` (para a coluna `unidade_id`) inseridos no arquivo `app/models/base.py`. Estes mixins foram aplicados de forma bem-sucedida, simplificando os modelos de `academico.py`, `pedagogico.py`, `matriculas.py`, `conselho.py` e `aulas.py`.
 - Adicionada configuração `alembic.ini` e migração de banco `a9f3c8e2d1b7` que insere as colunas nas tabelas supracitadas.
 - Atualização do arquivo `docs/wiki.md` e `app/models/MER.md` refletindo essas modernizações (resolvendo o item 12.3 da dívida técnica).
+
+
+### Alterações do dia — 26/10/2026
+
+- **Vários temas por aula:** pauta atualizada para selecionar e gravar vários temas no mesmo `RegistroAula`; validação rejeita temas inexistentes ou incompatíveis com o curso da oferta. Observações, estatísticas docentes e BI foram adaptados; BI conta aulas distintas por tema.
+- Migration `a8b9c0d1e2f3` aplicada ao PostgreSQL local: revisão atualizada de `f6a7b8c9d0e1` para `a8b9c0d1e2f3`. A tabela associativa foi criada; a conferência encontrou 0 registros antigos com tema sem vínculo migrado (o banco continha 0 associações a migrar).
+- Testes focados: `tests/test_turma_curso_fase4.py` e `tests/test_pauta_professor.py` — **26 aprovados**. Incluído teste de integração com dois temas no mesmo registro.
+

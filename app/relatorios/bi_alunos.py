@@ -12,6 +12,7 @@ from app.models import (
     RegistroAula,
     TemaAula,
     Turma,
+    TurmaCurso,
     Unidade,
     User,
 )
@@ -21,10 +22,155 @@ from app.services.aluno_status import (
     periodos_de_referencia_bi,
     status_alunos_para_bi,
 )
-from app.relatorios.bi_filtros import cond_inscricao_enturmada
-from sqlalchemy import func, case, cast, Integer
+from app.relatorios.bi_filtros import (
+    cond_inscricao_enturmada,
+    cond_linha_por_oferta,
+)
+# ETAPA D3b.4a (decisão 4): percentual, faixa e agregação em lote vêm do
+# serviço único `frequencia_oferta`; curso/professor de linhas com oferta
+# nullable são resolvidos por `cond_linha_por_oferta` (decisões 1 e 3).
+from app.services.frequencia_oferta import (
+    agregar_por_oferta,
+    agregar_por_turma,
+    faixa as faixa_de,
+    ofertas_unicas_ativas,
+    percentual,
+)
+from sqlalchemy import func, case, cast, Integer, and_, or_, select
 from sqlalchemy.orm import selectinload
 from datetime import date
+
+
+# ---------------------------------------------------------------------------
+# ETAPA D3b.4a — helpers de linha (Frequencia/RegistroAula) por OFERTA
+# ---------------------------------------------------------------------------
+
+# Listas literais preservam exatamente os conceitos usados pelo código anterior
+# (presença A-D; contáveis A-D + F; J fora do percentual).
+_CONCEITOS_PRESENCA = ["A", "B", "C", "D"]
+_CONCEITOS_CONTABEIS = ["A", "B", "C", "D", "F"]
+
+
+def _base_frequencia(filtros, conceitos=None):
+    """Query base de linhas `Frequencia` com os filtros do BI por OFERTA.
+
+    unidade/turma/datas são colunas diretas; período joina `Turma` apenas
+    quando filtrado; curso/professor casam pela OFERTA da linha
+    (`cond_linha_por_oferta`) — legado só entra em turma de oferta única
+    ativa (regra D2 da decisão 3).
+    """
+    query = Frequencia.query
+
+    if filtros.get("unidade_id"):
+        query = query.filter(Frequencia.unidade_id == filtros["unidade_id"])
+
+    if filtros.get("turma_id"):
+        query = query.filter(Frequencia.turma_id == filtros["turma_id"])
+
+    if filtros.get("data_inicio"):
+        query = query.filter(Frequencia.data >= filtros["data_inicio"])
+
+    if filtros.get("data_fim"):
+        query = query.filter(Frequencia.data <= filtros["data_fim"])
+
+    if filtros.get("periodo_letivo_id"):
+        query = query.join(
+            Turma,
+            Turma.id == Frequencia.turma_id,
+        ).filter(Turma.periodo_letivo_id == filtros["periodo_letivo_id"])
+
+    cond = cond_linha_por_oferta(
+        Frequencia.turma_curso_id,
+        Frequencia.turma_id,
+        curso_id=filtros.get("curso_id"),
+        professor_id=filtros.get("professor_id"),
+    )
+    if cond is not None:
+        query = query.filter(cond)
+
+    if conceitos is not None:
+        query = query.filter(Frequencia.conceito.in_(conceitos))
+
+    return query
+
+
+def _base_registro_aula(filtros):
+    """Query base de `RegistroAula` com join ÚNICO em Turma (corrige o join
+    duplo caracterizado em D3b.4a: unidade + curso/prof/período geravam
+    `ambiguous column name: turma.unidade_id` — 500 na rota) e filtros de
+    curso/professor pela OFERTA via `cond_linha_por_oferta`.
+    """
+    query = RegistroAula.query.join(
+        Turma,
+        Turma.id == RegistroAula.turma_id,
+    )
+
+    if filtros.get("unidade_id"):
+        query = query.filter(Turma.unidade_id == filtros["unidade_id"])
+
+    if filtros.get("periodo_letivo_id"):
+        query = query.filter(Turma.periodo_letivo_id == filtros["periodo_letivo_id"])
+
+    if filtros.get("turma_id"):
+        query = query.filter(Turma.id == filtros["turma_id"])
+
+    cond = cond_linha_por_oferta(
+        RegistroAula.turma_curso_id,
+        RegistroAula.turma_id,
+        curso_id=filtros.get("curso_id"),
+        professor_id=filtros.get("professor_id"),
+    )
+    if cond is not None:
+        query = query.filter(cond)
+
+    if filtros.get("data_inicio"):
+        query = query.filter(RegistroAula.data >= filtros["data_inicio"])
+
+    if filtros.get("data_fim"):
+        query = query.filter(RegistroAula.data <= filtros["data_fim"])
+
+    return query
+
+
+def _totais_por_aluno(filtros):
+    """`aluno_id -> [presentes, faltas]` em UMA consulta agregada (D3b.4a).
+
+    Só entram linhas contábeis (A-D, F); J fica fora, exatamente como a regra
+    do serviço. Substitui o carregamento linha a linha das faixas antigas.
+    """
+    linhas = (
+        _base_frequencia(filtros, conceitos=_CONCEITOS_CONTABEIS)
+        .with_entities(
+            Frequencia.aluno_id,
+            Frequencia.conceito,
+            func.count(Frequencia.id),
+        )
+        .group_by(Frequencia.aluno_id, Frequencia.conceito)
+        .all()
+    )
+
+    totais = {}
+    for aluno_id, conceito, n in linhas:
+        atual = totais.setdefault(aluno_id, [0, 0])
+        if conceito in _CONCEITOS_PRESENCA:
+            atual[0] += n
+        else:
+            atual[1] += n
+    return totais
+
+
+def _contagem_por_faixa(alvo, filtros):
+    """FRE-006/007/008 como UMA função auxiliar parametrizada (decisão 4).
+
+    Percentual e faixa vêm do serviço `frequencia_oferta` (faixa sobre o valor
+    arredondado: hi >= 90, mid >= 75, lo abaixo), de modo que hi + mid + lo
+    somam exatamente o total de alunos com frequência contável no escopo.
+    """
+    return sum(
+        1
+        for presentes, faltas in _totais_por_aluno(filtros).values()
+        if faixa_de(percentual(presentes, faltas)) == alvo
+    )
 
 
 def total_alunos(
@@ -423,14 +569,20 @@ def alunos_por_unidade(
         if periodo_letivo_id:
             query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
         if turma_id:
             query = query.filter(Turma.id == turma_id)
 
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
+        # D3b.4a (decisão 1): curso/professor pela OFERTA da inscrição
+        # (Inscricao.turma_curso_id é NOT NULL — sem fallback para a turma).
+        # Decisão 6: a base do indicador continua a cadastral do catálogo.
+        if curso_id or professor_id:
+            query = query.join(
+                TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id
+            )
+            if curso_id:
+                query = query.filter(TurmaCurso.curso_id == curso_id)
+            if professor_id:
+                query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Aluno.created_at >= data_inicio)
@@ -500,7 +652,10 @@ def alunos_por_curso(
         Aluno.query.filter(Aluno.id.in_(ids_enturmados))
         .join(Inscricao, Inscricao.aluno_id == Aluno.id)
         .join(Turma, Turma.id == Inscricao.turma_id)
-        .join(Curso, Curso.id == Turma.curso_id)
+        # D3b.4a (decisão 1): o curso vem da OFERTA da inscrição
+        # (TurmaCurso.curso_id), sem fallback para Turma.curso_id.
+        .join(TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id)
+        .join(Curso, Curso.id == TurmaCurso.curso_id)
         .filter(
             # Etapa J3: só conta enturmado em oferta ativa (helper inclui
             # Inscricao.ativo e Turma.ativo; NULL ambíguo com 2+ ofertas fora).
@@ -515,14 +670,17 @@ def alunos_por_curso(
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
+    # D3b.4a (decisões 1 e 2): curso/professor pela OFERTA; o aluno é
+    # distinto DENTRO de cada curso (a soma dos cursos pode exceder os
+    # alunos distintos da unidade — documentado no catálogo).
+    if curso_id:
+        query = query.filter(TurmaCurso.curso_id == curso_id)
+
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+        query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Aluno.created_at >= data_inicio)
@@ -605,14 +763,19 @@ def alunos_por_turma(
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+    # D3b.4a (decisões 1 e 2): curso/professor pela OFERTA da inscrição;
+    # o aluno conta uma vez por turma (distinct por Turma já no group_by).
+    if curso_id or professor_id:
+        query = query.join(
+            TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id
+        )
+        if curso_id:
+            query = query.filter(TurmaCurso.curso_id == curso_id)
+        if professor_id:
+            query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Aluno.created_at >= data_inicio)
@@ -823,11 +986,17 @@ def inscricoes_por_curso(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de inscrições agrupada por curso."""
+    """Retorna a quantidade de inscrições agrupada por curso.
+
+    D3b.4a (decisão 1): o curso vem da OFERTA da inscrição
+    (`Inscricao.turma_curso_id` -> `TurmaCurso.curso_id`), sem fallback.
+    """
     from app.models import Curso
 
     query = Inscricao.query.join(Turma, Turma.id == Inscricao.turma_id).join(
-        Curso, Curso.id == Turma.curso_id
+        TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id
+    ).join(
+        Curso, Curso.id == TurmaCurso.curso_id
     ).filter(
         # Turma desativada (excluída) não entra em contagens agregadas.
         Turma.ativo.is_(True),
@@ -839,14 +1008,14 @@ def inscricoes_por_curso(
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
+    if curso_id:
+        query = query.filter(TurmaCurso.curso_id == curso_id)
+
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+        query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Inscricao.data_inicio >= data_inicio)
@@ -884,37 +1053,21 @@ def total_lancamentos_frequencia(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna o total de lançamentos de frequência conforme os filtros do BI."""
-    query = Frequencia.query
+    """Retorna o total de lançamentos de frequência conforme os filtros do BI.
 
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    return query.count()
+    D3b.4a (decisões 1 e 3): curso/professor casam pela OFERTA da linha.
+    """
+    return _base_frequencia(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
+    ).count()
 
 
 def total_presencas(
@@ -926,37 +1079,19 @@ def total_presencas(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna o total de presenças conforme os filtros do BI."""
-    query = Frequencia.query.filter(Frequencia.conceito.in_(["A", "B", "C", "D"]))
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    return query.count()
+    """Retorna o total de presenças conforme os filtros do BI (D3b.4a: por OFERTA)."""
+    return _base_frequencia(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+        conceitos=_CONCEITOS_PRESENCA,
+    ).count()
 
 
 def total_faltas(
@@ -968,37 +1103,19 @@ def total_faltas(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna o total de faltas conforme os filtros do BI."""
-    query = Frequencia.query.filter(Frequencia.conceito == "F")
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    return query.count()
+    """Retorna o total de faltas conforme os filtros do BI (D3b.4a: por OFERTA)."""
+    return _base_frequencia(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+        conceitos=["F"],
+    ).count()
 
 
 def total_faltas_justificadas(
@@ -1010,37 +1127,19 @@ def total_faltas_justificadas(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna o total de faltas justificadas conforme os filtros do BI."""
-    query = Frequencia.query.filter(Frequencia.conceito == "J")
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    return query.count()
+    """Retorna o total de faltas justificadas conforme os filtros do BI (D3b.4a: por OFERTA)."""
+    return _base_frequencia(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+        conceitos=["J"],
+    ).count()
 
 
 def frequencia_media(
@@ -1052,47 +1151,42 @@ def frequencia_media(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a frequência média global, excluindo faltas justificadas."""
-    query = Frequencia.query.filter(Frequencia.conceito.in_(["A", "B", "C", "D", "F"]))
+    """Retorna a frequência média global, excluindo faltas justificadas.
 
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
+    D3b.4a (decisão 4): o percentual vem da regra única do serviço
+    `frequencia_oferta` — presentes/(presentes+faltas), J fora, 1 casa.
+    """
+    contagens = (
+        _base_frequencia(
+            {
+                "unidade_id": unidade_id,
+                "periodo_letivo_id": periodo_letivo_id,
+                "curso_id": curso_id,
+                "turma_id": turma_id,
+                "professor_id": professor_id,
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
+            },
+            conceitos=_CONCEITOS_CONTABEIS,
         )
+        .with_entities(Frequencia.conceito, func.count(Frequencia.id))
+        .group_by(Frequencia.conceito)
+        .all()
+    )
 
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
+    presentes = sum(
+        n for conceito, n in contagens if conceito in _CONCEITOS_PRESENCA
+    )
+    faltas = sum(n for conceito, n in contagens if conceito == "F")
 
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    total = query.count()
-
-    if total == 0:
-        return 0.0
-
-    presentes = query.filter(Frequencia.conceito.in_(["A", "B", "C", "D"])).count()
-
-    return round((presentes / total) * 100, 1)
+    return percentual(presentes, faltas)
 
 
-"""Retorna alunos com frequência igual ou superior a 90%."""
+"""FRE-006/007/008 (D3b.4a, decisão 4): as três faixas viram UMA função
+auxiliar parametrizada (`_contagem_por_faixa`), sobre o percentual e a faixa
+do serviço `frequencia_oferta` (faixa sobre o valor arredondado: hi >= 90,
+mid >= 75, lo abaixo). Assim hi + mid + lo somam exatamente o total de alunos
+com frequência contável no escopo (fecha a brecha do 89,96%)."""
 
 
 def alunos_frequencia_90(
@@ -1104,61 +1198,19 @@ def alunos_frequencia_90(
     data_inicio=None,
     data_fim=None,
 ):
-    from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
-
-    query = Frequencia.query
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    registros = query.all()
-    frequencias = {}
-
-    for registro in registros:
-        if registro.conceito not in CONCEITOS_CONTABEIS:
-            continue
-
-        frequencias.setdefault(registro.aluno_id, []).append(registro.conceito)
-
-    total = 0
-
-    for conceitos in frequencias.values():
-        presentes = sum(1 for conceito in conceitos if conceito in CONCEITOS_PRESENCA)
-
-        frequencia = (presentes / len(conceitos)) * 100
-
-        if frequencia >= 90:
-            total += 1
-
-    return total
-
-
-"""Retorna alunos com frequência entre 75% e 89%."""
-from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
+    """Retorna alunos com frequência na faixa "hi" (>= 90% arredondado)."""
+    return _contagem_por_faixa(
+        "hi",
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+    )
 
 
 def alunos_frequencia_75_89(
@@ -1170,62 +1222,19 @@ def alunos_frequencia_75_89(
     data_inicio=None,
     data_fim=None,
 ):
-
-    query = Frequencia.query
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    registros = query.all()
-    frequencias = {}
-
-    for registro in registros:
-        if registro.conceito not in CONCEITOS_CONTABEIS:
-            continue
-
-        frequencias.setdefault(
-            registro.aluno_id,
-            [],
-        ).append(registro.conceito)
-
-    total = 0
-
-    for conceitos in frequencias.values():
-        presentes = sum(conceito in CONCEITOS_PRESENCA for conceito in conceitos)
-
-        frequencia = (presentes / len(conceitos)) * 100
-
-        if 75 <= round(frequencia, 1) <= 89:
-            total += 1
-
-    return total
-
-
-"""Retorna alunos com frequência inferior a 75%."""
+    """Retorna alunos com frequência na faixa "mid" (75% <= arredondado < 90%)."""
+    return _contagem_por_faixa(
+        "mid",
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+    )
 
 
 def alunos_frequencia_inferior_75(
@@ -1237,57 +1246,19 @@ def alunos_frequencia_inferior_75(
     data_inicio=None,
     data_fim=None,
 ):
-    from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
-
-    query = Frequencia.query
-
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(Frequencia.turma_id == turma_id)
-
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    registros = query.all()
-    frequencias = {}
-
-    for registro in registros:
-        if registro.conceito not in CONCEITOS_CONTABEIS:
-            continue
-
-        frequencias.setdefault(registro.aluno_id, []).append(registro.conceito)
-
-    total = 0
-
-    for conceitos in frequencias.values():
-        presentes = sum(1 for conceito in conceitos if conceito in CONCEITOS_PRESENCA)
-
-        frequencia = (presentes / len(conceitos)) * 100
-
-        if frequencia < 75:
-            total += 1
-
-    return total
+    """Retorna alunos com frequência na faixa "lo" (< 75% arredondado)."""
+    return _contagem_por_faixa(
+        "lo",
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        },
+    )
 
 
 def frequencia_por_turma(
@@ -1299,7 +1270,15 @@ def frequencia_por_turma(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a frequência média agrupada por turma."""
+    """Retorna a frequência média agrupada por turma.
+
+    D3b.4a: o percentual exibido continua POR TURMA (todas as linhas da
+    turma — decisão 3: o legado entra nos totais de unidade/turma), mas a
+    agregação passa a ser em lote pelo serviço `frequencia_oferta`
+    (`agregar_por_turma`), sem iterar turma a turma. Os filtros curso e
+    professor passam a selecionar as TURMAS pela OFERTA (decisão 1): a
+    turma aparece quando tem oferta ativa casando o filtro.
+    """
 
     # Turma desativada (excluída) não entra em contagens agregadas.
     query = Turma.query.filter(Turma.ativo.is_(True))
@@ -1310,62 +1289,74 @@ def frequencia_por_turma(
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
+    # D3b.4a (decisão 1): curso/professor pela OFERTA — a turma entra quando
+    # tem oferta ATIVA casando o filtro.
+    casam = []
+    if curso_id:
+        casam.append(TurmaCurso.curso_id == curso_id)
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-
-    turmas = query.order_by(Turma.nome).all()
-
-    resultados = []
-
-    for turma in turmas:
-        frequencia = turma.freq_geral
-
-        if data_inicio or data_fim:
-            frequencia_query = Frequencia.query.filter(Frequencia.turma_id == turma.id)
-
-            if data_inicio:
-                frequencia_query = frequencia_query.filter(
-                    Frequencia.data >= data_inicio
-                )
-
-            if data_fim:
-                frequencia_query = frequencia_query.filter(Frequencia.data <= data_fim)
-
-            registros = frequencia_query.all()
-
-            contabilizaveis = [
-                registro
-                for registro in registros
-                if registro.conceito in ["A", "B", "C", "D", "F"]
-            ]
-
-            if contabilizaveis:
-                presentes = sum(
-                    registro.conceito in ["A", "B", "C", "D"]
-                    for registro in contabilizaveis
-                )
-                frequencia = round(
-                    (presentes / len(contabilizaveis)) * 100,
-                    1,
-                )
-            else:
-                frequencia = 0.0
-
-        resultados.append(
-            {
-                "id": turma.id,
-                "nome": turma.nome,
-                "valor": frequencia,
-            }
+        casam.append(TurmaCurso.professor_id == professor_id)
+    if casam:
+        query = query.filter(
+            select(TurmaCurso.id)
+            .where(
+                TurmaCurso.turma_id == Turma.id,
+                TurmaCurso.ativo.is_(True),
+                *casam,
+            )
+            .exists()
         )
 
-    return resultados
+    turmas = query.order_by(Turma.nome).all()
+    if not turmas:
+        return []
+
+    turmas_ids = [turma.id for turma in turmas]
+
+    if data_inicio or data_fim:
+        # Recálculo por intervalo de datas: UMA consulta agregada (sem N+1).
+        fq = db.session.query(
+            Frequencia.turma_id,
+            Frequencia.conceito,
+            func.count(Frequencia.id),
+        ).filter(
+            Frequencia.turma_id.in_(turmas_ids),
+            Frequencia.conceito.in_(_CONCEITOS_CONTABEIS),
+        )
+        if unidade_id:
+            fq = fq.filter(Frequencia.unidade_id == unidade_id)
+        if data_inicio:
+            fq = fq.filter(Frequencia.data >= data_inicio)
+        if data_fim:
+            fq = fq.filter(Frequencia.data <= data_fim)
+
+        totais = {tid: [0, 0] for tid in turmas_ids}
+        for tid, conceito, n in fq.group_by(
+            Frequencia.turma_id, Frequencia.conceito
+        ).all():
+            if conceito == "F":
+                totais[tid][1] += n
+            else:
+                totais[tid][0] += n
+        percentuais = {tid: percentual(p, f) for tid, (p, f) in totais.items()}
+    else:
+        # Agregação em lote pelo serviço único (1 consulta para todas as
+        # turmas; turmas sem frequência ficam ausentes do dict).
+        agregado = agregar_por_turma(turmas_ids, unidade_id=unidade_id)
+        percentuais = {tid: info.pct_turma for tid, info in agregado.items()}
+
+    return [
+        {
+            "id": turma.id,
+            "nome": turma.nome,
+            # Turma sem frequência: 0.0 (mesmo comportamento do anterior).
+            "valor": percentuais.get(turma.id, 0.0),
+        }
+        for turma in turmas
+    ]
 
 
 def frequencia_por_curso(
@@ -1377,70 +1368,133 @@ def frequencia_por_curso(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a frequência média agrupada por curso."""
+    """Retorna a frequência média agrupada por curso.
 
-    query = Frequencia.query.join(Turma, Turma.id == Frequencia.turma_id).join(
-        Curso, Curso.id == Turma.curso_id
-    ).filter(
-        # Turma desativada (excluída) não entra em contagens agregadas.
-        Turma.ativo.is_(True),
+    D3b.4a (decisão 3): frequência POR CURSO usa somente linhas de OFERTA
+    (`TurmaCurso.curso_id`, sem fallback para a turma); as linhas legadas
+    (`turma_curso_id IS NULL`) entram no curso da oferta quando ela é a
+    única ativa da turma (regra D2, aplicada dentro do serviço
+    `agregar_por_oferta`). Agregação em lote — sem carregar linha a linha
+    nem iterar turma a turma.
+    """
+    ofertas = (
+        db.session.query(TurmaCurso.id, TurmaCurso.curso_id, Curso.nome)
+        .join(Turma, Turma.id == TurmaCurso.turma_id)
+        .join(Curso, Curso.id == TurmaCurso.curso_id)
+        .filter(
+            # Turma desativada (excluída) não entra em contagens agregadas.
+            Turma.ativo.is_(True),
+        )
     )
 
     if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
+        ofertas = ofertas.filter(Turma.unidade_id == unidade_id)
 
     if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
+        ofertas = ofertas.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
     if turma_id:
-        query = query.filter(Turma.id == turma_id)
+        ofertas = ofertas.filter(Turma.id == turma_id)
+
+    if curso_id:
+        ofertas = ofertas.filter(TurmaCurso.curso_id == curso_id)
 
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+        ofertas = ofertas.filter(TurmaCurso.professor_id == professor_id)
 
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
+    linhas_oferta = ofertas.all()
+    if not linhas_oferta:
+        return []
 
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
+    curso_por_oferta = {
+        oferta_id: (curso_rel, nome)
+        for oferta_id, curso_rel, nome in linhas_oferta
+    }
+    contagem = {}
 
-    registros = query.with_entities(
-        Curso.id,
-        Curso.nome,
-        Frequencia.conceito,
-    ).all()
+    def _acumula(oferta_id, presentes, faltas):
+        chave = curso_por_oferta.get(oferta_id)
+        if chave is None:
+            return
+        atual = contagem.setdefault(chave, [0, 0])
+        atual[0] += presentes
+        atual[1] += faltas
 
-    frequencias = {}
+    if data_inicio or data_fim:
+        # Recálculo por intervalo de datas: a mesma regra D2 do serviço, em
+        # UMA consulta agregada (ofertas próprias + legadas das turmas em
+        # que a oferta pedida é a única ativa).
+        ids = list(curso_por_oferta)
+        unicas = ofertas_unicas_ativas(ids)
+        turmas_unicas = {
+            oferta_id: turma_rel
+            for oferta_id, turma_rel in db.session.query(
+                TurmaCurso.id, TurmaCurso.turma_id
+            )
+            .filter(TurmaCurso.id.in_(sorted(unicas)))
+            .all()
+        } if unicas else {}
 
-    for curso_id_resultado, nome, conceito in registros:
-        if conceito not in ["A", "B", "C", "D", "F"]:
-            continue
+        alvos = [Frequencia.turma_curso_id.in_(ids)]
+        if turmas_unicas:
+            alvos.append(
+                and_(
+                    Frequencia.turma_curso_id.is_(None),
+                    Frequencia.turma_id.in_(set(turmas_unicas.values())),
+                )
+            )
 
-        frequencias.setdefault(
-            (curso_id_resultado, nome),
-            [],
-        ).append(conceito)
-
-    resultados = []
-
-    for (curso_id_resultado, nome), conceitos in frequencias.items():
-        presentes = sum(conceito in ["A", "B", "C", "D"] for conceito in conceitos)
-
-        frequencia = round(
-            (presentes / len(conceitos)) * 100,
-            1,
+        fq = db.session.query(
+            Frequencia.turma_curso_id,
+            Frequencia.turma_id,
+            Frequencia.conceito,
+            func.count(Frequencia.id),
+        ).filter(
+            or_(*alvos),
+            Frequencia.conceito.in_(_CONCEITOS_CONTABEIS),
         )
+        if unidade_id:
+            fq = fq.filter(Frequencia.unidade_id == unidade_id)
+        if data_inicio:
+            fq = fq.filter(Frequencia.data >= data_inicio)
+        if data_fim:
+            fq = fq.filter(Frequencia.data <= data_fim)
 
-        resultados.append(
-            {
-                "id": curso_id_resultado,
-                "nome": nome,
-                "valor": frequencia,
-            }
-        )
+        for tcurso_id, turma_rel, conceito, n in fq.group_by(
+            Frequencia.turma_curso_id,
+            Frequencia.turma_id,
+            Frequencia.conceito,
+        ).all():
+            if tcurso_id is None:
+                # legado: atribuído à única oferta ativa daquela turma (D2)
+                alvo = next(
+                    (
+                        oid
+                        for oid, t in turmas_unicas.items()
+                        if t == turma_rel
+                    ),
+                    None,
+                )
+            else:
+                alvo = tcurso_id
+            presente = conceito in _CONCEITOS_PRESENCA
+            _acumula(alvo, n if presente else 0, 0 if presente else n)
+    else:
+        # Serviço único: 1 consulta de frequência para todas as ofertas, com
+        # a regra D2 do legado embutida.
+        agregado = agregar_por_oferta(list(curso_por_oferta), unidade_id=unidade_id)
+        for oferta_id, info in agregado.items():
+            _acumula(oferta_id, info.presentes, info.faltas)
+
+    resultados = [
+        {
+            "id": curso_rel,
+            "nome": nome,
+            "valor": percentual(p, f),
+        }
+        for (curso_rel, nome), (p, f) in contagem.items()
+        if p + f  # curso sem nenhuma linha contável fica fora (como antes)
+    ]
 
     return sorted(
         resultados,
@@ -1835,41 +1889,25 @@ def total_aulas_registradas(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna o total de aulas registradas conforme os filtros informados."""
+    """Retorna o total de aulas registradas conforme os filtros informados.
 
-    query = RegistroAula.query
-
-    if unidade_id:
-        query = query.join(
-            Turma,
-            Turma.id == RegistroAula.turma_id,
-        ).filter(Turma.unidade_id == unidade_id)
-
-    if turma_id:
-        query = query.filter(RegistroAula.turma_id == turma_id)
-
-    if periodo_letivo_id or curso_id or professor_id:
-        query = query.join(
-            Turma,
-            Turma.id == RegistroAula.turma_id,
-        )
-
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
-
-    return query.count()
+    D3b.4a (decisões 1 e 3): curso/professor casam pela OFERTA do registro
+    (`cond_linha_por_oferta`). Corrige o defect do join duplo em `Turma`
+    caracterizado nos testes: unidade + curso/professor/período geravam
+    `ambiguous column name: turma.unidade_id` (OperationalError -> 500 na
+    rota do BI).
+    """
+    return _base_registro_aula(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
+    ).count()
 
 
 def aulas_por_turma(
@@ -1881,33 +1919,22 @@ def aulas_por_turma(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por turma."""
+    """Retorna a quantidade de aulas registradas agrupada por turma.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
+    D3b.4a (decisão 1): curso/professor casam pela OFERTA do registro.
+    """
+
+    query = _base_registro_aula(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
     )
-
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
-
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
 
     resultados = (
         query.with_entities(
@@ -1942,11 +1969,21 @@ def aulas_por_periodo(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por período letivo."""
+    """Retorna a quantidade de aulas registradas agrupada por período letivo.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
+    D3b.4a (decisão 1): curso/professor casam pela OFERTA do registro.
+    """
+
+    query = _base_registro_aula(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
     ).join(
         PeriodoLetivo,
         PeriodoLetivo.id == Turma.periodo_letivo_id,
@@ -1954,27 +1991,6 @@ def aulas_por_periodo(
         Unidade,
         Unidade.id == PeriodoLetivo.unidade_id,
     )
-
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
-
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
 
     resultados = (
         query.with_entities(
@@ -2011,52 +2027,112 @@ def aulas_por_professor(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por professor."""
+    """Retorna a quantidade de aulas registradas agrupada por professor.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
-    ).join(
-        User,
-        User.id == Turma.professor_id,
-    )
+    D3b.4a (decisão 1): o agrupamento passa a ser pelo PROFESSOR DA OFERTA
+    (`TurmaCurso.professor_id`), não mais por `Turma.professor_id`. Linhas
+    com oferta própria agrupam pela sua oferta; linhas legadas entram quando
+    a turma tem exatamente uma oferta ATIVA (regra D2 da decisão 3), pelo
+    professor dessa oferta. Duas consultas agregadas + merge em Python
+    (sem N+1); oferta sem professor fica fora do agrupamento (como antes,
+    pelo join interno em `User`).
+    """
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
 
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
+    def _escopo(query):
+        if filtros["unidade_id"]:
+            query = query.filter(Turma.unidade_id == filtros["unidade_id"])
+        if filtros["periodo_letivo_id"]:
+            query = query.filter(
+                Turma.periodo_letivo_id == filtros["periodo_letivo_id"]
+            )
+        if filtros["turma_id"]:
+            query = query.filter(Turma.id == filtros["turma_id"])
+        if filtros["curso_id"]:
+            query = query.filter(TurmaCurso.curso_id == filtros["curso_id"])
+        if filtros["professor_id"]:
+            query = query.filter(
+                TurmaCurso.professor_id == filtros["professor_id"]
+            )
+        if filtros["data_inicio"]:
+            query = query.filter(RegistroAula.data >= filtros["data_inicio"])
+        if filtros["data_fim"]:
+            query = query.filter(RegistroAula.data <= filtros["data_fim"])
+        return query
 
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
-
-    resultados = (
-        query.with_entities(
-            User.id,
-            User.name,
-            db.func.count(RegistroAula.id),
+    # 1) linhas com oferta própria: agrupam pelo professor da SUA oferta.
+    proprias = (
+        _escopo(
+            db.session.query(TurmaCurso.professor_id, func.count(RegistroAula.id))
+            .select_from(RegistroAula)
+            .join(Turma, Turma.id == RegistroAula.turma_id)
+            .join(TurmaCurso, TurmaCurso.id == RegistroAula.turma_curso_id)
         )
-        .group_by(User.id, User.name)
-        .order_by(User.name)
+        .group_by(TurmaCurso.professor_id)
         .all()
     )
 
-    return [
-        {"id": professor_id_resultado, "nome": nome, "valor": total}
-        for professor_id_resultado, nome, total in resultados
+    # 2) linhas legadas: só entram em turma de oferta ÚNICA ativa (regra D2),
+    #    agrupadas pelo professor dessa oferta única.
+    turmas_unica = (
+        select(TurmaCurso.turma_id)
+        .where(TurmaCurso.ativo.is_(True))
+        .group_by(TurmaCurso.turma_id)
+        .having(func.count(TurmaCurso.id) == 1)
+    )
+    legadas = (
+        _escopo(
+            db.session.query(TurmaCurso.professor_id, func.count(RegistroAula.id))
+            .select_from(RegistroAula)
+            .join(Turma, Turma.id == RegistroAula.turma_id)
+            .join(
+                TurmaCurso,
+                and_(
+                    TurmaCurso.turma_id == RegistroAula.turma_id,
+                    TurmaCurso.ativo.is_(True),
+                ),
+            )
+            .filter(
+                RegistroAula.turma_curso_id.is_(None),
+                Turma.id.in_(turmas_unica),
+            )
+        )
+        .group_by(TurmaCurso.professor_id)
+        .all()
+    )
+
+    totais = {}
+    for professor_rel, n in proprias + legadas:
+        if professor_rel is None:
+            continue
+        totais[professor_rel] = totais.get(professor_rel, 0) + n
+
+    if not totais:
+        return []
+
+    nomes = dict(
+        db.session.query(User.id, User.name)
+        .filter(User.id.in_(list(totais)))
+        .all()
+    )
+
+    resultados = [
+        {
+            "id": professor_rel,
+            "nome": nomes.get(professor_rel, f"Professor #{professor_rel}"),
+            "valor": total,
+        }
+        for professor_rel, total in totais.items()
     ]
+    return sorted(resultados, key=lambda item: item["nome"])
 
 
 def aulas_por_curso(
@@ -2068,52 +2144,107 @@ def aulas_por_curso(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por curso."""
+    """Retorna a quantidade de aulas registradas agrupada por curso.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
-    ).join(
-        Curso,
-        Curso.id == Turma.curso_id,
-    )
+    D3b.4a (decisões 1 e 3): o curso passa a ser o da OFERTA
+    (`TurmaCurso.curso_id`). Linhas com oferta própria agrupam pelo curso
+    da sua oferta; linhas legadas entram quando a turma tem exatamente uma
+    oferta ATIVA (regra D2), pelo curso dessa oferta. Duas consultas
+    agregadas + merge em Python (sem N+1).
+    """
+    filtros = {
+        "unidade_id": unidade_id,
+        "periodo_letivo_id": periodo_letivo_id,
+        "curso_id": curso_id,
+        "turma_id": turma_id,
+        "professor_id": professor_id,
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
 
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
+    def _escopo(query):
+        if filtros["unidade_id"]:
+            query = query.filter(Turma.unidade_id == filtros["unidade_id"])
+        if filtros["periodo_letivo_id"]:
+            query = query.filter(
+                Turma.periodo_letivo_id == filtros["periodo_letivo_id"]
+            )
+        if filtros["turma_id"]:
+            query = query.filter(Turma.id == filtros["turma_id"])
+        if filtros["curso_id"]:
+            query = query.filter(TurmaCurso.curso_id == filtros["curso_id"])
+        if filtros["professor_id"]:
+            query = query.filter(
+                TurmaCurso.professor_id == filtros["professor_id"]
+            )
+        if filtros["data_inicio"]:
+            query = query.filter(RegistroAula.data >= filtros["data_inicio"])
+        if filtros["data_fim"]:
+            query = query.filter(RegistroAula.data <= filtros["data_fim"])
+        return query
 
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
-
-    resultados = (
-        query.with_entities(
-            Curso.id,
-            Curso.nome,
-            db.func.count(RegistroAula.id),
+    proprias = (
+        _escopo(
+            db.session.query(TurmaCurso.curso_id, func.count(RegistroAula.id))
+            .select_from(RegistroAula)
+            .join(Turma, Turma.id == RegistroAula.turma_id)
+            .join(TurmaCurso, TurmaCurso.id == RegistroAula.turma_curso_id)
         )
-        .group_by(Curso.id, Curso.nome)
-        .order_by(Curso.nome)
+        .group_by(TurmaCurso.curso_id)
         .all()
     )
 
-    return [
-        {"id": curso_id_resultado, "nome": nome, "valor": total}
-        for curso_id_resultado, nome, total in resultados
+    turmas_unica = (
+        select(TurmaCurso.turma_id)
+        .where(TurmaCurso.ativo.is_(True))
+        .group_by(TurmaCurso.turma_id)
+        .having(func.count(TurmaCurso.id) == 1)
+    )
+    legadas = (
+        _escopo(
+            db.session.query(TurmaCurso.curso_id, func.count(RegistroAula.id))
+            .select_from(RegistroAula)
+            .join(Turma, Turma.id == RegistroAula.turma_id)
+            .join(
+                TurmaCurso,
+                and_(
+                    TurmaCurso.turma_id == RegistroAula.turma_id,
+                    TurmaCurso.ativo.is_(True),
+                ),
+            )
+            .filter(
+                RegistroAula.turma_curso_id.is_(None),
+                Turma.id.in_(turmas_unica),
+            )
+        )
+        .group_by(TurmaCurso.curso_id)
+        .all()
+    )
+
+    totais = {}
+    for curso_rel, n in proprias + legadas:
+        if curso_rel is None:
+            continue
+        totais[curso_rel] = totais.get(curso_rel, 0) + n
+
+    if not totais:
+        return []
+
+    nomes = dict(
+        db.session.query(Curso.id, Curso.nome)
+        .filter(Curso.id.in_(list(totais)))
+        .all()
+    )
+
+    resultados = [
+        {
+            "id": curso_rel,
+            "nome": nomes.get(curso_rel, f"Curso #{curso_rel}"),
+            "valor": total,
+        }
+        for curso_rel, total in totais.items()
     ]
+    return sorted(resultados, key=lambda item: item["nome"])
 
 
 def aulas_por_tema(
@@ -2125,36 +2256,28 @@ def aulas_por_tema(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por tema."""
+    """Retorna a quantidade de aulas registradas agrupada por tema.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
-    ).join(
-        TemaAula,
-        TemaAula.id == RegistroAula.tema_id,
-    )
+    D3b.4a (decisão 1): curso/professor casam pela OFERTA do registro.
+    """
 
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
+    query = _base_registro_aula(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
+    ).join(RegistroAula.temas)
 
     resultados = (
         query.with_entities(
             TemaAula.id,
             TemaAula.titulo,
-            func.count(RegistroAula.id),
+            func.count(func.distinct(RegistroAula.id)),
         )
         .group_by(TemaAula.id, TemaAula.titulo)
         .order_by(TemaAula.titulo)
@@ -2176,46 +2299,45 @@ def aulas_por_unidade(
     data_inicio=None,
     data_fim=None,
 ):
+    """Retorna a quantidade de aulas registradas agrupada por unidade.
+
+    D3b.4a (decisão 1): curso/professor pela OFERTA (via
+    `cond_linha_por_oferta`, com a regra D2 do legado). Corrige defect
+    caracterizado: o código antigo filtrava por `RegistroAula.periodo_id` e
+    `RegistroAula.professor_id`, atributos INEXISTENTES no modelo — qualquer
+    filtro de período/professor derrubava a consulta (500 na rota). O
+    período passa a ser o da turma.
+    """
     query = (
-        db.session.query(
+        _base_registro_aula(
+            {
+                "unidade_id": unidade_id,
+                "periodo_letivo_id": periodo_id,
+                "curso_id": curso_id,
+                "turma_id": turma_id,
+                "professor_id": professor_id,
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
+            }
+        )
+        .join(Unidade, Unidade.id == Turma.unidade_id)
+        .with_entities(
             Unidade.id,
             Unidade.nome,
             func.count(RegistroAula.id),
         )
-        .join(Turma, Turma.unidade_id == Unidade.id)
-        .join(RegistroAula, RegistroAula.turma_id == Turma.id)
+        .group_by(Unidade.id, Unidade.nome)
+        .order_by(Unidade.nome)
+        .all()
     )
-
-    if unidade_id:
-        query = query.filter(Unidade.id == unidade_id)
-
-    if periodo_id:
-        query = query.filter(RegistroAula.periodo_id == periodo_id)
-
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-
-    if professor_id:
-        query = query.filter(RegistroAula.professor_id == professor_id)
-
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
-
-    resultados = query.group_by(Unidade.id, Unidade.nome).order_by(Unidade.nome).all()
 
     return [
         {
-            "id": unidade_id,
+            "id": unidade_rel,
             "nome": nome,
             "valor": valor,
         }
-        for unidade_id, nome, valor in resultados
+        for unidade_rel, nome, valor in query
     ]
 
 
@@ -2228,27 +2350,22 @@ def aulas_por_dia(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de aulas registradas agrupada por data."""
+    """Retorna a quantidade de aulas registradas agrupada por data.
 
-    query = RegistroAula.query.join(
-        Turma,
-        Turma.id == RegistroAula.turma_id,
+    D3b.4a (decisão 1): curso/professor casam pela OFERTA do registro.
+    """
+
+    query = _base_registro_aula(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
     )
-
-    if unidade_id:
-        query = query.filter(Turma.unidade_id == unidade_id)
-    if periodo_letivo_id:
-        query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-    if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
-    if turma_id:
-        query = query.filter(Turma.id == turma_id)
-    if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
-    if data_inicio:
-        query = query.filter(RegistroAula.data >= data_inicio)
-    if data_fim:
-        query = query.filter(RegistroAula.data <= data_fim)
 
     resultados = (
         query.with_entities(
@@ -2433,12 +2550,19 @@ def total_atendimentos(
 
         if periodo_letivo_id:
             query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
         if turma_id:
             query = query.filter(Turma.id == turma_id)
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
+        # D3b.4a (decisão 1): curso/professor pela OFERTA da inscrição.
+        if curso_id or professor_id:
+            query = query.join(
+                TurmaCurso, TurmaCurso.id == Inscricao.turma_curso_id
+            )
+            if curso_id:
+                query = query.filter(TurmaCurso.curso_id == curso_id)
+            if professor_id:
+                query = query.filter(
+                    TurmaCurso.professor_id == professor_id
+                )
 
         query = query.distinct()
 
@@ -2454,42 +2578,32 @@ def frequencia_critica_por_vulnerabilidade(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a quantidade de alunos com frequência < 75% agrupada por vulnerabilidade social."""
-    from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
-    from app.models import PerfilSocioeconomico, Turma, Frequencia
+    """Retorna a quantidade de alunos com frequência < 75% agrupada por vulnerabilidade social.
 
-    query = Frequencia.query
-    if unidade_id:
-        query = query.filter(Frequencia.unidade_id == unidade_id)
-    if data_inicio:
-        query = query.filter(Frequencia.data >= data_inicio)
-    if data_fim:
-        query = query.filter(Frequencia.data <= data_fim)
+    D3b.4a (decisões 1, 3 e 4): curso/professor casam pela OFERTA da linha
+    e a faixa "lo" (percentual arredondado < 75) vem do serviço único
+    `frequencia_oferta`, com agregação em lote (UMA consulta
+    GROUP BY aluno/conceito, sem carregar linha a linha).
+    """
+    from app.models import PerfilSocioeconomico
 
-    if periodo_letivo_id or curso_id or turma_id or professor_id:
-        query = query.join(Turma, Turma.id == Frequencia.turma_id)
-        if periodo_letivo_id:
-            query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
-        if turma_id:
-            query = query.filter(Turma.id == turma_id)
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
+    totais = _totais_por_aluno(
+        {
+            "unidade_id": unidade_id,
+            "periodo_letivo_id": periodo_letivo_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
+    )
 
-    registros = query.all()
-    frequencias = {}
-    for reg in registros:
-        if reg.conceito not in CONCEITOS_CONTABEIS:
-            continue
-        frequencias.setdefault(reg.aluno_id, []).append(reg.conceito)
-
-    alunos_criticos_ids = []
-    for aluno_id, conceitos in frequencias.items():
-        presentes = sum(1 for c in conceitos if c in CONCEITOS_PRESENCA)
-        freq = (presentes / len(conceitos)) * 100
-        if freq < 75:
-            alunos_criticos_ids.append(aluno_id)
+    alunos_criticos_ids = [
+        aluno_id
+        for aluno_id, (presentes, faltas) in totais.items()
+        if faixa_de(percentual(presentes, faltas)) == "lo"
+    ]
 
     if not alunos_criticos_ids:
         return [
@@ -2535,12 +2649,20 @@ def alunos_raca_conselho(
         query = query.join(Turma, Turma.id == ConselhoClasse.turma_id)
         if periodo_letivo_id:
             query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
         if turma_id:
             query = query.filter(Turma.id == turma_id)
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
+        # D3b.4a (decisão 1): curso/professor pela OFERTA do conselho
+        # (ConselhoClasse.turma_curso_id é NOT NULL — sem fallback).
+        if curso_id or professor_id:
+            query = query.join(
+                TurmaCurso, TurmaCurso.id == ConselhoClasse.turma_curso_id
+            )
+            if curso_id:
+                query = query.filter(TurmaCurso.curso_id == curso_id)
+            if professor_id:
+                query = query.filter(
+                    TurmaCurso.professor_id == professor_id
+                )
 
     resultados = (
         query.with_entities(
@@ -2686,12 +2808,19 @@ def desempenho_conselho_por_renda(
         query = query.join(Turma, Turma.id == ConselhoClasse.turma_id)
         if periodo_letivo_id:
             query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
-        if curso_id:
-            query = query.filter(Turma.curso_id == curso_id)
         if turma_id:
             query = query.filter(Turma.id == turma_id)
-        if professor_id:
-            query = query.filter(Turma.professor_id == professor_id)
+        # D3b.4a (decisão 1): curso/professor pela OFERTA do conselho.
+        if curso_id or professor_id:
+            query = query.join(
+                TurmaCurso, TurmaCurso.id == ConselhoClasse.turma_curso_id
+            )
+            if curso_id:
+                query = query.filter(TurmaCurso.curso_id == curso_id)
+            if professor_id:
+                query = query.filter(
+                    TurmaCurso.professor_id == professor_id
+                )
 
     resultados = query.with_entities(
         ConselhoClasse.situacao_final,
