@@ -304,6 +304,7 @@
                                 {{ turma.alunos_ativos_count if turma.alunos_ativos_count is not none else
                                 turma.alunos|length }}
                             </span>
+                            <br>
                             {% set frequencia_turma = turma.freq_geral %}
                             <span
                                 class="badge {% if frequencia_turma >= 75 %}bg-success{% elif frequencia_turma >= 50 %}bg-warning{% else %}bg-danger{% endif %}">

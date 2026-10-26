@@ -2366,7 +2366,6 @@ def alunos_por_tipo_deficiencia(
 ):
     """Retorna a quantidade de alunos com laudo agrupada por tipo de deficiência."""
     from .bi_filtros import aplicar_filtros_aluno
-    from app.models import PerfilDiversidade
 
     filtros = {
         "unidade_id": unidade_id,
@@ -2524,7 +2523,7 @@ def alunos_raca_conselho(
     data_fim=None,
 ):
     """Retorna a distribuição de alunos por raça/cor avaliados no Conselho de Classe."""
-    from app.models import ConselhoClasse, PerfilDiversidade, Turma
+    from app.models import ConselhoClasse, Turma
 
     query = ConselhoClasse.query.join(
         PerfilDiversidade, PerfilDiversidade.aluno_id == ConselhoClasse.aluno_id

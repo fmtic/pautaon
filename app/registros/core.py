@@ -370,28 +370,51 @@ def frequencia():
                 turma_curso_id=oferta_atual.id if oferta_atual else None,
             )
 
-        for aluno in ctx.get('alunos', []):
-            registros = Frequencia.query.filter_by(
-                aluno_id=aluno.id, turma_id=turma_id
-            ).all()
-            if not registros:
-                registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
-
-            estatisticas = calcular_estatisticas_frequencia(
-                registro.conceito for registro in registros
+        # ETAPA D3b.2: estatísticas em lote — o loop anterior fazia 2 queries
+        # por aluno (N+1) e tinha um fallback morto (`turma_id=None`, coluna
+        # NOT NULL). Mesma semântica: estatísticas POR TURMA (todas as linhas
+        # do aluno na turma, como na tela antiga), primeira inscrição define
+        # se o aluno pode receber frequência.
+        alunos_ctx = ctx.get('alunos', [])
+        aluno_ids = [a.id for a in alunos_ctx]
+        conceitos_por_aluno: dict = {}
+        if aluno_ids:
+            rows = (
+                db.session.query(
+                    Frequencia.aluno_id, Frequencia.conceito, func.count(Frequencia.id)
+                )
+                .filter(
+                    Frequencia.aluno_id.in_(aluno_ids),
+                    Frequencia.turma_id == turma_id,
+                )
+                .group_by(Frequencia.aluno_id, Frequencia.conceito)
+                .all()
             )
-            aluno.estats_freq = type('E', (), {
-                'presenca': estatisticas['presenca_percentual'],
-                'falta': estatisticas['falta_percentual'],
-                'justificada': estatisticas['justificada_percentual'],
-                'justificadas': estatisticas['justificadas'],
-                'total_aulas': estatisticas['total'],
-            })()
-
-            insc = Inscricao.query.filter_by(
-                aluno_id=aluno.id, turma_id=int(turma_id)
-            ).first()
-            aluno.pode_receber_frequencia = bool(insc and insc.ativo)
+            for aluno_id, conceito, n in rows:
+                conceitos_por_aluno.setdefault(aluno_id, []).extend([conceito] * n)
+            inscricoes_por_aluno: dict = {}
+            for insc in (
+                Inscricao.query
+                .filter(Inscricao.aluno_id.in_(aluno_ids),
+                        Inscricao.turma_id == turma_id)
+                .order_by(Inscricao.id)
+                .all()
+            ):
+                # primeira inscrição (menor id) manda, como o .first() antigo
+                inscricoes_por_aluno.setdefault(insc.aluno_id, insc)
+            for aluno in alunos_ctx:
+                estatisticas = calcular_estatisticas_frequencia(
+                    conceitos_por_aluno.get(aluno.id, [])
+                )
+                aluno.estats_freq = type('E', (), {
+                    'presenca': estatisticas['presenca_percentual'],
+                    'falta': estatisticas['falta_percentual'],
+                    'justificada': estatisticas['justificada_percentual'],
+                    'justificadas': estatisticas['justificadas'],
+                    'total_aulas': estatisticas['total'],
+                })()
+                insc = inscricoes_por_aluno.get(aluno.id)
+                aluno.pode_receber_frequencia = bool(insc and insc.ativo)
 
     return render_template('frequencia/lancar.html',
                            turmas=turmas,
@@ -416,7 +439,9 @@ def frequencia_relatorio():
     if current_user.role != UserRole.PEDAGOGICO:
         abort(403)
 
-    turma_id = request.args.get('turma')
+    # D3b.2: `type=int` — antes, `?turma=abc` chegava cru e o `int(turma_id)`
+    # de baixo derrubava a página com 500; valor inválido agora é None.
+    turma_id = request.args.get('turma', type=int)
 
     # Onda 2A: Frequencia.data é `date`. Os parâmetros da URL chegam como
     # string e precisam ser normalizados antes de filtrar, senão o filtro
@@ -436,12 +461,15 @@ def frequencia_relatorio():
 
     if turma_id:
         turma_selecionada = next(
-            (turma for turma in turmas if turma.id == int(turma_id)), None
+            (turma for turma in turmas if turma.id == turma_id), None
         )
         if not turma_selecionada:
             abort(404)
+        # .distinct(): aluno com inscrição ativa em 2+ ofertas da mesma turma
+        # aparecia duplicado na lista do relatório (uma linha por inscrição).
         alunos = db.session.execute(
             select(Aluno)
+            .distinct()
             .join(Inscricao, Inscricao.aluno_id == Aluno.id)
             .where(
                 Inscricao.turma_id == turma_selecionada.id,

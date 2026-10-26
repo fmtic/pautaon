@@ -57,7 +57,8 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
 def _configure_extensions(app: Flask) -> None:
     db.init_app(app)
-    migrate = Migrate(app, db)
+    # O efeito colateral importa: registrar a extensão Flask-Migrate no app.
+    Migrate(app, db)
     csrf.init_app(app)
     login_manager.init_app(app)
     mail.init_app(app)

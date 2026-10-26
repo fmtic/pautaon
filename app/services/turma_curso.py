@@ -54,33 +54,6 @@ def ofertas_ativas(turma_id: int):
     )
 
 
-def turma_conselho_concluido(turma_ou_id) -> bool:
-    """Encerramento DERIVADO do conselho da turma (D5.3).
-
-    Verdadeiro somente quando a turma tem **ao menos uma oferta ativa** e
-    **todas** as ofertas ativas estão com `TurmaCurso.conselho_concluido`.
-    O encerramento é manual e por oferta (`alternar_conselho`); a turma é
-    derivada. Turma sem oferta ativa não abre conselho e não é considerada
-    concluída (fica fora das contagens). Não lê `Turma.conselho_concluido` —
-    a coluna permanece apenas como ponte de escrita até a D5.5.
-    """
-    turma_id = turma_ou_id.id if isinstance(turma_ou_id, Turma) else turma_ou_id
-    if turma_id is None:
-        return False
-    flags = [
-        bool(flag)
-        for (flag,) in (
-            db.session.query(TurmaCurso.conselho_concluido)
-            .filter(
-                TurmaCurso.turma_id == turma_id,
-                TurmaCurso.ativo.is_(True),
-            )
-            .all()
-        )
-    ]
-    return bool(flags) and all(flags)
-
-
 def contar_ofertas_conselho(unidade_id=None) -> tuple[int, int]:
     """(concluídas, total) de ofertas ativas de turmas ativas (D5.3).
 

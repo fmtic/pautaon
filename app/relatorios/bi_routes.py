@@ -205,10 +205,13 @@ def bi_exportar_xlsx():
         "border": 1, "border_color": "#3a0ca3",
         "align": "center", "valign": "vcenter",
     })
-    fmt_valor = workbook.add_format({
+    # fmt_valor/fmt_item nunca foram aplicados a nenhuma célula; as chamadas
+    # permanecem para registrar os formatos no workbook exatamente como antes
+    # (D3b.1 — limpeza sem mudança de comportamento).
+    workbook.add_format({
         "num_format": "#,##0.##", "align": "right",
     })
-    fmt_item = workbook.add_format({"align": "left"})
+    workbook.add_format({"align": "left"})
     fmt_numero_grande = workbook.add_format({
         "bold": True, "font_size": 28, "font_color": "#4361ee",
         "align": "center", "valign": "vcenter",

@@ -83,8 +83,8 @@ def _gerar_sinais_e_entradas(acum: _Acumulado, turmas_dados: list, semanas_queda
     # 1. Sinais de Atenção
     sinais = []
     
-    # 1.1 Turma abaixo de 75%
-    turmas_abaixo = [t for t in turmas_dados if t["pct_turma"] < 75.0]
+    # 1.1 Turma abaixo do limiar crítico (D3b.2: sem literal 75 hardcoded)
+    turmas_abaixo = [t for t in turmas_dados if t["pct_turma"] < LIMIAR_CRITICO]
     if turmas_abaixo:
         pior_turma = min(turmas_abaixo, key=lambda x: x["pct_turma"])
         titulo = f'{len(turmas_abaixo)} turma{"s" if len(turmas_abaixo)>1 else ""} abaixo de 75%'
@@ -208,7 +208,7 @@ def montar(periodo: PeriodoLetivo, unidade_id: int | None) -> dict:
     turmas_ids = [t.id for t in turmas]
     semanas = semanas_do_periodo(periodo)
 
-    freq = frequencia.agregar_por_turma(turmas_ids)
+    freq = frequencia.agregar_por_turma(turmas_ids, unidade_id=unidade_id)
     cons = conselho.por_turma(turmas_ids)
 
     status_map = coorte.status(unidade_id, periodo.id)

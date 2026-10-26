@@ -276,7 +276,10 @@ def gerenciar_perguntas():
         value=PerguntaConselho.etapa
     )
 
-    unidade_id = get_unidade_id()
+    # Chamada preservada pelo efeito colateral: normaliza o contexto de
+    # unidade na sessão (perfis operacionais). O resultado não é usado aqui —
+    # PerguntaConselho é global.
+    get_unidade_id()
     query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas)
     # PerguntaConselho é global — perguntas são compartilhadas entre unidades
     perguntas_raw = query.all()
@@ -782,7 +785,7 @@ def salvar_fechamento_data(turma_id):
     except ValueError as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.exception("Erro no salvamento do fechamento da turma %s", turma_id)
         return jsonify({"success": False, "message": "Falha ao salvar o fechamento da turma. Veja o log para detalhes."})

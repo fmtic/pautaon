@@ -274,7 +274,6 @@ def dados_aluno(aluno_id):
 
     ident = perfil["identificacao"]
     div = perfil["diversidade"]
-    socio = perfil["socioeconomico"]
     resp = perfil["responsavel"]
     end = perfil["endereco"]
 

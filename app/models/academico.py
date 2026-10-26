@@ -29,7 +29,6 @@ NOTAS DE ONDAS
 from datetime import time
 
 from app.models.base import db, datetime, date, select, get_local_now, List
-from app.models.enums import CONCEITOS_PRESENCA, CONCEITOS_CONTABEIS
 from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.base import SoftDeleteMixin, TenantMixin
 
@@ -143,57 +142,42 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     @property
     def freq_geral(self) -> float:
         """
-        Frequência geral da turma (0.0 a 100.0).
+        Frequência geral da turma (0.0 a 100.0) — ETAPA D3b.2.
 
-        Regras de contagem (via `app.models.enums`):
-            - `CONCEITOS_PRESENCA` (A/B/C/D) = presença.
-            - `CONCEITOS_CONTABEIS` = presença + F (denominador).
-            - J (justificada) não entra em nenhum dos dois.
-            - Se não houver registros contáveis, retorna 0.0.
+        Delegado ao serviço único `app.services.frequencia_oferta`:
+        soma de TODAS as linhas da turma (ofertas + legado) — regra POR
+        TURMA, mesmo número de antes (refactor puro).
+        Regras de contagem no serviço: `CONCEITOS_PRESENCA` no numerador,
+        presença + F no denominador, J fora de ambos, 1 casa decimal.
         """
         try:
-            from app.models.aulas import Frequencia
+            # Import local do serviço para não criar ciclo models → services.
+            from app.services.frequencia_oferta import agregar_por_turma
 
-            registros = Frequencia.query.filter_by(turma_id=self.id).all()
-
-            # Comparação funciona com enum ou string porque os enums herdam de str.
-            contaveis = [r for r in registros if r.conceito in CONCEITOS_CONTABEIS]
-            total = len(contaveis)
-            presentes = sum(
-                1 for r in contaveis if r.conceito in CONCEITOS_PRESENCA
-            )
-            return round((presentes / total) * 100, 1) if total > 0 else 0.0
+            info = agregar_por_turma([self.id]).get(self.id)
+            return info.pct_turma if info else 0.0
         except Exception:
             return 0.0
 
     def freq_geral_oferta(self, turma_curso_id: int) -> float:
         """
-        Frequência geral de UMA oferta da turma (0.0 a 100.0) — Onda 4 D3a.
+        Frequência geral de UMA oferta da turma (0.0 a 100.0) — D3b.2.
 
-        Mesmo cálculo da property `freq_geral` (que não aceita parâmetro e
-        segue misturando cursos quando a turma tem 2+ ofertas ativas), mas
-        filtrado por `turma_curso_id`. Regras de contagem idênticas:
-        CONCEITOS_PRESENCA no numerador, CONCEITOS_CONTABEIS no denominador,
-        J fora de ambos.
-
-        PENDÊNCIA DE OTIMIZAÇÃO (Onda 4, Etapa K): faz 1 consulta por oferta;
-        numa lista com N turmas × M ofertas isso vira N+1. Trocar por
-        agregação em lote (SELECT turma_curso_id, conceito, COUNT(*) ... WHERE
-        turma_id IN (...) GROUP BY turma_curso_id, conceito).
+        Delegado ao serviço único: só as linhas da oferta, com as linhas
+        legadas (`turma_curso_id IS NULL`) entrando apenas quando a oferta
+        é a única ativa da turma (regra D2 da pauta — caso DECIDIDO na
+        etapa: numa turma de oferta única o legado agora conta).
+        Fora da turma (ou sem linha contável) → 0.0, como antes.
         """
         try:
-            from app.models.aulas import Frequencia
+            from app.services.frequencia_oferta import agregar_por_oferta
 
-            registros = Frequencia.query.filter_by(
-                turma_id=self.id, turma_curso_id=turma_curso_id
-            ).all()
-
-            contaveis = [r for r in registros if r.conceito in CONCEITOS_CONTABEIS]
-            total = len(contaveis)
-            presentes = sum(
-                1 for r in contaveis if r.conceito in CONCEITOS_PRESENCA
-            )
-            return round((presentes / total) * 100, 1) if total > 0 else 0.0
+            info = agregar_por_oferta(
+                [turma_curso_id], por_turma=self.id
+            ).get(turma_curso_id)
+            if info is None or info.turma_id != self.id:
+                return 0.0
+            return info.pct
         except Exception:
             return 0.0
 

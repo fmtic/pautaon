@@ -43,6 +43,7 @@ from app.models.enums import (
 from app.services import aluno_perfil
 from app.services.aluno_status import status_alunos
 from app.services.conselho_leitura import conselho_do_aluno
+from app.services.frequencia_oferta import agregar_por_oferta, agregar_por_turma
 
 from .formatacao import (
     faixa_meta,
@@ -50,7 +51,7 @@ from .formatacao import (
     fmt_pct,
 )
 from .helpers import faixa, pct, semanas_do_periodo
-from .regras import LIMIAR_CRITICO
+from .regras import LIMIAR_ATENCAO, LIMIAR_CRITICO
 
 
 # =============================================================================
@@ -260,7 +261,16 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list, oferta=None) -> dict
     maior_seq = _maior_sequencia_faltas(rows)
 
     pct_aluno = acum.pct
-    pct_turma = serie_turma[-1] if serie_turma else 0.0
+    # ETAPA D3b.2 (caso decidido, passo 2.4 do desenho): "frequência da
+    # turma" é o ACUMULADO da oferta (serviço único, com a regra D2 do
+    # legado), não o último ponto da série semanal — que zera quando a
+    # última semana do período não tem aula lançada.
+    if oferta is not None:
+        _agg = agregar_por_oferta([oferta.id], por_turma=turma.id).get(oferta.id)
+        pct_turma = _agg.pct if _agg else 0.0
+    else:
+        _agg = agregar_por_turma([turma.id]).get(turma.id)
+        pct_turma = _agg.pct_turma if _agg else 0.0
 
     # Substitua o "return" final por:
     return {
@@ -433,7 +443,8 @@ def _sinais(freq: dict, conselho: dict, atendimentos_count: int) -> list[dict]:
                 "detalhe": f'{freq["pct_str"]} contra {freq["pct_turma_str"]} · regra: 5 pp ou mais.',
             }
         )
-    if LIMIAR_CRITICO <= freq["pct"] < 90:
+    # D3b.2: faixa de atenção sem literal 90 — LIMIAR_ATENCAO de regras.py.
+    if LIMIAR_CRITICO <= freq["pct"] < LIMIAR_ATENCAO:
         sinais.append(
             {
                 "nivel": "info",
