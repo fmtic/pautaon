@@ -576,7 +576,10 @@ def test_admin_cria_turma_com_periodo_da_propria_unidade(client, app):
         data={
             "turma": "T criada ok",
             "turno": "Manhã",
+            # H4: dia marcado exige par de horários (validação do parsing).
             "dias_semana": "Segunda",
+            "hora_inicio": "08:00",
+            "hora_fim": "11:00",
             "periodo_letivo_id": str(ids["periodo_a"]),
         },
     )

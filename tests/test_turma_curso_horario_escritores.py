@@ -301,17 +301,18 @@ def _post_edit(app, ids, **over):
     return client.post(f"/turma/editar/{ids['turma']}", data=form, follow_redirects=True)
 
 
-def test_editar_turma_post_nao_sobrescreve_grade_nao_uniforme(app):
-    """Decisão H2: bloqueio por UNIFORMIDADE, não por nº de ofertas. Com grade
-    não uniforme, a oferta única tem agenda própria e o POST da Turma ignora
-    os campos de agenda com mensagem clara."""
+def test_editar_turma_post_substitui_grade_nao_uniforme(app):
+    """Decisão H4: com oferta ÚNICA a agenda é editável mesmo com grade não
+    uniforme — o POST substitui a grade inteira pela agenda do formulário
+    (modo padrão) e os escalares da Turma saem só da projeção."""
     ids = _seed_rota(app, [(0, time(9, 0), time(10, 0)), (1, time(14, 0), time(16, 0))])
     r = _post_edit(
         app, ids,
         dias_semana="Quarta", hora_inicio="11:00", hora_fim="12:00",
     )
     assert r.status_code == 200  # follow_redirects
-    assert "não é uniforme" in r.get_data(as_text=True)
+    html = r.get_data(as_text=True)
+    assert "não é uniforme" not in html
 
     with app.app_context():
         db.session.expire_all()
@@ -319,12 +320,13 @@ def test_editar_turma_post_nao_sobrescreve_grade_nao_uniforme(app):
         assert [
             (l.dia_semana, l.hora_inicio, l.hora_fim)
             for l in grade_da_oferta(oferta)
-        ] == [(0, time(9, 0), time(10, 0)), (1, time(14, 0), time(16, 0))]
+        ] == [(2, time(11, 0), time(12, 0))]
         turma = _get(Turma, ids["turma"])
-        # Nada foi gravado na turma nem na projeção da oferta
-        assert turma.dias_semana == "Segunda, Terça"
-        assert oferta.dias_semana == "Segunda, Terça"
-        assert oferta.hora_inicio is None and oferta.hora_fim is None
+        # Projeção da grade uniforme nos escalares da Turma e da oferta
+        assert turma.dias_semana == "Quarta"
+        assert turma.hora_inicio == time(11, 0) and turma.hora_fim == time(12, 0)
+        assert oferta.dias_semana == "Quarta"
+        assert oferta.hora_inicio == time(11, 0) and oferta.hora_fim == time(12, 0)
 
 
 def test_editar_turma_post_espelha_agenda_com_grade_uniforme(app):
