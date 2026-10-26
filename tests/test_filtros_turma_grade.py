@@ -1,0 +1,216 @@
+"""H3d — filtros de dia/horário e agregação de dias da listagem pela GRADE.
+
+Cobre:
+    - caracterização ANTES da migração (grades uniformes, oferta legada sem
+      grade e turma sem oferta) — deve continuar idêntica depois;
+    - filtro de dia e de horário em grade NÃO uniforme (casa só no dia certo);
+    - dia + horário exigindo os dois na MESMA linha da grade;
+    - `min_ch_aula` da turma multi-oferta = menor duração entre TODAS as
+      ofertas ativas;
+    - agregação de dias da linha da listagem (união das ofertas ativas).
+"""
+
+from datetime import date, time
+
+import pytest
+from sqlalchemy import select
+
+from app import create_app
+from app.database import db
+from app.models import (
+    Curso,
+    PeriodoLetivo,
+    Turma,
+    TurmaCurso,
+    Unidade,
+    User,
+)
+from app.registros.turmas import _resumo_ofertas, aplicar_filtros_turmas
+from app.services.turma_curso_horario import definir_grade
+from config import Config
+
+DATA_INI = date(2026, 3, 2)
+DATA_FIM = date(2026, 12, 15)
+
+
+class SQLiteTestConfig(Config):
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    TESTING = True
+    WTF_CSRF_ENABLED = False
+
+
+@pytest.fixture
+def app():
+    test_app = create_app(SQLiteTestConfig)
+    with test_app.app_context():
+        db.create_all()
+        yield test_app
+        db.session.remove()
+        db.drop_all()
+
+
+def _oferta(turma, curso, principal, grade, **campos):
+    """Oferta com grade (linhas ``(dia, ini, fim)``) gravada pelo serviço."""
+    oferta = TurmaCurso(
+        turma_id=turma.id,
+        curso_id=curso.id,
+        unidade_id=turma.unidade_id,
+        ativo=True,
+        principal=principal,
+        programa="Teste",
+        data_inicio=DATA_INI,
+        data_fim=DATA_FIM,
+        **campos,
+    )
+    db.session.add(oferta)
+    db.session.flush()
+    definir_grade(oferta, grade)
+    return oferta
+
+
+def _seed(app, variavel=False):
+    """5 turmas: uniforme, multi-oferta, sem oferta, oferta sem grade (+var)."""
+    with app.app_context():
+        unidade = Unidade(nome="U1", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+        periodo = PeriodoLetivo(
+            nome="2026", data_inicio=DATA_INI, data_fim=DATA_FIM,
+            unidade_id=unidade.id, ativo=True,
+        )
+        db.session.add(periodo)
+        user = User(
+            name="Coord", email="coord@example.com", role="pedagogico",
+            first_login=False, unidade_id=unidade.id,
+        )
+        db.session.add(user)
+        cursos = [
+            Curso(nome=f"C{i}", unidade_id=unidade.id, ativo=True) for i in range(1, 6)
+        ]
+        db.session.add_all(cursos)
+        db.session.flush()
+
+        def nova_turma(nome, dias, ini, fim):
+            turma = Turma(
+                nome=nome, unidade_id=unidade.id, curso_id=cursos[0].id,
+                periodo_letivo_id=periodo.id, ativo=True,
+                data_inicio=DATA_INI, data_fim=DATA_FIM,
+                dias_semana=dias, hora_inicio=ini, hora_fim=fim,
+            )
+            db.session.add(turma)
+            db.session.flush()
+            return turma
+
+        t_uni = nova_turma("T-UNI", "Segunda, Quarta", time(8), time(9, 30))
+        o_uni = _oferta(
+            t_uni, cursos[1], True,
+            [(0, time(8), time(9, 30)), (2, time(8), time(9, 30))],
+        )
+
+        t_multi = nova_turma("T-MULTI", "Segunda, Quarta", time(8), time(11))
+        o_p = _oferta(
+            t_multi, cursos[0], True,
+            [(0, time(8), time(11)), (2, time(8), time(11))],
+        )
+        o_s = _oferta(t_multi, cursos[2], False, [(1, time(8), time(9))])
+
+        t_sem = nova_turma("T-SEM", "Sábado", time(19), time(21))
+
+        t_leg = nova_turma("T-LEG", "Quinta", time(10), time(11))
+        o_leg = TurmaCurso(
+            turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
+            ativo=True, principal=True, programa="Teste", dias_semana="Quinta",
+            hora_inicio=time(10), hora_fim=time(11),
+            data_inicio=DATA_INI, data_fim=DATA_FIM,
+        )
+        db.session.add(o_leg)
+
+        ids = {
+            "unidade": unidade.id, "periodo": periodo.id, "user": user.id,
+            "t_uni": t_uni.id, "t_multi": t_multi.id, "t_sem": t_sem.id,
+            "t_leg": t_leg.id, "o_uni": o_uni.id, "o_p": o_p.id, "o_s": o_s.id,
+        }
+        if variavel:
+            # Grade NÃO uniforme: o par escalar da turma não representa a oferta.
+            t_var = nova_turma("T-VAR", "Terça, Quinta", time(14), time(16))
+            o_var = _oferta(
+                t_var, cursos[4], True,
+                [(1, time(8), time(10)), (3, time(14), time(16))],
+            )
+            ids["t_var"] = t_var.id
+            ids["o_var"] = o_var.id
+        db.session.commit()
+        return ids
+
+
+def _filtrar(args):
+    """Nomes das turmas devolvidas por `aplicar_filtros_turmas` + filtro em SQL."""
+    stmt = aplicar_filtros_turmas(select(Turma), args)
+    return {t.nome for t in db.session.execute(stmt).scalars().all()}
+
+
+# --- Caracterização ANTES (grades uniformes / legado / sem oferta) ------------
+class TestCaracterizacaoFiltros:
+    """Resultados fixados ANTES do H3d — idênticos depois, para grades uniformes."""
+
+    def test_dia_segunda(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Segunda"}) == {"T-UNI", "T-MULTI"}
+
+    def test_dia_quinta(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Quinta"}) == {"T-LEG"}
+
+    def test_dia_terca(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Terça"}) == {"T-MULTI"}
+
+    def test_dia_sabado_so_turma_sem_oferta(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Sábado"}) == {"T-SEM"}
+
+    def test_horario_inicio(self, app):
+        _seed(app)
+        assert _filtrar({"horario_inicio": "08:00"}) == {"T-UNI", "T-MULTI"}
+
+    def test_horario_inicio_de_oferta_sem_grade(self, app):
+        _seed(app)
+        assert _filtrar({"horario_inicio": "10:00"}) == {"T-LEG"}
+
+    def test_horario_inicio_de_turma_sem_oferta(self, app):
+        _seed(app)
+        assert _filtrar({"horario_inicio": "19:00"}) == {"T-SEM"}
+
+    def test_dia_e_horario_na_mesma_oferta(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Quarta", "horario_inicio": "08:00"}) == {
+            "T-UNI", "T-MULTI",
+        }
+
+    def test_dia_e_horario_sem_cruzamento(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Terça", "horario_inicio": "10:00"}) == set()
+
+    def test_dia_invalido_mantem_comparador_antigo(self, app):
+        _seed(app)
+        assert _filtrar({"dia": "Xyz"}) == set()
+
+    def test_texto_vazio_nao_filtra(self, app):
+        _seed(app)
+        assert len(_filtrar({"dia": "", "horario_inicio": ""})) == 4
+
+    def test_agregacao_de_dias_da_linha(self, app):
+        ids = _seed(app)
+        for chave, esperado in (
+            ("t_uni", (["Segunda", "Quarta"], ["Seg.", "Qua."])),
+            ("t_multi", (["Segunda", "Terça", "Quarta"], ["Seg.", "Ter.", "Qua."])),
+            ("t_sem", (["Sábado"], ["Sáb."])),
+            ("t_leg", (["Quinta"], ["Qui."])),
+        ):
+            resumo = _resumo_ofertas(db.session.get(Turma, ids[chave]))
+            assert (resumo["dias"], resumo["dias_abreviados"]) == esperado
+
+
+# --- Comportamento novo (grade NÃO uniforme) ---------------------------------
+# Adicionado no P4/P5, depois da migração: filtro por dia/horário e
+# agregação passam a ler a grade.
