@@ -289,6 +289,33 @@ def test_carga_horaria_oferta_calculo_manual_com_bloqueio():
         assert o3b.carga_horaria_total == 90 * len(esperado_b)
 
 
+def test_caracterizacao_ch_uniforme_e_turma_legada_antes_h3c():
+    """Valores de referência medidos antes do H3c migrar C.H. para a grade.
+
+    As duas ofertas de T3 têm grade uniforme; a oferta única de T2 também.
+    Turma T3 registra a semântica antiga (escalar da Turma × dias da união),
+    que será substituída pelo tempo físico da união de intervalos.
+    """
+    app, ids = _seed()
+    with app.app_context():
+        t2 = db.session.get(Turma, ids["t2"])
+        t3 = db.session.get(Turma, ids["t3"])
+        o2 = db.session.get(TurmaCurso, ids["o2"])
+        o3p = db.session.get(TurmaCurso, ids["o3p"])
+        o3b = db.session.get(TurmaCurso, ids["o3b"])
+
+        assert (o2.carga_horaria_aula, o2.carga_horaria_total) == (60, 2520)
+        assert (o3p.carga_horaria_aula, o3p.carga_horaria_total) == (60, 4920)
+        assert (o3b.carga_horaria_aula, o3b.carga_horaria_total) == (90, 3780)
+        assert (t2.carga_horaria_aula, t2.carga_horaria_total) == (60, 2520)
+        assert (t3.carga_horaria_aula, t3.carga_horaria_total) == (60, 2520)
+
+    # O filtro min_ch_total seleciona pela oferta principal (82h) na turma
+    # multi-oferta; acima dela a turma some, embora a secundária tenha 63h.
+    assert _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=82")), ids["t3"])
+    assert not _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=83")), ids["t3"])
+
+
 # --- datas_esperadas_oferta inalterada (corta em hoje) ------------------------
 def test_datas_esperadas_oferta_continua_cortando_em_hoje():
     app, ids = _seed()
