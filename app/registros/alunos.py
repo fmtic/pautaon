@@ -28,6 +28,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
 from app.database import db
@@ -52,6 +53,7 @@ from app.services.aluno_perfil import (
 from app.services.conselho_leitura import conselhos_por_oferta
 from app.services.enturmado import cond_aluno_enturmado
 from app.services.enturmacao import enturmar_aluno
+from app.services.turma_curso_horario import grades_para_exibicao
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
@@ -291,6 +293,36 @@ def atualizar_nivel_aluno(aluno_id):
 # =============================================================================
 
 
+def _grade_por_aluno(aluno_ids) -> dict[int, object]:
+    """Grade de exibição por aluno (oferta da inscrição ativa) — H3e.
+
+    Uma consulta de inscrições (com a grade via ``selectinload``) e uma
+    leitura em lote de ``GradeExibicao``; a primeira inscrição ativa do aluno
+    define a oferta exibida, como no template (``aluno.turmas|first``).
+    """
+    if not aluno_ids:
+        return {}
+    inscricoes = (
+        Inscricao.query.options(
+            joinedload(Inscricao.turma_curso).selectinload(TurmaCurso.horarios),
+        )
+        .filter(Inscricao.aluno_id.in_(list(aluno_ids)), Inscricao.ativo.is_(True))
+        .order_by(Inscricao.id)
+        .all()
+    )
+    grade_oferta = grades_para_exibicao(
+        [insc.turma_curso for insc in inscricoes if insc.turma_curso is not None]
+    )
+    resultado = {}
+    for insc in inscricoes:
+        if insc.aluno_id in resultado:
+            continue
+        grade = grade_oferta.get(insc.turma_curso_id)
+        if grade is not None:
+            resultado[insc.aluno_id] = grade
+    return resultado
+
+
 @bp.route("/alunos")
 @login_required
 def gerenciar_alunos():
@@ -368,6 +400,9 @@ def gerenciar_alunos():
             self.next_num = page + 1
 
     pagination = Paginator(items, page, per_page, total_filtrado)
+    # H3e: dias/horário de cada aluno da página pela GRADE da oferta da
+    # inscrição ativa (uma consulta de inscrições + uma leitura de grade).
+    grade_aluno_map = _grade_por_aluno([aluno.id for aluno in items])
     total_q = Aluno.query.filter_by(ativo=True)
     enturm_q = Aluno.query.filter_by(ativo=True)
     if unidade_id:
@@ -377,6 +412,7 @@ def gerenciar_alunos():
     return render_template(
         "alunos/gerenciar.html",
         pagination=pagination,
+        grade_aluno_map=grade_aluno_map,
         total_alunos=total_q.count(),
         # ETAPA D3b.3: card "Enturmados" pela definição única (serviço
         # `enturmado`): Aluno.ativo + inscrição ativa em turma ativa + oferta
@@ -870,9 +906,19 @@ def historico_aluno(aluno_id):
     # D5.4: uma linha por INSCRIÇÃO (aluno × oferta). O status de cada etapa
     # vem do conselho da OFERTA, buscado em lote (uma consulta; sem N+1).
     # Linhas legadas (turma_curso_id NULL) não são exibidas.
-    inscricoes = Inscricao.query.filter_by(aluno_id=aluno_id).all()
+    inscricoes = (
+        Inscricao.query.options(
+            joinedload(Inscricao.turma_curso).selectinload(TurmaCurso.horarios),
+        )
+        .filter_by(aluno_id=aluno_id)
+        .all()
+    )
     conselhos = conselhos_por_oferta(
         (insc.aluno_id, insc.turma_curso_id) for insc in inscricoes
+    )
+    # H3e: dias/horário exibidos vêm da GRADE da oferta (uma leitura em lote).
+    grade_oferta_map = grades_para_exibicao(
+        [insc.turma_curso for insc in inscricoes if insc.turma_curso is not None]
     )
     dados = []
     for insc in inscricoes:
@@ -898,16 +944,15 @@ def historico_aluno(aluno_id):
         professor = (
             oferta.professor if oferta and oferta.professor else turma.professor
         )
-        hora_inicio = oferta.hora_inicio if oferta and oferta.hora_inicio else turma.hora_inicio
-        hora_fim = oferta.hora_fim if oferta and oferta.hora_fim else turma.hora_fim
+        grade = grade_oferta_map.get(oferta_id) if oferta_id else None
         data_inicio = oferta.data_inicio if oferta and oferta.data_inicio else turma.data_inicio
         data_fim = oferta.data_fim if oferta and oferta.data_fim else turma.data_fim
 
         # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
+        # Desde o H3e o par sai da grade; não uniforme -> lista por dia.
         horario = (
-            f"{hora_inicio.strftime('%H:%M') if hora_inicio else '--:--'}"
-            f" às "
-            f"{hora_fim.strftime('%H:%M') if hora_fim else '--:--'}"
+            grade.texto_horario if grade is not None and grade.texto_horario
+            else "--:-- às --:--"
         )
 
         dados.append(
@@ -924,8 +969,8 @@ def historico_aluno(aluno_id):
                 "professor": professor.name if professor else "—",
                 "periodo": (turma.periodo_letivo.nome_exibicao if turma.periodo_letivo else "—"),
                 "dias": (
-                    oferta.dias_semana if oferta and oferta.dias_semana
-                    else (turma.dias_semana or "—")
+                    grade.dias_texto if grade is not None and grade.dias_texto
+                    else "—"
                 ),
                 "horario": horario,
                 "data_inicio": (
@@ -1082,6 +1127,7 @@ def transferir_aluno(aluno_id):
             aluno=aluno,
             turma_origem=turma_origem,
             oferta_origem=oferta_origem,
+            grade_origem=grades_para_exibicao([oferta_origem]).get(oferta_origem.id),
             ofertas_destino=ofertas_destino,
             hoje=get_local_now().date(),
         )

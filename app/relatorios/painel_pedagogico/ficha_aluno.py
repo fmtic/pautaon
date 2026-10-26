@@ -44,6 +44,7 @@ from app.services import aluno_perfil
 from app.services.aluno_status import status_alunos
 from app.services.conselho_leitura import conselho_do_aluno
 from app.services.frequencia_oferta import agregar_por_oferta, agregar_por_turma
+from app.services.turma_curso_horario import grades_para_exibicao
 
 from .formatacao import (
     faixa_meta,
@@ -95,6 +96,7 @@ def _identidade(
     turma: Turma | None,
     inscricao: Inscricao | None,
     status: StatusAluno | None = None,
+    oferta=None,
 ) -> dict:
     # D5.4: `Inscricao` não guarda status — ele é derivado por
     # `services.aluno_status.status_alunos` (antes `inscricao.status_aluno`
@@ -115,7 +117,7 @@ def _identidade(
         "status_classe": _classe_status(status),
         "turma": turma,
         "professor": turma.professor if turma and turma.professor else None,
-        "dias_horario": _dias_horario(turma) if turma else "—",
+        "dias_horario": _dias_horario(turma, oferta) if turma else "—",
     }
 
 
@@ -143,7 +145,18 @@ def _classe_status(s: StatusAluno) -> str:
     }.get(s, "secondary")
 
 
-def _dias_horario(turma: Turma) -> str:
+def _dias_horario(turma: Turma, oferta=None) -> str:
+    """Dias · horários da OFERTA pela grade (H3e).
+
+    Grade uniforme mantém o texto anterior ("Segunda, Quarta · 08:00–09:30");
+    grade não uniforme lista um segmento por dia. Sem oferta (vínculo legado)
+    cai nos escalares da turma, como antes.
+    """
+    if oferta is not None:
+        grade = grades_para_exibicao([oferta]).get(oferta.id)
+        if grade is not None and grade.dias_texto:
+            horario = grade.texto_horario_curto
+            return f"{grade.dias_texto} · {horario}" if horario else grade.dias_texto
     if not turma.dias_semana:
         return "—"
     h = ""
@@ -688,7 +701,7 @@ def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
         "inscricao": inscricao,
         "oferta": oferta,
         "periodo": periodo,
-        "identidade": _identidade(aluno, turma, inscricao, status=status),
+        "identidade": _identidade(aluno, turma, inscricao, status=status, oferta=oferta),
         "frequencia": freq,
         "conselho": cons,
         "atendimentos": atendimentos,

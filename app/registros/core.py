@@ -50,6 +50,7 @@ from app.services.turma_curso import (
     resolver_oferta_lancamento,
     _alunos_da_oferta,
 )
+from app.services.turma_curso_horario import grades_para_exibicao
 from . import bp
 from .shared import assert_unidade_context
 
@@ -446,6 +447,8 @@ def frequencia():
                            temas=ctx.get('temas', []),
                            meses=ctx.get('meses', []),
                            ofertas=ofertas,
+                           # H3e: horário do seletor de oferta pela grade.
+                           grade_oferta_map=grades_para_exibicao(ofertas),
                            oferta_atual=oferta_atual,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 

@@ -50,6 +50,7 @@ from app.services.turma_curso import (
     ofertas_ativas,
     ofertas_do_painel_conselho,
 )
+from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
 from datetime import datetime, date
 from collections import OrderedDict
@@ -251,8 +252,14 @@ def index_conselho():
         if turma.id not in turma_ids_com_oferta
     )
 
+    # H3e: grade de exibição das ofertas do painel (uma leitura em lote).
+    grade_oferta_map = grades_para_exibicao(
+        [item['oferta'] for item in ofertas]
+    )
+
     return render_template('conselho/painel.html',
                            ofertas=ofertas,
+                           grade_oferta_map=grade_oferta_map,
                            turmas_sem_oferta=turmas_sem_oferta,
                            lista_programas=lista_programas,
                            programa_ativo=programa_ativo,
@@ -647,6 +654,7 @@ def fechamento_turma(turma_id):
         return render_template('conselho/fechamento.html',
                                turma=turma,
                                oferta=None,
+                               grade_oferta=None,
                                ofertas=ofertas_turma,
                                exigir_escolha=True,
                                dados=[],
@@ -698,6 +706,7 @@ def fechamento_turma(turma_id):
     return render_template('conselho/fechamento.html',
                            turma=turma,
                            oferta=oferta,
+                           grade_oferta=grades_para_exibicao([oferta]).get(oferta.id),
                            ofertas=ofertas_turma,
                            exigir_escolha=False,
                            dados=dados_alunos,

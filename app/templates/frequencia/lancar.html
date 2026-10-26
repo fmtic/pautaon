@@ -79,12 +79,12 @@
                         onchange="atualizarUrl()">
                     <option value="">Selecione o curso</option>
                     {% for o in ofertas %}
+                    {# H3e: horário do curso no seletor vem da GRADE da oferta. #}
+                    {% set grade_oferta = grade_oferta_map.get(o.id) %}
                     <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
                         {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
                         {%- if o.turno %} — {{ o.turno }}{% endif -%}
-                        {%- if o.hora_inicio %} ({{ o.hora_inicio.strftime('%H:%M') }}
-                            {%- if o.hora_fim %}–{{ o.hora_fim.strftime('%H:%M') }}{% endif -%}
-                        ){% endif -%}
+                        {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto }}){% endif -%}
                     </option>
                     {% endfor %}
                 </select>

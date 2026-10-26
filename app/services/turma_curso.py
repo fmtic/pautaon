@@ -29,7 +29,7 @@ import logging
 from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.database import db
 from app.models import (
@@ -136,6 +136,8 @@ def ofertas_do_painel_conselho(
             joinedload(TurmaCurso.turma),
             joinedload(TurmaCurso.curso),
             joinedload(TurmaCurso.professor),
+            # H3e: dias/horários exibidos no painel saem da grade (lote).
+            selectinload(TurmaCurso.horarios),
         )
         .filter(TurmaCurso.ativo.is_(True), Turma.ativo.is_(True))
     )

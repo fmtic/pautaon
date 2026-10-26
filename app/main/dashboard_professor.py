@@ -8,11 +8,15 @@ from flask_login import current_user
 from app.models import Aluno, DiaBloqueado, Turma, TurmaCurso
 from app.services.turma_curso import (
     _alunos_da_oferta,
-    _dias_efetivos_da_oferta,
     datas_esperadas_oferta,
     ofertas_ativas,
 )
+from app.services.turma_curso_horario import (
+    grades_para_exibicao,
+    intervalo_do_dia,
+)
 from app.utils.datetime_parse import parse_date
+from app.utils.dias_semana import csv_para_weekdays, weekday_para_nome
 from app.utils.frequencia import (
     alunos_ativos_da_turma,
     datas_bloqueadas_str,
@@ -26,16 +30,26 @@ def _nome_curso_oferta(oferta) -> str:
     return oferta.curso.nome if oferta.curso else f"curso #{oferta.curso_id}"
 
 
-def _horario_oferta(oferta):
-    """Retorna (hora_inicio, hora_fim) da oferta, herdando da turma quando ausentes."""
-    hi = oferta.hora_inicio
-    hf = oferta.hora_fim
-    if (hi is None or hf is None) and oferta.turma is not None:
-        if hi is None:
-            hi = oferta.turma.hora_inicio
-        if hf is None:
-            hf = oferta.turma.hora_fim
-    return hi, hf
+def _dias_badges(grade=None, turma=None) -> list[str]:
+    """Nomes dos dias para os badges da linha (grade ou escalar da turma)."""
+    if grade is not None:
+        dias = grade.dias
+    elif turma is not None:
+        dias = tuple(sorted(set(csv_para_weekdays(turma.dias_semana))))
+    else:
+        dias = ()
+    return [weekday_para_nome(dia) for dia in dias]
+
+
+def _horario_entrada(grade=None, turma=None):
+    """Par de horas formatado da grade; escalar da turma só sem oferta (H3e)."""
+    if grade is not None and grade.texto_horario:
+        return grade.texto_horario
+    if turma is not None and turma.hora_inicio and turma.hora_fim:
+        return (
+            f"{turma.hora_inicio:%H:%M} às {turma.hora_fim:%H:%M}"
+        )
+    return None
 
 
 def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
@@ -97,6 +111,8 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
                             'total': len(aluno_ids),
                             'oferta_label': f"{turma.nome} — {_nome_curso_oferta(oferta)}",
                             'turma_curso_id': oferta.id,
+                            # H3e: a hora da data vem do weekday dela na grade.
+                            'intervalo': intervalo_do_dia(oferta, data_alvo),
                         })
             continue
 
@@ -111,6 +127,14 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
         aluno_ids = alunos_ativos_da_turma(turma.id)
         if not aluno_ids:
             continue
+
+        # H3e: com 1 oferta ativa a hora da data sai da grade dela; sem
+        # oferta (turma 100 % legado) valem os escalares da turma.
+        oferta_ref = ativas[0] if ativas else None
+        intervalo_escalar = (
+            (turma.hora_inicio, turma.hora_fim)
+            if turma.hora_inicio and turma.hora_fim else None
+        )
 
         for data_item in datas_aula:
             # `gerar_datas` ainda pode retornar strings; parse_date normaliza.
@@ -127,6 +151,10 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
                     'data':     data_alvo,
                     'faltando': len(aluno_ids) - lancados,
                     'total':    len(aluno_ids),
+                    'intervalo': (
+                        intervalo_do_dia(oferta_ref, data_alvo)
+                        if oferta_ref is not None else intervalo_escalar
+                    ),
                 })
 
     pendentes.sort(key=lambda x: x['data'])
@@ -153,6 +181,8 @@ def _entradas_professor(user_id):
         .order_by(Turma.nome, TurmaCurso.id)
         .all()
     )
+    # H3e: grade de exibição em lote (relação `horarios` já vem selectin).
+    grade_oferta_map = grades_para_exibicao(ofertas)
     for oferta in ofertas:
         turma = oferta.turma
         chave = (turma.id, oferta.id)
@@ -162,17 +192,17 @@ def _entradas_professor(user_id):
         pauta = _alunos_da_oferta(
             turma.id, oferta.id,
         )
-        hi, hf = _horario_oferta(oferta)
-        dias = _dias_efetivos_da_oferta(oferta)
+        grade = grade_oferta_map.get(oferta.id)
         entradas.append({
             'turma': turma,
             'oferta': oferta,
             'turma_curso_id': oferta.id,
             'curso_nome': _nome_curso_oferta(oferta),
             'label': f"{turma.nome} — {_nome_curso_oferta(oferta)}",
-            'dias': dias,
-            'hora_inicio': hi,
-            'hora_fim': hf,
+            'dias': grade.dias_texto if grade else None,
+            'dias_badges': _dias_badges(grade=grade),
+            'grade': grade,
+            'horario': _horario_entrada(grade=grade),
             'alunos_count': len(pauta),
             'pendentes_count': 0,
         })
@@ -198,8 +228,10 @@ def _entradas_professor(user_id):
             'curso_nome': curso_nome,
             'label': f"{turma.nome} — {curso_nome}",
             'dias': turma.dias_semana,
-            'hora_inicio': turma.hora_inicio,
-            'hora_fim': turma.hora_fim,
+            'dias_badges': _dias_badges(turma=turma),
+            'grade': None,
+            # Turma sem oferta ativa/grade: fallback escalar (H3e).
+            'horario': _horario_entrada(turma=turma),
             'alunos_count': len(aluno_ids),
             'pendentes_count': 0,
         })

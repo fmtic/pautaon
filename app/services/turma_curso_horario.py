@@ -107,11 +107,34 @@ class GradeExibicao:
     resumo: str
     ch_aula_min: int | None = None
     ch_aula_por_dia_texto: str | None = None
+    dias: tuple[int, ...] = ()
 
     @property
     def ch_aula_varia(self) -> bool:
         """``True`` quando a oferta não tem uma C.H. por aula única."""
         return self.ch_aula_min is None and bool(self.por_dia_texto)
+
+    @property
+    def texto_horario(self) -> str:
+        """Horário para exibição: par único ("08:00 às 09:30") ou por dia.
+
+        Grade não uniforme devolve a lista por dia do H3d; sem horário
+        nenhum devolve ``""`` (o template decide o texto de ausência).
+        """
+        if self.por_dia_texto:
+            return self.por_dia_texto
+        if self.hora_inicio and self.hora_fim:
+            return f"{self.hora_inicio} às {self.hora_fim}"
+        return ""
+
+    @property
+    def texto_horario_curto(self) -> str:
+        """Mesmo conteúdo de ``texto_horario`` com en dash ("08:00–09:30")."""
+        if self.por_dia_texto:
+            return self.por_dia_texto
+        if self.hora_inicio and self.hora_fim:
+            return f"{self.hora_inicio}–{self.hora_fim}"
+        return ""
 
 
 logger = logging.getLogger(__name__)
@@ -605,6 +628,37 @@ def cargas_horarias_turmas_em_lote(turmas: list[Turma]) -> dict[int, CargaTurma]
     return resultado
 
 
+def intervalo_do_dia(oferta: TurmaCurso, quando) -> tuple[time, time] | None:
+    """Par ``(início, fim)`` da aula da oferta no dia `quando` (H3e).
+
+    `quando` pode ser uma ``date`` (usa o weekday dela) ou o próprio weekday
+    0–6. Lê a grade pelo relacionamento já carregado (``selectin``) — nenhuma
+    consulta por data/oferta. Dia fora da grade de uma oferta **com** grade
+    devolve ``None``; oferta 100 % legado (sem grade) cai no par escalar da
+    oferta e, por último, no da turma.
+    """
+    dia = quando.weekday() if hasattr(quando, "weekday") else int(quando)
+    if not 0 <= dia <= 6:
+        return None
+    grade = grade_da_oferta(oferta)
+    for linha in grade:
+        if linha.dia_semana == dia:
+            if linha.hora_inicio is None or linha.hora_fim is None:
+                return None
+            return (linha.hora_inicio, linha.hora_fim)
+    if grade:
+        return None
+    if oferta.hora_inicio and oferta.hora_fim:
+        return (oferta.hora_inicio, oferta.hora_fim)
+    if (
+        oferta.turma is not None
+        and oferta.turma.hora_inicio
+        and oferta.turma.hora_fim
+    ):
+        return (oferta.turma.hora_inicio, oferta.turma.hora_fim)
+    return None
+
+
 def _formatar_hora(valor: time | None) -> str:
     return f"{valor:%H:%M}" if valor is not None else ""
 
@@ -714,6 +768,7 @@ def grade_para_exibicao(oferta: TurmaCurso, linhas, carga=None) -> GradeExibicao
         resumo=resumo,
         ch_aula_min=carga.carga_horaria_aula if carga is not None else None,
         ch_aula_por_dia_texto=_ch_por_dia_texto(carga),
+        dias=tuple(dias),
     )
 
 

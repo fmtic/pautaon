@@ -54,8 +54,14 @@
               Dias / Horário
             </p>
             <p class="mb-0">
-              {{ turma.dias_semana }} | {{ turma.hora_inicio }} às {{
-              turma.hora_fim }}
+              {# H3e: dias/horário da OFERTA pela grade; sem oferta escolhida
+                 (2+ cursos) vale a projeção escalar da turma. #}
+              {% if grade_oferta %}
+              {{ grade_oferta.dias_texto or '—' }} | {{ grade_oferta.texto_horario or 'Horário não definido' }}
+              {% else %}
+              {{ turma.dias_semana or '—' }} | {{ turma.hora_inicio or '--:--' }} às {{
+              turma.hora_fim or '--:--' }}
+              {% endif %}
             </p>
           </div>
         </div>

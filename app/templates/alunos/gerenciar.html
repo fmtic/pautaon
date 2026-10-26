@@ -266,14 +266,15 @@
                             </a>
                             {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else
                             none %}
+                            {% set grade_aluno = grade_aluno_map.get(aluno.id) %}
                             <button type="button" class="btn btn-sm btn-outline-success py-1 px-2 btn-novo-atendimento"
                                 data-aluno-id="{{ aluno.id }}" data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
                                 data-aluno-matricula="{{ aluno.matricula or '-' }}"
                                 data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                 data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
                                 data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
-                                data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
-                                data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
+                                data-turma-horario="{{ grade_aluno.texto_horario if grade_aluno and grade_aluno.texto_horario else '-' }}"
+                                data-turma-dias="{{ grade_aluno.dias_texto if grade_aluno and grade_aluno.dias_texto else '-' }}"
                                 data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
                                 title="Registro Pedagógico">
                                 <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>
@@ -289,6 +290,7 @@
                         {% else %}
                         {% set turma_atual = aluno.turmas | selectattr('ativo') | list | first if aluno.turmas else none
                         %}
+                        {% set grade_aluno = grade_aluno_map.get(aluno.id) %}
                         <div class="btn-group btn-group-sm gap-1">
                             <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank"
                                 class="btn btn-sm btn-outline-secondary py-1 px-2" title="Ver histórico">
@@ -300,8 +302,8 @@
                                 data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
                                 data-turma-nome="{{ turma_atual.nome if turma_atual else '-' }}"
                                 data-turma-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '-' }}"
-                                data-turma-horario="{{ (turma_atual.hora_inicio or '--:--') ~ ' às ' ~ (turma_atual.hora_fim or '--:--') if turma_atual else '-' }}"
-                                data-turma-dias="{{ turma_atual.dias_semana if turma_atual and turma_atual.dias_semana else '-' }}"
+                                data-turma-horario="{{ grade_aluno.texto_horario if grade_aluno and grade_aluno.texto_horario else '-' }}"
+                                data-turma-dias="{{ grade_aluno.dias_texto if grade_aluno and grade_aluno.dias_texto else '-' }}"
                                 data-turma-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '-' }}"
                                 title="Registro Pedagógico">
                                 <i class="bi bi-clipboard2-plus" style="font-size: 0.85rem;"></i>

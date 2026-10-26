@@ -82,13 +82,14 @@
         {% set aluno = atendimento.aluno %}
         {% set inscricao_atual = (aluno.inscricoes | selectattr('ativo') | list | first) %}
         {% set turma_atual = inscricao_atual.turma if inscricao_atual else none %}
+        {% set grade_aluno = grade_aluno_map.get(aluno.id) %}
         {% set identificacao = aluno.identificacao_json or {} %}
         <tr class="row-atendimento" data-aluno-id="{{ aluno.id }}"
           data-aluno-nome="{{ aluno.nome_social or aluno.nome }}" data-aluno-matricula="{{ aluno.matricula or '-' }}"
           data-aluno-foto="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
           data-aluno-turma="{{ turma_atual.nome if turma_atual else '' }}"
           data-aluno-curso="{{ turma_atual.curso.nome if turma_atual and turma_atual.curso else '' }}"
-          data-aluno-horario="{{ (turma_atual.hora_inicio or '') ~ (' - ' ~ turma_atual.hora_fim if turma_atual and turma_atual.hora_fim else '') if turma_atual else '' }}"
+          data-aluno-horario="{% if grade_aluno and grade_aluno.por_dia_texto %}{{ grade_aluno.por_dia_texto }}{% elif grade_aluno and grade_aluno.hora_inicio %}{{ grade_aluno.hora_inicio }} - {{ grade_aluno.hora_fim or '' }}{% endif %}"
           data-aluno-instrutor="{{ turma_atual.professor.name if turma_atual and turma_atual.professor else '' }}"
           data-responsavel-mae="{{ aluno.nome_mae or identificacao.get('nome_mae', '') }}"
           data-responsavel-pai="{{ aluno.nome_pai or identificacao.get('nome_pai', '') }}"

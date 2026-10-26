@@ -87,17 +87,14 @@
                         'Não atribuído' }}
                     </p>
                     <p class="small text-muted mb-1">
-                        <i class="bi bi-calendar-event me-1"></i> {{ oferta.dias_semana or turma.dias_semana or 'N/A' }}
+                        {# H3e: dias e horário da OFERTA pela grade (uniforme = como
+                           antes; não uniforme = um segmento por dia). #}
+                        {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
+                        <i class="bi bi-calendar-event me-1"></i> {{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else 'N/A' }}
                         <span class="mx-2 text-black-50">|</span>
                         <i class="bi bi-clock me-1"></i>
-                        {% if oferta.hora_inicio and oferta.hora_fim %}
-                        {{ oferta.hora_inicio }} às {{ oferta.hora_fim }}
-                        {% elif oferta.hora_inicio %}
-                        {{ oferta.hora_inicio }}
-                        {% elif turma.hora_inicio and turma.hora_fim %}
-                        {{ turma.hora_inicio }} às {{ turma.hora_fim }}
-                        {% elif turma.horario %}
-                        {{ turma.horario }}
+                        {% if grade_oferta and grade_oferta.texto_horario %}
+                        {{ grade_oferta.texto_horario }}
                         {% else %}
                         Horário não definido
                         {% endif %}
