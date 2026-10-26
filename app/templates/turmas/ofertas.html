@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "turmas/_agenda_macros.html" import agenda_campos %}
 
 {% block content %}
 
@@ -45,10 +46,20 @@
                     <td class="small">{{ oferta.professor.name if oferta.professor else '—' }}</td>
                     <td class="small">{{ oferta.turno or '—' }}</td>
                     <td class="small">
+                        {# H4: Dias/Horários vêm da GradeExibicao (H3d), não da projeção. #}
+                        {% set g = grade_map.get(oferta.id) if grade_map else None %}
+                        {% if g and (g.dias_texto or g.texto_horario) %}
+                        {{ g.dias_texto or '—' }}<br>
+                        {{ g.texto_horario or '—' }}
+                        {% if g.por_dia_texto %}
+                        <span class="badge bg-info text-dark ms-1" title="Horários diferentes por dia">varia</span>
+                        {% endif %}
+                        {% else %}
                         {{ oferta.dias_semana or '—' }}<br>
                         {% if oferta.hora_inicio and oferta.hora_fim %}
                         {{ oferta.hora_inicio.strftime('%H:%M') }} às {{ oferta.hora_fim.strftime('%H:%M') }}
                         {% else %}—{% endif %}
+                        {% endif %}
                     </td>
                     <td class="small">
                         {% if oferta.data_inicio %}{{ oferta.data_inicio.strftime('%d/%m/%Y') }}{% else %}—{% endif %}
@@ -85,90 +96,94 @@
                     </td>
                 </tr>
                 {% if oferta.ativo %}
+                {% set est = estados_oferta.get(oferta.id) if estados_oferta else None %}
+                {% set rasc = rascunho if oferta_aberta == oferta.id else None %}
                 <tr class="collapse" id="editarOferta{{ oferta.id }}">
                     <td colspan="8" class="p-4 bg-light">
                         <form action="{{ url_for('registros.turma_oferta_editar', oferta_id=oferta.id) }}" method="POST"
-                            class="row g-3">
+                            id="form-ed-{{ oferta.id }}" class="row g-3">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="curso_id" value="{{ oferta.curso_id }}">
                             <div class="col-md-3">
-                                <label class="form-label fw-bold small">Professor</label>
-                                <select name="professor_id" class="form-select form-select-sm">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_professor">Professor</label>
+                                <select name="professor_id" id="ed{{ oferta.id }}_professor" class="form-select form-select-sm">
                                     <option value="">-- Sem professor --</option>
                                     {% for p in professores %}
-                                    <option value="{{ p.id }}" {{ 'selected' if oferta.professor_id==p.id }}>
+                                    {% set sel_prof = rasc.get('professor_id') if rasc else (oferta.professor_id or '') %}
+                                    <option value="{{ p.id }}" {{ 'selected' if p.id|string == sel_prof|string }}>
                                         {{ p.name }}
                                     </option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-md-2">
-                                <label class="form-label fw-bold small">Turno</label>
-                                <select name="turno" class="form-select form-select-sm">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_turno">Turno</label>
+                                <select name="turno" id="ed{{ oferta.id }}_turno" class="form-select form-select-sm">
                                     <option value="">—</option>
                                     {% for t in ['Manhã', 'Tarde', 'Noite'] %}
-                                    <option value="{{ t }}" {{ 'selected' if oferta.turno==t }}>{{ t }}</option>
+                                    {% set sel_turno = rasc.get('turno') if rasc else (oferta.turno or '') %}
+                                    <option value="{{ t }}" {{ 'selected' if t == sel_turno }}>{{ t }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-md-2">
-                                <label class="form-label fw-bold small">Hora Início</label>
-                                <input type="time" name="hora_inicio" class="form-control form-control-sm"
-                                    value="{{ oferta.hora_inicio.strftime('%H:%M') if oferta.hora_inicio else '' }}">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_hora_inicio">Hora Início</label>
+                                <input type="time" name="hora_inicio" id="ed{{ oferta.id }}_hora_inicio"
+                                    class="form-control form-control-sm"
+                                    value="{{ est['hora_inicio'] if est else (oferta.hora_inicio.strftime('%H:%M') if oferta.hora_inicio else '') }}">
                             </div>
                             <div class="col-md-2">
-                                <label class="form-label fw-bold small">Hora Fim</label>
-                                <input type="time" name="hora_fim" class="form-control form-control-sm"
-                                    value="{{ oferta.hora_fim.strftime('%H:%M') if oferta.hora_fim else '' }}">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_hora_fim">Hora Fim</label>
+                                <input type="time" name="hora_fim" id="ed{{ oferta.id }}_hora_fim"
+                                    class="form-control form-control-sm"
+                                    value="{{ est['hora_fim'] if est else (oferta.hora_fim.strftime('%H:%M') if oferta.hora_fim else '') }}">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label fw-bold small">Centro de Custo</label>
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_centro">Centro de Custo</label>
+                                {% set sel_cc = (rasc.get('centro_custo') if rasc else (oferta.centro_custo or '')) or '' %}
                                 {% if centros %}
-                                <select name="centro_custo" class="form-select form-select-sm">
+                                <select name="centro_custo" id="ed{{ oferta.id }}_centro" class="form-select form-select-sm">
                                     <option value="">Compartilhado (turma)</option>
                                     {% for cc in centros %}
-                                    <option value="{{ cc }}" {{ 'selected' if oferta.centro_custo==cc }}>{{ cc }}
+                                    <option value="{{ cc }}" {{ 'selected' if cc == sel_cc }}>{{ cc }}
                                     </option>
                                     {% endfor %}
                                 </select>
                                 {% else %}
-                                <input type="text" name="centro_custo" class="form-control form-control-sm"
-                                    value="{{ oferta.centro_custo or '' }}" placeholder="Compartilhado (turma)">
+                                <input type="text" name="centro_custo" id="ed{{ oferta.id }}_centro"
+                                    class="form-control form-control-sm" value="{{ sel_cc }}"
+                                    placeholder="Compartilhado (turma)">
                                 {% endif %}
                             </div>
+
                             <div class="col-md-3">
-                                <label class="form-label fw-bold small">Programa</label>
-                                <select name="programa" class="form-select form-select-sm" required>
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_programa">Programa</label>
+                                {% set sel_prog = (rasc.get('programa') if rasc else oferta.programa) or '' %}
+                                <select name="programa" id="ed{{ oferta.id }}_programa" class="form-select form-select-sm" required>
                                     <option value="">Selecione um programa</option>
                                     {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
-                                    <option value="{{ prog }}" {{ 'selected' if oferta.programa==prog }}>{{ prog }}
+                                    <option value="{{ prog }}" {{ 'selected' if prog == sel_prog }}>{{ prog }}
                                     </option>
                                     {% endfor %}
                                 </select>
                             </div>
 
                             <div class="col-md-2">
-                                <label class="form-label fw-bold small">Data Início</label>
-                                <input type="date" name="data_inicio" class="form-control form-control-sm"
-                                    value="{{ oferta.data_inicio.isoformat() if oferta.data_inicio else '' }}">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_data_inicio">Data Início</label>
+                                <input type="date" name="data_inicio" id="ed{{ oferta.id }}_data_inicio"
+                                    class="form-control form-control-sm"
+                                    value="{{ (rasc.get('data_inicio') if rasc else (oferta.data_inicio.isoformat() if oferta.data_inicio else '')) or '' }}">
                             </div>
                             <div class="col-md-2">
-                                <label class="form-label fw-bold small">Data Fim</label>
-                                <input type="date" name="data_fim" class="form-control form-control-sm"
-                                    value="{{ oferta.data_fim.isoformat() if oferta.data_fim else '' }}">
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_data_fim">Data Fim</label>
+                                <input type="date" name="data_fim" id="ed{{ oferta.id }}_data_fim"
+                                    class="form-control form-control-sm"
+                                    value="{{ (rasc.get('data_fim') if rasc else (oferta.data_fim.isoformat() if oferta.data_fim else '')) or '' }}">
                             </div>
 
-                            <div class="col-md-7">
-                                <label class="form-label fw-bold small">Dias da semana</label><br>
-                                {% for dia in dias_semana %}
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox" name="dias_semana"
-                                        id="ed_dia_{{ oferta.id }}_{{ loop.index }}" value="{{ dia }}" {{ 'checked' if
-                                        oferta.dias_semana and dia in oferta.dias_semana }}>
-                                    <label class="form-check-label small"
-                                        for="ed_dia_{{ oferta.id }}_{{ loop.index }}">{{ dia }}</label>
-                                </div>
-                                {% endfor %}
+                            <div class="col-12">
+                                <label class="form-label fw-bold small">Dias da semana</label>
+                                {{ agenda_campos(est, 'ed' ~ oferta.id) }}
                             </div>
 
                             <div class="col-12">
@@ -210,14 +225,19 @@
         <i class="bi bi-plus-circle me-2"></i>Adicionar curso à turma
     </h5>
     {% if cursosDisponiveis %}
-    <form action="{{ url_for('registros.turma_oferta_nova', id=turma.id) }}" method="POST" class="row g-3">
+    {% set estn = estado_nova %}
+    {% set rascn = rascunho if oferta_aberta == 'nova' else None %}
+    <form action="{{ url_for('registros.turma_oferta_nova', id=turma.id) }}" method="POST"
+        id="formNovaOferta" class="row g-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-md-4">
             <label for="curso_id" class="form-label fw-bold small">Curso *</label>
             <select id="curso_id" name="curso_id" class="form-select" required>
                 <option value="">-- Selecione o curso --</option>
                 {% for c in cursosDisponiveis %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
+                <option value="{{ c.id }}" {{ 'selected' if rascn and rascn.get('curso_id')|string == c.id|string }}>
+                    {{ c.nome }}
+                </option>
                 {% endfor %}
             </select>
             <div class="form-text">Cursos já ofertados nesta turma não aparecem na lista.</div>
@@ -227,7 +247,9 @@
             <select id="professor_id" name="professor_id" class="form-select">
                 <option value="">-- Sem professor --</option>
                 {% for p in professores %}
-                <option value="{{ p.id }}">{{ p.name }}</option>
+                <option value="{{ p.id }}" {{ 'selected' if rascn and rascn.get('professor_id')|string == p.id|string }}>
+                    {{ p.name }}
+                </option>
                 {% endfor %}
             </select>
         </div>
@@ -236,15 +258,16 @@
             <select id="turno" name="turno" class="form-select">
                 <option value="">—</option>
                 {% for t in ['Manhã', 'Tarde', 'Noite'] %}
-                <option value="{{ t }}">{{ t }}</option>
+                <option value="{{ t }}" {{ 'selected' if rascn and rascn.get('turno') == t }}>{{ t }}</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-3">
             <label class="form-label fw-bold small d-block">Curso principal da turma</label>
             <div class="form-check form-switch mt-2">
-                <input class="form-check-input" type="checkbox" name="principal" id="principal" {{ 'checked' if not
-                    ofertas|selectattr('ativo')|selectattr('principal')|list }}>
+                <input class="form-check-input" type="checkbox" name="principal" id="principal"
+                    {{ 'checked' if (rascn and rascn.get('principal') == 'on') or
+                    (not rascn and not ofertas|selectattr('ativo')|selectattr('principal')|list) }}>
                 <label class="form-check-label small" for="principal">
                     Marcar este curso como principal
                 </label>
@@ -252,40 +275,35 @@
         </div>
         {# Centro de Custo (mantido) #}
         <div class="col-md-4">
-            <label class="form-label fw-bold small">Centro de Custo</label>
+            <label class="form-label fw-bold small" for="novo_centro">Centro de Custo</label>
             {% if centros %}
-            <select name="centro_custo" class="form-select">
+            <select name="centro_custo" id="novo_centro" class="form-select">
                 <option value="">Não compartilhado</option>
                 {% for cc in centros %}
-                <option value="{{ cc }}">{{ cc }}</option>
+                <option value="{{ cc }}" {{ 'selected' if rascn and rascn.get('centro_custo') == cc }}>{{ cc }}</option>
                 {% endfor %}
             </select>
             {% else %}
-            <input type="text" name="centro_custo" class="form-control" placeholder="Compartilhado (turma)">
+            <input type="text" name="centro_custo" id="novo_centro" class="form-control"
+                value="{{ rascn.get('centro_custo') if rascn else '' }}" placeholder="Compartilhado (turma)">
             {% endif %}
         </div>
 
         <div class="col-md-4">
-            <label class="form-label fw-bold small">Programa</label>
-            <select name="programa" class="form-select" required>
+            <label class="form-label fw-bold small" for="novo_programa">Programa</label>
+            <select name="programa" id="novo_programa" class="form-select" required>
                 <option value="">Selecione um programa</option>
                 {% for prog in ['Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros'] %}
-                <option value="{{ prog }}">{{ prog }}</option>
+                <option value="{{ prog }}" {{ 'selected' if rascn and rascn.get('programa') == prog }}>{{ prog }}</option>
                 {% endfor %}
             </select>
         </div>
 
-        <!-- Dias da Semana -->
+        <!-- Dias da Semana + modo personalizado (H4) -->
         <div class="col-12">
             <label class="form-label fw-bold">Dias da Semana</label>
-            <div class="d-flex flex-wrap gap-3 p-3 bg-white rounded border shadow-sm">
-                {% for dia in dias_semana %}
-                <div class="form-check form-check-inline form-switch">
-                    <input class="form-check-input" type="checkbox" name="dias_semana" id="novo_dia_{{ loop.index }}"
-                        value="{{ dia }}">
-                    <label class="form-check-label fw-medium" for="novo_dia_{{ loop.index }}">{{ dia }}</label>
-                </div>
-                {% endfor %}
+            <div class="p-3 bg-white rounded border shadow-sm">
+                {{ agenda_campos(estn, 'novo') }}
             </div>
         </div>
 
@@ -295,7 +313,8 @@
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="toggle_datas_curso"
-                            name="datas_personalizadas" value="1">
+                            name="datas_personalizadas" value="1"
+                            {{ 'checked' if rascn and rascn.get('datas_personalizadas') == '1' }}>
                         <label class="form-check-label fw-bold" for="toggle_datas_curso">Definir datas
                             específicas para este curso</label>
                     </div>
@@ -309,14 +328,18 @@
                         nos dias selecionados.
                     </div>
 
-                    <div id="datas_custom_area" class="row g-3 mt-1 d-none">
+                    <div id="datas_custom_area" class="row g-3 mt-1{{ ' d-none' if not (rascn and rascn.get('datas_personalizadas') == '1') }}">
                         <div class="col-sm-6">
                             <label for="data_inicio_custom" class="form-label fw-bold small">Início do Curso</label>
-                            <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control" disabled>
+                            <input type="date" name="data_inicio" id="data_inicio_custom" class="form-control"
+                                value="{{ rascn.get('data_inicio') if rascn else '' }}"
+                                {{ 'disabled' if not (rascn and rascn.get('datas_personalizadas') == '1') }}>
                         </div>
                         <div class="col-sm-6">
                             <label for="data_fim_custom" class="form-label fw-bold small">Término do Curso</label>
-                            <input type="date" name="data_fim" id="data_fim_custom" class="form-control" disabled>
+                            <input type="date" name="data_fim" id="data_fim_custom" class="form-control"
+                                value="{{ rascn.get('data_fim') if rascn else '' }}"
+                                {{ 'disabled' if not (rascn and rascn.get('datas_personalizadas') == '1') }}>
                         </div>
                         <div class="col-12">
                             <div class="form-text text-muted small">
@@ -338,11 +361,13 @@
                     <div class="row g-3">
                         <div class="col-sm-6">
                             <label for="hora_inicio" class="form-label fw-bold small">Hora Início</label>
-                            <input type="time" name="hora_inicio" id="hora_inicio" class="form-control">
+                            <input type="time" name="hora_inicio" id="hora_inicio" class="form-control"
+                                value="{{ estn['hora_inicio'] if estn else '' }}">
                         </div>
                         <div class="col-sm-6">
                             <label for="hora_fim" class="form-label fw-bold small">Hora Fim</label>
-                            <input type="time" name="hora_fim" id="hora_fim" class="form-control">
+                            <input type="time" name="hora_fim" id="hora_fim" class="form-control"
+                                value="{{ estn['hora_fim'] if estn else '' }}">
                         </div>
                     </div>
                 </div>
@@ -387,26 +412,22 @@
 
 {% block scripts %}
 <script>
+    window.ofertaAberta = {{ (oferta_aberta or '') | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/turmas/grade_horario.js') }}"></script>
+<script>
     (function () {
         const $ = (id) => document.getElementById(id);
+        const form = $('formNovaOferta');
         const toggle = $('toggle_datas_curso');
         const area = $('datas_custom_area');
         const info = $('datas_periodo_info');
         const diCustom = $('data_inicio_custom');
         const dfCustom = $('data_fim_custom');
-        const hIni = $('hora_inicio');
-        const hFim = $('hora_fim');
         const spanIni = $('periodo_data_inicio');
         const spanFim = $('periodo_data_fim');
-        const chAula = $('ch_aula_display');
-        const chTotal = $('ch_total_display');
-        const diasInputs = () => document.querySelectorAll('input[name="dias_semana"][id^="novo_dia_"]');
 
         const fmt = (iso) => iso ? iso.split('-').reverse().join('/') : '—';
-        const parse = (iso) => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
-        const norm = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3);
-        const MAPA = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
-
         const periodoIni = spanIni.dataset.valor || '';
         const periodoFim = spanFim.dataset.valor || '';
         spanIni.textContent = fmt(periodoIni);
@@ -414,31 +435,13 @@
         if (periodoIni) { diCustom.min = periodoIni; dfCustom.min = periodoIni; }
         if (periodoFim) { diCustom.max = periodoFim; dfCustom.max = periodoFim; }
 
-        function horasPorAula() {
-            if (!hIni.value || !hFim.value) return null;
-            const [h1, m1] = hIni.value.split(':').map(Number);
-            const [h2, m2] = hFim.value.split(':').map(Number);
-            const min = (h2 * 60 + m2) - (h1 * 60 + m1);
-            return min > 0 ? min / 60 : null;
-        }
-
-        const fmtH = (h) => (Number.isInteger(h) ? h : h.toFixed(2).replace('.', ',')) + 'h';
-
-        function recalcular() {
-            const porAula = horasPorAula();
-            chAula.textContent = porAula ? fmtH(porAula) : '—';
-
-            const ini = parse(toggle.checked && diCustom.value ? diCustom.value : periodoIni);
-            const fim = parse(toggle.checked && dfCustom.value ? dfCustom.value : periodoFim);
-            const dias = new Set([...diasInputs()].filter(i => i.checked).map(i => MAPA[norm(i.value)]));
-
-            if (!porAula || !ini || !fim || !dias.size || fim < ini) { chTotal.textContent = '—'; return; }
-            let aulas = 0;
-            for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
-                if (dias.has(d.getDay())) aulas++;
-            }
-            chTotal.textContent = fmtH(aulas * porAula) + ' (' + aulas + ' aulas)';
-        }
+        // Componente de agenda (H4): dias + par padrão + "Horário diferente por
+        // dia" + C.H. estimativa — tudo no módulo compartilhado grade_horario.js.
+        const grade = GradeHorario.initGrade(form, {
+            getDatas: () => (toggle.checked && diCustom.value && dfCustom.value)
+                ? [diCustom.value, dfCustom.value]
+                : [periodoIni, periodoFim],
+        });
 
         toggle.addEventListener('change', () => {
             const on = toggle.checked;
@@ -447,11 +450,30 @@
             diCustom.disabled = !on;
             dfCustom.disabled = !on;
             if (!on) { diCustom.value = ''; dfCustom.value = ''; }
-            recalcular();
+            grade.recalculaCH();
         });
-        [hIni, hFim, diCustom, dfCustom].forEach(el => el.addEventListener('input', recalcular));
-        diasInputs().forEach(el => el.addEventListener('change', recalcular));
-        recalcular();
+        [diCustom, dfCustom].forEach((el) => el.addEventListener('change', () => grade.recalculaCH()));
+
+        // Cada formulário de edição (collapse) recebe o mesmo componente.
+        document.querySelectorAll('form[id^="form-ed-"]').forEach((f) => {
+            GradeHorario.initGrade(f, {
+                getDatas: () => {
+                    const ini = f.querySelector('input[name="data_inicio"]');
+                    const fim = f.querySelector('input[name="data_fim"]');
+                    return [ini ? ini.value || null : null, fim ? fim.value || null : null];
+                },
+            });
+        });
+
+        // Re-render de erro: reabre o collapse da oferta que falhou.
+        const aberta = window.ofertaAberta;
+        if (aberta && aberta !== 'nova') {
+            const alvo = document.getElementById('editarOferta' + aberta);
+            if (alvo) {
+                alvo.classList.add('show');
+                alvo.setAttribute('aria-expanded', 'true');
+            }
+        }
     })();
 </script>
 {% endblock %}

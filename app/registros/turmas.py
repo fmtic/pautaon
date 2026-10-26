@@ -239,6 +239,88 @@ def _erro_agenda_formulario(grade: dict) -> bool:
     return grade["erro"] != _AGENDA_INCOMPLETA
 
 
+def _fmt_hora_agenda(value):
+    """`time`/`"HH:MM"` → texto para `<input type="time">`; `None` → `""`."""
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M")
+    return str(value)
+
+
+def _estado_agenda(
+    *, dias=(), por_dia=False, hora_inicio="", hora_fim="", por_dia_map=None, erro=None
+):
+    """Estado do componente de agenda que o template consumes (H4, Passo 3).
+
+    ``dias`` = weekdays marcados; ``hora_inicio``/``hora_fim`` = par padrão;
+    ``por_dia_map`` = ``{weekday: (início, fim)}`` do modo personalizado; é essa
+    a fonte que abre o formulário já em modo personalizado quando a grade da
+    oferta não é uniforme.
+    """
+    return {
+        "dias": set(dias),
+        "por_dia": por_dia,
+        "hora_inicio": _fmt_hora_agenda(hora_inicio),
+        "hora_fim": _fmt_hora_agenda(hora_fim),
+        "por_dia_map": {
+            w: (_fmt_hora_agenda(ini), _fmt_hora_agenda(fim))
+            for w, (ini, fim) in (por_dia_map or {}).items()
+        },
+        "erro": erro,
+    }
+
+
+def _estado_agenda_da_grade(linhas, dias_csv=None, hora_inicio=None, hora_fim=None):
+    """Estado a partir das linhas da grade; sem grade, cai nos escalares."""
+    if not linhas:
+        return _estado_agenda(
+            dias=set(csv_para_weekdays(dias_csv)) if dias_csv else set(),
+            hora_inicio=hora_inicio,
+            hora_fim=hora_fim,
+        )
+    pares = {(l.hora_inicio, l.hora_fim) for l in linhas}
+    por_dia = len(pares) > 1
+    if len(pares) == 1:
+        ini, fim = next(iter(pares))
+    else:
+        ini = fim = None
+    return _estado_agenda(
+        dias={l.dia_semana for l in linhas},
+        por_dia=por_dia,
+        hora_inicio=ini,
+        hora_fim=fim,
+        por_dia_map={l.dia_semana: (l.hora_inicio, l.hora_fim) for l in linhas},
+    )
+
+
+def _estado_agenda_do_form(form):
+    """Estado a partir do POST rejeitado — o formulário volta como o usuário digitou."""
+    grade = grade_do_formulario(form)
+    mapa = {
+        w: (form.get(f"hora_inicio_{w}") or "", form.get(f"hora_fim_{w}") or "")
+        for w in grade["dias"]
+    }
+    return _estado_agenda(
+        dias=grade["dias"],
+        por_dia=grade["por_dia"],
+        hora_inicio=grade["hora_inicio"],
+        hora_fim=grade["hora_fim"],
+        por_dia_map=mapa,
+        erro=grade["erro"],
+    )
+
+
+def _serializar_estado_agenda(estado):
+    """Estado → ``"dia:HH:MM-HH:MM|..."`` (mesmo formato do JS, mudança de agenda)."""
+    mapa = estado["por_dia_map"] or {}
+    partes = []
+    for w in sorted(estado["dias"]):
+        ini, fim = mapa.get(w, (estado["hora_inicio"], estado["hora_fim"]))
+        partes.append(f"{w}:{ini or ''}-{fim or ''}")
+    return "|".join(partes)
+
+
 def _parse_int_arg(value):
     if value is None:
         return None
@@ -1387,7 +1469,7 @@ def enturmar_alunos(turma_id):
     return redirect(url_for("registros.ver_turma", id=turma_id))
 
 
-def _editar_turma_contexto(turma_obj):
+def _editar_turma_contexto(turma_obj, rascunho=None):
     """Contexto do formulário de edição de turma (GET e re-render do POST — H4).
 
     Além do contexto histórico, expõe a agenda em termos do H4:
@@ -1443,6 +1525,16 @@ def _editar_turma_contexto(turma_obj):
     # H4: o bloqueio de agenda é apenas "2+ ofertas".
     agenda_bloqueada = n_ofertas >= 2
     grade_atual = grade_da_oferta(ofertas[0]) if n_ofertas == 1 else []
+    if rascunho is not None:
+        estado_agenda = _estado_agenda_do_form(rascunho)
+    elif n_ofertas == 1:
+        estado_agenda = _estado_agenda_da_grade(
+            grade_atual, ofertas[0].dias_semana, ofertas[0].hora_inicio, ofertas[0].hora_fim
+        )
+    else:
+        estado_agenda = _estado_agenda_da_grade(
+            [], turma_obj.dias_semana, turma_obj.hora_inicio, turma_obj.hora_fim
+        )
     return dict(
         turma=turma_obj,
         professores=professores,
@@ -1458,6 +1550,8 @@ def _editar_turma_contexto(turma_obj):
         agenda_bloqueada=agenda_bloqueada,
         dias_agenda=list(_DIAS_AGENDA),
         grade_atual=grade_atual,
+        estado_agenda=estado_agenda,
+        grade_original=_serializar_estado_agenda(estado_agenda),
         agenda_nao_uniforme=bool(grade_atual) and not grade_uniforme(ofertas[0]),
     )
 
@@ -1505,7 +1599,7 @@ def editar_turma(id):
                 flash(grade["erro"], "warning")
                 return render_template(
                     "turmas/editar.html",
-                    **_editar_turma_contexto(turma_obj),
+                    **_editar_turma_contexto(turma_obj, rascunho=request.form),
                     rascunho=request.form,
                 )
             itens_grade_única: list | None = grade["itens"]
@@ -1914,6 +2008,26 @@ def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200)
         else []
     )
     ofertas, linhas, grade_map = _ofertas_de_agenda_da_turma(turma_obj)
+    # Estado do componente de agenda por formulário (H4): o POST rejeitado
+    # volta como o usuário digitou; os demais formulários partem da grade.
+    estados_oferta = {}
+    for oferta_item in ofertas:
+        if not oferta_item.ativo:
+            continue
+        if rascunho is not None and oferta_aberta == oferta_item.id:
+            estados_oferta[oferta_item.id] = _estado_agenda_do_form(rascunho)
+        else:
+            estados_oferta[oferta_item.id] = _estado_agenda_da_grade(
+                linhas.get(oferta_item.id) or [],
+                oferta_item.dias_semana,
+                oferta_item.hora_inicio,
+                oferta_item.hora_fim,
+            )
+    estado_nova = (
+        _estado_agenda_do_form(rascunho)
+        if rascunho is not None and oferta_aberta == "nova"
+        else _estado_agenda()
+    )
     return render_template(
         "turmas/ofertas.html",
         turma=turma_obj,
@@ -1925,6 +2039,8 @@ def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200)
         dias_agenda=list(_DIAS_AGENDA),
         grade_linhas=linhas,
         grade_map=grade_map,
+        estados_oferta=estados_oferta,
+        estado_nova=estado_nova,
         rascunho=rascunho,
         oferta_aberta=oferta_aberta,
     ), status
