@@ -27,7 +27,6 @@ from app.models import Curso, Turma, TurmaCurso, Unidade, User
 from app.services.turma_curso import (
     adicionar_oferta,
     editar_oferta,
-    _parse_dias,
     _sobreposicao_horario,
     _sobreposicao_vigencia,
 )
@@ -97,17 +96,6 @@ def _turma(base):
 # ---------------------------------------------------------------------------
 # Unitários: helpers de sobreposição
 # ---------------------------------------------------------------------------
-
-class TestParseDias:
-    def test_csv_normal(self):
-        assert _parse_dias("Segunda, Quarta, Sexta") == {"segunda", "quarta", "sexta"}
-
-    def test_none(self):
-        assert _parse_dias(None) == set()
-
-    def test_vazio(self):
-        assert _parse_dias("") == set()
-
 
 class TestSobreposicaoHorario:
     def test_parcial(self):

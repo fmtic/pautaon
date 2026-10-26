@@ -44,11 +44,18 @@ from app.models import (
 )
 from app.models.base import get_local_now
 from app.services.turma_curso_horario import (
+    Linha,
     definir_grade,
     grade_a_partir_do_legado,
     grade_da_oferta,
+    grades_em_lote,
 )
-from app.utils.dias_semana import csv_para_weekdays, csv_tokens_desconhecidos
+from app.utils.dias_semana import (
+    csv_para_weekdays,
+    csv_tokens_desconhecidos,
+    weekday_para_nome,
+    weekdays_para_csv,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,17 +212,20 @@ def turma_tem_historico(turma_id: int) -> bool:
     return False
 
 
-def _parse_dias(dias_semana: str | None) -> set[str]:
-    """Converte CSV de dias ('Segunda, Quarta') em set normalizado (lowerstrip).
+def _normalizar_agenda(agenda: list) -> list[tuple[int, time | None, time | None]]:
+    """Normaliza a grade CANDIDATA para tuplas ordenadas por dia.
 
-    PONTE (H3a): desde a migração dos leitores de agenda, só é usado por
-    ``_conflitos_horario_concomitante`` (leitor de concomitância, ainda por
-    dia — grupo concomitância do H3). Será removido quando a concomitância
-    passar a comparar a grade por dia.
+    Aceita itens no formato do serviço — ``(dia, hora_inicio, hora_fim)`` — e
+    ``Linha`` da grade lida da oferta (``grade_da_oferta``).
     """
-    if not dias_semana:
-        return set()
-    return {d.strip().lower() for d in dias_semana.split(",") if d.strip()}
+    itens: list[tuple[int, time | None, time | None]] = []
+    for item in agenda:
+        if isinstance(item, Linha):
+            itens.append((item.dia_semana, item.hora_inicio, item.hora_fim))
+        else:
+            dia, ini, fim = item
+            itens.append((int(dia), ini, fim))
+    return sorted(itens, key=lambda t: t[0])
 
 
 def _sobreposicao_horario(a_ini: time, a_fim: time, b_ini: time, b_fim: time) -> bool:
@@ -238,24 +248,72 @@ def _sobreposicao_vigencia(
     return True
 
 
+def _mensagem_conflito(
+    outra: TurmaCurso,
+    grade_outra: list[tuple[int, time | None, time | None]],
+    dias_conflito: list[int],
+) -> str:
+    """Aviso de concomitância citando o(s) dia(s) em conflito (H3b).
+
+    Grade uniforme da outra oferta → mantém o formato anterior
+    (``<dias CSV>, HH:MM–HH:MM``), que é o texto caracterizado nos testes.
+    Grade não uniforme → um segmento por dia em conflito
+    (``Terça 08:00–10:00; Quinta 14:00–16:00``).
+    """
+    curso_nome = outra.curso.nome if outra.curso else f"curso #{outra.curso_id}"
+    pares = {(ini, fim) for _, ini, fim in grade_outra}
+    if len(pares) == 1:
+        ini, fim = next(iter(pares))
+        dias_txt = outra.dias_semana or weekdays_para_csv(
+            [dia for dia, _, _ in grade_outra]
+        )
+        detalhe = f"{dias_txt}, {ini:%H:%M}–{fim:%H:%M}"
+    else:
+        por_dia = {dia: (ini, fim) for dia, ini, fim in grade_outra}
+        detalhe = "; ".join(
+            f"{weekday_para_nome(dia)} "
+            f"{por_dia[dia][0]:%H:%M}–{por_dia[dia][1]:%H:%M}"
+            for dia in dias_conflito
+        )
+    return (
+        f"Horário concomitante com '{curso_nome}' ({detalhe}). "
+        "A oferta foi salva."
+    )
+
+
 def _conflitos_horario_concomitante(
     turma_id: int,
     *,
-    dias_semana: str | None,
-    hora_inicio: time | None,
-    hora_fim: time | None,
-    data_inicio: date | None,
-    data_fim: date | None,
+    dias_semana: str | None = None,
+    hora_inicio: time | None = None,
+    hora_fim: time | None = None,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
     exclude_oferta_id: int | None = None,
+    agenda: list | None = None,
 ) -> list[str]:
-    """Lista conflitos com outras ofertas ativas da mesma turma.
+    """Lista conflitos POR DIA com outras ofertas ativas da mesma turma (H3b).
 
-    A checagem é pulada quando faltam dados mínimos (sem dias OU sem horários).
-    Concomitância é permitida; as mensagens servem apenas como alerta.
+    Para cada weekday em comum, compara o intervalo DESSE dia; há conflito
+    quando os intervalos se sobrepõem (início_a < fim_b e início_b < fim_a).
+    Horários adjacentes (fim = início) NÃO conflitam. A vigência continua
+    limitando a comparação (sem interseção → sem conflito). Concomitância é
+    permitida; as mensagens servem apenas como ALERTA — nunca bloqueiam.
+
+    A grade candidata vem de `agenda` (itens ``(dia, ini, fim)`` ou ``Linha``),
+    necessária quando a oferta ainda não tem linhas no banco (criação) ou tem
+    grade não uniforme. Sem `agenda`, o trio escalar é convertido em grade
+    uniforme por ``grade_a_partir_do_legado``; agenda incompleta → sem checagem
+    (comportamento anterior). As grades das demais ofertas são lidas em UMA
+    consulta (``grades_em_lote``), com fallback ao CSV legado quando a oferta
+    ainda não tem grade.
     """
-    # Dados insuficientes — não há como determinar conflito
-    dias_novos = _parse_dias(dias_semana)
-    if not dias_novos or hora_inicio is None or hora_fim is None:
+    grade_nova = (
+        _normalizar_agenda(agenda)
+        if agenda is not None
+        else grade_a_partir_do_legado(dias_semana, hora_inicio, hora_fim)
+    )
+    if not grade_nova:
         return []
 
     outras = (
@@ -264,30 +322,41 @@ def _conflitos_horario_concomitante(
         .order_by(TurmaCurso.id)
         .all()
     )
+    outras = [
+        o for o in outras
+        if not (exclude_oferta_id and o.id == exclude_oferta_id)
+    ]
+    grades = grades_em_lote([o.id for o in outras])
+
+    por_dia_nova = {dia: (ini, fim) for dia, ini, fim in grade_nova}
     conflitos = []
     for outra in outras:
-        if exclude_oferta_id and outra.id == exclude_oferta_id:
+        linhas = grades.get(outra.id) or []
+        if linhas:
+            grade_outra = [(l.dia_semana, l.hora_inicio, l.hora_fim) for l in linhas]
+        else:
+            # Oferta 100% legado (sem grade): reproduz a leitura escalar antiga.
+            grade_outra = grade_a_partir_do_legado(
+                outra.dias_semana, outra.hora_inicio, outra.hora_fim
+            )
+        if not grade_outra:
             continue
-        # Precisa ter dados de horário para comparar
-        dias_outra = _parse_dias(outra.dias_semana)
-        if not dias_outra or outra.hora_inicio is None or outra.hora_fim is None:
+        if not _sobreposicao_vigencia(
+            data_inicio, data_fim, outra.data_inicio, outra.data_fim
+        ):
             continue
-        # Condição 1: dias em comum
-        if not dias_novos & dias_outra:
-            continue
-        # Condição 2: sobreposição estrita de horário
-        if not _sobreposicao_horario(hora_inicio, hora_fim, outra.hora_inicio, outra.hora_fim):
-            continue
-        # Condição 3: vigências se interceptam
-        if not _sobreposicao_vigencia(data_inicio, data_fim, outra.data_inicio, outra.data_fim):
-            continue
-        # Conflito detectado: alerta sem bloquear a operação.
-        curso_nome = outra.curso.nome if outra.curso else f"curso #{outra.curso_id}"
-        conflitos.append(
-            f"Horário concomitante com '{curso_nome}' "
-            f"({outra.dias_semana}, {outra.hora_inicio:%H:%M}–{outra.hora_fim:%H:%M}). "
-            "A oferta foi salva."
-        )
+
+        por_dia_outra = {dia: (ini, fim) for dia, ini, fim in grade_outra}
+        dias_conflito = []
+        for dia in sorted(set(por_dia_nova) & set(por_dia_outra)):
+            ini_a, fim_a = por_dia_nova[dia]
+            ini_b, fim_b = por_dia_outra[dia]
+            if None in (ini_a, fim_a, ini_b, fim_b):
+                continue  # dia sem horário (legado) não permite comparar
+            if _sobreposicao_horario(ini_a, fim_a, ini_b, fim_b):
+                dias_conflito.append(dia)
+        if dias_conflito:
+            conflitos.append(_mensagem_conflito(outra, grade_outra, dias_conflito))
     return conflitos
 
 
@@ -591,6 +660,9 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
             data_inicio=dados.get("data_inicio", oferta.data_inicio),
             data_fim=dados.get("data_fim", oferta.data_fim),
             exclude_oferta_id=oferta.id,
+            # H3b: agenda nova (se veio no `dados`) ou a grade atual da oferta
+            # (lida da relação carregada — sem consulta extra).
+            agenda=itens if itens is not None else grade_da_oferta(oferta),
         )
     else:
         avisos_horario = []
@@ -732,8 +804,7 @@ def _dias_set_da_oferta(oferta: TurmaCurso) -> set[int]:
 
 def _data_bate_dias_semana(oferta: TurmaCurso, data: date) -> bool:
     """True se `data` cai em um dos dias da grade da oferta. Oferta sem dias
-    definidos não impõe restrição (True). H3a: lê a grade (weekday 0-5), não
-    mais o CSV via ``_parse_dias``.
+    definidos não impõe restrição (True). H3a: lê a grade (weekday 0-5).
     """
     dias = _dias_set_da_oferta(oferta)
     if not dias:
