@@ -7,6 +7,7 @@ Contém:
     - PeriodoLetivo : semestre/módulo/ciclo de uma unidade.
     - Turma         : agrupamento operacional de alunos.
     - TurmaCurso    : oferta concreta de um curso dentro de uma turma.
+    - TurmaCursoHorario : grade de horário por dia da oferta (H1).
     - TemaAula      : tópico macro do planejamento pedagógico.
 
 Turma é a entidade mais conectada do sistema: liga unidade, período letivo,
@@ -23,10 +24,16 @@ NOTAS DE ONDAS
     - Onda 4 (Fase 1, múltiplos cursos por turma): `TurmaCurso` é a unidade
       acadêmica concreta; os atributos de horário/professor/turno replicam-se
       na oferta e as colunas legadas de `Turma` permanecem até o contrato final.
+    - H1 (horário por dia na oferta): `TurmaCursoHorario` nasce como fonte dos
+      dias e horários da oferta; `dias_semana`/`hora_inicio`/`hora_fim` da
+      oferta viram PROJEÇÃO transitória (removidas só no H5) e as colunas
+      `dias_semana` de `Turma`/`TurmaCurso` ampliam-se para `String(80)`.
 ================================================================================
 """
 
 from datetime import time
+
+from sqlalchemy import SmallInteger
 
 from app.models.base import db, datetime, date, select, get_local_now, List
 from app.models.auditoria_mixin import AuditoriaMixin
@@ -112,7 +119,8 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     hora_inicio: time = db.Column(db.Time)
     hora_fim: time = db.Column(db.Time)
 
-    dias_semana: str = db.Column(db.String(20))
+    # H1-P2: String(80) — o CSV canônico dos sete dias não cabe em 20.
+    dias_semana: str = db.Column(db.String(80))
     programa: str = db.Column(db.String(50))
     turno: str = db.Column(db.String(20))
     centro_custo: str = db.Column(db.String(150))
@@ -305,7 +313,10 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         comment='Professor responsável pela oferta do curso na turma',
     )
     turno: str = db.Column(db.String(20))
-    dias_semana: str = db.Column(db.String(20))
+    # H1-P2: String(80); desde o H2 esta coluna é PROJEÇÃO da grade
+    # (`TurmaCursoHorario`) gravada por `sincronizar_projecao_horario` —
+    # não escreva nela diretamente. Removida no H5.
+    dias_semana: str = db.Column(db.String(80))
     hora_inicio: time = db.Column(db.Time)
     hora_fim: time = db.Column(db.Time)
     data_inicio: date = db.Column(db.Date)
@@ -339,6 +350,17 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     # (professor_id + updated_by_id do AuditoriaMixin). Convenção do MER §1.
     professor = db.relationship(
         'User', foreign_keys=[professor_id], backref='ofertas_como_responsavel'
+    )
+    # H1: grade de horário por dia — fonte dos dias/horários da oferta
+    # (decisão 5). lazy="selectin": uma consulta por lote, sem N+1 em
+    # listagens. Cascade físico acompanha o de `ofertas_curso`.
+    horarios = db.relationship(
+        'TurmaCursoHorario',
+        order_by='TurmaCursoHorario.dia_semana',
+        lazy='selectin',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+        back_populates='oferta',
     )
 
     @property
@@ -383,6 +405,64 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         blocked = _blocked_dates_str(self.turma) if self.turma is not None else set()
         datas = datas_aula_oferta(self, blocked=blocked)
         return ch_aula * len(datas) if datas else None
+
+
+class TurmaCursoHorario(db.Model):
+    """
+    Grade de horário por dia de aula de uma OFERTA (H1).
+
+    Fonte dos dias E dos horários da oferta (decisão 5): cada linha é um
+    dia da semana (0 = segunda … 6 = domingo, `date.weekday()`) com um par
+    de horários opcional. As colunas escalares de `TurmaCurso` são apenas
+    projeção transitória desta grade (removidas no H5).
+
+    Regras (decisão 2, garantidas por CHECK no schema):
+        - `dia_semana` ∈ 0–6, único por oferta (`uix_turma_curso_horario_dia`).
+        - Linha com `hora_inicio` e `hora_fim` ambos NULL é permitida (dia
+          sem horário); só um extremo preenchido é inválido.
+        - Quando ambos preenchidos: `hora_fim` > `hora_inicio` (mesmo dia,
+          sem virar meia-noite).
+
+    Sem `unidade_id`, sem `AuditoriaMixin`, sem `ativo`: o escopo vem da
+    oferta (como `inscricoes`); a grade vale retroativamente para todo o
+    período da oferta (decisão 4, sem versionar).
+    """
+    __tablename__ = 'turma_curso_horario'
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    turma_curso_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey('turma_curso.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    # 0 = segunda … 6 = domingo (date.weekday(); decisão 1).
+    dia_semana: int = db.Column(SmallInteger, nullable=False)
+    hora_inicio: time | None = db.Column(db.Time)
+    hora_fim: time | None = db.Column(db.Time)
+
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+
+    oferta = db.relationship('TurmaCurso', back_populates='horarios')
+
+    __table_args__ = (
+        # Um dia por oferta (unicidade plena; também cobre o índice FK).
+        db.UniqueConstraint(
+            'turma_curso_id', 'dia_semana',
+            name='uix_turma_curso_horario_dia',
+        ),
+        db.CheckConstraint(
+            'dia_semana >= 0 AND dia_semana <= 6', name='ck_tch_dia',
+        ),
+        db.CheckConstraint(
+            '(hora_inicio IS NULL AND hora_fim IS NULL) '
+            'OR (hora_inicio IS NOT NULL AND hora_fim IS NOT NULL)',
+            name='ck_tch_par',
+        ),
+        db.CheckConstraint(
+            'hora_inicio IS NULL OR hora_fim IS NULL OR hora_fim > hora_inicio',
+            name='ck_tch_fim_maior',
+        ),
+    )
 
 
 class TemaAula(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
