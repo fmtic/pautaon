@@ -14,6 +14,7 @@ from datetime import date, time
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import create_app
 from app.database import db
@@ -25,8 +26,16 @@ from app.models import (
     Unidade,
     User,
 )
-from app.registros.turmas import _resumo_ofertas, aplicar_filtros_turmas
-from app.services.turma_curso_horario import definir_grade
+from app.registros.turmas import (
+    _resumo_ofertas,
+    aplicar_filtros_turmas,
+    pos_filtrar_turmas,
+)
+from app.services.turma_curso_horario import (
+    cargas_horarias_turmas_em_lote,
+    definir_grade,
+    grades_por_oferta,
+)
 from config import Config
 
 DATA_INI = date(2026, 3, 2)
@@ -214,3 +223,129 @@ class TestCaracterizacaoFiltros:
 # --- Comportamento novo (grade NÃO uniforme) ---------------------------------
 # Adicionado no P4/P5, depois da migração: filtro por dia/horário e
 # agregação passam a ler a grade.
+class TestFiltrosPelaGradeNaoUniforme:
+    """T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00 (projeção escalar 14:00)."""
+
+    def test_dia_casa_somente_os_dias_da_grade(self, app):
+        _seed(app, variavel=True)
+        assert _filtrar({"dia": "Terça"}) == {"T-MULTI", "T-VAR"}
+        assert _filtrar({"dia": "Quinta"}) == {"T-LEG", "T-VAR"}
+        assert _filtrar({"dia": "Sexta"}) == set()
+
+    def test_horario_casa_a_hora_de_inicio_de_qualquer_dia(self, app):
+        _seed(app, variavel=True)
+        assert "T-VAR" in _filtrar({"horario_inicio": "08:00"})
+        assert "T-VAR" in _filtrar({"horario_inicio": "14:00"})
+        # 10:00/16:00 são FIM de alguma linha, nunca início: não casam.
+        assert "T-VAR" not in _filtrar({"horario_inicio": "10:00"})
+        assert "T-VAR" not in _filtrar({"horario_inicio": "16:00"})
+
+    def test_dia_e_horario_precisam_casar_na_mesma_linha(self, app):
+        _seed(app, variavel=True)
+        # Antes do H3d a projeção escalar (14:00) fazia Terça + 14:00 casar.
+        assert "T-VAR" not in _filtrar({"dia": "Terça", "horario_inicio": "14:00"})
+        assert "T-VAR" not in _filtrar({"dia": "Quinta", "horario_inicio": "08:00"})
+        assert "T-VAR" in _filtrar({"dia": "Terça", "horario_inicio": "08:00"})
+        assert "T-VAR" in _filtrar({"dia": "Quinta", "horario_inicio": "14:00"})
+
+    def test_fallback_escalar_continua_para_quem_nao_tem_grade(self, app):
+        _seed(app, variavel=True)
+        # T-LEG (oferta ativa sem grade) e T-SEM (sem oferta) seguem no CSV.
+        assert _filtrar({"horario_inicio": "10:00"}) == {"T-LEG"}
+        assert _filtrar({"horario_inicio": "19:00"}) == {"T-SEM"}
+        assert _filtrar({"dia": "Sábado"}) == {"T-SEM"}
+
+    def test_agregacao_de_dias_le_a_grade(self, app):
+        ids = _seed(app, variavel=True)
+        resumo = _resumo_ofertas(db.session.get(Turma, ids["t_var"]))
+        assert resumo["dias"] == ["Terça", "Quinta"]
+        assert resumo["dias_abreviados"] == ["Ter.", "Qui."]
+
+
+class TestMinChAulaGlobal:
+    """Decisão H3d: menor duração semanal entre TODAS as ofertas ativas."""
+
+    def test_turma_multi_usa_o_menor_entre_todas_as_ofertas(self, app):
+        ids = _seed(app)
+        turma = db.session.get(Turma, ids["t_multi"])
+        carga = cargas_horarias_turmas_em_lote([turma])[turma.id]
+        # Principal = aulas de 3h; secundária = aula de 1h. Antes do H3d o
+        # filtro usava só a principal (180).
+        assert carga.carga_horaria_aula == 180
+        assert carga.min_ch_aula == 60
+
+    def test_filtro_min_ch_aula_usa_o_minimo_global(self, app):
+        ids = _seed(app)
+        turma = db.session.get(Turma, ids["t_multi"])
+        assert pos_filtrar_turmas([turma], {"min_ch_aula": "1"}) == [turma]
+        assert pos_filtrar_turmas([turma], {"min_ch_aula": "1.5"}) == []
+
+    def test_turma_de_uma_oferta_nao_muda(self, app):
+        ids = _seed(app)
+        turma = db.session.get(Turma, ids["t_uni"])
+        carga = cargas_horarias_turmas_em_lote([turma])[turma.id]
+        assert carga.min_ch_aula == 90  # aula de 1h30
+
+
+# --- Sem N+1 nos filtros/agregação -------------------------------------------
+def _consultas_de_grade(args):
+    """Nº de statements que tocam a grade/ofertas ao rodar filtros + agregação.
+
+    Reproduz o eager loading da rota `turma()`: sem ele qualquer lazy load
+    contaria como N+1 e o teste mediria outra coisa.
+    """
+    from sqlalchemy import event
+
+    engine = db.engine
+    vistas = []
+
+    def _antes(conn, cursor, statement, parameters, context, executemany):
+        if "turma_curso" in statement.lower():
+            vistas.append(statement)
+
+    stmt = aplicar_filtros_turmas(
+        select(Turma).options(
+            joinedload(Turma.professor),
+            selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
+            selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+            selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios),
+        ),
+        args,
+    )
+    event.listen(engine, "before_cursor_execute", _antes)
+    try:
+        turmas = db.session.execute(stmt).unique().scalars().all()
+        _resumo_ofertas_e_carga(turmas)
+    finally:
+        event.remove(engine, "before_cursor_execute", _antes)
+    return len(vistas)
+
+
+def _resumo_ofertas_e_carga(turmas):
+    """O mesmo trabalho da rota: resumo por turma + C.H. em lote."""
+    grades = grades_por_oferta([o for t in turmas for o in t.ofertas_curso if o.ativo])
+    for turma in turmas:
+        _resumo_ofertas(turma, grades)
+    cargas_horarias_turmas_em_lote(turmas)
+
+
+class TestSemN1:
+    def test_numero_de_consultas_de_grade_nao_cresce_com_turmas(self, app):
+        _seed(app, variavel=True)
+        base = _consultas_de_grade({"dia": "Terça"})
+        with app.app_context():
+            unidade = db.session.execute(select(Unidade)).scalars().first()
+            periodo = db.session.execute(select(PeriodoLetivo)).scalars().first()
+            curso = db.session.execute(select(Curso)).scalars().first()
+            for i in range(3):
+                turma = Turma(
+                    nome=f"T-X{i}", unidade_id=unidade.id, curso_id=curso.id,
+                    periodo_letivo_id=periodo.id, ativo=True,
+                    data_inicio=DATA_INI, data_fim=DATA_FIM,
+                    dias_semana="Terça", hora_inicio=time(7), hora_fim=time(8),
+                )
+                db.session.add(turma)
+                db.session.flush()
+                _oferta(turma, curso, True, [(1, time(7), time(8))])
+            db.session.commit()
+        assert _consultas_de_grade({"dia": "Terça"}) == base

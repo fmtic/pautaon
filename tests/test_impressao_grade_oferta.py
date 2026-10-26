@@ -239,3 +239,114 @@ class TestCaracterizacaoTextoUniforme:
 
 # --- Comportamento novo (P5) -------------------------------------------------
 # Grade NÃO uniforme e ausência de N+1 são adicionados depois da migração.
+def _listar(app, ids):
+    prompt = f"/turma?periodo_letivo_id={ids['periodo']}"
+    return _client(app, ids["user"]).get(prompt).get_data(as_text=True)
+
+
+def _adicionar_ofertas(app, turma_id, quantidade, dia=4, hora=9):
+    """Cria `quantidade` ofertas uniformes na mesma turma (dias/horas distintas)."""
+    with app.app_context():
+        turma = db.session.get(Turma, turma_id)
+        for i in range(quantidade):
+            curso = Curso(nome=f"E{i}", unidade_id=turma.unidade_id, ativo=True)
+            db.session.add(curso)
+            db.session.flush()
+            _oferta(turma, curso, False, [(dia, time(hora + i), time(hora + i + 1))])
+        db.session.commit()
+
+
+class TestTextoGradeNaoUniforme:
+    """T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00."""
+
+    def test_linha_da_turma_mostra_grade_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        trecho = _linha(_listar(app, ids), ids["t_var"])
+        assert "Ter. Qui." in trecho
+        assert "Terça 08:00–10:00; Quinta 14:00–16:00" in trecho
+        assert "14:00 - 16:00" not in trecho  # não repete o par escalar da turma
+
+    def test_detalhe_mostra_grade_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        corpo = _client(app, ids["user"]).get(f"/turma/{ids['t_var']}")
+        assert corpo.status_code == 200
+        texto = _norm(corpo.get_data(as_text=True))
+        assert (
+            "Dias: Terça, Quinta Horários: Terça 08:00–10:00; Quinta 14:00–16:00"
+            in texto
+        )
+
+    def test_impressao_mostra_por_dia_e_ch_aula_varia(self, app):
+        ids = _seed(app, variavel=True)
+        corpo = _client(app, ids["user"]).get(
+            f"/turmas/centros-custo/imprimir?periodo_letivo_id={ids['periodo']}"
+        )
+        assert corpo.status_code == 200
+        html = corpo.get_data(as_text=True)
+        texto = _norm(html)
+        assert (
+            "Terça, Quinta Terça 08:00–10:00; Quinta 14:00–16:00 varia" in texto
+        )
+        # A lista por dia da C.H. por aula vai no tooltip (não na célula).
+        assert 'title="Ter 2h; Qui 2h"' in html
+
+    def test_sublinha_multi_mostra_varia_na_oferta_nao_uniforme(self, app):
+        ids = _seed(app, variavel=True)
+        _adicionar_ofertas(app, ids["t_var"], 1)
+        html = _listar(app, ids)
+        trecho = _sublinha(html, ids["t_var"])
+        assert "Terça 08:00–10:00; Quinta 14:00–16:00" in trecho
+        assert "varia" in trecho
+        assert "Sexta 09:00 - 10:00" in trecho
+        assert 'title="Ter 2h; Qui 2h"' in html
+
+    def test_impressao_uniforme_nao_diz_varia(self, app):
+        ids = _seed(app)
+        corpo = _client(app, ids["user"]).get(
+            f"/turmas/centros-custo/imprimir?periodo_letivo_id={ids['periodo']}"
+        )
+        texto = _norm(corpo.get_data(as_text=True))
+        assert "varia" not in texto
+        assert "Segunda, Quarta 08:00–09:30 1h30min" in texto
+
+
+# --- Sem N+1 nas telas --------------------------------------------------------
+def _consultas_de_grade(client, url):
+    """Nº de statements que tocam `turma_curso`/grade ao renderizar a tela."""
+    from sqlalchemy import event
+
+    engine = db.engine
+    vistas = []
+
+    def _antes(conn, cursor, statement, parameters, context, executemany):
+        if "turma_curso" in statement.lower():
+            vistas.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _antes)
+    try:
+        resposta = client.get(url)
+        assert resposta.status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", _antes)
+    return len(vistas)
+
+
+class TestRenderSemN1:
+    def test_listagem_nao_cresce_com_turmas(self, app):
+        ids = _seed(app, variavel=True)
+        client = _client(app, ids["user"])
+        url = f"/turma?periodo_letivo_id={ids['periodo']}"
+        base = _consultas_de_grade(client, url)
+        assert base > 0
+        _adicionar_ofertas(app, ids["t_multi"], 2)
+        _adicionar_ofertas(app, ids["t_uni"], 1)
+        assert _consultas_de_grade(client, url) == base
+
+    def test_detalhe_nao_cresce_com_ofertas(self, app):
+        ids = _seed(app)
+        client = _client(app, ids["user"])
+        url = f"/turma/{ids['t_multi']}"
+        base = _consultas_de_grade(client, url)
+        assert base > 0
+        _adicionar_ofertas(app, ids["t_multi"], 3)
+        assert _consultas_de_grade(client, url) == base
