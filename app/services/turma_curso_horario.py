@@ -1,21 +1,23 @@
-"""Serviço único da grade de horário por dia da oferta (H1-P4).
+"""Serviço único da grade de horário por dia da oferta (H1-P4, H2-P2).
 
 Camada de leitura/escrita sobre `TurmaCursoHorario` (fonte dos dias e horários
 da oferta — decisão 5). Nenhuma função desta camada faz ``commit``: o chamador
 (rota/escritor do H2) controla a transação.
 
 Convenções:
-    - ``dia_semana`` é sempre ``date.weekday()`` (0 = segunda … 6 = domingo);
-      a tradução com o texto dos formulários passa pelo conversor único
-      ``app/utils/dias_semana.py`` (H1-P1).
-    - A grade pode ter dias sem horário (par ``hora_inicio``/``hora_fim`` ambos
-      NULL). Só um extremo preenchido é inválido (decisão 2), assim como
-      ``hora_fim <= hora_inicio`` — ``definir_grade`` recusa ambos.
+    - ``dia_semana`` é ``date.weekday()``; o domínio GRAVÁVEL pela escrita é
+      0–5 (segunda a sábado) — domingo (6) é recusado por ``definir_grade``
+      (decisão H2), embora o CHECK do banco ainda admita 0–6 por tolerância ao
+      legado lido antes do H2. A tradução com o texto dos formulários passa
+      pelo conversor único ``app/utils/dias_semana.py`` (H1-P1).
+    - Desde o H2 toda grade escrita pelo serviço tem AO MENOS um dia e TODO dia
+      com ``hora_inicio`` e ``hora_fim`` preenchidos, ``fim > início``
+      (decisão H2). Leitores (`duracao_do_dia`, `grade_uniforme`, `resumo_grade`)
+      continuam tolerando linhas sem horário vindas do backfill, para não
+      quebrar antes do H3.
     - ``sincronizar_projecao_horario`` é, a partir do H2, o ÚNICO ponto que
       escreve ``oferta.dias_semana``/``hora_inicio``/``hora_fim`` (projeção
       transitória removida no H5).
-
-Nada aqui altera os escritores/leitores atuais; é somente a base que o H2 usa.
 """
 from __future__ import annotations
 
@@ -25,7 +27,11 @@ from datetime import time
 
 from app import db
 from app.models import TurmaCurso, TurmaCursoHorario
-from app.utils.dias_semana import weekday_para_abrev, weekdays_para_csv
+from app.utils.dias_semana import (
+    weekday_para_abrev,
+    weekday_para_nome,
+    weekdays_para_csv,
+)
 
 
 @dataclass(frozen=True)
@@ -189,20 +195,32 @@ def sincronizar_projecao_horario(oferta: TurmaCurso) -> None:
 def definir_grade(oferta: TurmaCurso, itens: list[tuple[int, time | None, time | None]]) -> None:
     """Substitui a grade inteira da oferta por `itens` (átomo, sem commit).
 
-    `itens` é uma lista de ``(dia_semana, hora_inicio|None, hora_fim|None)``.
-    Valida antes de tocar na coleção: dia em 0-6, sem duplicata de dia, par
-    completo (ambos NULL ou ambos preenchidos) e ``hora_fim > hora_inicio``
-    quando preenchido. Em qualquer erro levanta ``ValueError`` em português e
-    NÃO altera a grade anterior.
+    `itens` é uma lista de ``(dia_semana, hora_inicio, hora_fim)``. Regras H2
+    (decisões 2–4), validadas ANTES de qualquer alteração:
 
-    A substituição é feita removendo as linhas antigas e ``flush``-ando antes
-    de reinserir, para não violar ``uix_turma_curso_horario_dia`` no meio do
-    flush. Por fim chama ``sincronizar_projecao_horario``.
+    - grade não pode ser vazia (toda oferta tem ao menos um dia de aula);
+    - dia em 0–5 (segunda a sábado); domingo (6) é recusado;
+    - sem duplicata de dia;
+    - todo dia tem hora de início E fim preenchidas;
+    - ``hora_fim > hora_inicio`` (mesmo dia, sem virar meia-noite).
+
+    Qualquer violação levanta ``ValueError`` com mensagem em português
+    identificando o dia, e a grade anterior permanece intacta. Aplicar a
+    MESMA grade de novo é no-op (não escreve nada).
+
+    A substituição remove as linhas antigas e ``flush``-a antes de reinserir,
+    para não violar ``uix_turma_curso_horario_dia`` no meio do flush. Por fim
+    chama ``sincronizar_projecao_horario``.
     """
+    if not itens:
+        raise ValueError(
+            "A grade não pode ficar vazia: selecione ao menos um dia de aula."
+        )
+
     vistos: set[int] = set()
     validados: list[tuple[int, time | None, time | None]] = []
 
-    for idx, item in enumerate(itens):
+    for item in itens:
         try:
             dia, ini, fim = item
         except (TypeError, ValueError):
@@ -213,24 +231,37 @@ def definir_grade(oferta: TurmaCurso, itens: list[tuple[int, time | None, time |
         if not isinstance(dia, int) or dia < 0 or dia > 6:
             raise ValueError(
                 f"dia_semana inválido {dia!r}: use inteiro de 0 (segunda) a "
-                "6 (domingo)."
+                "5 (sábado)."
+            )
+        if dia == 6:
+            raise ValueError(
+                "Domingo não é dia de aula: use dias de segunda (0) a sábado (5)."
             )
         if dia in vistos:
-            raise ValueError(f"dia_semana duplicado na grade: {dia}.")
+            raise ValueError(f"Dia duplicado na grade: {weekday_para_nome(dia)}.")
         vistos.add(dia)
 
-        if (ini is None) != (fim is None):
+        if ini is None or fim is None:
             raise ValueError(
-                f"Par de horários incompleto no dia {dia}: preencha início e "
-                "fim juntos, ou deixe ambos vazios (dia sem horário)."
+                f"Falta horário no dia {weekday_para_nome(dia)}: toda aula precisa "
+                "de hora de início e de término."
             )
-        if ini is not None and fim is not None and fim <= ini:
+        if fim <= ini:
             raise ValueError(
-                f"Horário inválido no dia {dia}: hora_fim ({fim:%H:%M}) deve "
-                f"ser maior que hora_inicio ({ini:%H:%M})."
+                f"Horário inválido no dia {weekday_para_nome(dia)}: hora_fim "
+                f"({fim:%H:%M}) deve ser maior que hora_inicio ({ini:%H:%M})."
             )
 
         validados.append((dia, ini, fim))
+
+    validados.sort(key=lambda t: t[0])
+    atuais = [
+        (l.dia_semana, l.hora_inicio, l.hora_fim)
+        for l in grade_da_oferta(oferta)
+    ]
+    if atuais == validados:
+        # Idempotência: mesma grade não toca no banco nem na projeção.
+        return
 
     # Remove as linhas antigas e consolida o DELETE antes de reinserir (evita
     # colisão com a UNIQUE (turma_curso_id, dia_semana) no mesmo flush).

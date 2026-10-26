@@ -1,9 +1,13 @@
-"""H1-P5 — Serviço `app/services/turma_curso_horario.py`.
+"""H1-P5 — Serviço `app/services/turma_curso_horario.py` (contrato H2).
 
 Cobre a camada da grade por dia da oferta:
     - `definir_grade`: substitui sem duplicar, rollback atômico (ValueError não
       deixa grade parcial e preserva a anterior), idempotência (reaplicar o
-      mesmo conjunto não muda nada).
+      mesmo conjunto não escreve nada). Desde o H2 recusa grade vazia, domingo
+      e dia sem horário completo — os cenários "sem horário" abaixo são
+      semeados via modelo direto (tolerância do banco ao legado pré-H2), para
+      manter a cobertura dos leitores (`duracao_do_dia`, `grade_uniforme`,
+      `resumo_grade`, `sincronizar_projecao_horario`).
     - `duracao_do_dia`: minutos do dia; None p/ dia ausente ou sem horário.
     - `grade_uniforme`: uniforme / dias diferentes / sem horário / mista.
     - `resumo_grade`: os três formatos (uniforme, não uniforme, só dias).
@@ -81,6 +85,19 @@ def _oferta(**legado):
     return oferta
 
 
+def _semeiar_linhas_legado(oferta, itens):
+    """Insere linhas na grade pelo MODELO (não pelo serviço), permitindo os
+    formatos tolerados pelo banco mas recusados pelo contrato H2 de
+    `definir_grade` (dia sem horário, domingo). Usado para cobrir leitores."""
+    for dia, ini, fim in itens:
+        db.session.add(TurmaCursoHorario(
+            turma_curso_id=oferta.id, dia_semana=dia, hora_inicio=ini, hora_fim=fim,
+        ))
+    db.session.flush()
+    # A relação já carregada não vê o add direto por FK: expira para reler.
+    db.session.expire(oferta, ["horarios"])
+
+
 # --- definir_grade ------------------------------------------------------------
 def test_definir_grade_substitui_sem_duplicar(app):
     o = _oferta()
@@ -126,13 +143,16 @@ def test_definir_grade_rollback_atomic_preserva_anterior(app):
 @pytest.mark.parametrize(
     "itens",
     [
-        [(7, None, None)],                    # dia fora do domínio
-        [(-1, time(9, 0), time(10, 0))],      # dia negativo
+        [],                                     # grade vazia (H2)
+        [(7, time(9, 0), time(10, 0))],         # dia fora do domínio
+        [(-1, time(9, 0), time(10, 0))],        # dia negativo
+        [(6, time(9, 0), time(10, 0))],         # domingo (H2)
         [(0, time(9, 0), time(10, 0)), (0, time(11, 0), time(12, 0))],  # duplicata
-        [(1, time(9, 0), None)],              # par incompleto
-        [(1, None, time(9, 0))],              # par incompleto (só fim)
-        [(2, time(15, 0), time(13, 0))],      # fim < início
-        [(2, time(13, 0), time(13, 0))],      # fim == início
+        [(1, time(9, 0), None)],                # falta fim
+        [(1, None, time(9, 0))],                # falta início
+        [(1, None, None)],                      # dia sem horário (H2 exige par)
+        [(2, time(15, 0), time(13, 0))],        # fim < início
+        [(2, time(13, 0), time(13, 0))],        # fim == início
     ],
 )
 def test_definir_grade_validacoes_levantam_valueerror(app, itens):
@@ -144,7 +164,8 @@ def test_definir_grade_validacoes_levantam_valueerror(app, itens):
 # --- duracao_do_dia -----------------------------------------------------------
 def test_duracao_do_dia(app):
     o = _oferta()
-    definir_grade(o, [(0, time(13, 30), time(16, 30)), (2, None, None)])
+    definir_grade(o, [(0, time(13, 30), time(16, 30))])
+    _semeiar_linhas_legado(o, [(2, None, None)])  # legado: dia sem horário
     db.session.commit()
     assert duracao_do_dia(o, 0) == 180      # 13:30 -> 16:30
     assert duracao_do_dia(o, 2) is None     # dia sem horário
@@ -162,20 +183,22 @@ def test_grade_uniforme_casos(app):
     db.session.commit()
     assert grade_uniforme(o) is True
 
-    # sem horário em todos os dias -> uniforme
-    definir_grade(o, [(1, None, None), (3, None, None)])
+    # sem horário em todos os dias -> uniforme (legado: semeadura via modelo)
+    o2 = _oferta()
+    _semeiar_linhas_legado(o2, [(1, None, None), (3, None, None)])
     db.session.commit()
-    assert grade_uniforme(o) is True
+    assert grade_uniforme(o2) is True
 
     # horários diferentes entre dias -> não uniforme
     definir_grade(o, [(0, time(9, 0), time(10, 0)), (1, time(14, 0), time(15, 0))])
     db.session.commit()
     assert grade_uniforme(o) is False
 
-    # mista: um dia com horário, outro sem -> não uniforme
-    definir_grade(o, [(0, time(9, 0), time(10, 0)), (1, None, None)])
+    # mista: um dia com horário, outro sem -> não uniforme (legado)
+    o3 = _oferta()
+    _semeiar_linhas_legado(o3, [(0, time(9, 0), time(10, 0)), (1, None, None)])
     db.session.commit()
-    assert grade_uniforme(o) is False
+    assert grade_uniforme(o3) is False
 
 
 # --- resumo_grade -------------------------------------------------------------
@@ -193,10 +216,11 @@ def test_resumo_grade_formatos(app):
     db.session.commit()
     assert resumo_grade(o) == "Seg 13:30-16:30 · Ter 13:00-15:00"
 
-    # sem horário -> só os dias
-    definir_grade(o, [(0, None, None), (3, None, None)])
+    # sem horário -> só os dias (legado: semeadura via modelo)
+    o2 = _oferta()
+    _semeiar_linhas_legado(o2, [(0, None, None), (3, None, None)])
     db.session.commit()
-    assert resumo_grade(o) == "Seg, Qui"
+    assert resumo_grade(o2) == "Seg, Qui"
 
 
 # --- sincronizar_projecao_horario ---------------------------------------------
@@ -220,7 +244,8 @@ def test_projecao_nao_uniforme_zera_horas_mantem_dias(app):
 
 def test_projecao_sem_horario_mantem_dias_horas_null(app):
     o = _oferta()
-    definir_grade(o, [(0, None, None), (1, None, None)])
+    _semeiar_linhas_legado(o, [(0, None, None), (1, None, None)])
+    sincronizar_projecao_horario(o)
     db.session.commit()
     assert o.dias_semana == "Segunda, Terça"
     assert o.hora_inicio is None and o.hora_fim is None
@@ -236,17 +261,49 @@ def test_projecao_grade_vaza_zera_tudo(app):
 
 def test_projecao_seis_dias_cabem_em_80(app):
     o = _oferta()
-    # seg..sab = 0..5 (sem domingo)
+    # seg..sab = 0..5 (sem domingo) — domínio escrito desde o H2
     definir_grade(o, [(d, time(9, 0), time(10, 0)) for d in range(6)])
     db.session.commit()
     assert len(o.dias_semana) <= 80
-    # sete dias completos também cabem
-    definir_grade(o, [(d, time(9, 0), time(10, 0)) for d in range(7)])
-    db.session.commit()
-    assert len(o.dias_semana) <= 80
     assert o.dias_semana == (
-        "Segunda, Terça, Quarta, Quinta, Sexta, Sábado, Domingo"
+        "Segunda, Terça, Quarta, Quinta, Sexta, Sábado"
     )
+
+
+def test_definir_grade_recusa_domingo(app):
+    o = _oferta()
+    definir_grade(o, [(0, time(9, 0), time(10, 0))])
+    db.session.commit()
+    with pytest.raises(ValueError, match="[Dd]omingo"):
+        definir_grade(o, [(6, time(9, 0), time(10, 0))])
+    # grade anterior intacta
+    assert [l.dia_semana for l in grade_da_oferta(o)] == [0]
+
+
+def test_definir_grade_idempotencia_nao_escreve(app):
+    """Mesma grade de novo = zero DELETE/INSERT na tabela (no-op real)."""
+    o = _oferta()
+    itens = [(0, time(9, 0), time(10, 0)), (2, time(9, 0), time(10, 0))]
+    definir_grade(o, itens)
+    db.session.commit()
+    ids_antes = sorted(l.id for l in o.horarios)
+
+    cont = {"escrita": 0}
+
+    def _antes(conn, cur, statement, params, context, executemany):
+        if "turma_curso_horario" in str(statement).lower() and any(
+            k in str(statement).upper() for k in ("INSERT", "DELETE", "UPDATE")
+        ):
+            cont["escrita"] += 1
+
+    event.listen(db.engine, "before_cursor_execute", _antes)
+    try:
+        definir_grade(o, itens)
+        db.session.commit()
+    finally:
+        event.remove(db.engine, "before_cursor_execute", _antes)
+    assert cont["escrita"] == 0
+    assert sorted(l.id for l in o.horarios) == ids_antes
 
 
 # --- grades_em_lote (uma consulta, sem N+1) -----------------------------------
