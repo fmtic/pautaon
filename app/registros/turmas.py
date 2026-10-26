@@ -33,8 +33,14 @@ from app.services.turma_curso import (
     ofertas_ativas,
     sincronizar_programa_turma,
     turma_tem_historico,
+    _AGENDA_INCOMPLETA,
     _alunos_da_oferta,
     _conflitos_horario_concomitante,
+)
+from app.services.turma_curso_horario import (
+    definir_grade,
+    grade_a_partir_do_legado,
+    grade_uniforme,
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.formatters import formatar_ch
@@ -860,6 +866,11 @@ def nova_turma():
                 "success",
             )
             return redirect(url_for("registros.turma_ofertas", id=nova.id))
+        except ValueError as erro:
+            # H2: oferta inicial exige agenda completa na turma.
+            db.session.rollback()
+            flash(str(erro), "warning")
+            return redirect(url_for("registros.nova_turma"))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao salvar turma.")
@@ -1154,6 +1165,31 @@ def editar_turma(id):
             n_ativas = len(ativas)
             oferta_única = ativas[0] if n_ativas == 1 else None
 
+            # H2: a agenda do formulário só espelha na oferta quando a grade
+            # dela é UNIFORME (critério = uniformidade, não nº de ofertas).
+            # A decisão é tomada ANTES de qualquer escrita.
+            mudou_agenda = (
+                novo_dias_semana != (turma_obj.dias_semana or "")
+                or novo_hora_inicio != turma_obj.hora_inicio
+                or novo_hora_fim != turma_obj.hora_fim
+            )
+            grade_nao_uniforme = (
+                oferta_única is not None and not grade_uniforme(oferta_única)
+            )
+            agenda_ignorada = grade_nao_uniforme and mudou_agenda
+            itens_grade_única: list | None = None
+            if (
+                oferta_única is not None
+                and mudou_agenda
+                and not grade_nao_uniforme
+            ):
+                itens_grade_única = grade_a_partir_do_legado(
+                    novo_dias_semana, novo_hora_inicio, novo_hora_fim
+                )
+                if itens_grade_única is None:
+                    flash(_AGENDA_INCOMPLETA, "warning")
+                    return redirect(url_for("registros.editar_turma", id=id))
+
             # Campos "de oferta" vindos do POST (professor/turno/centro/curso).
             novo_professor_raw = request.form.get("professor_id") or None
             novo_turno = request.form.get("turno")
@@ -1246,12 +1282,12 @@ def editar_turma(id):
                 return redirect(url_for("registros.turma"))
 
             # --- REGRAS 2 (sem oferta) e 3 (1 oferta): fluxo atual ---
+            # H2: se a agenda foi ignorada (grade não uniforme), só as datas
+            # contam como mudança de lançamento.
             dados_de_lancamento_alterados = (
-                novo_dias_semana != (turma_obj.dias_semana or "")
+                (mudou_agenda and not agenda_ignorada)
                 or novo_data_inicio_date != turma_obj.data_inicio
                 or novo_data_fim_date != turma_obj.data_fim
-                or novo_hora_inicio != turma_obj.hora_inicio
-                or novo_hora_fim != turma_obj.hora_fim
             )
 
             if dados_de_lancamento_alterados:
@@ -1270,11 +1306,11 @@ def editar_turma(id):
             turma_obj.turno = novo_turno
             turma_obj.data_inicio = novo_data_inicio_date
             turma_obj.data_fim = novo_data_fim_date
-            turma_obj.hora_inicio = novo_hora_inicio
-            turma_obj.hora_fim = novo_hora_fim
+            if not agenda_ignorada:
+                turma_obj.hora_inicio = novo_hora_inicio
+                turma_obj.hora_fim = novo_hora_fim
+                turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
             turma_obj.professor_id = novo_professor_raw
-
-            turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
 
             original_periodo_id = turma_obj.periodo_letivo_id
             novo_periodo_id = request.form.get("periodo_letivo_id")
@@ -1360,22 +1396,31 @@ def editar_turma(id):
 
             # REGRA 3 (1 oferta ativa): espelha na oferta exatamente o que foi
             # gravado na turma. Conflitos de horário geram apenas aviso; não
-            # impedem a gravação transacional de turma e oferta.
+            # impedem a gravação transacional de turma e oferta. Desde o H2 os
+            # dias/horários vão para a oferta via definir_grade (única fonte);
+            # com grade não uniforme a agenda da Turma é ignorada (mensagem).
             if oferta_única is not None:
-                avisos_horario = _conflitos_horario_concomitante(
-                    id,
-                    dias_semana=turma_obj.dias_semana,
-                    hora_inicio=turma_obj.hora_inicio,
-                    hora_fim=turma_obj.hora_fim,
-                    data_inicio=turma_obj.data_inicio,
-                    data_fim=turma_obj.data_fim,
-                    exclude_oferta_id=oferta_única.id,
-                )
+                if agenda_ignorada:
+                    flash(
+                        "A agenda desta oferta não é uniforme (há horários "
+                        "diferentes por dia). Os dias e horários são editados "
+                        "somente em Cursos da Turma e não foram alterados.",
+                        "warning",
+                    )
+                else:
+                    avisos_horario = _conflitos_horario_concomitante(
+                        id,
+                        dias_semana=turma_obj.dias_semana,
+                        hora_inicio=turma_obj.hora_inicio,
+                        hora_fim=turma_obj.hora_fim,
+                        data_inicio=turma_obj.data_inicio,
+                        data_fim=turma_obj.data_fim,
+                        exclude_oferta_id=oferta_única.id,
+                    )
                 oferta_única.professor_id = turma_obj.professor_id
                 oferta_única.turno = turma_obj.turno
-                oferta_única.dias_semana = turma_obj.dias_semana
-                oferta_única.hora_inicio = turma_obj.hora_inicio
-                oferta_única.hora_fim = turma_obj.hora_fim
+                if mudou_agenda and itens_grade_única is not None:
+                    definir_grade(oferta_única, itens_grade_única)
                 oferta_única.data_inicio = turma_obj.data_inicio
                 oferta_única.data_fim = turma_obj.data_fim
                 oferta_única.centro_custo = turma_obj.centro_custo
@@ -1452,6 +1497,11 @@ def editar_turma(id):
     # Onda 4 (Fase 4, G3): ofertas ativas para o bloco "Cursos desta turma".
     ofertas = ofertas_ativas(id)
     n_ofertas = len(ofertas)
+    # H2: agenda bloqueada quando não há para onde espelhar uniforme —
+    # 2+ ofertas ativas OU oferta única com grade não uniforme.
+    agenda_bloqueada = n_ofertas >= 2 or (
+        n_ofertas == 1 and not grade_uniforme(ofertas[0])
+    )
     return render_template(
         "turmas/editar.html",
         turma=turma_obj,
@@ -1465,6 +1515,7 @@ def editar_turma(id):
         tem_lancamentos=tem_lancamentos,
         ofertas=ofertas,
         n_ofertas=n_ofertas,
+        agenda_bloqueada=agenda_bloqueada,
     )
 
 

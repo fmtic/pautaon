@@ -28,6 +28,7 @@ from datetime import time
 from app import db
 from app.models import TurmaCurso, TurmaCursoHorario
 from app.utils.dias_semana import (
+    csv_para_weekdays,
     weekday_para_abrev,
     weekday_para_nome,
     weekdays_para_csv,
@@ -191,6 +192,25 @@ def sincronizar_projecao_horario(oferta: TurmaCurso) -> None:
 # ---------------------------------------------------------------------------
 # Escrita
 # ---------------------------------------------------------------------------
+
+def grade_a_partir_do_legado(
+    dias_semana: str | None,
+    hora_inicio: time | None,
+    hora_fim: time | None,
+) -> list[tuple[int, time, time]] | None:
+    """Converte colunas escalares (CSV de dias + par único) em grade uniforme.
+
+    É a ponte dos escritores legados para ``definir_grade`` (H2): resolve o
+    CSV pelo conversor único, descarta domingo (fora do domínio 0–5 do H2) e
+    monta um par por dia. Devolve ``None`` quando a agenda legada está
+    INCOMPLETA (sem dias utilizáveis, sem hora, ou ``fim <= início``) — o
+    chamador deve recusar e pedir agenda completa, nunca gravar grade parcial.
+    """
+    dias = [d for d in csv_para_weekdays(dias_semana) if d <= 5]
+    if not dias or hora_inicio is None or hora_fim is None or hora_fim <= hora_inicio:
+        return None
+    return [(d, hora_inicio, hora_fim) for d in sorted(set(dias))]
+
 
 def definir_grade(oferta: TurmaCurso, itens: list[tuple[int, time | None, time | None]]) -> None:
     """Substitui a grade inteira da oferta por `itens` (átomo, sem commit).

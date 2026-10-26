@@ -316,8 +316,10 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
     db.session.commit()
 
     # Adiciona a 2ª oferta (B) sem data_inicio: turma encerrada → não usa hoje.
+    # Agenda explícita (H2): com vínculo legado espelhado, a herança não se aplica.
     oferta = adicionar_oferta(
         turma, curso_id=curso_b.id, principal=False, programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(8), hora_fim=time(12),
     )
 
     assert getattr(oferta, "inicio_ajustado_para_hoje", False) is False
@@ -739,6 +741,9 @@ def _post_nova_turma(app, ids, *, nome, curso_id=None, dias="Segunda", data=DATA
         "periodo_letivo_id": ids["periodo"],
         "programa": "Teste",
         "dias_semana": dias,
+        # H2: a oferta inicial exige agenda completa na turma.
+        "hora_inicio": "09:00",
+        "hora_fim": "10:00",
         "datas_personalizadas": "1",
         "data_inicio": data.isoformat(),
         "data_fim": data.isoformat(),
@@ -817,6 +822,7 @@ def test_criar_oferta_inicial_idempotente_nao_duplica(app):
     db.session.flush()
     turma = Turma(
         nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
         programa="Teste",
     )
     db.session.add(turma)

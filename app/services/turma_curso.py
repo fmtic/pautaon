@@ -42,6 +42,17 @@ from app.models import (
     User,
 )
 from app.models.base import get_local_now
+from app.services.turma_curso_horario import (
+    definir_grade,
+    grade_a_partir_do_legado,
+)
+
+# Mensagem única usada quando a agenda enviada está incompleta (H2: toda
+# oferta precisa de ao menos um dia e horário completo início+fim).
+_AGENDA_INCOMPLETA = (
+    "Selecione ao menos um dia de aula (segunda a sábado) e preencha as horas "
+    "de início e fim, com o fim maior que o início."
+)
 
 
 def ofertas_ativas(turma_id: int):
@@ -373,6 +384,11 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     `add`/`flush` — para que a rota grave turma e oferta na mesma transação
     (falha na oferta desfaz a turma). Não valida concomitância: a oferta
     replica exatamente a grade já aceita da turma.
+
+    Desde o H2 a agenda vem da TURMA só quando está COMPLETA (dias + início +
+    fim): a grade da oferta é criada pelo serviço (`definir_grade`) e as
+    colunas escalares da oferta passam a ser projeção. Herança incompleta é
+    recusada com ValueError (nunca se cria oferta com grade parcial).
     """
     existente = (
         TurmaCurso.query
@@ -389,6 +405,14 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     if not turma.programa or not turma.programa.strip():
         raise ValueError("Toda oferta precisa ter um programa.")
 
+    itens = grade_a_partir_do_legado(
+        turma.dias_semana, turma.hora_inicio, turma.hora_fim
+    )
+    if itens is None:
+        raise ValueError(
+            f"A turma não tem agenda completa — {_AGENDA_INCOMPLETA.lower()}"
+        )
+
     periodo = turma.periodo_letivo
 
     oferta = TurmaCurso(
@@ -397,9 +421,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
         principal=False,
         professor_id=turma.professor_id,
         turno=turma.turno,
-        dias_semana=turma.dias_semana,
-        hora_inicio=turma.hora_inicio,
-        hora_fim=turma.hora_fim,
+        # dias_semana/hora_inicio/hora_fim: projeção gravada pelo definir_grade.
         data_inicio=periodo.data_inicio if periodo else turma.data_inicio,
         data_fim=periodo.data_fim if periodo else turma.data_fim,
         centro_custo=turma.centro_custo,
@@ -409,6 +431,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     )
     db.session.add(oferta)
     db.session.flush()
+    definir_grade(oferta, itens)
     sincronizar_programa_turma(turma)
     return oferta
 
@@ -471,6 +494,12 @@ def adicionar_oferta(
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
 
+    # H2: a grade da oferta é a fonte dos dias/horários e nasce completa —
+    # valida ANTES de qualquer escrita (nada é alterado em caso de erro).
+    itens = grade_a_partir_do_legado(dias_semana, hora_inicio, hora_fim)
+    if itens is None:
+        raise ValueError(_AGENDA_INCOMPLETA)
+
     # A troca é feita antes do INSERT e dentro da mesma transação. O flush
     # libera o índice único parcial antes de gravar a nova oferta principal.
     if principal:
@@ -485,9 +514,7 @@ def adicionar_oferta(
         principal=bool(principal),
         professor_id=professor_id,
         turno=turno,
-        dias_semana=dias_semana,
-        hora_inicio=hora_inicio,
-        hora_fim=hora_fim,
+        # dias_semana/hora_inicio/hora_fim: projeção gravada pelo definir_grade.
         data_inicio=data_inicio,
         data_fim=data_fim,
         centro_custo=centro_custo,
@@ -497,6 +524,7 @@ def adicionar_oferta(
     )
     db.session.add(oferta)
     db.session.flush()
+    definir_grade(oferta, itens)
     _sincronizar_legado(turma, oferta)
     sincronizar_programa_turma(turma)
 
@@ -507,8 +535,14 @@ def adicionar_oferta(
 
 def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
     """Atualiza os atributos da oferta. O campo `principal` não é editável
-    aqui (use `definir_principal`); alterações não retroativas: inscrições e
-    lançamentos existentes continuam como estão.
+    aqui (use `definir_principal`).
+
+    H2: `dias_semana`/`hora_inicio`/`hora_fim` NÃO são mais gravados por
+    setattr direto — quando algum deles chega, a grade inteira da oferta é
+    substituida por ``definir_grade`` (grade uniforme a partir do CSV + par
+    do formulário; UI de grade variável é H4) e as colunas escalares passam a
+    ser projeção. Herança/legado incompleto é recusado (nunca grade parcial).
+    Sem campos de agenda no `dados`, a grade não é tocada.
     """
     if "professor_id" in dados:
         dados["professor_id"] = _validar_professor(
@@ -520,6 +554,20 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         dados["programa"] = (dados["programa"] or "").strip()
         if not dados["programa"]:
             raise ValueError("Toda oferta precisa ter um programa.")
+
+    agenda = {"dias_semana", "hora_inicio", "hora_fim"} & set(dados)
+    itens: list | None = None
+    if agenda:
+        efetivo = {
+            "dias": dados.get("dias_semana", oferta.dias_semana),
+            "ini": dados.get("hora_inicio", oferta.hora_inicio),
+            "fim": dados.get("hora_fim", oferta.hora_fim),
+        }
+        itens = grade_a_partir_do_legado(
+            efetivo["dias"], efetivo["ini"], efetivo["fim"]
+        )
+        if itens is None:
+            raise ValueError(_AGENDA_INCOMPLETA)
 
     # Concomitância: checar apenas se pelo menos um dos campos de horário/dias mudou
     campos_horario = {"dias_semana", "hora_inicio", "hora_fim", "data_inicio", "data_fim"}
@@ -537,11 +585,16 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         avisos_horario = []
 
     for campo in (
-        "curso_id", "professor_id", "turno", "dias_semana",
-        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo", "programa",
+        "curso_id", "professor_id", "turno",
+        "data_inicio", "data_fim", "centro_custo", "programa",
     ):
         if campo in dados:
             setattr(oferta, campo, dados[campo])
+
+    if itens is not None:
+        # Única escrita dos dias/horários da oferta: substitui a grade e
+        # reprojeta as colunas escalares (sincronizar_projecao_horario).
+        definir_grade(oferta, itens)
 
     sincronizar_programa_turma(oferta.turma)
 

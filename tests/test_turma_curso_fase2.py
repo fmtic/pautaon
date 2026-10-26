@@ -14,7 +14,14 @@ Cobre os cenários do plano (§16) pertinentes à Fase 2:
     - Edição de oferta com 2+ ofertas não toca as colunas legadas.
     - Rotas: tela lista ofertas; POST nova cria oferta; POST duplicado é
       rejeitado com flash e nada cria.
+
+H2 (grade por dia): toda oferta nasce com agenda completa (dias + horas).
+A herança da Turma só vale enquanto a turma não tem vínculo; depois disso,
+as chamadas precisam enviar dias/hora explícitos — chamadas incompletas
+são rejeitadas com ValueError.
 """
+
+from datetime import time
 
 import pytest
 
@@ -74,7 +81,10 @@ def base(app):
     curso_b = Curso(nome="Natação B", unidade_id=unidade_b.id, ativo=True)
     db.session.add_all([curso1, curso2, curso_b])
 
-    turma = Turma(nome="Turma sem curso", unidade_id=unidade_a.id, ativo=True)
+    turma = Turma(
+        nome="Turma sem curso", unidade_id=unidade_a.id, ativo=True,
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
     db.session.add(turma)
     db.session.commit()
 
@@ -131,7 +141,10 @@ def test_segunda_oferta_exige_principal_quando_nenhuma_tem(base):
     with pytest.raises(ValueError, match="curso principal"):
         adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
 
-    oferta2 = adicionar_oferta(turma, curso_id=base["curso2"], principal=True, programa="Teste")
+    oferta2 = adicionar_oferta(
+        turma, curso_id=base["curso2"], principal=True, programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
     assert oferta2.principal is True
     assert len(ofertas_ativas(turma.id)) == 2
 
@@ -140,7 +153,10 @@ def test_segunda_oferta_livre_quando_existe_principal(base):
     """Já havendo principal marcado, a nova oferta pode entrar sem marca."""
     turma = _turma(base)
     primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
+    segunda = adicionar_oferta(
+        turma, curso_id=base["curso2"], programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
 
     assert segunda.principal is False
     assert primeira.principal is True
@@ -149,7 +165,10 @@ def test_segunda_oferta_livre_quando_existe_principal(base):
 def test_definir_principal_faz_swap_atomico(base):
     turma = _turma(base)
     primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
+    segunda = adicionar_oferta(
+        turma, curso_id=base["curso2"], programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
 
     definir_principal(segunda)
     db.session.expire_all()
@@ -177,13 +196,19 @@ def test_desativar_oferta_bloqueada_se_deixaria_2_ativas_sem_principal(base):
     """Remover a única principal deixaria 2+ ativas sem principal — bloqueado."""
     turma = _turma(base)
     principal = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
+    segunda = adicionar_oferta(
+        turma, curso_id=base["curso2"], programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
     curso3 = Curso(
         nome="Eletrônica", unidade_id=base["unidade_a"], ativo=True,
     )
     db.session.add(curso3)
     db.session.commit()
-    terceira = adicionar_oferta(turma, curso_id=curso3.id, programa="Teste")
+    terceira = adicionar_oferta(
+        turma, curso_id=curso3.id, programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
 
     # Desativar uma não-principal é sempre livre (principal permanece).
     desativar_oferta(segunda)
@@ -208,7 +233,10 @@ def test_desativar_oferta_bloqueada_se_deixaria_2_ativas_sem_principal(base):
 def test_editar_oferta_com_duas_ativas_nao_toca_legado(base):
     turma = _turma(base)
     primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
+    adicionar_oferta(
+        turma, curso_id=base["curso2"], programa="Teste",
+        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
+    )
 
     editar_oferta(primeira, turno="Noite", professor_id=base["professor_id"])
     db.session.expire_all()
@@ -269,10 +297,14 @@ def test_rota_nova_oferta_cria_incremental(app, base):
     turma = db.session.get(Turma, base["turma_id"])
     assert len(ofertas_ativas(turma.id)) == 1
 
-    # Incremental: segundo curso entra marcado como principal.
+    # Incremental: segundo curso entra marcado como principal, com agenda própria
+    # (após a 1ª oferta a turma já tem vínculo e a herança de agenda não se aplica).
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso2"], "principal": "on", "programa": "Teste"},
+        data={
+            "curso_id": base["curso2"], "principal": "on", "programa": "Teste",
+            "dias_semana": "Segunda", "hora_inicio": "09:00", "hora_fim": "10:00",
+        },
     )
     assert len(ofertas_ativas(base["turma_id"])) == 2
 

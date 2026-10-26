@@ -14,7 +14,7 @@ Cenários cobertos:
     - Vigência NULL (aberta) → sempre intercepta.
     - Edição que remove a sobreposição → permitido.
     - Edição que cria sobreposição → grava com aviso.
-    - Sem dados de horário → pula validação.
+    - Sem agenda completa → oferta rejeitada (H2: a grade nunca nasce parcial).
     - Rota POST nova com conflito → flash de aviso e oferta gravada.
 """
 
@@ -265,17 +265,20 @@ def test_adicionar_oferta_vigencia_disjunta_permitida(base):
     assert oferta2.id is not None
 
 
-def test_adicionar_oferta_sem_horario_pula_validacao(base):
-    """Sem dias/horas a checagem de concomitância é pulada."""
+def test_adicionar_oferta_sem_agenda_completa_e_rejeitada(base):
+    """H2: sem dias/horas completos a nova oferta é recusada (nada é gravado)."""
     turma = _turma(base)
     adicionar_oferta(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         dias_semana="Segunda",
         hora_inicio=time(8), hora_fim=time(12),
     )
-    # c2 sem dias/horas → permitido
-    oferta2 = adicionar_oferta(turma, curso_id=base["c2"], programa="Teste")
-    assert oferta2.id is not None
+    # c2 sem agenda → rejeitada: toda oferta nasce com grade completa.
+    with pytest.raises(ValueError, match="ao menos um dia"):
+        adicionar_oferta(turma, curso_id=base["c2"], programa="Teste")
+    assert TurmaCurso.query.filter_by(
+        turma_id=base["turma_id"], ativo=True
+    ).count() == 1
 
 
 # ---------------------------------------------------------------------------
