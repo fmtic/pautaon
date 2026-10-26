@@ -249,35 +249,55 @@ def _register_cli(app: Flask) -> None:
 
 def _register_error_handlers(app: Flask) -> None:
     from sqlalchemy.exc import SQLAlchemyError
-    from flask import render_template
+    from flask import render_template, request
     from werkzeug.exceptions import HTTPException
+
+    # ==========================================
+    # ERROS ESPECÍFICOS DE NAVEGAÇÃO / PERMISSÃO
+    # ==========================================
+
+    @app.errorhandler(403)
+    def handle_403_error(e):
+        app.logger.warning(f"Acesso Negado (403) para: {request.path}")
+        return render_template("erros/403.html"), 403
+
+    @app.errorhandler(404)
+    def handle_404_error(e):
+        app.logger.warning(f"Página não encontrada (404): {request.path}")
+        # Caso ainda não tenha um 404.html, você pode retornar temporariamente o sistema_indisponivel
+        # return render_template("erros/sistema_indisponivel.html"), 404
+        return render_template("erros/404.html"), 404
+
+    # ==========================================
+    # FALHAS DE SISTEMA / ERROS GERAIS
+    # ==========================================
 
     @app.errorhandler(SQLAlchemyError)
     def handle_db_error(e):
         app.logger.error(f"Erro de banco de dados interceptado: {e}")
         if app.debug:
             raise e
-        return render_template("sistema_indisponivel.html"), 503
+        return render_template("erros/sistema_indisponivel.html"), 503
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(e):
-        """Renderiza `sistema_indisponivel.html` para erros HTTP (4xx/5xx).
-
+        """Renderiza `sistema_indisponivel.html` para os DEMAIS erros HTTP (ex: 400, 405).
+        
         Mantemos o código de status original para que caches/proxies e clientes
         recebam o código apropriado, mas sempre mostramos a mesma página ao usuário.
         """
-        app.logger.warning(f"HTTP Exception interceptada: {e.code} {e.description}")
+        app.logger.warning(f"HTTP Exception genérica interceptada: {e.code} {e.description}")
         if app.debug:
             return e
-        return render_template("sistema_indisponivel.html"), e.code
+        return render_template("erros/sistema_indisponivel.html"), e.code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e):
         """Captura exceções não previstas e mostra a página de indisponibilidade.
-
+        
         Registra a stack trace no logger para investigação posterior.
         """
         app.logger.exception("Unhandled exception: %s", e)
         if app.debug:
             raise e
-        return render_template("sistema_indisponivel.html"), 500
+        return render_template("erros/sistema_indisponivel.html"), 500
