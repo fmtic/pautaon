@@ -66,20 +66,20 @@ class PeriodoLetivo(SoftDeleteMixin, TenantMixin, db.Model):
 
     def alunos_enturmados(self) -> int:
         """
-        Retorna o total de alunos ÚNICOS matriculados em qualquer turma
-        pertencente a este período letivo.
+        Retorna o total de alunos ÚNICOS enturmados neste período letivo.
+
+        ETAPA D3b.3: delega ao serviço único `app.services.enturmado` —
+        definição canônica (`Aluno.ativo` + inscrição ativa em turma ativa +
+        oferta efetiva/regra M4). Antes qualquer linha de inscrição contava
+        (sem `Aluno.ativo`, `Inscricao.ativo`, `Turma.ativo` nem oferta).
 
         Importante: um aluno em duas turmas do mesmo período conta UMA vez.
         """
-        from app.models.pessoas import Aluno
+        # Import local: modelos não importam serviços no topo (ciclo de
+        # inicialização da app — mesmo padrão de `freq_geral`).
+        from app.services.enturmado import contar_alunos_enturmados
 
-        return (
-            Aluno.query
-            .join(Aluno.turmas)
-            .filter(Turma.periodo_letivo_id == self.id)
-            .distinct()
-            .count()
-        )
+        return contar_alunos_enturmados(periodo_letivo_id=self.id)
 
 
 class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):

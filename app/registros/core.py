@@ -44,6 +44,7 @@ from app.utils.logica import (
     get_unidade_id,
     salvar_frequencia,
 )
+from app.services.enturmado import cond_inscricao_enturmada
 from app.services.turma_curso import (
     ofertas_ativas,
     resolver_oferta_lancamento,
@@ -164,14 +165,20 @@ def painel_professor():
     ids_turmas = [t.id for t in todas_turmas]
     total_alunos = 0
     if ids_turmas:
+        # ETAPA D3b.3: contagem pela definição única de "enturmado"
+        # (app.services.enturmado): inscrição ativa + turma ativa + oferta
+        # efetiva (M4). Antes não havia filtro de oferta efetiva, e o
+        # `.distinct(Aluno.id)` (DISTINCT ON, só PostgreSQL) é emitido com
+        # `with_entities(...).distinct()`, equivalente em todos os bancos.
         total_alunos = (
-            Aluno.query.join(Inscricao)
+            Aluno.query.join(Inscricao, Inscricao.aluno_id == Aluno.id)
             .filter(
                 Inscricao.turma_id.in_(ids_turmas),
-                Inscricao.ativo == True,
-                Aluno.ativo == True,
+                cond_inscricao_enturmada(),
+                Aluno.ativo.is_(True),
             )
-            .distinct(Aluno.id)
+            .with_entities(Aluno.id)
+            .distinct()
             .count()
         )
 

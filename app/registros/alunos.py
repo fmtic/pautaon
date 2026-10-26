@@ -50,6 +50,7 @@ from app.services.aluno_perfil import (
     upsert_responsavel,
 )
 from app.services.conselho_leitura import conselhos_por_oferta
+from app.services.enturmado import cond_aluno_enturmado
 from app.services.enturmacao import enturmar_aluno
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
@@ -377,7 +378,11 @@ def gerenciar_alunos():
         "alunos/gerenciar.html",
         pagination=pagination,
         total_alunos=total_q.count(),
-        total_enturmados=enturm_q.filter(Aluno.turmas.any(Turma.ativo == True)).count(),
+        # ETAPA D3b.3: card "Enturmados" pela definição única (serviço
+        # `enturmado`): Aluno.ativo + inscrição ativa em turma ativa + oferta
+        # efetiva (M4). Antes bastava QUALQUER linha de inscrição (até
+        # inativa) em turma ativa — número do card cai no cenário do teste.
+        total_enturmados=enturm_q.filter(cond_aluno_enturmado()).count(),
         search_nome=search_nome,
         search_matr=search_matr,
         search_cpf=search_cpf,
