@@ -98,7 +98,7 @@ def _register_security_hooks(app: Flask) -> None:
             if current_user.is_authenticated and current_user.role == UserRole.ADMIN:
                 return None
             if request.endpoint not in {"auth.login", "auth.logout"}:
-                return render_template("sistema_indisponivel.html"), 503
+                return render_template("erros/sistema_indisponivel.html"), 503
 
         if not current_user.is_authenticated:
             return None
