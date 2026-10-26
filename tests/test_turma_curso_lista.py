@@ -6,7 +6,7 @@ Cobre:
     - agregação de professores/turnos/dias na linha de turma multi-oferta;
     - filtros por oferta (COALESCE oferta→turma) — inclusive "não casa quando o
       professor só existe na coluna congelada de uma turma com ofertas ativas";
-    - min_ch_total avaliado sobre a oferta principal;
+    - min_ch_total avaliado sobre a C.H. total da TURMA (mesmo valor exibido);
     - carga_horaria_aula / carga_horaria_total da oferta (agenda conhecida,
       com um dia bloqueado);
     - datas_esperadas_oferta inalterada após a extração de datas_aula_oferta.
@@ -25,6 +25,7 @@ from app.models import (
     User,
 )
 from app.models.enums import TipoDiaBloqueado
+from app.utils.formatters import formatar_ch
 from config import Config
 
 DATA_INI = date(2026, 3, 2)    # segunda-feira
@@ -243,25 +244,28 @@ def test_professor_da_oferta_encontra_turma_de_uma_oferta():
     assert _linha(body, ids["t2"]) and _linha(body, ids["t3"])
 
 
-# --- min_ch_total sobre a oferta principal ------------------------------------
-def test_min_ch_total_usa_oferta_principal():
+# --- min_ch_total sobre a C.H. total da turma (mesmo valor exibido) -----------
+def test_min_ch_total_usa_total_da_turma_exibido_na_lista():
     app, ids = _seed()
     with app.app_context():
+        t3 = db.session.get(Turma, ids["t3"])
         o3p = db.session.get(TurmaCurso, ids["o3p"])
-        o3b = db.session.get(TurmaCurso, ids["o3b"])
         p_total_min = o3p.carga_horaria_total
-        b_total_min = o3b.carga_horaria_total
-        assert p_total_min is not None and b_total_min is not None
-        assert p_total_min > b_total_min
+        t3_total_min = t3.carga_horaria_total
+        assert p_total_min is not None and t3_total_min is not None
+        # Sem datas/horários coincidentes o tempo físico soma as duas ofertas.
+        assert t3_total_min > p_total_min
 
-    # Limiar entre as duas: se usasse a secundária, T3 sumiria; usando a
-    # principal, T3 permanece.
-    thr = b_total_min // 60 + 1
+    # Limiar acima da principal e abaixo do total da turma: se o filtro usasse a
+    # principal, T3 sumiria; usando o total da turma, permanece.
+    thr = p_total_min // 60 + 1
     body = _corpo(_lista(app, ids["resp"], f"?min_ch_total={thr}"))
     assert _linha(body, ids["t3"])
+    # O número que o filtro usa é o mesmo exibido na coluna de C.H. total.
+    assert formatar_ch(t3_total_min) in body
 
-    # Acima da principal, T3 sai.
-    thr_hi = p_total_min // 60 + 1
+    # Acima do total da turma, T3 sai.
+    thr_hi = t3_total_min // 60 + 1
     body_hi = _corpo(_lista(app, ids["resp"], f"?min_ch_total={thr_hi}"))
     assert not _linha(body_hi, ids["t3"])
 
@@ -289,12 +293,12 @@ def test_carga_horaria_oferta_calculo_manual_com_bloqueio():
         assert o3b.carga_horaria_total == 90 * len(esperado_b)
 
 
-def test_caracterizacao_ch_uniforme_e_turma_legada_antes_h3c():
-    """Valores de referência medidos antes do H3c migrar C.H. para a grade.
+def test_caracterizacao_ch_uniforme_e_tempo_fisico_multi_oferta():
+    """Valores de referência da C.H. depois do H3c.
 
     As duas ofertas de T3 têm grade uniforme; a oferta única de T2 também.
-    Turma T3 registra a semântica antiga (escalar da Turma × dias da união),
-    que será substituída pelo tempo físico da união de intervalos.
+    T3 registra a semântica antiga (escalar da Turma × dias da união = 2520) e
+    o contrato novo (tempo físico da união de intervalos = 8700).
     """
     app, ids = _seed()
     with app.app_context():
@@ -308,12 +312,15 @@ def test_caracterizacao_ch_uniforme_e_turma_legada_antes_h3c():
         assert (o3p.carga_horaria_aula, o3p.carga_horaria_total) == (60, 4920)
         assert (o3b.carga_horaria_aula, o3b.carga_horaria_total) == (90, 3780)
         assert (t2.carga_horaria_aula, t2.carga_horaria_total) == (60, 2520)
-        assert (t3.carga_horaria_aula, t3.carga_horaria_total) == (60, 2520)
+        assert t3.carga_horaria_aula == 60
+        # Baseline pre-H3c: 60 min × 42 dias da união = 2520 min.
+        # Contrato H3c: aulas em dias diferentes somam e sobreposições contam uma vez.
+        assert t3.carga_horaria_total == 8700
 
-    # O filtro min_ch_total seleciona pela oferta principal (82h) na turma
-    # multi-oferta; acima dela a turma some, embora a secundária tenha 63h.
-    assert _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=82")), ids["t3"])
-    assert not _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=83")), ids["t3"])
+    # O filtro min_ch_total usa o total da turma (145h), não o da principal
+    # (82h): acima da principal a turma permanece; acima do total, some.
+    assert _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=100")), ids["t3"])
+    assert not _linha(_corpo(_lista(app, ids["resp"], "?min_ch_total=146")), ids["t3"])
 
 
 # --- datas_esperadas_oferta inalterada (corta em hoje) ------------------------

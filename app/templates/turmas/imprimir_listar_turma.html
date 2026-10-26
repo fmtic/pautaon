@@ -96,7 +96,7 @@
                 <td>{{ oferta.turno or turma.turno or '—' }}</td>
                 <td>{{ oferta.dias_semana or turma.dias_semana or '—' }}</td>
                 <td>{{ hora_inicio.strftime('%H:%M') if hora_inicio else '--:--' }}–{{ hora_fim.strftime('%H:%M') if hora_fim else '--:--' }}</td>
-                <td class="text-center">{{ formatar_ch(oferta.carga_horaria_aula) }}</td>
+                <td class="text-center">{{ formatar_ch(carga_oferta_map[oferta.id].carga_horaria_aula) }}</td>
               </tr>
               {% endfor %}
             </tbody>

@@ -221,32 +221,23 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     @property
     def carga_horaria_aula(self) -> int | None:
         """
-        Duração de uma aula em MINUTOS (hora_fim - hora_inicio).
+        Duração uniforme da oferta principal em minutos.
 
-        Retorna None se hora_inicio ou hora_fim não estiverem definidas ou se
-        hora_fim <= hora_inicio.
+        Grades não uniformes não têm uma duração única e retornam ``None``.
+        Sem ofertas ativas, preserva o escalar legado da turma.
         """
-        if not self.hora_inicio or not self.hora_fim:
-            return None
-        delta = (
-            self.hora_fim.hour * 60 + self.hora_fim.minute
-            - self.hora_inicio.hour * 60 - self.hora_inicio.minute
-        )
-        return delta if delta > 0 else None
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+        return cargas_horarias_turmas_em_lote([self])[self.id].carga_horaria_aula
 
     @property
     def carga_horaria_total(self) -> int | None:
         """
-        C.H. Total em MINUTOS = carga_horaria_aula × dias_aula_efetivos().
-
-        Retorna None se carga_horaria_aula for None ou se não houver dias de
-        aula calculáveis (sem data_inicio/data_fim/dias_semana).
+        Tempo físico em minutos da turma. Em cada data, intervalos ativos são
+        unidos, contando sobreposições uma vez e somando intervalos disjuntos.
+        Sem oferta ativa, preserva o cálculo escalar legado com aviso.
         """
-        ch_aula = self.carga_horaria_aula
-        if ch_aula is None:
-            return None
-        dias = self.dias_aula_efetivos()
-        return ch_aula * dias if dias else None
+        from app.services.turma_curso_horario import carga_horaria_total_turma
+        return carga_horaria_total_turma(self)
 
     @classmethod
     def get_ativas(cls) -> List['Turma']:
@@ -366,45 +357,19 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     @property
     def carga_horaria_aula(self) -> int | None:
         """
-        Duração de uma aula da OFERTA em MINUTOS (Onda 4, Etapa K).
-
-        Mesma regra de `Turma.carga_horaria_aula`: `hora_fim - hora_inicio`,
-        herdando os horários da turma quando a oferta não define os próprios
-        (NULL = compartilhado). None se ausente ou `hora_fim <= hora_inicio`.
+        Duração única da oferta em minutos; grade não uniforme retorna ``None``.
+        Oferta sem grade usa a compatibilidade escalar legada, com aviso.
         """
-        inicio = self.hora_inicio
-        fim = self.hora_fim
-        if (not inicio or not fim) and self.turma is not None:
-            inicio = inicio or self.turma.hora_inicio
-            fim = fim or self.turma.hora_fim
-        if not inicio or not fim:
-            return None
-        delta = (
-            fim.hour * 60 + fim.minute
-            - inicio.hour * 60 - inicio.minute
-        )
-        return delta if delta > 0 else None
+        from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+        return cargas_horarias_ofertas_em_lote([self])[self.id].carga_horaria_aula
 
     @property
     def carga_horaria_total(self) -> int | None:
         """
-        C.H. Total da OFERTA em MINUTOS = carga_horaria_aula × nº de dias de
-        aula da oferta (Onda 4, Etapa K).
-
-        Reaproveita `datas_aula_oferta` (agenda própria da oferta, até a
-        data_fim efetiva) e o MESMO helper de bloqueios usado pela turma
-        (`_blocked_dates_str` sobre a turma da oferta). None se a aula não
-        tiver duração ou se não houver dias calculáveis.
+        Soma em minutos a duração da grade de cada ocorrência válida da oferta.
         """
-        ch_aula = self.carga_horaria_aula
-        if ch_aula is None:
-            return None
-        from app.services.turma_curso import datas_aula_oferta
-        from app.utils.logica import _blocked_dates_str
-
-        blocked = _blocked_dates_str(self.turma) if self.turma is not None else set()
-        datas = datas_aula_oferta(self, blocked=blocked)
-        return ch_aula * len(datas) if datas else None
+        from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+        return cargas_horarias_ofertas_em_lote([self])[self.id].carga_horaria_total
 
 
 class TurmaCursoHorario(db.Model):

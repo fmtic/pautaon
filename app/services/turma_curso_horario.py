@@ -21,12 +21,16 @@ Convenções:
 """
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, time
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app import db
-from app.models import TurmaCurso, TurmaCursoHorario
+from app.models import Turma, TurmaCurso, TurmaCursoHorario
 from app.utils.dias_semana import (
     csv_para_weekdays,
     weekday_para_abrev,
@@ -42,6 +46,42 @@ class Linha:
     dia_semana: int
     hora_inicio: time | None
     hora_fim: time | None
+
+
+@dataclass(frozen=True)
+class CargaOferta:
+    """C.H. de UMA oferta: aula/total em minutos, menor aula e a grade por dia.
+
+    ``carga_horaria_aula`` é ``None`` quando a grade não é uniforme;
+    ``carga_horaria_total`` soma a duração da grade em cada ocorrência válida;
+    ``min_ch_aula`` é a menor duração semanal; ``por_dia``/``intervalos``
+    guardam o par de horários por weekday para a união da turma.
+    """
+
+    carga_horaria_aula: int | None
+    carga_horaria_total: int | None
+    min_ch_aula: int | None
+    por_dia: dict[int, int | None]
+    intervalos: dict[int, tuple[time, time] | None]
+
+
+@dataclass(frozen=True)
+class CargaTurma:
+    """C.H. de UMA turma: aula/total em minutos, menor aula e nº de ofertas.
+
+    ``carga_horaria_aula``/``min_ch_aula`` vêm da oferta principal;
+    ``carga_horaria_total`` é o tempo físico da turma (união dos intervalos das
+    ofertas ativas por data) — o MESMO valor exibido na listagem e usado pelo
+    filtro ``min_ch_total``; ``ofertas_ativas`` conta só as ativas.
+    """
+
+    carga_horaria_aula: int | None
+    carga_horaria_total: int | None
+    min_ch_aula: int | None
+    ofertas_ativas: int
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +186,269 @@ def grade_uniforme(oferta: TurmaCurso) -> bool:
     """
     pares = {(l.hora_inicio, l.hora_fim) for l in grade_da_oferta(oferta)}
     return len(pares) <= 1
+
+
+def _duracao(inicio: time | None, fim: time | None) -> int | None:
+    if inicio is None or fim is None:
+        return None
+    minutos = (fim.hour * 60 + fim.minute) - (inicio.hour * 60 + inicio.minute)
+    return minutos if minutos > 0 else None
+
+
+def duracao_escalar_oferta(oferta: TurmaCurso) -> int | None:
+    """Compatibilidade para oferta legada que ainda não possui linhas de grade."""
+    inicio, fim = oferta.hora_inicio, oferta.hora_fim
+    if oferta.turma is not None:
+        inicio = inicio or oferta.turma.hora_inicio
+        fim = fim or oferta.turma.hora_fim
+    return _duracao(inicio, fim)
+
+
+def carga_horaria_total_oferta(
+    oferta: TurmaCurso,
+    datas_esperadas: list[date],
+    grade: list[Linha] | None = None,
+) -> int | None:
+    """Soma as durações das ocorrências esperadas da oferta.
+
+    ``datas_esperadas`` deve vir resolvida pelo leitor de agenda (com vigência
+    e bloqueios aplicados). Sem grade, mantém o cálculo escalar legado.
+    """
+    linhas = grade_da_oferta(oferta) if grade is None else grade
+    if not linhas:
+        logger.warning(
+            "Oferta %s sem grade: C.H. total usa duração escalar legada.",
+            oferta.id,
+        )
+        duracao = duracao_escalar_oferta(oferta)
+        return duracao * len(datas_esperadas) if duracao and datas_esperadas else None
+
+    por_dia = {
+        linha.dia_semana: _duracao(linha.hora_inicio, linha.hora_fim)
+        for linha in linhas
+    }
+    valores = [por_dia.get(data.weekday()) for data in datas_esperadas]
+    total = sum(valor for valor in valores if valor is not None)
+    return total or None
+
+
+def _bloqueios_em_lote(turmas: list[Turma]) -> dict[int, set[str]]:
+    """Lê bloqueios do período e exceções das turmas em no máximo 2 consultas."""
+    from app.models import DiaBloqueado, DiaBloqueadoTurma
+
+    turma_ids = [t.id for t in turmas if t.id is not None]
+    periodo_por_turma = {t.id: t.periodo_letivo_id for t in turmas if t.id is not None}
+    periodo_ids = {pid for pid in periodo_por_turma.values() if pid is not None}
+    bloqueios_periodo: dict[int, set[str]] = defaultdict(set)
+    excecoes: dict[int, set[str]] = defaultdict(set)
+
+    if periodo_ids:
+        for periodo_id, data in db.session.execute(
+            select(DiaBloqueado.periodo_letivo_id, DiaBloqueado.data).where(
+                DiaBloqueado.periodo_letivo_id.in_(periodo_ids)
+            )
+        ):
+            bloqueios_periodo[periodo_id].add(data.strftime("%Y-%m-%d"))
+
+    if turma_ids:
+        for turma_id, data in db.session.execute(
+            select(DiaBloqueadoTurma.turma_id, DiaBloqueadoTurma.data).where(
+                DiaBloqueadoTurma.turma_id.in_(turma_ids)
+            )
+        ):
+            excecoes[turma_id].add(data.strftime("%Y-%m-%d"))
+
+    return {
+        turma_id: bloqueios_periodo.get(periodo_id, set()) - excecoes.get(turma_id, set())
+        for turma_id, periodo_id in periodo_por_turma.items()
+    }
+
+
+def oferta_principal_da_turma(ofertas: list[TurmaCurso]) -> TurmaCurso | None:
+    """Mesmo critério da lista: marcada principal; senão, menor id ativo."""
+    ativas = sorted((o for o in ofertas if o.ativo), key=lambda o: o.id)
+    return next((o for o in ativas if o.principal), ativas[0] if ativas else None)
+
+
+def _duracao_turma_escalar(turma: Turma) -> int | None:
+    return _duracao(turma.hora_inicio, turma.hora_fim)
+
+
+def _intervalos_unidos_minutos(intervalos: list[tuple[int, int]]) -> int:
+    total = 0
+    fim_atual: int | None = None
+    for inicio, fim in sorted(intervalos):
+        if fim_atual is None or inicio >= fim_atual:
+            total += fim - inicio
+        elif fim > fim_atual:
+            total += fim - fim_atual
+        fim_atual = max(fim_atual or fim, fim)
+    return total
+
+
+def cargas_horarias_ofertas_em_lote(
+    ofertas: list[TurmaCurso],
+    bloqueios: dict[int, set[str]] | None = None,
+) -> dict[int, CargaOferta]:
+    """Calcula C.H. por oferta com uma leitura em lote da grade e dos bloqueios."""
+    from app.services.turma_curso import datas_esperadas_oferta
+
+    if not ofertas:
+        return {}
+    ids = [oferta.id for oferta in ofertas]
+    grades = grades_em_lote(ids)
+    turmas = list({oferta.turma.id: oferta.turma for oferta in ofertas
+                   if oferta.turma is not None}.values())
+    bloqueados = bloqueios if bloqueios is not None else _bloqueios_em_lote(turmas)
+    resultado: dict[int, CargaOferta] = {}
+
+    for oferta in ofertas:
+        linhas = grades.get(oferta.id, [])
+        if linhas:
+            por_dia = {
+                linha.dia_semana: _duracao(linha.hora_inicio, linha.hora_fim)
+                for linha in linhas
+            }
+            intervalos = {
+                linha.dia_semana: (linha.hora_inicio, linha.hora_fim)
+                if linha.hora_inicio is not None and linha.hora_fim is not None
+                else None
+                for linha in linhas
+            }
+            pares = {(linha.hora_inicio, linha.hora_fim) for linha in linhas}
+            uniforme = len(pares) <= 1
+            aula = next(iter(por_dia.values())) if uniforme and por_dia else None
+            duracoes = [valor for valor in por_dia.values() if valor is not None]
+            menor = min(duracoes) if duracoes else None
+        else:
+            logger.warning(
+                "Oferta %s sem grade: C.H. em lote usa horários escalares legados.",
+                oferta.id,
+            )
+            from app.services.turma_curso import _dias_efetivos_da_oferta
+
+            dias = csv_para_weekdays(_dias_efetivos_da_oferta(oferta))
+            aula = duracao_escalar_oferta(oferta)
+            por_dia = {dia: aula for dia in dias}
+            inicio, fim = oferta.hora_inicio, oferta.hora_fim
+            if oferta.turma is not None:
+                inicio = inicio or oferta.turma.hora_inicio
+                fim = fim or oferta.turma.hora_fim
+            intervalos = {dia: (inicio, fim) if inicio and fim else None for dia in dias}
+            menor = aula
+
+        turma = oferta.turma
+        datas = datas_esperadas_oferta(
+            oferta,
+            None,
+            blocked=bloqueados.get(turma.id, set()) if turma is not None else set(),
+        )
+        total = carga_horaria_total_oferta(oferta, datas, grade=linhas)
+        resultado[oferta.id] = CargaOferta(aula, total, menor, por_dia, intervalos)
+    return resultado
+
+
+def carga_horaria_total_turma(turma: Turma) -> int | None:
+    """Tempo físico total da turma: união dos intervalos por data de aula."""
+    return cargas_horarias_turmas_em_lote([turma]).get(
+        turma.id, CargaTurma(None, None, None, 0)
+    ).carga_horaria_total
+
+
+def cargas_horarias_turmas_em_lote(turmas: list[Turma]) -> dict[int, CargaTurma]:
+    """C.H. aula/total e menor aula por turma, sem consultas por oferta/turma."""
+    if not turmas:
+        return {}
+
+    from app.models import DiaBloqueado, DiaBloqueadoTurma
+    from app.services.turma_curso import datas_esperadas_oferta
+    from app.utils.dias_semana import csv_para_weekdays
+
+    turma_ids = [turma.id for turma in turmas if turma.id is not None]
+    ofertas = db.session.execute(
+        select(TurmaCurso)
+        .options(selectinload(TurmaCurso.horarios))
+        .where(TurmaCurso.turma_id.in_(turma_ids), TurmaCurso.ativo.is_(True))
+        .order_by(TurmaCurso.id)
+    ).scalars().all() if turma_ids else []
+    por_turma: dict[int, list[TurmaCurso]] = defaultdict(list)
+    for oferta in ofertas:
+        por_turma[oferta.turma_id].append(oferta)
+
+    periodo_ids = {turma.periodo_letivo_id for turma in turmas if turma.periodo_letivo_id}
+    bloqueios_periodo: dict[int, set[str]] = defaultdict(set)
+    excecoes: dict[int, set[str]] = defaultdict(set)
+    if periodo_ids:
+        for periodo_id, data in db.session.execute(
+            select(DiaBloqueado.periodo_letivo_id, DiaBloqueado.data).where(
+                DiaBloqueado.periodo_letivo_id.in_(periodo_ids)
+            )
+        ):
+            bloqueios_periodo[periodo_id].add(data.strftime("%Y-%m-%d"))
+    if turma_ids:
+        for turma_id, data in db.session.execute(
+            select(DiaBloqueadoTurma.turma_id, DiaBloqueadoTurma.data).where(
+                DiaBloqueadoTurma.turma_id.in_(turma_ids)
+            )
+        ):
+            excecoes[turma_id].add(data.strftime("%Y-%m-%d"))
+
+    oferta_cargas = cargas_horarias_ofertas_em_lote(ofertas, {
+        turma.id: bloqueios_periodo.get(turma.periodo_letivo_id, set())
+        - excecoes.get(turma.id, set())
+        for turma in turmas if turma.id is not None
+    })
+    resultado: dict[int, CargaTurma] = {}
+
+    for turma in turmas:
+        ativas = por_turma.get(turma.id, [])
+        principal = oferta_principal_da_turma(ativas)
+        principal_carga = oferta_cargas.get(principal.id) if principal else None
+        aula = principal_carga.carga_horaria_aula if principal_carga else _duracao_turma_escalar(turma)
+        menor = principal_carga.min_ch_aula if principal_carga else _duracao_turma_escalar(turma)
+
+        if not ativas:
+            logger.warning(
+                "Turma %s sem oferta ativa/grade: C.H. usa escalares legados.", turma.id,
+            )
+            duracao = _duracao_turma_escalar(turma)
+            if duracao and turma.data_inicio and turma.data_fim:
+                bloqueadas = bloqueios_periodo.get(turma.periodo_letivo_id, set()) - excecoes.get(turma.id, set())
+                weekdays = set(csv_para_weekdays(turma.dias_semana))
+                ocorrencias = 0
+                atual = turma.data_inicio
+                while atual <= turma.data_fim:
+                    if atual.weekday() in weekdays and atual.strftime("%Y-%m-%d") not in bloqueadas:
+                        ocorrencias += 1
+                    atual += date.resolution
+                total = duracao * ocorrencias if ocorrencias else None
+            else:
+                total = None
+        else:
+            intervalos_por_data: dict[date, list[tuple[int, int]]] = defaultdict(list)
+            for oferta in ativas:
+                carga = oferta_cargas.get(oferta.id)
+                if carga is None:
+                    continue
+                bloqueadas = bloqueios_periodo.get(turma.periodo_letivo_id, set()) - excecoes.get(turma.id, set())
+                datas = datas_esperadas_oferta(oferta, None, blocked=bloqueadas)
+                for data in datas:
+                    intervalo = carga.intervalos.get(data.weekday())
+                    if intervalo and intervalo[0] is not None and intervalo[1] is not None:
+                        inicio = intervalo[0].hour * 60 + intervalo[0].minute
+                        fim = intervalo[1].hour * 60 + intervalo[1].minute
+                        if fim > inicio:
+                            intervalos_por_data[data].append((inicio, fim))
+            total_minutos = sum(_intervalos_unidos_minutos(items) for items in intervalos_por_data.values())
+            total = total_minutos or None
+
+        resultado[turma.id] = CargaTurma(
+            aula,
+            total,
+            menor,
+            len(ativas),
+        )
+    return resultado
 
 
 def _formatar_hora(valor: time | None) -> str:

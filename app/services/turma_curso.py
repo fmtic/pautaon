@@ -1021,13 +1021,12 @@ def datas_aula_oferta(
 
 def datas_esperadas_oferta(
     oferta: TurmaCurso,
-    hoje: date,
+    hoje: date | None,
     blocked: set | None = None,
 ) -> list[date]:
-    """Datas de aula da OFERTA até `hoje` (inclusive), cortadas na `data_fim`
-    efetiva — base da contagem de pendência por oferta (D3b-1).
+    """Datas esperadas da oferta até `hoje`, ou por toda a vigência se ``None``.
 
-    Delega para `datas_aula_oferta` com `limite=hoje` (a helper corta em
-    `min(hoje, data_fim)`, preservando exatamente o comportamento anterior).
+    A listagem de pendências passa uma data explícita (D3b-1); a C.H. da oferta
+    passa ``None`` para somar ocorrências de toda a vigência.
     """
     return datas_aula_oferta(oferta, limite=hoje, blocked=blocked)

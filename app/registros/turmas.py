@@ -344,20 +344,36 @@ def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
 def pos_filtrar_turmas(turmas, args):
     """Filtra em memória critérios calculados (alunos, frequência, C.H.).
 
-    Com 2+ ofertas ativas, freq/C.H. são avaliados sobre a oferta principal;
-    com 0 ou 1, sobre a própria turma (como antes). min_alunos inalterado.
+    Com 2+ ofertas ativas, `min_freq` é avaliado sobre a oferta principal.
+    A C.H. usa SEMPRE o valor calculado da turma — o mesmo exibido na lista:
+    `min_ch_aula` compara a menor duração semanal da oferta principal e
+    `min_ch_total` compara o tempo físico da turma (união dos intervalos das
+    ofertas ativas), nunca o total de uma oferta isolada. Com 0 ou 1 oferta o
+    resultado é o mesmo de antes. `min_alunos` inalterado.
     """
     min_alunos = _parse_int_arg(args.get("min_alunos"))
     min_freq = _parse_float_arg(args.get("min_freq"))
     min_ch_aula = _parse_float_arg(args.get("min_ch_aula"))
     min_ch_total = _parse_float_arg(args.get("min_ch_total"))
 
+    cargas = {}
+    if min_ch_aula is not None or min_ch_total is not None:
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+
+        persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
+        cargas = cargas_horarias_turmas_em_lote(persistidas)
+
     resultado = []
     for turma_item in turmas:
         if min_alunos is not None and turma_item.alunos_ativos_count < min_alunos:
             continue
 
-        multi = len(_ofertas_ativas_da_turma(turma_item)) >= 2
+        carga_turma = cargas.get(getattr(turma_item, "id", None))
+        multi = (
+            carga_turma.ofertas_ativas >= 2
+            if carga_turma is not None
+            else len(_ofertas_ativas_da_turma(turma_item)) >= 2
+        )
         principal = _oferta_principal(turma_item) if multi else None
 
         if min_freq is not None:
@@ -371,18 +387,22 @@ def pos_filtrar_turmas(turmas, args):
 
         if min_ch_aula is not None:
             ch_aula = (
-                principal.carga_horaria_aula
-                if multi
-                else turma_item.carga_horaria_aula
+                carga_turma.min_ch_aula
+                if carga_turma is not None
+                else (
+                    principal.carga_horaria_aula
+                    if multi
+                    else turma_item.carga_horaria_aula
+                )
             )
             if ch_aula is None or ch_aula < min_ch_aula * 60:
                 continue
 
         if min_ch_total is not None:
             ch_total = (
-                principal.carga_horaria_total
-                if multi
-                else turma_item.carga_horaria_total
+                carga_turma.carga_horaria_total
+                if carga_turma is not None
+                else (principal.carga_horaria_total if multi else turma_item.carga_horaria_total)
             )
             if ch_total is None or ch_total < min_ch_total * 60:
                 continue
@@ -432,6 +452,14 @@ def turma():
         .all()
     )
     turmas = pos_filtrar_turmas(turmas, request.args)
+    from app.services.turma_curso_horario import (
+        cargas_horarias_ofertas_em_lote,
+        cargas_horarias_turmas_em_lote,
+    )
+
+    carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
+    ofertas_carga = [o for t in turmas for o in _ofertas_ativas_da_turma(t)]
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_carga)
 
     # Centros disponíveis para o filtro do formulário.
     stmt_centros_catalogo = select(CentroCusto).where(CentroCusto.ativo.is_(True))
@@ -511,16 +539,10 @@ def turma():
     ofertas_map = {t.id: _ofertas_ativas_da_turma(t) for t in turmas}
     principal_map = {t.id: _oferta_principal(t) for t in turmas}
     resumo_map = {t.id: _resumo_ofertas(t) for t in turmas}
-    carga_horaria_total_map = {}
-    for t in turmas:
-        ofertas_turma = ofertas_map[t.id]
-        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
-        if cargas:
-            carga_horaria_total_map[t.id] = (
-                sum(cargas) if all(carga is not None for carga in cargas) else None
-            )
-        else:
-            carga_horaria_total_map[t.id] = t.carga_horaria_total
+    carga_horaria_total_map = {
+        turma.id: carga_turma_map[turma.id].carga_horaria_total
+        for turma in turmas
+    }
 
     # Nome da turma e professor vêm de todas as turmas ativas da unidade, sem
     # depender do ano/período ou dos demais filtros atualmente selecionados.
@@ -560,6 +582,8 @@ def turma():
         principal_map=principal_map,
         resumo_map=resumo_map,
         carga_horaria_total_map=carga_horaria_total_map,
+        carga_turma_map=carga_turma_map,
+        carga_oferta_map=carga_oferta_map,
         formatar_ch=formatar_ch,
         nomes_turmas=nomes_turmas,
         professores=professores_filtro,
@@ -631,6 +655,7 @@ def imprimir_centros_custo_turmas():
                 joinedload(Turma.professor),
                 selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
                 selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios),
             ).order_by(Turma.ordenacao, Turma.nome)
         )
         .unique()
@@ -639,18 +664,22 @@ def imprimir_centros_custo_turmas():
     )
     turmas = pos_filtrar_turmas(turmas, filtros)
 
+    from app.services.turma_curso_horario import (
+        cargas_horarias_ofertas_em_lote,
+        cargas_horarias_turmas_em_lote,
+    )
+
+    carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
+    ofertas_todas = [o for item in turmas for o in _ofertas_ativas_da_turma(item)]
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_todas)
+
     centros_por_chave = {
         (centro.unidade_id, centro.nome): centro for centro in centros
     }
     turmas_por_centro = {centro.id: [] for centro in centros}
     for turma_item in turmas:
         ofertas_turma = _ofertas_ativas_da_turma(turma_item)
-        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
-        ch_total_turma = (
-            sum(cargas)
-            if cargas and all(carga is not None for carga in cargas)
-            else (turma_item.carga_horaria_total if not ofertas_turma else None)
-        )
+        ch_total_turma = carga_turma_map[turma_item.id].carga_horaria_total
         principal = next(
             (oferta for oferta in ofertas_turma if oferta.principal),
             ofertas_turma[0] if len(ofertas_turma) == 1 else None,
@@ -693,6 +722,7 @@ def imprimir_centros_custo_turmas():
         unidade_nome=unidade.nome if unidade else None,
         periodo_relatorio=periodo_relatorio,
         url_retorno=url_for("registros.turma", **filtros),
+        carga_oferta_map=carga_oferta_map,
         filtros_aplicados=any(filtros.values()),
         agora=get_local_now(),
         formatar_ch=formatar_ch,
@@ -1931,14 +1961,11 @@ def carga_horaria_turmas():
             else 0.0
         )
 
-        # 4. C.H. Total: soma de carga_horaria_total de todas as turmas do curso
-        #    no filtro ativo. Carrega apenas turmas com hora configurada.
+        # 4. C.H. total: soma da carga calculada em lote para as turmas do curso.
         stmt_turmas_ch = select(Turma).where(
             Turma.curso_id == c.id,
             Turma.ativo == True,
             cond_status,
-            Turma.hora_inicio.isnot(None),
-            Turma.hora_fim.isnot(None),
         )
         if unidade_efetiva:
             stmt_turmas_ch = stmt_turmas_ch.where(Turma.unidade_id == unidade_efetiva)
@@ -1947,9 +1974,16 @@ def carga_horaria_turmas():
         if professor_id:
             stmt_turmas_ch = stmt_turmas_ch.where(Turma.professor_id == professor_id)
 
-        turmas_ch = db.session.execute(stmt_turmas_ch).scalars().all()
+        turmas_ch = db.session.execute(
+            stmt_turmas_ch.options(
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios)
+            )
+        ).scalars().all()
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+
+        cargas_turmas = cargas_horarias_turmas_em_lote(turmas_ch)
         ch_total_minutos = sum(
-            (t.carga_horaria_total or 0) for t in turmas_ch
+            (cargas_turmas[t.id].carga_horaria_total or 0) for t in turmas_ch
         ) or None  # None → "—" no template via formatar_ch
 
         cursos_dados.append({

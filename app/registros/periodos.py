@@ -12,6 +12,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from sqlalchemy import select
 
 from app.database import db
 from app.models import (
@@ -526,9 +527,9 @@ def periodo_letivo_relatorio_certificado(id):
     Concluído/Pendente do flag da PRÓPRIA oferta. Linhas legadas (oferta
     NULL) não são exibidas — a lista está em `scripts/verificar_onda4_d5.py`.
     """
-    from sqlalchemy.orm import joinedload
+    from sqlalchemy.orm import joinedload, selectinload
 
-    from app.models import ConselhoClasse
+    from app.models import ConselhoClasse, TurmaCurso
 
     if current_user.role not in _ROLES_PERIODO:
         abort(403)
@@ -540,6 +541,14 @@ def periodo_letivo_relatorio_certificado(id):
         assert_unidade_context(periodo.unidade_id, get_unidade_id())
 
     turmas = Turma.query.filter_by(periodo_letivo_id=id, ativo=True).all()
+    ofertas_relatorio = db.session.execute(
+        select(TurmaCurso)
+        .options(selectinload(TurmaCurso.horarios))
+        .where(TurmaCurso.turma_id.in_([turma.id for turma in turmas]))
+    ).scalars().all() if turmas else []
+    from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_relatorio)
     alunos_map = defaultdict(lambda: {"aluno": None, "cursos": []})
     situacoes_aprovadas = {"Aprovado", "Participação", "Concluído"}
 
@@ -575,12 +584,11 @@ def periodo_letivo_relatorio_certificado(id):
             aprovado = situacao in situacoes_aprovadas if situacao else False
             nivel_turma = inscricao.nivel or aluno.nivel
 
-            # Carga horária TOTAL cursada pelo aluno NA OFERTA (cai na da
-            # turma apenas quando a oferta não tem carga própria definida).
+            # O certificado é por oferta: mantém sua carga, sem substituir pelo
+            # total físico agregado da turma.
             carga_total = formatar_ch(
-                oferta.carga_horaria_total
-                if oferta.carga_horaria_total
-                else turma.carga_horaria_total
+                carga_oferta_map.get(oferta.id).carga_horaria_total
+                if oferta.id in carga_oferta_map else None
             )
 
             alunos_map[aluno.id]["aluno"] = aluno
