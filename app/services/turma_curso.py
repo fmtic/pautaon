@@ -48,7 +48,6 @@ from app.services.turma_curso_horario import (
     definir_grade,
     grade_a_partir_do_legado,
     grade_da_oferta,
-    grades_em_lote,
 )
 from app.utils.dias_semana import (
     csv_para_weekdays,
@@ -304,9 +303,10 @@ def _conflitos_horario_concomitante(
     necessária quando a oferta ainda não tem linhas no banco (criação) ou tem
     grade não uniforme. Sem `agenda`, o trio escalar é convertido em grade
     uniforme por ``grade_a_partir_do_legado``; agenda incompleta → sem checagem
-    (comportamento anterior). As grades das demais ofertas são lidas em UMA
-    consulta (``grades_em_lote``), com fallback ao CSV legado quando a oferta
-    ainda não tem grade.
+    (comportamento anterior). As grades das demais ofertas saem em UMA consulta:
+    a relação ``horarios`` é ``selectin`` e vem carregada junto com as ofertas
+    (``grade_da_oferta`` não consulta de novo) — sem N+1. Oferta ainda sem
+    grade cai no CSV legado.
     """
     grade_nova = (
         _normalizar_agenda(agenda)
@@ -326,15 +326,16 @@ def _conflitos_horario_concomitante(
         o for o in outras
         if not (exclude_oferta_id and o.id == exclude_oferta_id)
     ]
-    grades = grades_em_lote([o.id for o in outras])
 
     por_dia_nova = {dia: (ini, fim) for dia, ini, fim in grade_nova}
     conflitos = []
     for outra in outras:
-        linhas = grades.get(outra.id) or []
-        if linhas:
-            grade_outra = [(l.dia_semana, l.hora_inicio, l.hora_fim) for l in linhas]
-        else:
+        # A relação `horarios` é selectin: a grade já veio no lote acima.
+        grade_outra = [
+            (l.dia_semana, l.hora_inicio, l.hora_fim)
+            for l in grade_da_oferta(outra)
+        ]
+        if not grade_outra:
             # Oferta 100% legado (sem grade): reproduz a leitura escalar antiga.
             grade_outra = grade_a_partir_do_legado(
                 outra.dias_semana, outra.hora_inicio, outra.hora_fim
