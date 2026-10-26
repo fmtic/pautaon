@@ -311,17 +311,23 @@ class TestTextoGradeNaoUniforme:
 
 
 # --- Sem N+1 nas telas --------------------------------------------------------
-def _consultas_de_grade(client, url):
-    """Nº de statements que tocam `turma_curso`/grade ao renderizar a tela."""
+def _consultas_de_grade(client, url, engine=None):
+    """Nº de SELECTs na GRADE (`turma_curso_horario`) ao renderizar a tela.
+
+    Outras tabelas (ex.: `frequencia`, usada por `Turma.freq_geral`) não
+    entram na conta: o contrato do H3d é não crescer com turmas/ofertas nas
+    leituras da grade.
+    """
     from sqlalchemy import event
 
-    engine = db.engine
     vistas = []
 
     def _antes(conn, cursor, statement, parameters, context, executemany):
-        if "turma_curso" in statement.lower():
+        if "turma_curso_horario" in statement.lower():
             vistas.append(statement)
 
+    if engine is None:
+        engine = db.engine
     event.listen(engine, "before_cursor_execute", _antes)
     try:
         resposta = client.get(url)
@@ -331,22 +337,58 @@ def _consultas_de_grade(client, url):
     return len(vistas)
 
 
+def _listagem_com_ofertas_extra(qtd_multi, qtd_uni):
+    """Nº de consultas da listagem em um app NOVO com as ofertas já criadas.
+
+    Medir em app separado (em vez de criar ofertas entre dois requests do mesmo
+    app) torna o teste determinístico: o banco já nasce no estado final.
+    """
+    test_app = create_app(SQLiteTestConfig)
+    with test_app.app_context():
+        db.create_all()
+        engine = db.engine
+    try:
+        ids = _seed(test_app, variavel=True)
+        if qtd_multi:
+            _adicionar_ofertas(test_app, ids["t_multi"], qtd_multi)
+        if qtd_uni:
+            _adicionar_ofertas(test_app, ids["t_uni"], qtd_uni)
+        client = _client(test_app, ids["user"])
+        return _consultas_de_grade(
+            client, f"/turma?periodo_letivo_id={ids['periodo']}", engine=engine
+        )
+    finally:
+        with test_app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
 class TestRenderSemN1:
     def test_listagem_nao_cresce_com_turmas(self, app):
-        ids = _seed(app, variavel=True)
-        client = _client(app, ids["user"])
-        url = f"/turma?periodo_letivo_id={ids['periodo']}"
-        base = _consultas_de_grade(client, url)
+        base = _listagem_com_ofertas_extra(0, 0)
         assert base > 0
-        _adicionar_ofertas(app, ids["t_multi"], 2)
-        _adicionar_ofertas(app, ids["t_uni"], 1)
-        assert _consultas_de_grade(client, url) == base
+        assert _listagem_com_ofertas_extra(2, 1) == base
 
     def test_detalhe_nao_cresce_com_ofertas(self, app):
-        ids = _seed(app)
-        client = _client(app, ids["user"])
-        url = f"/turma/{ids['t_multi']}"
-        base = _consultas_de_grade(client, url)
+        def _medir(qtd_extra):
+            test_app = create_app(SQLiteTestConfig)
+            with test_app.app_context():
+                db.create_all()
+                engine = db.engine
+            try:
+                ids = _seed(test_app)
+                if qtd_extra:
+                    _adicionar_ofertas(test_app, ids["t_multi"], qtd_extra)
+                return _consultas_de_grade(
+                    _client(test_app, ids["user"]),
+                    f"/turma/{ids['t_multi']}",
+                    engine=engine,
+                )
+            finally:
+                with test_app.app_context():
+                    db.session.remove()
+                    db.drop_all()
+
+        base = _medir(0)
         assert base > 0
-        _adicionar_ofertas(app, ids["t_multi"], 3)
-        assert _consultas_de_grade(client, url) == base
+        assert _medir(3) == base

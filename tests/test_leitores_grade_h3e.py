@@ -11,13 +11,16 @@ Cobre:
     - ausência de N+1 nas consultas de grade.
 """
 
+import logging
 import re
 from datetime import date, time
 
 import pytest
+from sqlalchemy import event
 
 from app import create_app
 from app.database import db
+from app.main.dashboard_professor import _aulas_pendentes, _entradas_professor
 from app.models import (
     Aluno,
     Atendimento,
@@ -29,7 +32,7 @@ from app.models import (
     Unidade,
     User,
 )
-from app.services.turma_curso_horario import definir_grade
+from app.services.turma_curso_horario import definir_grade, dias_da_turma
 from config import Config
 
 DATA_INI = date(2026, 3, 2)  # segunda-feira
@@ -162,12 +165,14 @@ def _seed(app, variavel=False):
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(o_leg)
+        db.session.flush()
 
         ids = {
             "unidade": unidade.id, "prof": prof.id, "coord": coord.id,
             "t_uni": t_uni.id, "t_multi": t_multi.id, "t_leg": t_leg.id,
             "o_uni": o_uni.id, "o_p": o_p.id, "o_s": o_s.id,
-            "o_leg": o_leg.id,
+            "o_leg": o_leg.id, "periodo": periodo.id,
+            "cursos": [c.id for c in cursos],
         }
         if variavel:
             # T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00.
@@ -185,9 +190,10 @@ def _seed(app, variavel=False):
         aluno = Aluno(nome="Aluno Um", unidade_id=unidade.id, ativo=True)
         db.session.add(aluno)
         db.session.flush()
-        for chave_turma, chave_oferta in (
-            ("t_uni", "o_uni"), ("t_multi", "o_p"),
-        ):
+        pares_inscricao = [("t_uni", "o_uni"), ("t_multi", "o_p")]
+        if variavel:
+            pares_inscricao.append(("t_var", "o_var"))
+        for chave_turma, chave_oferta in pares_inscricao:
             db.session.add(Inscricao(
                 aluno_id=aluno.id, turma_id=ids[chave_turma],
                 turma_curso_id=ids[chave_oferta], ativo=True,
@@ -204,25 +210,28 @@ def _seed(app, variavel=False):
 
 
 # --- Caracterização ANTES (grades uniformes) ---------------------------------
+# Os textos abaixo são os do ANTES, com a única diferença da normalização
+# intencional do H3e: o `str(time)` cru ("08:00:00") passa ao formato HH:MM do
+# H3d ("08:00"). Nenhum outro caractere visível mudou.
 class TestCaracterizacaoLeitores:
     def test_dashboard_lista_dias_e_horas_da_oferta(self, app):
         ids = _seed(app)
         html = _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
         texto = _norm(html)
-        assert "T-UNI — Curso A Segunda Quarta 08:00:00 às 09:30:00" in texto
+        assert "T-UNI — Curso A Segunda Quarta 08:00 às 09:30" in texto
 
     def test_dashboard_multi_mostra_a_grade_de_cada_oferta(self, app):
         ids = _seed(app)
         html = _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
         texto = _norm(html)
-        assert "T-MULTI — Curso A Segunda Quarta 08:00:00 às 11:00:00" in texto
-        assert "T-MULTI — Curso B Terça 08:00:00 às 09:00:00" in texto
+        assert "T-MULTI — Curso A Segunda Quarta 08:00 às 11:00" in texto
+        assert "T-MULTI — Curso B Terça 08:00 às 09:00" in texto
 
-    def test_dashboard_pendencias_sem_horario(self, app):
+    def test_dashboard_pendencias_ganham_coluna_de_horario(self, app):
         ids = _seed(app)
         html = _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
         texto = _norm(html)
-        assert "Data Turma Pendentes" in texto
+        assert "Data Horário Turma Pendentes" in texto
         assert "02/03/2026" in texto
 
     def test_historico_do_aluno(self, app):
@@ -246,14 +255,14 @@ class TestCaracterizacaoLeitores:
         html = _client(app, ids["coord"], ids["unidade"]).get(
             "/conselho"
         ).get_data(as_text=True)
-        assert "Segunda, Quarta | 08:00:00 às 09:30:00" in _norm(html)
+        assert "Segunda, Quarta | 08:00 às 09:30" in _norm(html)
 
     def test_conselho_fechamento(self, app):
         ids = _seed(app)
         html = _client(app, ids["coord"], ids["unidade"]).get(
             f"/conselho/fechamento/{ids['t_uni']}"
         ).get_data(as_text=True)
-        assert "Segunda, Quarta | 08:00:00 às 09:30:00" in _norm(html)
+        assert "Segunda, Quarta | 08:00 às 09:30" in _norm(html)
 
     def test_frequencia_seletor_de_oferta(self, app):
         ids = _seed(app)
@@ -269,7 +278,7 @@ class TestCaracterizacaoLeitores:
         html = _client(app, ids["coord"], ids["unidade"]).get(
             "/alunos"
         ).get_data(as_text=True)
-        assert 'data-turma-horario="08:00:00 às 09:30:00"' in html
+        assert 'data-turma-horario="08:00 às 09:30"' in html
         assert 'data-turma-dias="Segunda, Quarta"' in html
 
     def test_atendimento_data_atributos(self, app):
@@ -277,7 +286,7 @@ class TestCaracterizacaoLeitores:
         html = _client(app, ids["coord"], ids["unidade"]).get(
             "/alunos/atendimentos"
         ).get_data(as_text=True)
-        assert 'data-aluno-horario="08:00:00 - 09:30:00"' in html
+        assert 'data-aluno-horario="08:00 - 09:30"' in html
 
     def test_transferir_dados_da_origem(self, app):
         ids = _seed(app)
@@ -287,4 +296,254 @@ class TestCaracterizacaoLeitores:
         ).get_data(as_text=True)
         texto = _norm(html)
         assert "Dias: Segunda, Quarta" in texto
-        assert "Horário: 08:00:00 às 09:30:00" in texto
+        assert "Horário: 08:00 às 09:30" in texto
+
+
+# --- Helpers dos cenários novos (não uniforme, fallback, N+1) -----------------
+def _aluno_em(app, unidade_id, turma_id, oferta_id, nome, com_atendimento=False):
+    """Aluno com UMA inscrição ativa — isola as telas no caso daquela oferta."""
+    with app.app_context():
+        aluno = Aluno(nome=nome, unidade_id=unidade_id, ativo=True)
+        db.session.add(aluno)
+        db.session.flush()
+        db.session.add(Inscricao(
+            aluno_id=aluno.id, turma_id=turma_id, turma_curso_id=oferta_id,
+            ativo=True, data_inicio=DATA_INI,
+        ))
+        if com_atendimento:
+            db.session.add(Atendimento(
+                aluno_id=aluno.id, setor="pedagogico",
+                data_atendimento=DATA_INI, resumo="Conversa", dados={},
+                unidade_id=unidade_id, atendido_por_nome="Coord",
+            ))
+        db.session.commit()
+        return aluno.id
+
+
+def _turma_duas_ofertas_dias_diferentes(app, ids):
+    """T-DOIS: Curso D Ter 08:00-10:00 + Curso E Qui 14:00-16:00."""
+    with app.app_context():
+        curso_d = db.session.get(Curso, ids["cursos"][3])
+        curso_e = db.session.get(Curso, ids["cursos"][4])
+        turma = Turma(
+            nome="T-DOIS", unidade_id=ids["unidade"], curso_id=curso_d.id,
+            professor_id=ids["prof"], periodo_letivo_id=ids["periodo"],
+            ativo=True, turno="Manhã", programa="Profissionalizante",
+            data_inicio=DATA_INI, data_fim=DATA_FIM,
+            dias_semana="Terça, Quinta", hora_inicio=time(14), hora_fim=time(16),
+            ordenacao=9,
+        )
+        db.session.add(turma)
+        db.session.flush()
+        oferta_a = _oferta(
+            turma, curso_d, True, [(1, time(8), time(10))],
+            professor_id=ids["prof"], turno="Manhã",
+            dias_semana="Terça", hora_inicio=time(8), hora_fim=time(10),
+        )
+        oferta_b = _oferta(
+            turma, curso_e, False, [(3, time(14), time(16))],
+            professor_id=ids["prof"], turno="Tarde",
+            dias_semana="Quinta", hora_inicio=time(14), hora_fim=time(16),
+        )
+        db.session.commit()
+        return {
+            "turma": turma.id,
+            "oferta_a": oferta_a.id,
+            "oferta_b": oferta_b.id,
+        }
+
+
+def _medir_selects_de_grade(app, funcao):
+    """Nº de SELECTs em `turma_curso_horario` de `funcao`, em sessão nova."""
+    contador = {"n": 0}
+
+    def _ouvir(conn, cursor, statement, parameters, context, executemany):
+        if "turma_curso_horario" in statement.lower():
+            contador["n"] += 1
+
+    with app.app_context():
+        event.listen(db.engine, "before_cursor_execute", _ouvir)
+        try:
+            funcao()
+        finally:
+            event.remove(db.engine, "before_cursor_execute", _ouvir)
+    return contador["n"]
+
+
+# --- Grade NÃO uniforme: cada tela mostra um segmento por dia -----------------
+class TestNaoUniformePorDia:
+    def test_dashboard_resumo_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        texto = _norm(
+            _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
+        )
+        assert (
+            "T-VAR — Curso E Terça Quinta Terça 08:00–10:00; Quinta 14:00–16:00"
+            in texto
+        )
+
+    def test_conselho_painel_e_fechamento_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        esperado = "Terça, Quinta | Terça 08:00–10:00; Quinta 14:00–16:00"
+        painel = _norm(
+            _client(app, ids["coord"], ids["unidade"])
+            .get("/conselho").get_data(as_text=True)
+        )
+        assert esperado in painel
+        fechamento = _norm(
+            _client(app, ids["coord"], ids["unidade"])
+            .get(f"/conselho/fechamento/{ids['t_var']}").get_data(as_text=True)
+        )
+        assert esperado in fechamento
+
+    def test_historico_e_ficha_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        aluno = _aluno_em(app, ids["unidade"], ids["t_var"], ids["o_var"], "Aluno Var")
+        cli = _client(app, ids["coord"], ids["unidade"])
+        historico = _norm(cli.get(f"/aluno/{aluno}/historico").get_data(as_text=True))
+        assert (
+            "T-VAR Curso E Prof A Terça, Quinta Terça 08:00–10:00; Quinta 14:00–16:00"
+            in historico
+        )
+        ficha = _norm(
+            cli.get(f"/relatorios/alunos/{aluno}/ficha").get_data(as_text=True)
+        )
+        assert (
+            "Dias e horário Terça, Quinta · Terça 08:00–10:00; Quinta 14:00–16:00"
+            in ficha
+        )
+
+    def test_gerenciar_atendimento_transferir_por_dia(self, app):
+        ids = _seed(app, variavel=True)
+        aluno = _aluno_em(
+            app, ids["unidade"], ids["t_var"], ids["o_var"], "Aluno Var",
+            com_atendimento=True,
+        )
+        cli = _client(app, ids["coord"], ids["unidade"])
+        por_dia = "Terça 08:00–10:00; Quinta 14:00–16:00"
+
+        gerenciar = cli.get("/alunos").get_data(as_text=True)
+        assert f'data-turma-horario="{por_dia}"' in gerenciar
+        assert 'data-turma-dias="Terça, Quinta"' in gerenciar
+
+        atendimento = cli.get("/alunos/atendimentos").get_data(as_text=True)
+        assert f'data-aluno-horario="{por_dia}"' in atendimento
+
+        transferir = _norm(
+            cli.get(
+                f"/aluno/transferir/{aluno}"
+                f"?turma_origem_id={ids['t_var']}&turma_curso_id={ids['o_var']}"
+            ).get_data(as_text=True)
+        )
+        assert "Dias: Terça, Quinta" in transferir
+        assert f"Horário: {por_dia}" in transferir
+
+    def test_frequencia_seletor_por_dia(self, app):
+        ids = _seed(app)
+        dois = _turma_duas_ofertas_dias_diferentes(app, ids)
+        texto = _norm(
+            _client(app, ids["prof"])
+            .get(f"/frequencia?turma_id={dois['turma']}").get_data(as_text=True)
+        )
+        assert "Curso D — Manhã (08:00–10:00)" in texto
+        assert "Curso E — Tarde (14:00–16:00)" in texto
+
+
+# --- Dashboard: a hora exibida é a do weekday da data ------------------------
+class TestDashboardPorData:
+    def test_pendencia_usa_o_intervalo_do_weekday_da_data(self, app):
+        ids = _seed(app, variavel=True)
+        with app.app_context():
+            turma = db.session.get(Turma, ids["t_var"])
+            pendentes = _aulas_pendentes([turma], prazo_dias=0)
+        por_data = {p["data"]: p["intervalo"] for p in pendentes}
+        assert por_data[date(2026, 3, 3)] == (time(8), time(10))    # terça
+        assert por_data[date(2026, 3, 5)] == (time(14), time(16))   # quinta
+
+    def test_dashboard_html_mostra_o_horario_da_data(self, app):
+        ids = _seed(app, variavel=True)
+        texto = _norm(
+            _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
+        )
+        assert "03/03/2026 08:00–10:00 T-VAR" in texto
+
+
+# --- Turma multi-oferta e fallback sem grade ---------------------------------
+class TestMultiOfertaEFallback:
+    def test_turma_multi_oferta_deriva_dias_da_grade(self, app):
+        ids = _seed(app)
+        dois = _turma_duas_ofertas_dias_diferentes(app, ids)
+        with app.app_context():
+            assert dias_da_turma(dois["turma"]) == {1, 3}
+        # A tela do aluno mostra a grade da OFERTA dele, não a união da turma.
+        _aluno_em(
+            app, ids["unidade"], dois["turma"], dois["oferta_a"], "Aluno Dois",
+        )
+        _aluno_em(
+            app, ids["unidade"], dois["turma"], dois["oferta_b"], "Aluno Tres",
+        )
+        html = _client(app, ids["coord"], ids["unidade"]).get(
+            "/alunos"
+        ).get_data(as_text=True)
+        assert 'data-turma-dias="Terça"' in html
+        assert 'data-turma-horario="08:00 às 10:00"' in html
+        assert 'data-turma-dias="Quinta"' in html
+        assert 'data-turma-horario="14:00 às 16:00"' in html
+
+    def test_fallback_sem_grade_dashboard_usa_escalar(self, app, caplog):
+        ids = _seed(app)
+        _aluno_em(app, ids["unidade"], ids["t_leg"], ids["o_leg"], "Aluno Leg")
+        with caplog.at_level(
+            logging.WARNING, logger="app.services.turma_curso_horario"
+        ):
+            texto = _norm(
+                _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
+            )
+        assert "T-LEG — Curso D Quinta 10:00 às 11:00" in texto
+        assert any("sem grade" in r.getMessage() for r in caplog.records)
+
+    def test_fallback_sem_grade_na_tela_do_aluno(self, app):
+        ids = _seed(app)
+        _aluno_em(app, ids["unidade"], ids["t_leg"], ids["o_leg"], "Aluno Leg")
+        html = _client(app, ids["coord"], ids["unidade"]).get(
+            "/alunos"
+        ).get_data(as_text=True)
+        assert 'data-turma-horario="10:00 às 11:00"' in html
+        assert 'data-turma-dias="Quinta"' in html
+
+
+# --- Sem N+1: consultas de grade constantes ao crescer ofertas ---------------
+class TestSemN1:
+    def test_consultas_de_grade_constantes_ao_crescer_ofertas(self, app):
+        ids = _seed(app)
+
+        def _entradas():
+            _entradas_professor(ids["prof"])
+
+        def _pendencias():
+            turmas = Turma.query.filter(
+                Turma.id.in_([ids["t_uni"], ids["t_multi"], ids["t_leg"]])
+            ).all()
+            _aulas_pendentes(turmas, prazo_dias=0)
+
+        antes = (
+            _medir_selects_de_grade(app, _entradas),
+            _medir_selects_de_grade(app, _pendencias),
+        )
+
+        with app.app_context():
+            turma = db.session.get(Turma, ids["t_multi"])
+            for curso_id in ids["cursos"][2:5]:
+                curso = db.session.get(Curso, curso_id)
+                _oferta(
+                    turma, curso, False, [(0, time(8), time(10))],
+                    professor_id=ids["prof"], dias_semana="Segunda",
+                    hora_inicio=time(8), hora_fim=time(10),
+                )
+            db.session.commit()
+
+        depois = (
+            _medir_selects_de_grade(app, _entradas),
+            _medir_selects_de_grade(app, _pendencias),
+        )
+        assert depois == antes
