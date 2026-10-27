@@ -418,3 +418,68 @@ def test_reenvio_do_mesmo_formulario_nao_altera_nada():
     r2 = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
     assert r2.status_code == 302
     assert _grade_rows(app, ids["ofertas"][0]) == depois_primeiro
+
+
+# --- H4c: servidor ignora campos corretos em cada modo ------------------------
+def test_modo_personalizado_ignora_par_padrao_mesmo_preenchido():
+    """H4c PASSO 5: em modo personalizado, o par padrão é ignorado mesmo se vier preenchido."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    # Envia par padrão divergente MAS os pares por dia são os que devem ser usados
+    form = _form_oferta(ids, curso="cA", prof="p1", turno="Manhã", **{
+        "horario_por_dia": "1",
+        "dias_semana": ["0", "2"],
+        "hora_inicio": "99:99",  # inválido, deve ser ignorado
+        "hora_fim": "99:99",     # inválido, deve ser ignorado
+        "hora_inicio_0": "08:00",
+        "hora_fim_0": "11:00",
+        "hora_inicio_2": "14:00",
+        "hora_fim_2": "17:00",
+    })
+    r = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
+    assert r.status_code == 302
+    # Grade segue só os pares por dia, ignorando o par padrão
+    assert _grade_rows(app, ids["ofertas"][0]) == [
+        (0, time(8), time(11)), (2, time(14), time(17)),
+    ]
+
+
+def test_modo_padrao_ignora_campos_por_dia_mesmo_preenchidos():
+    """H4c PASSO 5: em modo padrão, os campos por dia são ignorados mesmo se vierem preenchidos."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    # Envia campos por dia divergentes MAS o par padrão é o que deve ser usado
+    form = _form_oferta(ids, curso="cA", prof="p1", turno="Manhã", **{
+        "dias_semana": ["0", "2"],
+        "hora_inicio": "08:00",
+        "hora_fim": "11:00",
+        "hora_inicio_0": "99:99",  # inválido, deve ser ignorado
+        "hora_fim_0": "99:99",     # inválido, deve ser ignorado
+        "hora_inicio_2": "99:99",  # inválido, deve ser ignorado
+        "hora_fim_2": "99:99",     # inválido, deve ser ignorado
+    })
+    r = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
+    assert r.status_code == 302
+    # Grade segue o par padrão replicado, ignorando os campos por dia
+    assert _grade_rows(app, ids["ofertas"][0]) == [
+        (0, time(8), time(11)), (2, time(8), time(11)),
+    ]
+
+
+def test_modo_personalizado_com_1_dia_gera_grade_correta():
+    """H4c PASSO 5: POST horario_por_dia=1 com 1 dia gera a grade correspondente, sem erro."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    # H4c: servidor aceita horario_por_dia=1 com 1 dia (pode ser forjado)
+    form = _form_oferta(ids, curso="cA", prof="p1", turno="Manhã", **{
+        "horario_por_dia": "1",
+        "dias_semana": ["0"],
+        "hora_inicio": "08:00",
+        "hora_fim": "11:00",
+        "hora_inicio_0": "09:00",
+        "hora_fim_0": "10:00",
+    })
+    r = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
+    assert r.status_code == 302
+    # Grade segue o par por dia (09:00-10:00), não o padrão (08:00-11:00)
+    assert _grade_rows(app, ids["ofertas"][0]) == [(0, time(9), time(10))]

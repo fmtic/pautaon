@@ -1,13 +1,15 @@
 // static/js/turmas/grade_horario.js
-// Módulo compartilhado da agenda por dia (H4). Usado por nova.js, editar.js e
+// Módulo compartilhado da agenda por dia (H4c). Usado por nova.js, editar.js e
 // pela tela de Cursos da Turma (ofertas.html) — substitui os três mapas de dia
 // que existiam duplicados. Regras do contrato:
 //   - dias: Segunda–Sábado = índices Python date.weekday() (0–5); SEM domingo;
 //   - Date.getDay() do JS (0=domingo) converte por (getDay()+6)%7;
 //   - modo padrão replica o par hora_inicio/hora_fim nos dias marcados;
-//   - modo personalizado ("Horário diferente por dia") usa um par por dia;
+//   - modo personalizado ("Horário por dia") usa um par por dia;
 //   - a C.H. aqui é ESTIMATIVA (desconta dias bloqueados nem feriados); o
 //     valor autoritativo é o do servidor (definir_grade/cargas do H3c).
+//   - H4c: interruptor habilitado só com 2+ dias; voltar a 1 dia volta ao padrão
+//     automaticamente; par padrão visível mas esmaecido no modo personalizado.
 (function (global) {
     'use strict';
 
@@ -127,6 +129,13 @@
     }
 
     /**
+     * H4c: Função pura - verifica se o interruptor pode ser habilitado (2+ dias).
+     */
+    function podeHabilitarPorDia(diasMarcados) {
+        return Array.isArray(diasMarcados) && diasMarcados.length >= 2;
+    }
+
+    /**
      * Monta a grade a partir de um <form> (mesma lógica do parsing do
      * servidor): modo padrão replica o par padrão; modo personalizado usa o
      * par de cada dia marcado. Devolve [{dia, inicio, fim}] ordenado.
@@ -192,8 +201,11 @@
 
     /**
      * Inicia o componente de agenda em um <form>:
-     *  - interruptor "Horário diferente por dia" ([data-grade-switch]);
-     *  - blocos por dia ([data-grade-dia]) com hora_inicio_<w>/hora_fim_<w>;
+     *  - interruptor "Horário por dia" ([data-grade-switch]);
+     *  - linhas por dia ([data-grade-dia]) com hora_inicio_<w>/hora_fim_<w>;
+     *  - par padrão ([data-grade-padrao]) com hora_inicio/hora_fim;
+     *  - regra de 2+ dias para habilitar o interruptor;
+     *  - volta automática ao padrão ao desmarcar até 1 dia;
      *  - pré-preenchimento dos dias marcados com o par padrão;
      *  - confirmação ao desligar quando há valores diferentes do padrão;
      *  - C.H. estimativa (#ch_aula_display/#ch_total_display se existirem).
@@ -209,7 +221,9 @@
         const switchInput = form.querySelector('[data-grade-switch]');
         const padraoIni = form.querySelector('input[name="hora_inicio"]');
         const padraoFim = form.querySelector('input[name="hora_fim"]');
+        const padraoBlocos = Array.from(form.querySelectorAll('[data-grade-padrao]'));
         const blocos = Array.from(form.querySelectorAll('[data-grade-dia]'));
+        const switchHelp = switchInput ? form.querySelector(`#${switchInput.id}_switch_help`) : null;
 
         const diasMarcados = () =>
             Array.from(form.querySelectorAll('input[name="dias_semana"]'))
@@ -233,6 +247,20 @@
             });
         }
 
+        function espelhaPadrao() {
+            // No modo padrão, espelha o par padrão nos campos por dia (marcados)
+            if (switchInput && switchInput.checked) return;
+            const marcados = diasMarcados();
+            blocos.forEach((bloco) => {
+                const w = parseInt(bloco.getAttribute('data-grade-dia'), 10);
+                const marcado = marcados.indexOf(w) !== -1;
+                const ini = bloco.querySelector(`input[name="hora_inicio_${w}"]`);
+                const fim = bloco.querySelector(`input[name="hora_fim_${w}"]`);
+                if (marcado && ini && padraoIni) ini.value = padraoIni ? padraoIni.value : '';
+                if (marcado && fim && padraoFim) fim.value = padraoFim ? padraoFim.value : '';
+            });
+        }
+
         function temDiferencaPorDia() {
             // Algum dia marcado cujo par difere do par padrão preenchido?
             if (!padraoIni || !padraoFim) return false;
@@ -250,12 +278,50 @@
         function atualizaVisivel() {
             const on = !!(switchInput && switchInput.checked);
             const marcados = diasMarcados();
+            const nMarcados = marcados.length;
+
+            // Habilita/desabilita o interruptor conforme número de dias (H4c)
+            if (switchInput) {
+                const podeHabilitar = podeHabilitarPorDia(marcados);
+                switchInput.disabled = !podeHabilitar;
+                if (switchHelp) {
+                    switchHelp.textContent = podeHabilitar
+                        ? 'Definir horários diferentes para cada dia marcado.'
+                        : 'Marque 2 ou mais dias para definir horários diferentes.';
+                }
+                // H4c: voltar automaticamente ao padrão ao desmarcar até 1 dia
+                if (on && !podeHabilitar) {
+                    switchInput.checked = false;
+                    // O par do dia restante vira o par padrão
+                    if (nMarcados === 1) {
+                        const w = marcados[0];
+                        const bloco = blocoDe(w);
+                        if (bloco) {
+                            const ini = bloco.querySelector(`input[name="hora_inicio_${w}"]`);
+                            const fim = bloco.querySelector(`input[name="hora_fim_${w}"]`);
+                            if (padraoIni && ini && ini.value) padraoIni.value = ini.value;
+                            if (padraoFim && fim && fim.value) padraoFim.value = fim.value;
+                        }
+                    }
+                }
+            }
+
+            // Par padrão: visível mas esmaecido/desabilitado no modo personalizado
+            padraoBlocos.forEach((bloco) => {
+                bloco.classList.toggle('opacity-50', on);
+                bloco.querySelectorAll('input').forEach((i) => {
+                    i.disabled = on;
+                });
+            });
+
+            // Linhas por dia: estado conforme modo e marcação
             blocos.forEach((bloco) => {
                 const w = parseInt(bloco.getAttribute('data-grade-dia'), 10);
-                const mostra = on && marcados.indexOf(w) !== -1;
-                bloco.classList.toggle('d-none', !mostra);
+                const marcado = marcados.indexOf(w) !== -1;
+                const linhaEsmaecida = !marcado || (!on && marcado);
+                bloco.classList.toggle('opacity-50', linhaEsmaecida);
                 bloco.querySelectorAll('input').forEach((i) => {
-                    i.disabled = !mostra;
+                    i.disabled = !on || !marcado;
                 });
             });
         }
@@ -300,7 +366,7 @@
                 if (!switchInput.checked && temDiferencaPorDia()) {
                     // Voltar ao padrão perde as diferenças por dia — confirmar.
                     const ok = global.confirm(
-                        'Ao desligar "Horário diferente por dia" os dias voltam para o ' +
+                        'Ao desligar "Horário por dia" os dias voltam para o ' +
                         'horário padrão e as diferenças digitadas são perdidas.\nContinuar?'
                     );
                     if (!ok) {
@@ -308,23 +374,22 @@
                         return;
                     }
                 }
-                preenchePadrao();
+                if (switchInput.checked) {
+                    // Ao ligar, pré-preenche os pares por dia com o par padrão
+                    preenchePadrao();
+                }
                 atualizaVisivel();
                 recalculaCH();
             });
-            preenchePadrao();
-            atualizaVisivel();
         }
 
         const alvos = Array.from(
-            form.querySelectorAll(
-                'input[name="dias_semana"], input[name="hora_inicio"], input[name="hora_fim"]'
-            )
+            form.querySelectorAll('input[name="dias_semana"], input[name="hora_inicio"], input[name="hora_fim"]')
         );
         blocos.forEach((b) => b.querySelectorAll('input').forEach((i) => alvos.push(i)));
         alvos.forEach((el) => {
             el.addEventListener('change', () => {
-                preenchePadrao();
+                espelhaPadrao();
                 atualizaVisivel();
                 recalculaCH();
             });
@@ -333,6 +398,8 @@
 
         // Estado inicial já preenchido (pré-render do servidor) → estimativa
         // visível assim que a página carrega, como nas telas antigas.
+        espelhaPadrao();
+        atualizaVisivel();
         recalculaCH();
 
         // API mínima para o arquivo da página (editar.js reutiliza).
@@ -351,6 +418,7 @@
         ocorrenciasWeekday,
         estimarCHMinutos,
         formatarCH,
+        podeHabilitarPorDia,
         montarItensGrade,
         serializarGrade,
         deserializarGrade,

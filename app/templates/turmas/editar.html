@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% from "turmas/_agenda_macros.html" import agenda_campos %}
 
+{% block styles %}
+<link href="{{ url_for('static', filename='css/turmas/grade_horario.css') }}" rel="stylesheet" />
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <h2><i class="bi bi-pencil-square"></i> Editar Turma: {{ turma.nome }}</h2>
@@ -189,16 +193,15 @@
         {% else %}
         <div class="row mb-3">
             <div class="col-12">
-                <label class="form-label fw-bold">Dias da Semana</label>
                 {% if agenda_bloqueada %}
                 {# H5a: com 2+ ofertas a agenda é somente leitura e NÃO é lida de
                    coluna escalar alguma — o aviso remete a Cursos da Turma. #}
                 <input class="form-control" value="Definida por curso em Cursos da Turma" readonly tabindex="-1">
                 {% else %}
-                {# H4: componente compartilhado de agenda (dias Segunda–Sábado,
-                   weekday 0–5, sem domingo, interruptor "Horário diferente por
-                   dia") — mesma macro e JS da tela de Cursos da Turma. Turma
-                   com 1 oferta e grade não uniforme é editável aqui. #}
+                {# H4c: componente compartilhado de agenda (dias Segunda–Sábado,
+                   weekday 0–5, sem domingo, interruptor "Horário por dia") — mesma
+                   macro e JS da tela de Cursos da Turma. Turma com 1 oferta e grade
+                   não uniforme é editável aqui. #}
                 {{ agenda_campos(estado_agenda, 'agenda') }}
                 {% endif %}
             </div>
@@ -225,18 +228,7 @@
                 <input type="date" name="data_fim" class="form-control" value="{{ turma.data_fim }}" {% if n_ofertas >= 2 %}readonly tabindex="-1"{% endif %}>
             </div>
 
-            {% if n_ofertas >= 1 %}
-            <div class="mb-3 col-md-3">
-                <label class="form-label fw-bold">Hora Início</label>
-                {# Par padrão — estado_agenda pré-preenche do GET (grade) ou do
-                   rascunho rejeitado (H4); sem oferta o campo não existe (H5a). #}
-                <input type="time" name="hora_inicio" id="hora_inicio" class="form-control" value="{{ estado_agenda['hora_inicio'] }}" {% if agenda_bloqueada %}readonly tabindex="-1"{% endif %}>
-            </div>
-            <div class="mb-3 col-md-3">
-                <label class="form-label fw-bold">Hora Fim</label>
-                <input type="time" name="hora_fim" id="hora_fim" class="form-control" value="{{ estado_agenda['hora_fim'] }}" {% if agenda_bloqueada %}readonly tabindex="-1"{% endif %}>
-            </div>
-            {% endif %}
+
 
         {# Bloco de exibição de C.H. calculada em tempo real via JS. #}
         <div class="col-12 mb-3" id="bloco_ch">
