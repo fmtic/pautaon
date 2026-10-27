@@ -30,8 +30,9 @@ NOTAS DE ONDAS
       `Turma`/`TurmaCurso` ampliam-se para `String(80)`.
     - H5a: a grade (`turma_curso_horario`) é a ÚNICA fonte de agenda — nenhum
       código de `app/` ou `scripts/` lê ou escreve as seis colunas escalares
-      (`Turma` e `TurmaCurso`) bem como as colunas escalares de agenda. Elas
-      continuam no schema (e nos modelos) apenas até a remoção física (H5b).
+      (`Turma` e `TurmaCurso`).
+    - H5b: as seis colunas escalares de agenda foram REMOVIDAS do schema e do
+      modelo; `ck_tch_dia` passou a 0–5. A grade permanece como fonte única.
 ================================================================================
 """
 
@@ -105,10 +106,6 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         - Alunos (N:N via Inscricao)       -> alunos (backref)
 
     Regras:
-        - `dias_semana`/`hora_inicio`/`hora_fim` são colunas LEGADAS de agenda:
-          sem uso desde o H5a (a agenda vive na grade da oferta,
-          `turma_curso_horario`); permanecem no schema até a remoção física no
-          H5b — não escreva nem leia.
         - O encerramento do conselho NÃO vive na turma: desde a D5.5 ele é da
           OFERTA (`turma_curso.conselho_concluido`) e a turma é DERIVADA em
           leitura.
@@ -120,14 +117,10 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
 
-    # Datas/horas nativas (Onda 2A - antes eram VARCHAR).
+    # Datas nativas (Onda 2A - antes eram VARCHAR).
     data_inicio: date = db.Column(db.Date)
     data_fim: date = db.Column(db.Date)
-    hora_inicio: time = db.Column(db.Time)
-    hora_fim: time = db.Column(db.Time)
 
-    # H1-P2: String(80) — o CSV canônico dos sete dias não cabe em 20.
-    dias_semana: str = db.Column(db.String(80))
     programa: str = db.Column(db.String(50))
     turno: str = db.Column(db.String(20))
     centro_custo: str = db.Column(db.String(150))
@@ -279,9 +272,6 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
           replicados de `Turma`; durante a transição a camada de
           compatibilidade mantém as colunas legadas da turma para turmas
           com oferta única (não-remove sem migrar leitores).
-        - H5a: `dias_semana`/`hora_inicio`/`hora_fim` (aqui e em `Turma`) são
-          colunas legadas SEM USO — a agenda é a grade `turma_curso_horario`.
-          Continuam no schema até a remoção física (H5b).
     """
     __tablename__ = 'turma_curso'
     __table_args__ = (
@@ -314,12 +304,6 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         comment='Professor responsável pela oferta do curso na turma',
     )
     turno: str = db.Column(db.String(20))
-    # LEGADO (H5a): sem uso — a agenda é a grade `TurmaCursoHorario`. A coluna
-    # permanece no schema apenas até a remoção física no H5b; não leia nem
-    # escreva (não há projeção nem fallback).
-    dias_semana: str = db.Column(db.String(80))
-    hora_inicio: time = db.Column(db.Time)
-    hora_fim: time = db.Column(db.Time)
     data_inicio: date = db.Column(db.Date)
     data_fim: date = db.Column(db.Date)
     centro_custo: str = db.Column(
@@ -387,12 +371,12 @@ class TurmaCursoHorario(db.Model):
     Grade de horário por dia de aula de uma OFERTA (H1).
 
     Fonte dos dias E dos horários da oferta (decisão 5): cada linha é um
-    dia da semana (0 = segunda … 6 = domingo, `date.weekday()`) com um par
-    de horários opcional. As colunas escalares de `TurmaCurso` são legado sem
-    uso desde o H5a (remoção física no H5b).
+    dia da semana (0 = segunda … 5 = sábado; domingo não é gravável) com um
+    par de horários opcional. As colunas escalares de agenda de `Turma` e
+    `TurmaCurso` foram removidas no H5b.
 
     Regras (decisão 2, garantidas por CHECK no schema):
-        - `dia_semana` ∈ 0–6, único por oferta (`uix_turma_curso_horario_dia`).
+        - `dia_semana` ∈ 0–5, único por oferta (`uix_turma_curso_horario_dia`).
         - Linha com `hora_inicio` e `hora_fim` ambos NULL é permitida (dia
           sem horário); só um extremo preenchido é inválido.
         - Quando ambos preenchidos: `hora_fim` > `hora_inicio` (mesmo dia,
@@ -410,7 +394,7 @@ class TurmaCursoHorario(db.Model):
         db.ForeignKey('turma_curso.id', ondelete='CASCADE'),
         nullable=False,
     )
-    # 0 = segunda … 6 = domingo (date.weekday(); decisão 1).
+    # 0 = segunda … 5 = sábado (date.weekday(); domingo recusado).
     dia_semana: int = db.Column(SmallInteger, nullable=False)
     hora_inicio: time | None = db.Column(db.Time)
     hora_fim: time | None = db.Column(db.Time)
@@ -426,7 +410,7 @@ class TurmaCursoHorario(db.Model):
             name='uix_turma_curso_horario_dia',
         ),
         db.CheckConstraint(
-            'dia_semana >= 0 AND dia_semana <= 6', name='ck_tch_dia',
+            'dia_semana >= 0 AND dia_semana <= 5', name='ck_tch_dia',
         ),
         db.CheckConstraint(
             '(hora_inicio IS NULL AND hora_fim IS NULL) '
