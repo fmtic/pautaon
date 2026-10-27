@@ -373,7 +373,7 @@ def carregar_frequencias(
     turma_id: int,
     data: str | date,
     turma_curso_id: Optional[int] = None,
-) -> Tuple[Dict[int, str], Optional[int], str]:
+) -> Tuple[Dict[int, str], List[int], str]:
     """
     Carrega os conceitos lançados para uma turma (ou oferta) em uma data.
 
@@ -384,10 +384,15 @@ def carregar_frequencias(
     são lidos por oferta (`turma_curso_id`, `data`); com None, mantém o
     comportamento legado (filtro somente por `turma_id`, `data`).
 
-    :return: (dict{aluno_id: conceito}, tema_selecionado_id | None, observacoes)
+    Temas múltiplos: o segundo elemento é sempre a **lista** de IDs de tema
+    marcados no dia — vazia quando não há diário ainda (dia não lançado) ou
+    quando `turma_id`/`data` são inválidos. Nunca `None`: o template testa
+    `tema.id in tema_selecionado` e `None` derrubava a pauta com TypeError.
+
+    :return: (dict{aluno_id: conceito}, tema_ids_selecionados | [], observacoes)
     """
     frequencias: Dict[int, str] = {}
-    tema_selecionado: Optional[int] = None
+    tema_selecionado: List[int] = []
     obs_salva: str = ""
 
     data_alvo = parse_date(data)

@@ -33,6 +33,7 @@ from app.models import (
     Curso,
     Frequencia,
     PeriodoLetivo,
+    TemaAula,
     Turma,
     TurmaCurso,
     Unidade,
@@ -405,3 +406,88 @@ def test_frequencia_relatorio_aluno_em_2_ofertas_sem_duplicar(app, client):
     corpo = resposta.data.decode("utf-8")
     assert corpo.count("Caia") == 1
     assert corpo.count("Ana") == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression — temas marcados do dia NUNCA são None na pauta
+# (TypeError: argument of type 'NoneType' is not a container or iterable)
+# ---------------------------------------------------------------------------
+
+def _tema_da_oferta(app, oferta_id, titulo):
+    """Cria um `TemaAula` ativo no curso da oferta — é a lista que a pauta
+    percorre em `tema.id in tema_selecionado`. Sem tema, o loop não executa e a
+    tela nem chegava a quebrar."""
+    with app.app_context():
+        oferta = db.session.get(TurmaCurso, oferta_id)
+        tema = TemaAula(
+            curso_id=oferta.curso_id, unidade_id=oferta.unidade_id,
+            titulo=titulo, ordem=1, ativo=True,
+        )
+        db.session.add(tema)
+        db.session.commit()
+        return tema.id
+
+
+def _linha_do_tema(corpo, tema_id):
+    """Tag `<input>` do checkbox do tema (para afirmar marcado/desmarcado)."""
+    import re
+
+    match = re.search(rf'<input[^>]*id="tema-aula-{tema_id}"[^>]*>', corpo)
+    assert match, f"checkbox do tema {tema_id} não foi renderizado"
+    return match.group(0)
+
+
+def test_pauta_dia_sem_diario_com_temas_nao_eh_500(app, client):
+    """Dia ainda não lançado é o estado mais comum da pauta, e era o que
+    quebrava: sem `RegistroAula`, `carregar_frequencias` devolvia `None` como
+    temas marcados e o template testava `tema.id in None`.
+
+    Gema tem 1 oferta ativa (uso automático, sem seletor) e agora 1 tema no
+    curso da oferta."""
+    ids = _base(app)
+    from test_conselho_oferta import _loga
+
+    tema_id = _tema_da_oferta(app, ids["g"], "Tema Gema sem diario")
+    _loga(client, ids, unidade_id=ids["un"])
+
+    resposta = client.get(f"/frequencia?turma_id={ids['gema']}&data=2026-03-10")
+    assert resposta.status_code == 200
+    corpo = resposta.data.decode("utf-8")
+    # O loop de temas executou (sem isso o teste passaria mesmo com o bug).
+    assert "Tema Gema sem diario" in corpo
+    assert "checked" not in _linha_do_tema(corpo, tema_id)
+
+
+def test_pauta_data_fora_do_formato_iso_nao_eh_500(app, client):
+    """`parse_date` só aceita `YYYY-MM-DD`; `?data=10/03/2026` cai no
+    early-return de `carregar_frequencias`, que também devolvia `None`. A tela
+    deve responder 200 com a pauta vazia e o tema desmarcado."""
+    ids = _base(app)
+    from test_conselho_oferta import _loga
+
+    tema_id = _tema_da_oferta(app, ids["g"], "Tema Gema data invalida")
+    _loga(client, ids, unidade_id=ids["un"])
+
+    resposta = client.get(f"/frequencia?turma_id={ids['gema']}&data=10/03/2026")
+    assert resposta.status_code == 200
+    corpo = resposta.data.decode("utf-8")
+    assert "Tema Gema data invalida" in corpo
+    assert "checked" not in _linha_do_tema(corpo, tema_id)
+
+
+def test_carregar_frequencias_sempre_devolve_lista_de_temas(app):
+    """Contrato da função (fonte do bug acima): o segundo elemento é sempre
+    sequência — inclusive sem diário e com data inválida."""
+    from app.utils.logica import carregar_frequencias
+
+    ids = _base(app)
+    _tema_da_oferta(app, ids["g"], "Tema do contrato")
+    with app.app_context():
+        # Dia sem RegistroAula:
+        _, temas, _ = carregar_frequencias(
+            ids["gema"], date(2026, 3, 11), turma_curso_id=ids["g"],
+        )
+        assert temas == []
+        # Data não parseável (early-return):
+        _, temas_ruim, _ = carregar_frequencias(ids["gema"], "11/03/2026")
+        assert temas_ruim == []

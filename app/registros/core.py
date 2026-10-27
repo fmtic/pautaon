@@ -439,7 +439,7 @@ def frequencia():
                            turma_id=turma_id,
                            data=data,
                            frequencias=freqs,
-                           tema_selecionado=tema_sel,
+                           tema_selecionado=tema_sel or [],
                            obs_salva=obs,
                            turma=ctx.get('turma'),
                            alunos=ctx.get('alunos', []),
