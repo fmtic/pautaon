@@ -633,6 +633,37 @@ def pos_filtrar_turmas(turmas, args):
         persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
         cargas = cargas_horarias_turmas_em_lote(persistidas)
 
+    # Frequência em LOTE (D3b-2.2): mapas/agregados pré-calculados, UMA
+    # consulta por mapa — evita N+1 de `freq_geral`/`freq_geral_oferta` no
+    # filtro `min_freq`. Semântica idêntica à anterior (oferta principal com
+    # 2+ ofertas; `turma_id` coerente no ramo legado).
+    _agg_turma_freq = {}
+    _agg_oferta_freq = {}
+    _principal_por_turma = {}
+    if min_freq is not None:
+        from app.services.frequencia_oferta import (
+            agregar_por_oferta,
+            agregar_por_turma,
+        )
+
+        persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
+        _agg_turma_freq = agregar_por_turma(persistidas)
+        principal_ids: list[int] = []
+        for t in persistidas:
+            carga_t = cargas.get(getattr(t, "id", None))
+            multi_t = (
+                carga_t.ofertas_ativas >= 2
+                if carga_t is not None
+                else len(_ofertas_ativas_da_turma(t)) >= 2
+            )
+            if multi_t:
+                p = _oferta_principal(t)
+                _principal_por_turma[t.id] = p
+                if p is not None:
+                    principal_ids.append(p.id)
+        if principal_ids:
+            _agg_oferta_freq = agregar_por_oferta(principal_ids)
+
     resultado = []
     for turma_item in turmas:
         if min_alunos is not None and turma_item.alunos_ativos_count < min_alunos:
@@ -647,11 +678,22 @@ def pos_filtrar_turmas(turmas, args):
         principal = _oferta_principal(turma_item) if multi else None
 
         if min_freq is not None:
-            freq = (
-                turma_item.freq_geral_oferta(principal.id)
-                if multi
-                else turma_item.freq_geral
-            )
+            tid = getattr(turma_item, "id", None)
+            if tid is None:
+                # Objeto sem id (compatibilidade/testes): fallback à
+                # property, como antes da D3b-2.2.
+                freq = (
+                    turma_item.freq_geral_oferta(principal.id)
+                    if multi
+                    else turma_item.freq_geral
+                )
+            elif multi:
+                p = _principal_por_turma.get(tid)
+                info = _agg_oferta_freq.get(p.id) if p is not None else None
+                freq = info.pct if (info is not None and info.turma_id == turma_item.id) else 0.0
+            else:
+                info = _agg_turma_freq.get(tid)
+                freq = info.pct_turma if info is not None else 0.0
             if freq < min_freq:
                 continue
 
@@ -734,6 +776,20 @@ def turma():
     grades_ofertas = grades_por_oferta(ofertas_carga)
     grade_oferta_map = grades_para_exibicao(
         ofertas_carga, carga_oferta_map, grades_ofertas
+    )
+
+    # Frequência em LOTE (D3b-2.2): mapas pré-calculados, UMA consulta por
+    # mapa — evita N+1 de `Turma.freq_geral`/`freq_geral_oferta` na listagem.
+    from app.services.frequencia_oferta import (
+        freq_geral_ofertas_em_lote,
+        freq_geral_turmas_em_lote,
+    )
+
+    freq_turma_map = freq_geral_turmas_em_lote(
+        [t.id for t in turmas], unidade_id=unidade_id
+    )
+    freq_oferta_map = freq_geral_ofertas_em_lote(
+        [o.id for o in ofertas_carga], unidade_id=unidade_id
     )
 
     # Centros disponíveis para o filtro do formulário.
@@ -860,6 +916,8 @@ def turma():
         carga_turma_map=carga_turma_map,
         carga_oferta_map=carga_oferta_map,
         grade_oferta_map=grade_oferta_map,
+        freq_turma_map=freq_turma_map,
+        freq_oferta_map=freq_oferta_map,
         formatar_ch=formatar_ch,
         nomes_turmas=nomes_turmas,
         professores=professores_filtro,

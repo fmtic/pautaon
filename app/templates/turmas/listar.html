@@ -305,7 +305,7 @@
                                 turma.alunos|length }}
                             </span>
                             <br>
-                            {% set frequencia_turma = turma.freq_geral %}
+                            {% set frequencia_turma = freq_turma_map.get(turma.id, 0.0) %}
                             <span
                                 class="badge {% if frequencia_turma >= 75 %}bg-success{% elif frequencia_turma >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
                                 {{ frequencia_turma }}%
@@ -419,7 +419,7 @@
                                             </td>
                                             <td class="text-center">{% if grade_linha_oferta and grade_linha_oferta.ch_aula_varia %}<span title="{{ grade_linha_oferta.ch_aula_por_dia_texto or '' }}">varia</span>{% else %}{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_aula) }}{% endif %}</td>
                                             <td class="text-center">{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_total) }}</td>
-                                            <td class="text-center">{{ turma.freq_geral_oferta(o.id) }}%</td>
+                                            <td class="text-center">{{ freq_oferta_map.get(o.id, 0.0) }}%</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>

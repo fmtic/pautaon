@@ -366,3 +366,53 @@ def agregar_por_turma(
             pct_turma=percentual(info["presentes"], info["total"] - info["presentes"]),
         )
     return resultado
+
+# ---------------------------------------------------------------------------
+# Leituras em LOTE (D3b-2.2) — mapas pré-calculados para a listagem de
+# turmas. Mesma fórmula do serviço (J fora do denominador, 1 casa decimal,
+# 0.0 sem registros contáveis). Sem N+1: UMA consulta por mapa.
+# ---------------------------------------------------------------------------
+
+
+def freq_geral_turmas_em_lote(
+    turmas_ids: Iterable[int],
+    unidade_id: int | None = None,
+) -> dict[int, float]:
+    """`{turma_id: pct}` para uma lista de turmas — UMA consulta.
+
+    Reusa `agregar_por_turma` (soma de todas as linhas da turma, ofertas +
+    legado). Turmas sem lançamento ficam com 0.0 (mesmo comportamento da
+    property `Turma.freq_geral`).
+    """
+    turmas_ids = list(turmas_ids)
+    if not turmas_ids:
+        return {}
+    agregado = agregar_por_turma(turmas_ids, unidade_id=unidade_id)
+    return {
+        tid: (agregado.get(tid).pct_turma if agregado.get(tid) is not None else 0.0)
+        for tid in turmas_ids
+    }
+
+
+def freq_geral_ofertas_em_lote(
+    oferta_ids: Iterable[int],
+    unidade_id: int | None = None,
+    por_turma: int | None = None,
+) -> dict[int, float]:
+    """`{oferta_id: pct}` para uma lista de ofertas — UMA consulta.
+
+    Reusa `agregar_por_oferta` (regra D2 do legado aplicada). Ofertas sem
+    lançamento ficam com 0.0 (mesmo comportamento de `Turma.freq_geral_oferta`).
+    `por_turma` restringe a um único `turma_id` (equivalente ao parâmetro
+    do serviço), preservando a semântica de `freq_geral_oferta`.
+    """
+    oferta_ids = list(oferta_ids)
+    if not oferta_ids:
+        return {}
+    agregado = agregar_por_oferta(
+        oferta_ids, unidade_id=unidade_id, por_turma=por_turma
+    )
+    return {
+        oid: (agregado.get(oid).pct if agregado.get(oid) is not None else 0.0)
+        for oid in oferta_ids
+    }
