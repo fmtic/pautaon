@@ -1,5 +1,17 @@
 ### Alterações do dia — 27/10/2026 (Conselho — Gerenciar Perguntas)
 
+### Alterações do dia — 27/10/2026 (D3b-2.0–2.6 — frequência/diário por oferta)
+
+- **D3b-2.0:** mapa da frequência/diário por oferta (somente leitura): inventário P1 de ~40 pontos, dados reais P2 (0 lançamentos nos bancos locais), decisões D1–D6, plano D3b-2.1…2.7. Relatório `docs/Relatórios/D3b2_0_MapaFrequenciaPorOferta.md`. Commit `643d025`.
+- **D3b-2.1:** limpeza do working tree (commits 8da6655, b719a1a, 730822f, 40956a3); remoção dos 3 tmp*. Relatório `D3b2_1_LimpezaWorkingTree.md`.
+- **D3b-2.2:** remoção de N+1 de `freq_geral`/`freq_geral_oferta` na listagem: mapas `freq_geral_turmas_em_lote`/`freq_geral_ofertas_em_lote` (1 consulta cada); `pos_filtrar_turmas` batch para `min_freq`. Suíte 665. Commit `ed9a088`.
+- **D3b-2.3:** remoção de N+1 de frequência no histórico do aluno: `frequencias_aluno_por_inscricao` (1 consulta). Suíte 669. Commit `42cd2ad`.
+- **D3b-2.4:** estatísticas do GET `/frequencia` por oferta em turma com 2+ ofertas (legado NULL não entra). Suíte 673. Commit `344ad9f`.
+- **D3b-2.5:** `min_freq` coerente com a frequência exibida (D7: compara a soma da turma). Suíte 678. Commit `4c307a8`.
+- **D3b-2.6:** `f_prog` por `TurmaCurso.programa` (regra D2 do legado). Suíte 681. Commit ` (implementação + docs)`.
+- **Estado da suíte ao final da D3b-2.6: 681 passed**, 0 falhas; head `8d2e3f4a5b6c` (sem migration); sem push.
+
+
 - **PQ1 — Numeração e lettering das perguntas:** cada pergunta passa a exibir número sequencial (1, 2, 3…) reiniciando por aba (etapa + tipo) e cada opção de resposta recebe letra (A, B, C…), facilitando a referência para quem cadastra e para quem responde. Implementado **sem migration e sem campo novo**: ordenação estável por `id` nas três consultas de `app/conselho.py` (`gerenciar_perguntas` L290, lançamento L489, turma_aval L845) e `loop.index`/`loop.index0` (com `selectattr('tipo','equalto',…)` para o índice bater por aba) nos templates `conselho/perguntas.html`, `conselho/lancamento.html` e `conselho/turma_aval.html`. A letra é só exibição — o valor persistido continua o texto puro da opção e `opcoes` segue separado por `" | "`, sem impacto em `ConselhoResposta` histórico.
 - **PQ2 — Reparo do botão de edição de pergunta:** o `onclick` embutia os valores "crus" numa string JS dentro do atributo HTML. Com a Onda 2B, `str(EtapaConselho.INICIAL)` → `"EtapaConselho.INICIAL"` e `str(TipoPergunta.TURMA)` → `"TipoPergunta.TURMA"`, então os `<select>` de Etapa/Foco não pré-preenchiam; texto com aspa simples quebrava o clique; e pergunta dissertativa (`opcoes=None`) carregava uma opção fantasma "None". Correção: dados movidos para atributos `data-*` (autoescapados pelo Jinja) usando `.value` dos enums e `or ''` para nulo em `conselho/perguntas.html`; `editarPergunta(btn)` passa a ler `btn.dataset` e `adicionarCampoResposta` cria o `<input>` via propriedade `.value` (não interpolado no HTML) em `static/js/conselho/conselho.js`. Sem mudança em banco nem no valor persistido.
 
@@ -38,9 +50,7 @@
 
 ### Pendências abertas (pós-L3)
 
-- **D3b-2/J3 — frequência e relatórios ainda por `turma_id`:** frequência/diário do ramo legado (`app/utils/logica.py`, `app/utils/frequencia.py`), `Turma.freq_geral` (property que soma as ofertas), `Frequencia.agregar_por_turma` (painel pedagógico), BI de frequência (`frequencia_por_turma`/`frequencia_por_curso` e vizinhos em `bi_alunos.py`), `calcular_frequencias_relatorio` (relatórios) e `freq_geral` na listagem de turmas/BI. ALU-009/ALU-010 ainda não aplicam `cond_inscricao_enturmada`; o BI ainda lê `Turma.programa` (projeção) em vez de `turma_curso.programa`.
-  - Estatísticas do GET `/frequencia` (`app/registros/core.py`) agregam oferta e legado **sem separar por oferta**.
-  - `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
+- **D3b-2/J3 — frequência e relatórios por turma_id (parcialmente resolvido em D3b-2.0–2.6):** ramo legado ainda lê por `turma_id` (`app/utils/logica.py`, `app/utils/frequencia.py`); `Turma.freq_geral` (soma das ofertas, decisão D1) e `agregar_por_turma` (painel pedagógico, decisão D1) mantidos como visão por turma; BI `frequencia_por_turma` e indicadores de conselho (CRU-002/CRU-005) ainda filtram pela turma. **Resolvido:** N+1 de `freq_geral`/`freq_geral_oferta` na listagem (D3b-2.2); N+1 do histórico (D3b-2.3); estatísticas do GET `/frequencia` por oferta em 2+ ofertas (D3b-2.4); `min_freq` coerente com o valor exibido (D3b-2.5, D7); `f_prog` por `TurmaCurso.programa` (D3b-2.6); ALU-009/ALU-010 já aplicam `cond_inscricao_enturmada`. **Ainda pendente:** legado NULL sem backfill (decisão D2 — só regra D2); BI que ainda lê `Turma.programa` (projeção) em outros pontos (listagem, filtros, conselho) — fora do escopo da D3b-2.6; `excluir_turma`/limpeza de lançamentos em `editar_turma` ainda apagam por `turma_id` (D3).
 - **Fases 5–7 da Onda 4 (a redefinir):** autorização por professor da oferta, turno e centro de custo por oferta, transferências avançadas. Fases 8–9 e NOT NULL final (`c3d4e5f6a7b8` + `d4e5f6a7b8c9`) **concluídas**.
 - **`Transferencia`:** decidir se a tabela passa a registrar a oferta de origem/destino (hoje só `turma_origem_id`/`turma_destino_id`; rastrear exige `Inscricao`).
 - **`turma_lixeira`:** GET `/turmas/lixeira` renderiza `turma_lixeira.html` inexistente; não há rota para **reativar** turma desativada.

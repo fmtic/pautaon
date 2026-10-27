@@ -657,16 +657,77 @@ def calcular_frequencias_relatorio(
     p_geral = calc_pc(q_geral)
 
     f_prog: Dict[str, float] = {}
-    prog_query = db.session.query(Turma.programa).distinct().filter(Turma.ativo == True)
+    # ETAPA D3b-2.6: agrupamento por programa da OFERTA (TurmaCurso.programa),
+    # reusando a regra D2 do legado (oferta única ativa recebe as linhas
+    # legadas NULL; em turma sem oferta única ativa, o legado cai em
+    # Turma.programa, projeção). Fórmula §8.1 inalterada.
+    from collections import defaultdict
+
+    from app.services.frequencia_oferta import ofertas_unicas_ativas
+
+    # Ofertas ativas das turmas ativas no escopo.
+    ofertas_q = (
+        db.session.query(TurmaCurso.id, TurmaCurso.turma_id, TurmaCurso.programa)
+        .join(Turma, Turma.id == TurmaCurso.turma_id)
+        .filter(Turma.ativo == True)
+    )
     if unidade_id:
-        prog_query = prog_query.filter(Turma.unidade_id == unidade_id)
-    for prog, in prog_query.all():
-        q = Frequencia.query.join(
-            Turma, Frequencia.turma_id == Turma.id
-        ).filter(Turma.programa == prog, Turma.ativo == True)
-        if unidade_id:
-            q = q.filter(Turma.unidade_id == unidade_id)
-        f_prog[prog] = calc_pc(q)
+        ofertas_q = ofertas_q.filter(Turma.unidade_id == unidade_id)
+    ofertas_rows = ofertas_q.all()
+    ofertas_map: Dict[int, tuple[int, str]] = {
+        oid: (tid, prog) for oid, tid, prog in ofertas_rows
+    }
+    unicas = ofertas_unicas_ativas(list(ofertas_map.keys()))
+    turma_unica_oferta: Dict[int, int] = {
+        ofertas_map[oid][0]: oid for oid in unicas
+    }
+
+    # Programas distintos (ofertas + projeção das turmas sem oferta única).
+    programas_distintos: set[str] = {prog for _, _, prog in ofertas_rows}
+    turmas_scope = Turma.query.filter_by(ativo=True)
+    if unidade_id:
+        turmas_scope = turmas_scope.filter_by(unidade_id=unidade_id)
+    for t in turmas_scope.all():
+        if t.id not in turma_unica_oferta:
+            if t.programa:
+                programas_distintos.add(t.programa)
+
+    # Acumular presentes/faltas por programa (UMA consulta em Frequencia).
+    totais_por_prog: Dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    fq = (
+        db.session.query(
+            Frequencia.turma_id,
+            Frequencia.turma_curso_id,
+            Frequencia.conceito,
+            Turma.programa,
+        )
+        .join(Turma, Frequencia.turma_id == Turma.id)
+        .filter(Turma.ativo == True)
+    )
+    if unidade_id:
+        fq = fq.filter(Turma.unidade_id == unidade_id)
+    for tid, tcid, conceito, prog_turma in fq.all():
+        if conceito not in ("A", "B", "C", "D", "F"):
+            continue
+        # Programa da linha:
+        if tcid is not None and tcid in ofertas_map:
+            prog = ofertas_map[tcid][1]
+        else:
+            oid = turma_unica_oferta.get(tid)
+            if oid is not None:
+                prog = ofertas_map[oid][1]
+            else:
+                prog = prog_turma
+        if prog is None:
+            continue
+        if conceito in ("A", "B", "C", "D"):
+            totais_por_prog[prog][0] += 1
+        elif conceito == "F":
+            totais_por_prog[prog][1] += 1
+
+    for prog in sorted(programas_distintos):
+        pres, fal = totais_por_prog.get(prog, [0, 0])
+        f_prog[prog] = percentual(pres, fal)
 
     f_turma: Dict[str, float] = {}
     if todas_as_turmas:
