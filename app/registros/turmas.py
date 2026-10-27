@@ -647,7 +647,7 @@ def pos_filtrar_turmas(turmas, args):
         )
 
         persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
-        _agg_turma_freq = agregar_por_turma(persistidas)
+        _agg_turma_freq = agregar_por_turma([t.id for t in persistidas])
         principal_ids: list[int] = []
         for t in persistidas:
             carga_t = cargas.get(getattr(t, "id", None))
