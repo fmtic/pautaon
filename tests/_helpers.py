@@ -146,15 +146,3 @@ def nova_inscricao(
         db.session.add(inscricao)
         db.session.flush()
     return inscricao
-
-
-def grade_a_partir_do_legado(oferta, dias_semana=None, hora_inicio=None, hora_fim=None):
-    """Compatibilidade das sementes H2/H3 (H5a: só a grade é fonte).
-
-    Sem argumentos devolve a grade ATUAL da oferta (a semente já a criou). Com
-    ``dias_semana``/``hora_inicio``/``hora_fim`` grava a grade uniforme
-    correspondente e devolve as linhas resultantes.
-    """
-    if dias_semana is not None or hora_inicio is not None or hora_fim is not None:
-        aplicar_grade(oferta, dias_semana, hora_inicio, hora_fim)
-    return list(oferta.horarios)
