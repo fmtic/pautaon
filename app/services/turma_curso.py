@@ -29,6 +29,7 @@ quem chama (rotas) converter em `flash`.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_
@@ -1050,156 +1051,392 @@ def datas_esperadas_oferta(
     return datas_aula_oferta(oferta, limite=hoje, blocked=blocked)
 
 # =============================================================================
-# REATIVAÇÃO DE TURMA (L4)
+# REATIVAÇÃO DE TURMA (L4 / L4.1)
 # =============================================================================
 
+# Motivo gravado em `Inscricao.motivo_desativacao` pela exclusão lógica da
+# turma (`excluir_turma`); espelha `MOTIVO_INSCRICAO_TURMA_DESATIVADA` da rota.
+MOTIVO_TURMA_DESATIVADA = "TURMA_DESATIVADA"
 
-def preview_reativacao(turma: Turma) -> dict:
-    """Contagens para a listagem de lixeira (MESMA regra da reativação)."""
-    from datetime import date
+#: `acao` do `LogAcao`-marcador gravado por `excluir_turma` no caminho lógico.
+#: É o ÚNICO sinal confiável de quais ofertas foram desativadas JUNTO com a
+#: turma (L4.1): o `updated_at` não serve — o listener de auditoria grava
+#: `updated_at = now()` em toda oferta tocada pela exclusão, inclusive as que
+#: já estavam inativas (medido em PostgreSQL e SQLite).
+ACAO_EXCLUSAO_LOGICA_TURMA = "Excluir turma (lógica)"
 
-    from app import db
-    from app.models import Aluno, Inscricao
+_PADRAO_MARCADOR = re.compile(
+    r"\Aturma_id=(?P<turma>\d+)"
+    r" ofertas=\[(?P<ofertas>[\d,\s]*)\]"
+    r" inscricoes=\[(?P<inscricoes>[\d,\s]*)\]\Z"
+)
 
-    MOTIVO = "TURMA_DESATIVADA"
-    ofertas_inativas = [
-        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
-        if not o.ativo
-    ]
-    ofertas_ids = {o.id for o in ofertas_inativas}
-    elegiveis = 0
-    conflitos = 0
-    if ofertas_ids:
-        inscs = (
-            Inscricao.query
-            .filter(
-                Inscricao.turma_id == turma.id,
-                Inscricao.motivo_desativacao == MOTIVO,
-                Inscricao.turma_curso_id.in_(ofertas_ids),
-            )
-            .all()
-        )
-        for insc in inscs:
-            aluno = db.session.get(Aluno, insc.aluno_id)
-            if aluno is None or not aluno.ativo:
-                conflitos += 1
-                continue
-            outra = (
-                Inscricao.query
-                .filter(
-                    Inscricao.aluno_id == insc.aluno_id,
-                    Inscricao.turma_curso_id == insc.turma_curso_id,
-                    Inscricao.ativo.is_(True),
-                    Inscricao.id != insc.id,
-                )
-                .first()
-            )
-            if outra is not None:
-                conflitos += 1
-            else:
-                elegiveis += 1
 
-    periodo = turma.periodo_letivo
-    hoje = None
-    try:
-        from app.utils.timezone import get_local_now
-        hoje = get_local_now().date()
-    except Exception:
-        hoje = date.today()
-    periodo_encerrado = bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
+def _csv_ids(ids) -> str:
+    return ",".join(str(int(i)) for i in (ids or []))
 
+
+def _parse_ids(texto: str) -> list[int]:
+    return [int(p) for p in texto.replace(" ", "").split(",") if p]
+
+
+def formatar_marcador_exclusao(turma_id, oferta_ids, inscricao_ids) -> str:
+    """Texto do `detalhes` do LogAcao-marcador (parseável por linha)."""
+    return (
+        f"turma_id={int(turma_id)} ofertas=[{_csv_ids(oferta_ids)}] "
+        f"inscricoes=[{_csv_ids(inscricao_ids)}]"
+    )
+
+
+def parsear_marcador_exclusao(detalhes) -> dict | None:
+    """`{turma_id, ofertas, inscricoes}` ou `None` se o texto não é o marcador."""
+    if not detalhes:
+        return None
+    achado = _PADRAO_MARCADOR.match(str(detalhes).strip())
+    if not achado:
+        return None
     return {
-        "ofertas_reativar": len(ofertas_inativas),
-        "inscricoes_reativar": elegiveis,
+        "turma_id": int(achado.group("turma")),
+        "ofertas": _parse_ids(achado.group("ofertas")),
+        "inscricoes": _parse_ids(achado.group("inscricoes")),
+    }
+
+
+def gravar_marcador_exclusao(
+    turma_id, oferta_ids, inscricao_ids, *,
+    usuario_id=None, usuario_nome=None, ip=None, unidade_id=None,
+) -> None:
+    """Acrescenta o LogAcao-marcador da exclusão lógica (sem commit).
+
+    Chamado por `excluir_turma` na MESMA transação que desativa turma, ofertas
+    e inscrições — é isso que permite à reativação saber quais ofertas estavam
+    ativas. `oferta_ids` é a lista das que estavam **ativas** (as demais já
+    estavam fora da turma antes da exclusão e não podem voltar).
+    """
+    from app.models import LogAcao
+
+    db.session.add(LogAcao(
+        usuario_id=usuario_id,
+        usuario_nome=usuario_nome,
+        acao=ACAO_EXCLUSAO_LOGICA_TURMA,
+        detalhes=formatar_marcador_exclusao(turma_id, oferta_ids, inscricao_ids),
+        ip=ip,
+        unidade_id=unidade_id,
+    ))
+
+
+def _consulta_marcadores():
+    """Linhas de LogAcao-marcador (id, detalhes) da mais antiga para a mais nova."""
+    from app.models import LogAcao
+
+    return (
+        db.session.query(LogAcao.id, LogAcao.detalhes)
+        .filter(LogAcao.acao == ACAO_EXCLUSAO_LOGICA_TURMA)
+        .order_by(LogAcao.id)
+        .all()
+    )
+
+
+def marcador_exclusao_turma(turma_id: int) -> dict | None:
+    """Último marcador de exclusão lógica da turma (ou `None` se não há).
+
+    `None` é o caso da turma excluída ANTES desta versão: sem marcador não há
+    pré-seleção possível e a reativação exige escolha explícita.
+    """
+    prefixo = f"turma_id={int(turma_id)} ofertas="
+    from app.models import LogAcao
+
+    linhas = (
+        db.session.query(LogAcao.id, LogAcao.detalhes)
+        .filter(
+            LogAcao.acao == ACAO_EXCLUSAO_LOGICA_TURMA,
+            LogAcao.detalhes.startswith(prefixo, autoescape=True),
+        )
+        .order_by(LogAcao.id.desc())
+        .all()
+    )
+    for _id, detalhes in linhas:
+        marcador = parsear_marcador_exclusao(detalhes)
+        if marcador and marcador["turma_id"] == int(turma_id):
+            return marcador
+    return None
+
+
+def marcadores_exclusao_em_lote() -> dict[int, dict]:
+    """`{turma_id: marcador}` de UMA vez (última ocorrência por turma)."""
+    marcadores: dict[int, dict] = {}
+    for _id, detalhes in _consulta_marcadores():
+        marcador = parsear_marcador_exclusao(detalhes)
+        if marcador:
+            marcadores[marcador["turma_id"]] = marcador
+    return marcadores
+
+
+def _periodo_encerrado(turma: Turma, hoje: date) -> bool:
+    periodo = turma.periodo_letivo
+    return bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
+
+
+def _hoje_local() -> date:
+    try:
+        return get_local_now().date()
+    except Exception:  # relógio/fuso indisponível: cai no do sistema
+        return date.today()
+
+
+def _selecionar_ofertas_reativacao(
+    inativas: list[TurmaCurso], marcador: dict | None, oferta_ids,
+) -> tuple[list[TurmaCurso], str | None]:
+    """`(selecionadas, motivo_recusa)` — regra única da pré-visualização e da
+    reativação (L4.1).
+
+    - `oferta_ids` informado (escolha explícita do operador na lixeira): só
+      podem ser ofertas inativas desta turma; qualquer outra coisa é recusada.
+    - `oferta_ids` ausente: usa a pré-seleção do marcador da exclusão lógica.
+      Sem marcador (turma excluída antes desta versão) nada é pré-marcado.
+    """
+    if oferta_ids is not None:
+        pedidos = [int(i) for i in oferta_ids]
+        por_id = {o.id: o for o in inativas}
+        invalidos = [i for i in pedidos if i not in por_id]
+        if invalidos:
+            return [], (
+                "A seleção contém curso(s) que não são ofertas inativas desta "
+                f"turma (ids {', '.join(str(i) for i in invalidos)})."
+            )
+        return [por_id[i] for i in dict.fromkeys(pedidos)], None
+
+    if marcador is None:
+        return [], None
+    do_marcador = set(marcador["ofertas"])
+    return [o for o in inativas if o.id in do_marcador], None
+
+
+def _classificar_inscricoes(
+    candidatas, ids_reativar, alunos_ativos, pares_ativos,
+) -> tuple[list, list]:
+    """`(reativaveis, conflitos)` das inscrições marcadas TURMA_DESATIVADA.
+
+    Só voltam as inscrições das ofertas que serão reativadas; aluno inativo ou
+    inscrição ativa do mesmo aluno na mesma oferta (outra linha) é conflito e
+    permanece inativa. `pares_ativos` é `{(aluno_id, turma_curso_id)}` das
+    inscrições ativas da turma.
+    """
+    reativaveis, conflitos = [], []
+    for insc in candidatas:
+        if insc.turma_curso_id not in ids_reativar:
+            continue
+        if insc.aluno_id not in alunos_ativos:
+            conflitos.append(insc.id)
+            continue
+        if (insc.aluno_id, insc.turma_curso_id) in pares_ativos:
+            conflitos.append(insc.id)
+            continue
+        reativaveis.append(insc)
+    return reativaveis, conflitos
+
+
+def _contexto_reativacao_em_lote(turmas) -> dict[int, dict]:
+    """Carga em lote das ofertas/inscrições/marcadores de N turmas.
+
+    Número de SELECTs CONSTANTE (ofertas, inscrições candidatas, alunos,
+    inscrições ativas, marcadores), independentemente de quantas turmas a
+    listagem mostra — sem N+1 na lixeira.
+    """
+    turma_ids = [t.id for t in turmas]
+    if not turma_ids:
+        return {}
+
+    ofertas_por_turma: dict[int, list[TurmaCurso]] = {tid: [] for tid in turma_ids}
+    for oferta in (
+        TurmaCurso.query
+        .options(joinedload(TurmaCurso.curso))
+        .filter(TurmaCurso.turma_id.in_(turma_ids))
+        .order_by(TurmaCurso.id)
+        .all()
+    ):
+        ofertas_por_turma.setdefault(oferta.turma_id, []).append(oferta)
+
+    candidatas_por_turma: dict[int, list[Inscricao]] = {tid: [] for tid in turma_ids}
+    for insc in (
+        Inscricao.query
+        .filter(
+            Inscricao.turma_id.in_(turma_ids),
+            Inscricao.motivo_desativacao == MOTIVO_TURMA_DESATIVADA,
+        )
+        .all()
+    ):
+        candidatas_por_turma.setdefault(insc.turma_id, []).append(insc)
+
+    aluno_ids = {i.aluno_id for lista in candidatas_por_turma.values() for i in lista}
+    alunos_ativos = {
+        aid for (aid,) in
+        db.session.query(Aluno.id).filter(Aluno.id.in_(aluno_ids), Aluno.ativo.is_(True))
+    } if aluno_ids else set()
+
+    pares_ativos = {
+        (aid, oid) for aid, oid in
+        db.session.query(Inscricao.aluno_id, Inscricao.turma_curso_id).filter(
+            Inscricao.turma_id.in_(turma_ids), Inscricao.ativo.is_(True)
+        )
+    }
+
+    marcadores = marcadores_exclusao_em_lote()
+    contexto = {}
+    por_turma = {t.id: t for t in turmas}
+    for tid in turma_ids:
+        contexto[tid] = {
+            "turma": por_turma[tid],
+            "ofertas": ofertas_por_turma.get(tid, []),
+            "candidatas": candidatas_por_turma.get(tid, []),
+            "alunos_ativos": alunos_ativos,
+            "pares_ativos": pares_ativos,
+            "marcador": marcadores.get(tid),
+        }
+    return contexto
+
+
+def _avaliar_reativacao(dados: dict, *, hoje: date, oferta_ids=None) -> dict:
+    """Núcleo comum: o que a lixeira mostra e o que `reativar_turma` faz."""
+    turma = dados["turma"]
+    ofertas = dados["ofertas"]
+    inativas = [o for o in ofertas if not o.ativo]
+    ativas = [o for o in ofertas if o.ativo]
+    marcador = dados["marcador"]
+
+    selecionadas, recusa = _selecionar_ofertas_reativacao(inativas, marcador, oferta_ids)
+    ids_reativar = {o.id for o in selecionadas}
+    reativaveis, conflitos = _classificar_inscricoes(
+        dados["candidatas"], ids_reativar,
+        dados["alunos_ativos"], dados["pares_ativos"],
+    )
+
+    lista_final = ativas + list(selecionadas)
+    principals = [o for o in lista_final if o.principal]
+    viola_principal = len(lista_final) >= 2 and len(principals) != 1
+
+    periodo_encerrado = _periodo_encerrado(turma, hoje)
+    return {
+        "turma": turma,
+        "marcador": marcador,
+        "inativas": inativas,
+        "selecionadas": selecionadas,
+        "ids_reativar": ids_reativar,
+        "mantidas_inativas": [o for o in inativas if o.id not in ids_reativar],
+        "reativaveis": reativaveis,
         "conflitos": conflitos,
+        "viola_principal": viola_principal,
+        "recusa_selecao": recusa,
+        "tem_marcador": marcador is not None,
         "periodo_encerrado": periodo_encerrado,
     }
 
 
-def reativar_turma(turma: Turma, *, confirmar_periodo_encerrado: bool = False) -> dict:
-    """Reativa uma turma logicamente excluída (sem commit)."""
-    from datetime import date
+def _montar_preview(avaliacao: dict) -> dict:
+    """View da lixeira: uma linha por oferta inativa, com a origem dela."""
+    do_marcador = set(avaliacao["marcador"]["ofertas"]) if avaliacao["tem_marcador"] else set()
+    return {
+        "ofertas": [
+            {
+                "id": o.id,
+                "curso": _nome_curso(o),
+                "reativar": o.id in avaliacao["ids_reativar"],
+                "na_exclusao": o.id in do_marcador,
+                "vigencia": _formatar_vigencia(o),
+            }
+            for o in avaliacao["inativas"]
+        ],
+        "ofertas_reativar": len(avaliacao["selecionadas"]),
+        "ofertas_inativas": len(avaliacao["inativas"]),
+        "inscricoes_reativar": len(avaliacao["reativaveis"]),
+        "conflitos": len(avaliacao["conflitos"]),
+        "periodo_encerrado": avaliacao["periodo_encerrado"],
+        "tem_marcador": avaliacao["tem_marcador"],
+        "viola_principal": avaliacao["viola_principal"],
+    }
 
-    from app import db
-    from app.models import Aluno, Inscricao, TurmaCurso
 
-    MOTIVO = "TURMA_DESATIVADA"
+def preview_reativacao(turma: Turma) -> dict:
+    """Resumo da reativação de UMA turma (MESMA regra de `reativar_turma`).
 
-    periodo = turma.periodo_letivo
-    hoje = None
-    try:
-        from app.utils.timezone import get_local_now
-        hoje = get_local_now().date()
-    except Exception:
-        hoje = date.today()
-    periodo_encerrado = bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
-    if periodo_encerrado and not confirmar_periodo_encerrado:
+    A listagem da lixeira usa `previews_reativacao_em_lote` (carga única); esta
+    entrada avulsa serve a chamadas isoladas.
+    """
+    dados = _contexto_reativacao_em_lote([turma])[turma.id]
+    return _montar_preview(_avaliar_reativacao(dados, hoje=_hoje_local()))
+
+
+def previews_reativacao_em_lote(turmas) -> dict[int, dict]:
+    """Pré-visualização de várias turmas com carga única (sem N+1 na lixeira)."""
+    contexto = _contexto_reativacao_em_lote(turmas)
+    hoje = _hoje_local()
+    previews = {}
+    for turma in turmas:
+        dados = contexto.get(turma.id)
+        if dados is None:
+            continue
+        previews[turma.id] = _montar_preview(_avaliar_reativacao(dados, hoje=hoje))
+    return previews
+
+
+def reativar_turma(
+    turma: Turma, *,
+    confirmar_periodo_encerrado: bool = False,
+    oferta_ids: list[int] | tuple[int, ...] | None = None,
+) -> dict:
+    """Reativa uma turma logicamente excluída (sem commit) — L4/L4.1.
+
+    Só voltam as ofertas **desativadas junto com a turma**: a pré-seleção vem do
+    LogAcao-marcador gravado por `excluir_turma` e o operador pode ajustar a
+    lista (`oferta_ids` da lixeira). Oferta desativada ANTES (removida do curso
+    pela rota `turma_oferta_desativar`) permanece inativa — ressuscitá-la
+    violaria a intenção do responsável e a regra de curso principal.
+
+    Toda validação roda antes de qualquer mutação: violação recusa a operação
+    inteira, sem alteração parcial (quem chama faz `rollback` no `ValueError`).
+    """
+    contexto = _contexto_reativacao_em_lote([turma])
+    hoje = _hoje_local()
+    avaliacao = _avaliar_reativacao(contexto[turma.id], hoje=hoje, oferta_ids=oferta_ids)
+
+    if avaliacao["periodo_encerrado"] and not confirmar_periodo_encerrado:
         raise ValueError(
             "O período letivo da turma já encerrou. Confirme a reativação."
         )
-
-    ofertas_inativas = [
-        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
-        if not o.ativo
-    ]
-
-    ativas_apos = [
-        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
-        if o.ativo or o in ofertas_inativas
-    ]
-    principals = [o for o in ativas_apos if o.principal]
-    if len(ativas_apos) >= 2 and len(principals) != 1:
+    if avaliacao["recusa_selecao"]:
+        raise ValueError(avaliacao["recusa_selecao"])
+    if not avaliacao["tem_marcador"] and oferta_ids is None and avaliacao["inativas"]:
+        raise ValueError(
+            "Não há registro de quais cursos foram desativados junto com a turma "
+            "(exclusão anterior a esta versão). Escolha explicitamente os cursos "
+            "a reativar."
+        )
+    if avaliacao["inativas"] and not avaliacao["selecionadas"]:
+        raise ValueError(
+            "Selecione ao menos um curso para reativar junto com a turma."
+        )
+    if avaliacao["viola_principal"]:
         raise ValueError(
             "Reativação violaria a regra de curso principal (2+ ofertas ativas "
             "exigem exatamente 1 principal). Ajuste antes de reativar."
         )
 
     turma.ativo = True
-
-    ofertas_reativadas = 0
-    for o in ofertas_inativas:
-        o.ativo = True
-        ofertas_reativadas += 1
-
-    ofertas_ids = {o.id for o in ofertas_inativas}
-    inscricoes_reativadas = 0
-    conflitos: list[int] = []
-    if ofertas_ids:
-        inscs = (
-            Inscricao.query
-            .filter(
-                Inscricao.turma_id == turma.id,
-                Inscricao.motivo_desativacao == MOTIVO,
-                Inscricao.turma_curso_id.in_(ofertas_ids),
-            )
-            .all()
-        )
-        for insc in inscs:
-            aluno = db.session.get(Aluno, insc.aluno_id)
-            if aluno is None or not aluno.ativo:
-                conflitos.append(insc.id)
-                continue
-            outra = (
-                Inscricao.query
-                .filter(
-                    Inscricao.aluno_id == insc.aluno_id,
-                    Inscricao.turma_curso_id == insc.turma_curso_id,
-                    Inscricao.ativo.is_(True),
-                    Inscricao.id != insc.id,
-                )
-                .first()
-            )
-            if outra is not None:
-                conflitos.append(insc.id)
-                continue
-            insc.ativo = True
-            insc.data_desativacao = None
-            insc.motivo_desativacao = None
-            inscricoes_reativadas += 1
+    for oferta in avaliacao["selecionadas"]:
+        oferta.ativo = True
+    for insc in avaliacao["reativaveis"]:
+        insc.ativo = True
+        insc.data_desativacao = None
+        insc.motivo_desativacao = None
 
     return {
-        "ofertas_reativadas": ofertas_reativadas,
-        "inscricoes_reativadas": inscricoes_reativadas,
-        "conflitos": conflitos,
-        "periodo_encerrado": periodo_encerrado,
+        "ofertas_reativadas": len(avaliacao["selecionadas"]),
+        "ofertas_reativadas_ids": [o.id for o in avaliacao["selecionadas"]],
+        "cursos_reativados": [_nome_curso(o) for o in avaliacao["selecionadas"]],
+        "ofertas_inativas_restantes": [
+            {"id": o.id, "curso": _nome_curso(o)} for o in avaliacao["mantidas_inativas"]
+        ],
+        "inscricoes_reativadas": len(avaliacao["reativaveis"]),
+        "conflitos": list(avaliacao["conflitos"]),
+        "periodo_encerrado": avaliacao["periodo_encerrado"],
     }

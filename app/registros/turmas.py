@@ -30,6 +30,7 @@ from app.services.turma_curso import (
     desativar_oferta,
     datas_aula_oferta,
     editar_oferta,
+    gravar_marcador_exclusao,
     ofertas_ativas,
     sincronizar_programa_turma,
     turma_tem_historico,
@@ -1054,43 +1055,24 @@ def turma_lixeira():
     # Visão Global: somente leitura, sem botão.
     visao_global = unidade_id is None
 
-    stmt = select(Turma).where(Turma.ativo.is_(False))
+    stmt = select(Turma).where(Turma.ativo.is_(False)).options(
+        joinedload(Turma.periodo_letivo)
+    )
     if unidade_id:
         stmt = stmt.where(Turma.unidade_id == unidade_id)
-    turmas = db.session.execute(
-        stmt.order_by(Turma.nome)
-    ).scalars().all()
+    turmas = db.session.execute(stmt.order_by(Turma.nome)).scalars().unique().all()
 
-    # Contagens em lote (sem N+1).
-    turma_ids = [t.id for t in turmas]
-    ofertas_por_turma: dict[int, list] = {tid: [] for tid in turma_ids}
-    if turma_ids:
-        for o in TurmaCurso.query.filter(
-            TurmaCurso.turma_id.in_(turma_ids)
-        ).all():
-            ofertas_por_turma.setdefault(o.turma_id, []).append(o)
+    # Pré-visualização com a MESMA regra de `reativar_turma`, em carga única
+    # (ofertas, inscrições, alunos, marcadores) — sem N+1 por turma (L4.1).
+    from app.services.turma_curso import previews_reativacao_em_lote
 
-    # inscrições elegíveis por turma (motivo TURMA_DESATIVADA)
-    insc_por_turma: dict[int, list] = {tid: [] for tid in turma_ids}
-    if turma_ids:
-        for insc in Inscricao.query.filter(
-            Inscricao.turma_id.in_(turma_ids),
-            Inscricao.motivo_desativacao == "TURMA_DESATIVADA",
-        ).all():
-            insc_por_turma.setdefault(insc.turma_id, []).append(insc)
-
-    from app.services.turma_curso import preview_reativacao
-
-    previews = {}
-    for t in turmas:
-        previews[t.id] = preview_reativacao(t)
+    previews = previews_reativacao_em_lote(turmas)
 
     return render_template(
         "turmas/turma_lixeira.html",
         turmas=turmas,
         visao_global=visao_global,
         previews=previews,
-        ofertas_por_turma=ofertas_por_turma,
     )
 
 
@@ -1108,11 +1090,26 @@ def reativar_turma_route(id):
     assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
 
     confirmar = request.form.get("confirmar_periodo") == "1"
+    # A lixeira sempre envia a seleção explícita (`selecao_explicita`), inclusive
+    # quando nenhuma oferta vem marcada — assim "desmarcar tudo" é recusa do
+    # serviço, e não pré-seleção silenciosa do marcador.
+    oferta_ids = None
+    if request.form.get("selecao_explicita") == "1":
+        try:
+            oferta_ids = [int(v) for v in request.form.getlist("oferta_ids") if v]
+        except ValueError:
+            db.session.rollback()
+            flash("Seleção de cursos inválida.", "danger")
+            return redirect(url_for("registros.turma_lixeira"))
 
     from app.services.turma_curso import reativar_turma as _reativar
 
     try:
-        resultado = _reativar(turma_obj, confirmar_periodo_encerrado=confirmar)
+        resultado = _reativar(
+            turma_obj,
+            confirmar_periodo_encerrado=confirmar,
+            oferta_ids=oferta_ids,
+        )
         db.session.commit()
     except ValueError as exc:
         db.session.rollback()
@@ -1141,8 +1138,19 @@ def reativar_turma_route(id):
         f"Turma reativada: {resultado['ofertas_reativadas']} oferta(s) e "
         f"{resultado['inscricoes_reativadas']} inscrição(ões) reativadas."
     )
+    if resultado["cursos_reativados"]:
+        msg += f" Cursos que voltaram: {'; '.join(resultado['cursos_reativados'])}."
+    if resultado["ofertas_inativas_restantes"]:
+        nomes = "; ".join(o["curso"] for o in resultado["ofertas_inativas_restantes"])
+        msg += (
+            f" Permanecem inativos (desativados antes da exclusão da turma ou "
+            f"fora da seleção): {nomes}."
+        )
     if resultado["conflitos"]:
-        msg += f" {len(resultado['conflitos'])} inscrição(ões) permaneceram inativas por conflito."
+        msg += (
+            f" {len(resultado['conflitos'])} inscrição(ões) permaneceram "
+            "inativas (aluno inativo ou já matriculado na oferta)."
+        )
     flash(msg, "success")
     return redirect(url_for("registros.turma_lixeira"))
 
@@ -2278,15 +2286,33 @@ def excluir_turma(id):
             # ConselhoClasse, Transferencia e as inscrições (mantém o vínculo
             # histórico); só desativa turma, ofertas e inscrições ativas.
             turma_obj.ativo = False
+            # L4.1: o marcador guarda SÓ as ofertas que estavam ativas — oferta
+            # já removida do curso antes da exclusão não pode voltar.
+            ofertas_reativaveis = []
             for oferta in TurmaCurso.query.filter_by(turma_id=id).all():
+                if oferta.ativo:
+                    ofertas_reativaveis.append(oferta.id)
                 oferta.ativo = False
             agora = get_local_now()
+            inscricoes_desativadas = []
             for inscricao in Inscricao.query.filter_by(turma_id=id, ativo=True).all():
                 inscricao.ativo = False
                 inscricao.data_desativacao = agora
                 # Mesmo mecanismo da desenturmação/transferência: motivo em
                 # CAIXA-ALTA, sem acento (ver alunos.py: "TRANSFERENCIA").
                 inscricao.motivo_desativacao = MOTIVO_INSCRICAO_TURMA_DESATIVADA
+                inscricoes_desativadas.append(inscricao.id)
+            # Marcador L4.1 na MESMA transação (sem commit próprio): é o único
+            # sinal de quem saiu da turma junto com ela — o `updated_at` não
+            # serve, porque o listener de auditoria o reescreve também nas
+            # ofertas que já estavam inativas.
+            gravar_marcador_exclusao(
+                id, ofertas_reativaveis, inscricoes_desativadas,
+                usuario_id=current_user.id,
+                usuario_nome=current_user.name,
+                ip=request.remote_addr,
+                unidade_id=turma_obj.unidade_id,
+            )
             db.session.commit()
             flash(
                 "Turma desativada: possui lançamentos, o histórico foi preservado.",
