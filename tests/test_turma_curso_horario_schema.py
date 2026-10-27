@@ -2,7 +2,7 @@
 
 Cobre as constraints portáveis da grade por dia da oferta e os vínculos:
     - UNIQUE `uix_turma_curso_horario_dia` (turma_curso_id, dia_semana).
-    - CHECK `ck_tch_dia` (domínio 0-6).
+    - CHECK `ck_tch_dia` (domínio 0-5).
     - CHECK `ck_tch_par` (ambos NULL ou ambos preenchidos).
     - CHECK `ck_tch_fim_maior` (fim > início quando preenchidos).
     - FK `turma_curso_id` ON DELETE CASCADE (apagar a oferta apaga a grade).
@@ -109,14 +109,24 @@ def test_mesmo_dia_em_ofertas_diferentes_permitido(app):
     assert TurmaCursoHorario.query.filter_by(dia_semana=1).count() == 2
 
 
-# --- CHECK domínio 0-6 --------------------------------------------------------
+# --- CHECK domínio 0-5 --------------------------------------------------------
 def test_check_dia_fora_do_domainio_recusado(app):
     i = _seed()
-    for invalido in (-1, 7):
+    for invalido in (-1, 6, 7):
         with pytest.raises(IntegrityError):
             _linha(i["oferta"], invalido)
             db.session.commit()
         db.session.rollback()
+
+
+def test_check_dia_0_e_5_aceitos(app):
+    i = _seed()
+    _linha(i["oferta"], 0, time(9, 0), time(10, 0))
+    _linha(i["oferta"], 5, time(9, 0), time(10, 0))
+    db.session.commit()
+    assert TurmaCursoHorario.query.filter_by(
+        turma_curso_id=i["oferta"]
+    ).count() == 2
 
 
 # --- CHECK par (ambos NULL ou ambos preenchidos) ------------------------------
@@ -193,7 +203,7 @@ def test_excluir_turma_fisicoContinua_funcionando_com_grade(app):
 # --- Ordenação do relacionamento ----------------------------------------------
 def test_relacionamento_ordena_por_dia(app):
     i = _seed()
-    # Insere fora de ordem; a relação deve vir 0->6.
+    # Insere fora de ordem; a relação deve vir 0->5.
     _linha(i["oferta"], 5, time(13, 0), time(15, 0))
     _linha(i["oferta"], 0, time(9, 0), time(10, 0))
     _linha(i["oferta"], 2, time(9, 0), time(10, 0))
