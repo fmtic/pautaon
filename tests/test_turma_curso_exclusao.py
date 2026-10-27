@@ -93,8 +93,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
 
         turma = Turma(
             nome="T excl", unidade_id=u1.id, ativo=True, curso_id=cA.id,
-            professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            professor_id=p1.id, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(turma)
@@ -105,8 +104,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
             o = TurmaCurso(
                 turma_id=turma.id, curso_id=(cA.id if i == 0 else cB.id),
                 unidade_id=u1.id, ativo=True, principal=(i == 0),
-                professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-                hora_inicio=time(9, 0), hora_fim=time(10, 0),
+                professor_id=p1.id, turno="Manhã",
                 data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
             )
             db.session.add(o)

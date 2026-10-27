@@ -24,6 +24,8 @@ from app.services.turma_curso import (
 from app.services.turma_curso_horario import definir_grade
 from config import Config
 
+from _helpers import itens_grade
+
 
 class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -94,9 +96,7 @@ def _oferta(base, curso, dias, ini, fim, data_ini=None, data_fim=None, principal
         curso_id=curso,
         principal=principal,
         programa="Teste",
-        dias_semana=dias,
-        hora_inicio=ini,
-        hora_fim=fim,
+        agenda=itens_grade(dias, ini, fim),
         data_inicio=data_ini,
         data_fim=data_fim,
     )
@@ -159,7 +159,7 @@ def test_edicao_que_cria_conflito_gera_aviso_texto_exato(base):
     o2 = _oferta(base, base["c2"], "Terça", time(8), time(12))
     assert o2.avisos_horario == []
 
-    editar_oferta(o2, dias_semana="Segunda")
+    editar_oferta(o2, agenda=itens_grade("Segunda", time(8), time(12)))
     assert o2.avisos_horario == [
         "Horário concomitante com 'Carpintaria' "
         "(Segunda, 08:00–12:00). A oferta foi salva."

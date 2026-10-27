@@ -69,7 +69,6 @@ def _seed():
     db.session.flush()
     turma = Turma(
         nome="Turma grade", unidade_id=unidade.id, ativo=True,
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)

@@ -10,13 +10,16 @@ podiam ficar omissos nas sementes:
       passou a ``nullable=False``. Não existe mais inscrição "sem curso" (NULL);
       o vínculo do aluno é sempre uma oferta concreta ``TurmaCurso``.
 
-Estes dois helpers centralizam os preenchimentos obrigatórios para que as
-sementes não repitam o boilerplate nem violem os NOT NULL, mantendo a
-finalidade de cada teste.
+H5a (agenda só na grade): as sementes NÃO escrevem mais as colunas escalares
+``dias_semana``/``hora_inicio``/``hora_fim`` de ``Turma``/``TurmaCurso``. Este
+módulo concentra o caminho único para montar a agenda de uma oferta:
 
-``nova_oferta`` cria e persiste (add + flush) uma ``TurmaCurso`` com programa
-por omissão; aceite ``salvar=False`` apenas para montar o objeto sem gravar
-(ex.: quando o teste quer forçar um IntegrityError no commit).
+``aplicar_grade(oferta, dias_semana, hora_inicio, hora_fim)`` → grava a grade
+uniforme equivalente (CSV de dias + par único) via ``definir_grade``.
+
+``nova_oferta(..., dias_semana=..., hora_inicio=..., hora_fim=...)`` continua
+aceitando o trio por compatibilidade, mas o converte em grade — o construtor
+do modelo nunca recebe as colunas escalares.
 
 ``nova_inscricao`` cria e persiste uma ``Inscricao`` sempre vinculada a uma
 oferta (``turma_curso_id`` obrigatório).
@@ -24,11 +27,53 @@ oferta (``turma_curso_id`` obrigatório).
 
 from app import db
 from app.models import Inscricao, TurmaCurso
-
+from app.services.turma_curso_horario import definir_grade, grade_da_oferta
 from app.utils.dias_semana import csv_para_weekdays
 
 #: Programa padrão usado pelas sementes quando o teste não exige um específico.
 PROGRAMA_PADRAO = "Programa de Teste"
+
+
+def itens_grade(dias_semana, hora_inicio, hora_fim):
+    """``[(weekday, início, fim)]`` de um CSV de dias + par único (uniforme).
+
+    Descarta domingo (fora do domínio gravável 0–5) e devolve lista vazia
+    quando falta dia ou horário — o chamador decide (normalmente erro de
+    contrato, já que toda oferta tem agenda completa desde o H2).
+    """
+    dias = [d for d in csv_para_weekdays(dias_semana) if 0 <= d <= 5]
+    if not dias or hora_inicio is None or hora_fim is None:
+        return []
+    return [(d, hora_inicio, hora_fim) for d in sorted(set(dias))]
+
+
+def aplicar_grade(
+    oferta,
+    dias_semana,
+    hora_inicio,
+    hora_fim,
+    *,
+    salvar=True,
+):
+    """Grava na oferta a grade uniforme equivalente ao CSV + par informado.
+
+    Substitui o antigo hábito de semear ``dias_semana``/``hora_inicio``/
+    ``hora_fim`` no construtor do modelo (H5a: a grade é a única fonte).
+    Devolve os itens aplicados; não faz commit (só ``flush`` opcional).
+    """
+    itens = itens_grade(dias_semana, hora_inicio, hora_fim)
+    if itens:
+        definir_grade(oferta, itens)
+    if salvar:
+        db.session.flush()
+    return itens
+
+
+def grade_atual(oferta):
+    """Itens ``(dia, início, fim)`` da grade da oferta (leitura auxiliar)."""
+    return [
+        (l.dia_semana, l.hora_inicio, l.hora_fim) for l in grade_da_oferta(oferta)
+    ]
 
 
 def nova_oferta(
@@ -40,9 +85,21 @@ def nova_oferta(
     ativo=True,
     principal=False,
     salvar=True,
+    dias_semana=None,
+    hora_inicio=None,
+    hora_fim=None,
+    grade=None,
     **campos,
 ):
-    """Cria uma ``TurmaCurso`` com ``programa`` preenchido (NOT NULL)."""
+    """Cria uma ``TurmaCurso`` com ``programa`` preenchido (NOT NULL).
+
+    A agenda NUNCA vai para o construtor: ``dias_semana``/``hora_inicio``/
+    ``hora_fim`` (ou ``grade=[(dia, início, fim), ...]``) viram linhas de
+    ``turma_curso_horario`` via ``definir_grade`` (H5a).
+
+    Aceita ``salvar=False`` apenas para montar o objeto sem gravar (ex.: quando
+    o teste quer forçar um IntegrityError no commit).
+    """
     oferta = TurmaCurso(
         turma_id=turma_id,
         curso_id=curso_id,
@@ -52,9 +109,15 @@ def nova_oferta(
         principal=principal,
         **campos,
     )
-    if salvar:
-        db.session.add(oferta)
-        db.session.flush()
+    if not salvar:
+        return oferta
+    db.session.add(oferta)
+    db.session.flush()
+    itens = list(grade) if grade is not None else itens_grade(
+        dias_semana, hora_inicio, hora_fim
+    )
+    if itens:
+        definir_grade(oferta, itens)
     return oferta
 
 
@@ -85,29 +148,13 @@ def nova_inscricao(
     return inscricao
 
 
-def grade_a_partir_do_legado(oferta):
-    """Cria a grade uniforme equivalente às colunas escalares da oferta.
+def grade_a_partir_do_legado(oferta, dias_semana=None, hora_inicio=None, hora_fim=None):
+    """Compatibilidade das sementes H2/H3 (H5a: só a grade é fonte).
 
-    Lê `oferta.dias_semana` (CSV) e o par `hora_inicio`/`hora_fim`, resolve os
-    dias pelo conversor único e insere uma linha `TurmaCursoHorario` por dia
-    com o mesmo par de horários (grade uniforme = projeção idempotente). Não
-    faz commit. Usado pelos testes de H2/H3 para popular a grade a partir de
-    uma oferta legada já criada.
-
-    Devolve a lista de linhas inseridas.
+    Sem argumentos devolve a grade ATUAL da oferta (a semente já a criou). Com
+    ``dias_semana``/``hora_inicio``/``hora_fim`` grava a grade uniforme
+    correspondente e devolve as linhas resultantes.
     """
-    from app.models import TurmaCursoHorario
-
-    dias = csv_para_weekdays(oferta.dias_semana)
-    linhas = []
-    for dia in sorted(set(dias)):
-        linha = TurmaCursoHorario(
-            turma_curso_id=oferta.id,
-            dia_semana=dia,
-            hora_inicio=oferta.hora_inicio,
-            hora_fim=oferta.hora_fim,
-        )
-        db.session.add(linha)
-        linhas.append(linha)
-    db.session.flush()
-    return linhas
+    if dias_semana is not None or hora_inicio is not None or hora_fim is not None:
+        aplicar_grade(oferta, dias_semana, hora_inicio, hora_fim)
+    return list(oferta.horarios)

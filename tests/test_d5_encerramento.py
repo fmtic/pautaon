@@ -52,7 +52,7 @@ def _turma_extra(app, ids, *, nome, unidade_id, com_oferta=True):
     with app.app_context():
         turma = Turma(
             nome=nome, turno="Tarde", data_inicio=None, data_fim=None,
-            dias_semana="Terca", unidade_id=unidade_id, ativo=True,
+            unidade_id=unidade_id, ativo=True,
         )
         db.session.add(turma)
         db.session.flush()
@@ -73,7 +73,7 @@ def _unidade_b_com_turma(app, ids):
         db.session.flush()
         turma_b = Turma(
             nome="Turma B", turno="Manhã",
-            dias_semana="Segunda", unidade_id=un_b.id, ativo=True,
+            unidade_id=un_b.id, ativo=True,
         )
         db.session.add(turma_b)
         db.session.flush()

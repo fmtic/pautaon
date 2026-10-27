@@ -121,8 +121,9 @@ def test_mensagem_grade_vazia(app):
 
 # --- atomicidade em nível de banco ----------------------------------------------
 def test_grade_invalida_nao_altera_nada_no_banco(app):
-    """Erro no meio da lista não encosta nas linhas nem na projeção já
-    persistidas — verificado por releitura do BANCO após rollback."""
+    """Erro no meio da lista não encosta nas linhas já persistidas —
+    verificado por releitura do BANCO após rollback (H5a: a grade é a única
+    fonte, não há projeção escalar a preservar)."""
     o = _oferta()
     definir_grade(o, [(0, time(9, 0), time(10, 0)), (2, time(9, 0), time(10, 0))])
     db.session.commit()
@@ -141,9 +142,6 @@ def test_grade_invalida_nao_altera_nada_no_banco(app):
         (0, time(9, 0), time(10, 0)),
         (2, time(9, 0), time(10, 0)),
     ]
-    # projeção intacta (dias + par uniforme)
-    assert oferta_ok.dias_semana == "Segunda, Quarta"
-    assert oferta_ok.hora_inicio == time(9, 0) and oferta_ok.hora_fim == time(10, 0)
     assert TurmaCursoHorario.query.count() == 2
 
 

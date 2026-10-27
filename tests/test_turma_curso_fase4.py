@@ -36,6 +36,8 @@ from app.registros.core import _alunos_da_oferta
 from app.utils.frequencia import frequencias_lancadas
 from config import Config
 
+from _helpers import aplicar_grade, itens_grade
+
 
 class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -143,7 +145,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
 
         turma = Turma(
             nome="Turma D3a", unidade_id=unidade.id, ativo=True, curso_id=None,
-            data_inicio=DATA_AULA, data_fim=DATA_AULA, dias_semana="Segunda",
+            data_inicio=DATA_AULA, data_fim=DATA_AULA,
         )
         db.session.add(turma)
         db.session.flush()
@@ -158,6 +160,9 @@ def _sem_cenario(pares, cria_outra_turma=False):
                 unidade_id=unidade.id, ativo=True, programa="Teste",
             )
             db.session.add(oferta)
+            db.session.flush()
+            # H5a: agenda só na grade (Segunda, dia da DATA_AULA).
+            aplicar_grade(oferta, "Segunda", time(8), time(10))
             aluno = Aluno(nome=nome_aluno, unidade_id=unidade.id, ativo=True)
             db.session.add(aluno)
             db.session.flush()
@@ -316,10 +321,10 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
     db.session.commit()
 
     # Adiciona a 2ª oferta (B) sem data_inicio: turma encerrada → não usa hoje.
-    # Agenda explícita (H2): com vínculo legado espelhado, a herança não se aplica.
+    # Agenda explícita (H5a): sem `agenda`/grade herdada a oferta é recusada.
     oferta = adicionar_oferta(
         turma, curso_id=curso_b.id, principal=False, programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(8), hora_fim=time(12),
+        agenda=itens_grade("Segunda", time(8), time(12)),
     )
 
     assert getattr(oferta, "inicio_ajustado_para_hoje", False) is False
@@ -365,12 +370,14 @@ def _seed_servico(*, ofertas):
         db.session.flush()
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-            ativo=True, principal=(i == 0), dias_semana=cfg.get("dias"),
+            ativo=True, principal=(i == 0),
             data_inicio=cfg.get("ini"), data_fim=cfg.get("fim"),
             programa="Teste",
         )
         db.session.add(oferta)
         db.session.flush()
+        # H5a: os dias/horas do cenário vão para a GRADE da oferta.
+        aplicar_grade(oferta, cfg.get("dias"), time(8), time(10))
         ofertas_out.append(oferta)
         cursos[cfg["curso"]] = curso.id
         for nome in cfg.get("alunos", []):
@@ -408,7 +415,7 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
         db.session.add(resp)
         turma = Turma(
             nome="T rota", unidade_id=unidade.id, ativo=True, curso_id=None,
-            dias_semana=dia, data_inicio=data, data_fim=data,
+            data_inicio=data, data_fim=data,
         )
         db.session.add(turma)
         db.session.flush()
@@ -423,11 +430,13 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
             db.session.flush()
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-                ativo=True, principal=(i == 0), dias_semana=dia,
+                ativo=True, principal=(i == 0),
                 data_inicio=data, data_fim=data, programa="Teste",
             )
             db.session.add(oferta)
             db.session.flush()
+            # H5a: o dia do cenário vira a grade da oferta.
+            aplicar_grade(oferta, dia, time(8), time(10))
             ids["ofertas"].append(oferta.id)
             if cfg.get("tema"):
                 tema = TemaAula(
@@ -543,31 +552,38 @@ def test_uma_aula_persiste_varios_temas_no_mesmo_registro():
         assert RegistroAula.query.filter_by(data=DATA_ROTA).count() == 1
 
 
-# --- c1) legado (0 ofertas): lançar 2x no mesmo dia atualiza, não duplica --
-def test_legado_lancar_duas_vezes_atualiza_nao_duplica():
+# --- c1) 0 ofertas ativas: sem agenda não há calendário para lançar ---------
+def test_sem_oferta_ativa_nao_ha_agenda_para_lancar():
+    """H5a: a agenda nasce com a oferta.
+
+    Com a única oferta desativada a turma fica SEM agenda (não existe mais o
+    CSV escalar de `Turma.dias_semana`), então `gerar_datas` devolve lista
+    vazia e o POST legado (sem `turma_curso`) é recusado pelo calendário.
+    Antes do H5a este caminho gravava uma linha com `turma_curso_id = NULL`;
+    o contrato mudou de propósito (turma sem oferta não tem agenda).
+    """
     app, ids = _mk_rota([{"curso": "Natação", "alunos": ["Aluno A"]}])
-    # Desativa a única oferta → 0 ativas → caminho legado.
+    # Desativa a única oferta → 0 ativas → turma sem agenda.
     with app.app_context():
         db.session.get(TurmaCurso, ids["ofertas"][0]).ativo = False
         db.session.commit()
     client = _loga(app, ids["resp"])
     ds = DATA_ROTA.isoformat()
     a = ids["alunos"]["Aluno A"]
-    client.post("/frequencia", data={
+    resp = client.post("/frequencia", data={
         "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.A.value,
-    })
-    client.post("/frequencia", data={
-        "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.F.value,
-    })
+    }, follow_redirects=True)
+    assert "não pertence ao calendário válido" in resp.get_data(as_text=True)
     with app.app_context():
-        rows = Frequencia.query.filter_by(aluno_id=a, turma_id=ids["turma"]).all()
-        assert len(rows) == 1
-        assert rows[0].conceito == ConceitoFrequencia.F
-        assert rows[0].turma_curso_id is None
+        assert Frequencia.query.filter_by(
+            aluno_id=a, turma_id=ids["turma"],
+        ).count() == 0
 
 
-# --- c2) busca legada deve filtrar turma_curso_id IS NULL ------------------
+# --- c2) lançamento por oferta não é confundido com o caminho legado -------
 def test_frequencia_legada_nao_confundida_com_oferta():
+    """H5a: sem oferta ativa o caminho legado não tem agenda (bloqueado);
+    a linha já gravada pela oferta permanece intacta e única."""
     app, ids = _mk_rota([{"curso": "Natação", "alunos": ["Aluno A"]}])
     oa = ids["ofertas"][0]
     a = ids["alunos"]["Aluno A"]
@@ -578,22 +594,25 @@ def test_frequencia_legada_nao_confundida_com_oferta():
         "turma": ids["turma"], "data": ds, "turma_curso": oa,
         f"aluno_{a}": ConceitoFrequencia.A.value,
     })
-    # 2) desativa a oferta → turma passa a ter 0 ofertas ativas (legado).
+    # 2) desativa a oferta → turma passa a ter 0 ofertas ativas (sem agenda).
     with app.app_context():
         db.session.get(TurmaCurso, oa).ativo = False
         db.session.commit()
     # 3) lança no caminho LEGADO (sem turma_curso) no MESMO aluno/dia.
-    client.post("/frequencia", data={
+    resp = client.post("/frequencia", data={
         "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.F.value,
-    })
+    }, follow_redirects=True)
+    assert "não pertence ao calendário válido" in resp.get_data(as_text=True)
     with app.app_context():
         legada = Frequencia.query.filter_by(
             aluno_id=a, turma_id=ids["turma"], turma_curso_id=None,
         ).all()
-        # Esperado: nasce uma linha legada própria (IS NULL); a busca legada
-        # NÃO deve reaproveitar/reescrever a linha da oferta.
-        assert len(legada) == 1, "busca legada deveria filtrar turma_curso_id IS NULL"
-        assert legada[0].conceito == ConceitoFrequencia.F
+        # Nenhuma linha legada nova; a linha da oferta não é reescrita.
+        assert legada == []
+        da_oferta = Frequencia.query.filter_by(
+            aluno_id=a, turma_id=ids["turma"], turma_curso_id=oa,
+        ).one()
+        assert da_oferta.conceito == ConceitoFrequencia.A
 
 
 # --- d) dias_semana com acento/espaço e variante -feira --------------------
@@ -775,15 +794,15 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     db.session.flush()
     turma = Turma(
         nome="T F func", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
-        turno="Manhã", dias_semana="Segunda, Quarta",
-        hora_inicio=time(9, 0), hora_fim=time(10, 30),
+        turno="Manhã",
         data_inicio=date(2026, 3, 2), data_fim=date(2026, 12, 15),
         centro_custo="CC-42", programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()
 
-    oferta = criar_oferta_inicial_da_turma(turma)
+    agenda = itens_grade("Segunda, Quarta", time(9, 0), time(10, 30))
+    oferta = criar_oferta_inicial_da_turma(turma, agenda=agenda)
     db.session.commit()
 
     assert oferta is not None
@@ -793,9 +812,10 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     assert oferta.turma_id == turma.id
     assert oferta.unidade_id == unidade.id
     assert oferta.turno == "Manhã"
-    assert oferta.dias_semana == "Segunda, Quarta"
-    assert oferta.hora_inicio == time(9, 0)
-    assert oferta.hora_fim == time(10, 30)
+    # H5a: a agenda da oferta nasce na GRADE (colunas escalares sem uso).
+    assert sorted(
+        (l.dia_semana, l.hora_inicio, l.hora_fim) for l in oferta.horarios
+    ) == [(0, time(9, 0), time(10, 30)), (2, time(9, 0), time(10, 30))]
     assert oferta.data_inicio == date(2026, 3, 2)
     assert oferta.data_fim == date(2026, 12, 15)
     assert oferta.centro_custo == "CC-42"
@@ -832,13 +852,13 @@ def test_criar_oferta_inicial_idempotente_nao_duplica(app):
     db.session.flush()
     turma = Turma(
         nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
         programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()
 
-    o1 = criar_oferta_inicial_da_turma(turma)
+    agenda = itens_grade("Segunda", time(9), time(10))
+    o1 = criar_oferta_inicial_da_turma(turma, agenda=agenda)
     o2 = criar_oferta_inicial_da_turma(turma)
     db.session.commit()
 

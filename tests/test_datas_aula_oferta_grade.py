@@ -69,12 +69,13 @@ def _h(dia: int) -> tuple[time, time]:
     return (time(9 + dia), time(10 + dia))
 
 
-def _setup(*, grade=None, turma_dias="Segunda", oferta_ini=SEG, oferta_fim=FIM_SEMANA,
+def _setup(*, grade=None, oferta_ini=SEG, oferta_fim=FIM_SEMANA,
            turma_ini=SEG, turma_fim=FIM_SEMANA, nome="U"):
-    """Unidade + curso + turma (com `turma_dias`) + oferta com `grade`.
+    """Unidade + curso + turma + oferta com `grade`.
 
     `grade` é uma lista de (dia, ini, fim) aplicada via `definir_grade` (ou
-    None para deixar a oferta sem linhas). Retorna a oferta.
+    None para deixar a oferta sem linhas). H5a: a turma não tem agenda própria
+    — os dias/horas vêm da grade da oferta. Retorna a oferta.
     """
     unidade = Unidade(nome=nome, ativo=True)
     db.session.add(unidade)
@@ -84,8 +85,7 @@ def _setup(*, grade=None, turma_dias="Segunda", oferta_ini=SEG, oferta_fim=FIM_S
     db.session.flush()
     turma = Turma(
         nome=f"Turma {nome}", unidade_id=unidade.id, ativo=True,
-        data_inicio=turma_ini, data_fim=turma_fim, dias_semana=turma_dias,
-        hora_inicio=time(9), hora_fim=time(10),
+        data_inicio=turma_ini, data_fim=turma_fim,
     )
     db.session.add(turma)
     db.session.flush()
@@ -163,29 +163,20 @@ def test_datas_esperadas_oferta_usma_grade_e_desconta_bloqueios(app):
     assert datas_esperadas_oferta(o, hoje=SEX, blocked={QUI.strftime("%Y-%m-%d")}) == [TER]
 
 
-# --- grade NÃO uniforme: dias da oferta mandam, não o CSV da turma ------------
+# --- grade NÃO uniforme: só os dias da grade valem ----------------------------
 def test_grade_nao_uniforme_le_dias_da_oferta_nao_da_turma(app):
-    # turma legada diz "Segunda"; grade real é terça+quinta.
-    o = _setup(grade=[(1, *_h(1)), (3, *_h(3))], turma_dias="Segunda",
-               nome="NaoUnif")
+    # A turma não tem agenda própria (H5a); o que vale é a grade da oferta.
+    o = _setup(grade=[(1, *_h(1)), (3, *_h(3))], nome="NaoUnif")
     datas = datas_aula_oferta(o)
-    assert SEG not in datas          # dia antigo da turma NÃO aparece
+    assert SEG not in datas          # segunda não está na grade
     assert datas == [TER, QUI]       # o que a grade define
 
 
-# --- oferta sem linhas de grade (fallback legado) -----------------------------
-def test_oferta_sem_grade_cai_no_csv_projetado(app):
-    # Sem definir_grade, mas com projeção CSV na oferta (espelho legado).
-    o = _setup(grade=None, nome="SoCSV")
-    o.dias_semana = "Quarta, Sexta"
-    db.session.commit()
-    assert datas_aula_oferta(o) == [QUA, SEX]
-
-
-def test_oferta_sem_grade_nem_csv_nao_gera_datas(app):
-    o = _setup(grade=None, turma_dias=None, nome="Nada")
-    o.dias_semana = None
-    db.session.commit()
+# --- oferta sem linhas de grade (estado inválido desde o H5a) -----------------
+def test_oferta_sem_grade_nao_gera_datas(app):
+    """H5a: sem grade não há agenda — nenhum fallback para as colunas
+    escalares (antes este caso caía no CSV projetado da oferta)."""
+    o = _setup(grade=None, nome="SemGrade")
     assert datas_aula_oferta(o) == []
 
 
@@ -273,8 +264,7 @@ def _datas_caminho_antigo(dias_csv, inicio, fim, blocked):
     ("Sábado", [5]),
 ])
 def test_equivalencia_grade_vs_caminho_antigo(app, dias_csv, dias_grade):
-    o = _setup(grade=[(d, *_h(d)) for d in dias_grade], turma_dias=dias_csv,
-               nome=f"Eq{dias_grade[0]}")
+    o = _setup(grade=[(d, *_h(d)) for d in dias_grade], nome=f"Eq{dias_grade[0]}")
     blocked = {QUI.strftime("%Y-%m-%d")}
     novas = datas_aula_oferta(o, blocked=blocked)
     antigas = _datas_caminho_antigo(dias_csv, SEG, FIM_SEMANA, blocked)

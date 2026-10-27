@@ -77,9 +77,6 @@ def _seed_variavel():
             ativo=True,
             data_inicio=periodo.data_inicio,
             data_fim=periodo.data_fim,
-            dias_semana="Segunda,Quarta",
-            hora_inicio=time(9),
-            hora_fim=time(10),
         )
         db.session.add(turma)
         db.session.flush()

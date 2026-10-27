@@ -25,6 +25,7 @@ from app.models import (
     User,
 )
 from app.models.enums import TipoDiaBloqueado
+from app.services.turma_curso_horario import definir_grade
 from app.utils.formatters import formatar_ch
 from config import Config
 
@@ -115,8 +116,7 @@ def _seed():
         db.session.flush()
 
         comuns = dict(
-            unidade_id=u1.id, ativo=True, turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            unidade_id=u1.id, ativo=True, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM, periodo_letivo_id=periodo.id,
         )
         t1 = Turma(nome="T1", professor_id=pA.id, **comuns)
@@ -128,22 +128,26 @@ def _seed():
         o2 = TurmaCurso(
             turma_id=t2.id, curso_id=cA.id, unidade_id=u1.id, ativo=True,
             principal=True, professor_id=pA.id, turno="Manhã",
-            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         o3p = TurmaCurso(
             turma_id=t3.id, curso_id=cA.id, unidade_id=u1.id, ativo=True,
             principal=True, professor_id=pA.id, turno="Manhã",
-            dias_semana="Segunda,Quarta", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         o3b = TurmaCurso(
             turma_id=t3.id, curso_id=cB.id, unidade_id=u1.id, ativo=True,
             principal=False, professor_id=pB.id, turno="Tarde",
-            dias_semana="Terça", hora_inicio=time(14, 0), hora_fim=time(15, 30),
             data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add_all([o2, o3p, o3b])
+        db.session.flush()
+        # H5a: a agenda vive SÓ na grade (nada de colunas escalares).
+        definir_grade(o2, [(0, time(9, 0), time(10, 0))])
+        definir_grade(o3p, [
+            (0, time(9, 0), time(10, 0)), (2, time(9, 0), time(10, 0)),
+        ])
+        definir_grade(o3b, [(1, time(14, 0), time(15, 30))])
 
         bloqueado = DATA_INI + timedelta(days=2)  # primeira quarta-feira
         db.session.add(DiaBloqueado(
@@ -375,7 +379,7 @@ def _seed_d3():
         db.session.flush()
 
         comuns = dict(
-            unidade_id=u.id, ativo=True, turno="Manhã", dias_semana="Segunda",
+            unidade_id=u.id, ativo=True, turno="Manhã",
             data_inicio=date(ano, 2, 1), data_fim=date(ano, 11, 30),
         )
         com_periodo = Turma(nome="D3 Com Periodo", periodo_letivo_id=periodo.id,

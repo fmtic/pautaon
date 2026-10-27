@@ -1,19 +1,20 @@
-"""H2-P4 — Escritores de oferta passam pelo `definir_grade` (porta única).
+"""H2-P4 / H5a — Escritores de oferta passam pelo `definir_grade` (porta única).
 
-Cobertura exigida pelo protocolo H2, passo 4:
-    - criar_oferta_inicial_da_turma: grade uniforme a partir da agenda da
-      turma + projeção; herança INCOMPLETA é rejeitada (nada é gravado).
-    - adicionar_oferta: herança completa da turma; agenda ausente ou só
-      domingo rejeitadas; substituição via editar_oferta recalcula a grade e
-      a projeção; agenda incompleta na edição preserva a grade anterior.
-    - Projeção: uniforme preenche o par escalar; não uniforme deixa as horas
-      NULL — e os escritores não corrompem essa projeção ao editar outros
-      campos.
-    - POST /turma/editar/<id>: com grade NÃO uniforme os campos de agenda da
-      turma são ignorados (flash); com grade uniforme a agenda nova espelha
-      na oferta via definir_grade.
+Cobertura:
+    - criar_oferta_inicial_da_turma: a grade vem de `agenda=` (formulário);
+      sem agenda completa é rejeitada (nada é gravado).
+    - adicionar_oferta: herança da GRADE de uma oferta ativa; agenda ausente
+      ou só domingo rejeitadas; substituição via editar_oferta regrava a
+      grade; agenda vazia na edição preserva a grade anterior.
+    - Escritores não corrompem grade NÃO uniforme ao editar outros campos.
+    - POST /turma/editar/<id>: com oferta única a agenda do formulário é
+      gravada via grade (com grade não uniforme também: decisão H4).
     - Escrita limitada (sem N+1): aplicar uma grade de K dias faz no máximo
       K INSERTs na tabela, sem UPDATE/DELETE por dia e sem sonda por dia.
+
+H5a: as colunas escalares `dias_semana`/`hora_inicio`/`hora_fim` de `Turma`
+e `TurmaCurso` não são semeadas, lidas nem asseridas aqui — a grade é a única
+fonte de agenda (por isso não há mais casos de "projeção").
 """
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ from app.services.turma_curso_horario import (
 )
 from config import Config
 
-from _helpers import nova_oferta
+from _helpers import itens_grade, nova_oferta
 
 DATA_INI = date(2026, 3, 2)   # segunda-feira
 DATA_FIM = date(2026, 12, 15)
@@ -63,9 +64,11 @@ def app():
         db.drop_all()
 
 
-def _base(app, *, agenda_completa=True, curso_na_turma=True):
-    """Semente: unidade, 2 cursos, admin e 1 turma. Turma nasce com agenda
-    Segunda 09:00–10:00 (completa) ou sem horas (incompleta). Retorna ids."""
+def _base(app, *, curso_na_turma=True):
+    """Semente: unidade, 2 cursos, admin/professor e 1 turma SEM agenda.
+
+    H5a: a turma não nasce com agenda — ela nasce com a oferta (grade).
+    """
     with app.app_context():
         unidade = Unidade(nome="U esc", ativo=True)
         db.session.add(unidade)
@@ -84,17 +87,12 @@ def _base(app, *, agenda_completa=True, curso_na_turma=True):
         db.session.add_all([c1, c2])
         db.session.flush()
 
-        kwargs = {}
-        if agenda_completa:
-            kwargs = dict(
-                dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
-            )
         turma = Turma(
             nome="T esc", unidade_id=unidade.id, ativo=True,
             curso_id=(c1.id if curso_na_turma else None),
             professor_id=p1.id, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
-            programa="Teste", **kwargs,
+            programa="Teste",
         )
         db.session.add(turma)
         db.session.commit()
@@ -109,17 +107,18 @@ def _get(model, pk):
 
 
 # --- criar_oferta_inicial_da_turma -------------------------------------------
-def test_oferta_inicial_cria_grade_uniforme_com_projecao(app):
+def test_oferta_inicial_cria_grade_uniforme(app):
+    """Com `agenda=` a oferta inicial nasce com a grade informada."""
     ids = _base(app)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
-        oferta = criar_oferta_inicial_da_turma(turma)
+        oferta = criar_oferta_inicial_da_turma(
+            turma, agenda=itens_grade("Segunda", time(9, 0), time(10, 0)),
+        )
         db.session.commit()
         assert [
             (l.dia_semana, l.hora_inicio, l.hora_fim) for l in grade_da_oferta(oferta)
         ] == [(0, time(9, 0), time(10, 0))]
-        assert oferta.dias_semana == "Segunda"
-        assert oferta.hora_inicio == time(9, 0) and oferta.hora_fim == time(10, 0)
         # Persistiu de verdade (releitura do banco, não só a sessão)
         db.session.expire_all()
         oferta2 = _get(TurmaCurso, oferta.id)
@@ -129,8 +128,9 @@ def test_oferta_inicial_cria_grade_uniforme_com_projecao(app):
 
 
 def test_oferta_inicial_sem_agenda_completa_rejeitada(app):
-    """Turma sem horas: a herança não monta grade — recusa, nunca grade parcial."""
-    ids = _base(app, agenda_completa=False)
+    """H5a: sem `agenda=` (e sem grade para herdar) não há grade — recusa,
+    nunca grade parcial nem leitura das colunas da turma."""
+    ids = _base(app)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
         with pytest.raises(ValueError, match="agenda completa"):
@@ -140,14 +140,30 @@ def test_oferta_inicial_sem_agenda_completa_rejeitada(app):
 
 
 # --- adicionar_oferta ----------------------------------------------------------
-def test_adicionar_oferta_herda_agenda_completa_da_turma(app):
+def test_adicionar_oferta_herda_agenda_da_grade_da_outra_oferta(app):
+    """H5a: sem `agenda`, a herança vem da GRADE de uma oferta ativa (a
+    principal quando houver) — nunca das colunas escalares da turma.
+
+    O cenário usa uma turma SEM vínculo legado (`curso_id IS NULL`) que já
+    tem uma oferta com grade (estado de dados migrados); a primeira oferta é
+    semeada direto no modelo para não espelhar o vínculo na turma.
+    """
     ids = _base(app, curso_na_turma=False)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
-        oferta = adicionar_oferta(turma, curso_id=ids["c1"], programa="Teste")
+        primeira = nova_oferta(
+            turma.id, ids["c1"], ids["unidade"], principal=True,
+            dias_semana="Segunda, Quarta", hora_inicio=time(8), hora_fim=time(10),
+        )
         db.session.commit()
-        assert [l.dia_semana for l in grade_da_oferta(oferta)] == [0]
-        assert oferta.hora_inicio == time(9, 0)
+
+        segunda = adicionar_oferta(turma, curso_id=ids["c2"], programa="Teste")
+        db.session.commit()
+        assert [
+            (l.dia_semana, l.hora_inicio, l.hora_fim)
+            for l in grade_da_oferta(segunda)
+        ] == [(0, time(8, 0), time(10, 0)), (2, time(8, 0), time(10, 0))]
+        assert len(grade_da_oferta(primeira)) == 2
 
 
 def test_adicionar_oferta_sem_agenda_rejeitada_sem_escrita(app):
@@ -169,50 +185,47 @@ def test_adicionar_oferta_so_domingo_rejeitada(app):
         with pytest.raises(ValueError, match="ao menos um dia"):
             adicionar_oferta(
                 turma, curso_id=ids["c1"], programa="Teste",
-                dias_semana="Domingo", hora_inicio=time(9), hora_fim=time(10),
+                agenda=itens_grade("Domingo", time(9), time(10)),
             )
         db.session.rollback()
         assert TurmaCurso.query.count() == 0
 
 
 # --- editar_oferta --------------------------------------------------------------
-def test_editar_oferta_substitui_grade_e_reprojeta(app):
+def test_editar_oferta_substitui_grade(app):
     ids = _base(app, curso_na_turma=False)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
         oferta = adicionar_oferta(
             turma, curso_id=ids["c1"], programa="Teste",
-            dias_semana="Segunda", hora_inicio=time(8), hora_fim=time(12),
+            agenda=itens_grade("Segunda", time(8), time(12)),
         )
         db.session.commit()
 
         editar_oferta(
-            oferta, dias_semana="Terça",
-            hora_inicio=time(14), hora_fim=time(16),
+            oferta, agenda=itens_grade("Terça", time(14), time(16)),
         )
         db.session.commit()
         assert [
             (l.dia_semana, l.hora_inicio, l.hora_fim) for l in grade_da_oferta(oferta)
         ] == [(1, time(14, 0), time(16, 0))]
-        assert oferta.dias_semana == "Terça"
-        assert oferta.hora_inicio == time(14, 0) and oferta.hora_fim == time(16, 0)
         assert TurmaCursoHorario.query.count() == 1
 
 
-def test_editar_oferta_agenda_incompleta_preserva_grade(app):
-    """Só hora_inicio enviado: fim vigente (12:00) não passa do início novo →
-    agenda efetiva inválida → recusa e grade anterior intacta."""
+def test_editar_oferta_agenda_vazia_preserva_grade(app):
+    """`agenda=[]` é recusada (grade nunca fica vazia) e a grade anterior
+    permanece intacta — antes do H5a este caso era o trio escalar incompleto."""
     ids = _base(app, curso_na_turma=False)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
         oferta = adicionar_oferta(
             turma, curso_id=ids["c1"], programa="Teste",
-            dias_semana="Segunda", hora_inicio=time(8), hora_fim=time(12),
+            agenda=itens_grade("Segunda", time(8), time(12)),
         )
         db.session.commit()
 
-        with pytest.raises(ValueError, match="ao menos um dia"):
-            editar_oferta(oferta, hora_inicio=time(14))
+        with pytest.raises(ValueError, match="não pode ficar vazia"):
+            editar_oferta(oferta, agenda=[])
         db.session.rollback()
 
         db.session.expire_all()
@@ -223,31 +236,30 @@ def test_editar_oferta_agenda_incompleta_preserva_grade(app):
         ] == [(0, time(8, 0), time(12, 0))]
 
 
-# --- projeção uniforme / NULL com escritores ------------------------------------
-def test_escritores_nao_corrompem_projecao_nao_uniforme(app):
+# --- grade NÃO uniforme preservada pelos escritores -----------------------------
+def test_escritores_nao_corrompem_grade_nao_uniforme(app):
     ids = _base(app, curso_na_turma=False)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
         oferta = adicionar_oferta(
             turma, curso_id=ids["c1"], programa="Teste",
-            dias_semana="Segunda", hora_inicio=time(8), hora_fim=time(10),
+            agenda=itens_grade("Segunda", time(8), time(10)),
         )
         db.session.commit()
 
-        # Grade NÃO uniforme criada pelo serviço (H4 ainda não expõe isso na UI)
         definir_grade(
             oferta, [(0, time(8, 0), time(10, 0)), (1, time(14, 0), time(16, 0))]
         )
         db.session.commit()
-        assert oferta.dias_semana == "Segunda, Terça"
-        assert oferta.hora_inicio is None and oferta.hora_fim is None
+        assert grade_uniforme(oferta) is False
 
-        # Escritor mexe só em campo não-agenda: projeção NULL permanece
+        # Escritor mexe só em campo não-agenda: a grade não é tocada.
         editar_oferta(oferta, turno="Noite")
         db.session.commit()
         assert grade_uniforme(oferta) is False
-        assert oferta.hora_inicio is None and oferta.hora_fim is None
-        assert [l.dia_semana for l in grade_da_oferta(oferta)] == [0, 1]
+        assert [
+            (l.dia_semana, l.hora_inicio, l.hora_fim) for l in grade_da_oferta(oferta)
+        ] == [(0, time(8, 0), time(10, 0)), (1, time(14, 0), time(16, 0))]
 
 
 # --- POST /turma/editar/<id> -------------------------------------------------------
@@ -260,8 +272,7 @@ def _loga(app, user_id):
 
 
 def _seed_rota(app, grade_itens):
-    """Turma + 1 oferta ativa única com a grade dada (projeção via serviço).
-    Turma nasce Segunda 09:00–10:00. Retorna ids."""
+    """Turma + 1 oferta ativa única com a grade dada. Retorna ids."""
     ids = _base(app, curso_na_turma=True)
     with app.app_context():
         turma = _get(Turma, ids["turma"])
@@ -272,9 +283,6 @@ def _seed_rota(app, grade_itens):
             programa="Teste",
         )
         definir_grade(oferta, grade_itens)
-        turma.dias_semana = oferta.dias_semana
-        turma.hora_inicio = oferta.hora_inicio
-        turma.hora_fim = oferta.hora_fim
         db.session.commit()
         ids["oferta"] = oferta.id
     return ids
@@ -304,7 +312,7 @@ def _post_edit(app, ids, **over):
 def test_editar_turma_post_substitui_grade_nao_uniforme(app):
     """Decisão H4: com oferta ÚNICA a agenda é editável mesmo com grade não
     uniforme — o POST substitui a grade inteira pela agenda do formulário
-    (modo padrão) e os escalares da Turma saem só da projeção."""
+    (modo padrão). H5a: a agenda vai só para a grade, não para as colunas."""
     ids = _seed_rota(app, [(0, time(9, 0), time(10, 0)), (1, time(14, 0), time(16, 0))])
     r = _post_edit(
         app, ids,
@@ -321,17 +329,11 @@ def test_editar_turma_post_substitui_grade_nao_uniforme(app):
             (l.dia_semana, l.hora_inicio, l.hora_fim)
             for l in grade_da_oferta(oferta)
         ] == [(2, time(11, 0), time(12, 0))]
-        turma = _get(Turma, ids["turma"])
-        # Projeção da grade uniforme nos escalares da Turma e da oferta
-        assert turma.dias_semana == "Quarta"
-        assert turma.hora_inicio == time(11, 0) and turma.hora_fim == time(12, 0)
-        assert oferta.dias_semana == "Quarta"
-        assert oferta.hora_inicio == time(11, 0) and oferta.hora_fim == time(12, 0)
 
 
-def test_editar_turma_post_espelha_agenda_com_grade_uniforme(app):
+def test_editar_turma_post_com_grade_uniforme_grava_via_grade(app):
     """Com grade uniforme a edição da Turma continua valendo: a agenda nova é
-    convertida em grade pelo serviço e espelhada na oferta única."""
+    convertida em grade pelo serviço e gravada na oferta única."""
     ids = _seed_rota(app, [(0, time(9, 0), time(10, 0))])
     r = _post_edit(
         app, ids,
@@ -347,10 +349,6 @@ def test_editar_turma_post_espelha_agenda_com_grade_uniforme(app):
             (l.dia_semana, l.hora_inicio, l.hora_fim)
             for l in grade_da_oferta(oferta)
         ] == [(2, time(11, 0), time(12, 0))]
-        assert oferta.dias_semana == "Quarta"
-        turma = _get(Turma, ids["turma"])
-        assert turma.dias_semana == "Quarta"
-        assert turma.hora_inicio == time(11, 0) and turma.hora_fim == time(12, 0)
 
 
 # --- escrita limitada (sem N+1 de escrita) ----------------------------------------
@@ -371,9 +369,7 @@ def test_adicionar_oferta_escrita_limitada_sem_n_plus_1(app):
         try:
             turma = _get(Turma, ids["turma"])
             oferta = adicionar_oferta(
-                turma, curso_id=ids["c1"], programa="Teste",
-                dias_semana="Segunda, Terça, Quarta, Quinta, Sexta",
-                hora_inicio=time(9), hora_fim=time(10),
+                turma, curso_id=ids["c1"], programa="Teste", agenda=dias,
             )
             db.session.commit()
         finally:

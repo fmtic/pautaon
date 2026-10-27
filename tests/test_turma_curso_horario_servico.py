@@ -7,13 +7,15 @@ Cobre a camada da grade por dia da oferta:
       e dia sem horário completo — os cenários "sem horário" abaixo são
       semeados via modelo direto (tolerância do banco ao legado pré-H2), para
       manter a cobertura dos leitores (`duracao_do_dia`, `grade_uniforme`,
-      `resumo_grade`, `sincronizar_projecao_horario`).
+      `resumo_grade`).
     - `duracao_do_dia`: minutos do dia; None p/ dia ausente ou sem horário.
     - `grade_uniforme`: uniforme / dias diferentes / sem horário / mista.
     - `resumo_grade`: os três formatos (uniforme, não uniforme, só dias).
-    - `sincronizar_projecao_horario`: uniforme preenche horas; não uniforme
-      zera horas e mantém dias; 6 dias cabem em VARCHAR(80).
     - `grades_em_lote`: uma única consulta para várias ofertas.
+
+H5a: `sincronizar_projecao_horario` foi removida (a grade é a única fonte de
+agenda, sem projeção nas colunas escalares) — os casos que só caracterizavam a
+projeção saíram com ela.
 
 Nenhuma função do serviço faz commit — os testes confirmam isso ao não
 commitar e ver o estado coerente no flush.
@@ -34,7 +36,6 @@ from app.services.turma_curso_horario import (
     grade_uniforme,
     grades_em_lote,
     resumo_grade,
-    sincronizar_projecao_horario,
 )
 from config import Config
 
@@ -223,51 +224,10 @@ def test_resumo_grade_formatos(app):
     assert resumo_grade(o2) == "Seg, Qui"
 
 
-# --- sincronizar_projecao_horario ---------------------------------------------
-def test_projecao_uniforme_preenche_horas(app):
-    o = _oferta()
-    definir_grade(o, [(0, time(9, 0), time(10, 0)), (2, time(9, 0), time(10, 0))])
-    db.session.commit()
-    assert o.dias_semana == "Segunda, Quarta"
-    assert o.hora_inicio == time(9, 0)
-    assert o.hora_fim == time(10, 0)
-
-
-def test_projecao_nao_uniforme_zera_horas_mantem_dias(app):
-    o = _oferta()
-    definir_grade(o, [(0, time(9, 0), time(10, 0)), (1, time(14, 0), time(15, 0))])
-    db.session.commit()
-    assert o.dias_semana == "Segunda, Terça"
-    assert o.hora_inicio is None
-    assert o.hora_fim is None
-
-
-def test_projecao_sem_horario_mantem_dias_horas_null(app):
-    o = _oferta()
-    _semeiar_linhas_legado(o, [(0, None, None), (1, None, None)])
-    sincronizar_projecao_horario(o)
-    db.session.commit()
-    assert o.dias_semana == "Segunda, Terça"
-    assert o.hora_inicio is None and o.hora_fim is None
-
-
-def test_projecao_grade_vaza_zera_tudo(app):
-    o = _oferta(dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0))
-    sincronizar_projecao_horario(o)  # grade vazia
-    db.session.commit()
-    assert o.dias_semana is None
-    assert o.hora_inicio is None and o.hora_fim is None
-
-
-def test_projecao_seis_dias_cabem_em_80(app):
-    o = _oferta()
-    # seg..sab = 0..5 (sem domingo) — domínio escrito desde o H2
-    definir_grade(o, [(d, time(9, 0), time(10, 0)) for d in range(6)])
-    db.session.commit()
-    assert len(o.dias_semana) <= 80
-    assert o.dias_semana == (
-        "Segunda, Terça, Quarta, Quinta, Sexta, Sábado"
-    )
+# --- sincronizar_projecao_horario (removida no H5a) ---------------------------
+# Os quatro casos antigos (`test_projecao_*`) caracterizavam apenas a projeção
+# nas colunas escalares de agenda. Com a projeção removida (a grade é a única
+# fonte), eles deixam de ter contrato a defender e saíram junto.
 
 
 def test_definir_grade_recusa_domingo(app):

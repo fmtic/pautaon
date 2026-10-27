@@ -109,7 +109,6 @@ def _seed():
             professor_id=prof.id, periodo_letivo_id=periodo.id, ativo=True,
             turno="Manhã", programa="Profissionalizante",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
-            dias_semana="Segunda, Quarta", hora_inicio=time(8), hora_fim=time(11),
             ordenacao=1,
         )
         db.session.add(turma)
@@ -118,8 +117,6 @@ def _seed():
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, professor_id=prof.id, turno="Manhã",
-            dias_semana="Segunda, Quarta",
-            hora_inicio=time(8), hora_fim=time(11),
             data_inicio=DATA_INI, data_fim=DATA_FIM,
             programa="Profissionalizante",
         )
@@ -340,14 +337,14 @@ class TestLeitoresSemErroComGradeVariavel:
                 professor_id=ids["prof"], periodo_letivo_id=ids["periodo"],
                 ativo=True, turno="Tarde", programa="Profissionalizante",
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
-                dias_semana="Segunda, Quarta", ordenacao=2,
+                ordenacao=2,
             )
             db.session.add(t2)
             db.session.flush()
             o2 = TurmaCurso(
                 turma_id=t2.id, curso_id=curso2.id, unidade_id=ids["unidade"],
                 ativo=True, principal=True, professor_id=ids["prof"],
-                turno="Tarde", dias_semana="Segunda, Quarta",
+                turno="Tarde",
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
                 programa="Profissionalizante",
             )

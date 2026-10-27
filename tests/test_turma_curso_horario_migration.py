@@ -15,6 +15,12 @@ de downgrade) diretamente contra o bind de um SQLite em-memory criado via
 
 A migration em si (DDL via ``op``) é exercida no ensaio A-E do P6; aqui só as
 funções que recebem ``bind`` como parâmetro.
+
+H5a: a migration é HISTÓRICA — ela lê as colunas escalares de
+``turma``/``turma_curso`` antes de a grade existir. Como o app não usa mais
+essas colunas, as sementes deste arquivo as escrevem por SQL direto
+(``_escalares``), sem tocar nos atributos do modelo (os testes continuam
+válidos mesmo quando as colunas saírem do modelo no H5b).
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ from datetime import date, time
 from pathlib import Path
 
 import pytest
+from sqlalchemy import inspect, text
 
 from app import create_app, db
 from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
@@ -32,6 +39,32 @@ from _helpers import nova_oferta
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
+
+_COLUNAS_LEGADAS = {
+    "dias_semana": "VARCHAR(80)",
+    "hora_inicio": "TIME",
+    "hora_fim": "TIME",
+}
+
+
+def _garantir_colunas_legadas():
+    """Recria no SQLite as colunas que a migration histórica lê.
+
+    O teste roda a migration H1 sobre um schema criado por ``db.create_all()``.
+    Quando as colunas saírem dos modelos (H5b), ``create_all`` deixa de criá-las
+    e este arquivo precisa continuar exercitando o backfill: adiciona as três
+    colunas por DDL direto nas duas tabelas, sem depender do modelo do app.
+    """
+    for tabela in ("turma", "turma_curso"):
+        existentes = {
+            col["name"] for col in inspect(db.engine).get_columns(tabela)
+        }
+        for nome, tipo in _COLUNAS_LEGADAS.items():
+            if nome not in existentes:
+                db.session.execute(
+                    text(f"ALTER TABLE {tabela} ADD COLUMN {nome} {tipo}")
+                )
+    db.session.commit()
 
 # Carrega o módulo da migration pelo caminho (ele não importa nada da app).
 _CAMINHO = (
@@ -60,6 +93,7 @@ def app():
     )
     with test_app.app_context():
         db.create_all()  # inclui turma_curso_horario (modelo P2)
+        _garantir_colunas_legadas()  # schema histórico, mesmo sem as colunas no modelo
         yield test_app
         db.session.remove()
         db.drop_all()
@@ -82,7 +116,32 @@ def _ambiente():
     return {"unidade": unidade.id, "curso": curso.id, "turma": turma.id}
 
 
-def _oferta_com_curso(i, nome_curso=None, **campos):
+def _escalares(tabela, registro_id, *, dias=None, ini=None, fim=None):
+    """Grava as colunas escalares de agenda (estado PRÉ-H2) por SQL direto.
+
+    `turma`/`turma_curso` guardam ``dias_semana``/``hora_inicio``/``hora_fim``
+    até o H5b; a migration as lê com SQL cru, então a semente faz o mesmo — o
+    modelo do app não é usado como intermediário (H5a).
+    """
+    def _hora(valor):
+        if isinstance(valor, time):
+            return valor.strftime("%H:%M:%S")
+        return valor
+
+    db.session.execute(
+        text(
+            f"UPDATE {tabela} SET dias_semana = :d, "
+            "hora_inicio = :i, hora_fim = :f WHERE id = :id"
+        ),
+        {"d": dias, "i": _hora(ini), "f": _hora(fim), "id": registro_id},
+    )
+    db.session.flush()
+
+
+def _oferta_com_curso(
+    i, nome_curso=None, *, dias_semana=None, hora_inicio=None, hora_fim=None,
+    **campos,
+):
     curso_id = i["curso"]
     if nome_curso:  # segunda oferta na mesma turma precisa de outro curso
         curso = Curso(nome=nome_curso, unidade_id=i["unidade"], ativo=True)
@@ -90,6 +149,10 @@ def _oferta_com_curso(i, nome_curso=None, **campos):
         db.session.flush()
         curso_id = curso.id
     oferta = nova_oferta(i["turma"], curso_id, i["unidade"], **campos)
+    _escalares(
+        "turma_curso", oferta.id,
+        dias=dias_semana, ini=hora_inicio, fim=hora_fim,
+    )
     db.session.commit()
     return oferta
 
@@ -107,9 +170,7 @@ def _linhas(oferta_id):
 def test_backfill_heranca_campo_a_campo(app):
     i = _ambiente()
     turma = db.session.get(Turma, i["turma"])
-    turma.dias_semana = "Segunda, Terça"
-    turma.hora_inicio = time(9, 0)
-    turma.hora_fim = time(16, 0)
+    _escalares("turma", turma.id, dias="Segunda, Terça", ini=time(9, 0), fim=time(16, 0))
     # Oferta: próprios dias NULL; início próprio; fim herdado da turma.
     oferta = _oferta_com_curso(i, dias_semana=None, hora_inicio=time(14, 0),
                                hora_fim=None)
@@ -173,7 +234,8 @@ def test_check_ii_dia_duplicado_apos_normalizacao(app):
 def test_check_iii_par_incompleto_pos_coalesce(app):
     i = _ambiente()
     turma = db.session.get(Turma, i["turma"])
-    turma.hora_inicio = time(9, 0)  # nada para herdar do lado do fim
+    # nada para herdar do lado do fim
+    _escalares("turma", turma.id, ini=time(9, 0))
     oferta = _oferta_com_curso(i, dias_semana="Segunda",
                                hora_inicio=time(14, 0), hora_fim=None)
     db.session.commit()

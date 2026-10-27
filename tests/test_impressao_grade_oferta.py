@@ -89,38 +89,37 @@ def _seed(app, variavel=False):
         db.session.add_all(cursos)
         db.session.flush()
 
-        def nova_turma(nome, dias, ini, fim):
+        def nova_turma(nome):
             turma = Turma(
                 nome=nome, unidade_id=unidade.id, curso_id=cursos[0].id,
                 periodo_letivo_id=periodo.id, ativo=True,
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
-                dias_semana=dias, hora_inicio=ini, hora_fim=fim,
             )
             db.session.add(turma)
             db.session.flush()
             return turma
 
-        t_uni = nova_turma("T-UNI", "Segunda, Quarta", time(8), time(9, 30))
+        t_uni = nova_turma("T-UNI")
         _oferta(
             t_uni, cursos[1], True,
             [(0, time(8), time(9, 30)), (2, time(8), time(9, 30))],
         )
 
-        t_multi = nova_turma("T-MULTI", "Segunda, Quarta", time(8), time(11))
+        t_multi = nova_turma("T-MULTI")
         _oferta(
             t_multi, cursos[0], True,
             [(0, time(8), time(11)), (2, time(8), time(11))],
         )
         _oferta(t_multi, cursos[2], False, [(1, time(8), time(9))])
 
-        t_sem = nova_turma("T-SEM", "Sábado", time(19), time(21))
+        t_sem = nova_turma("T-SEM")
 
-        t_leg = nova_turma("T-LEG", "Quinta", time(10), time(11))
+        # H5a: oferta ativa SEM grade = estado inválido (não há agenda).
+        t_leg = nova_turma("T-LEG")
         db.session.add(
             TurmaCurso(
                 turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
-                ativo=True, principal=True, programa="Teste", dias_semana="Quinta",
-                hora_inicio=time(10), hora_fim=time(11),
+                ativo=True, principal=True, programa="Teste",
                 data_inicio=DATA_INI, data_fim=DATA_FIM, centro_custo="Centro A",
             )
         )
@@ -131,7 +130,7 @@ def _seed(app, variavel=False):
             "t_leg": t_leg.id,
         }
         if variavel:
-            t_var = nova_turma("T-VAR", "Terça, Quinta", time(14), time(16))
+            t_var = nova_turma("T-VAR")
             o_var = _oferta(
                 t_var, cursos[4], True,
                 [(1, time(8), time(10)), (3, time(14), time(16))],
@@ -191,14 +190,17 @@ class TestCaracterizacaoTextoUniforme:
         assert "Seg. Ter. Qua." in trecho
         assert "08:00 - 11:00" in trecho
 
-    def test_linha_de_turma_sem_oferta_usa_escalares(self, app):
+    def test_linha_de_turma_sem_oferta_nao_tem_agenda(self, app):
+        """H5a: turma sem oferta não tem agenda — a linha mostra `--:-- - --:--`
+        e nenhum dia (antes repetia o CSV escalar da turma)."""
         ids = _seed(app)
         html = _client(app, ids["user"]).get(
             f"/turma?periodo_letivo_id={ids['periodo']}"
         ).get_data(as_text=True)
         trecho = _linha(html, ids["t_sem"])
-        assert "Sáb." in trecho
-        assert "19:00 - 21:00" in trecho
+        assert "--:-- - --:--" in trecho
+        assert "Sáb." not in trecho
+        assert "19:00" not in trecho
 
     def test_sublinha_das_ofertas(self, app):
         ids = _seed(app)
@@ -218,11 +220,14 @@ class TestCaracterizacaoTextoUniforme:
         texto = _norm(corpo.get_data(as_text=True))
         assert "Dias: Segunda, Quarta Horários: 08:00 às 09:30" in texto
 
-    def test_detalhe_da_oferta_sem_grade(self, app):
+    def test_detalhe_da_oferta_sem_grade_mostra_sem_horario(self, app):
+        """H5a: oferta sem grade é estado inválido — o detalhe mostra
+        `Não informados` / `--:--`, nunca as colunas escalares."""
         ids = _seed(app)
         corpo = _client(app, ids["user"]).get(f"/turma/{ids['t_leg']}")
         texto = _norm(corpo.get_data(as_text=True))
-        assert "Dias: Quinta Horários: 10:00 às 11:00" in texto
+        assert "Dias: Não informados Horários: --:-- às --:--" in texto
+        assert "Quinta" not in texto.split("Horários:")[0][-40:]
 
     def test_impressao_das_ofertas(self, app):
         ids = _seed(app)
@@ -234,7 +239,8 @@ class TestCaracterizacaoTextoUniforme:
         assert "Segunda, Quarta 08:00–09:30 1h30min" in texto
         assert "Segunda, Quarta 08:00–11:00 3h" in texto
         assert "Terça 08:00–09:00 1h" in texto
-        assert "Quinta 10:00–11:00 1h" in texto
+        # H5a: T-LEG (oferta sem grade) não aparece com horário nenhum.
+        assert "Quinta 10:00–11:00 1h" not in texto
 
 
 # --- Comportamento novo (P5) -------------------------------------------------

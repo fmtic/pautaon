@@ -87,8 +87,6 @@ def _seed(*, ofertas=0, grade=None, duplo_prof=False):
         turma = Turma(
             nome="T H4", unidade_id=unidade.id, curso_id=cA.id,
             professor_id=p1.id, turno="Manhã",
-            dias_semana="Segunda, Quarta",
-            hora_inicio=time(8), hora_fim=time(11),
             data_inicio=DATA_INI, data_fim=DATA_FIM,
             periodo_letivo_id=periodo.id, programa="Profissionalizante",
             ativo=True, ordenacao=1,
@@ -103,8 +101,6 @@ def _seed(*, ofertas=0, grade=None, duplo_prof=False):
                 turma_id=turma.id, curso_id=(cA.id if i == 0 else cB.id),
                 unidade_id=unidade.id, ativo=True, principal=(i == 0),
                 professor_id=prof_oferta, turno="Manhã",
-                dias_semana="Segunda, Quarta",
-                hora_inicio=time(8), hora_fim=time(11),
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
                 programa="Profissionalizante",
             )
@@ -134,12 +130,6 @@ def _grade_rows(app, oferta_id):
             .all()
         )
         return [(l.dia_semana, l.hora_inicio, l.hora_fim) for l in linhas]
-
-
-def _turma_state(app, turma_id):
-    with app.app_context():
-        t = db.session.get(Turma, turma_id)
-        return t.nome, t.dias_semana, t.hora_inicio, t.hora_fim
 
 
 GRADE_POR_DIA = {
@@ -195,10 +185,6 @@ def test_modo_padrao_nova_turma_replica_par_em_todos_os_dias():
     assert _grade_rows(app, oferta.id) == [
         (0, time(8), time(11)), (2, time(8), time(11)),
     ]
-    # Escalares da Turma chegam só pela projeção da oferta única.
-    _, dias, ini, fim = _turma_state(app, nova_id)
-    assert dias == "Segunda, Quarta"
-    assert ini == time(8) and fim == time(11)
 
 
 def test_modo_personalizado_nova_turma_cria_grade_nao_uniforme():
@@ -212,10 +198,6 @@ def test_modo_personalizado_nova_turma_cria_grade_nao_uniforme():
     assert _grade_rows(app, oferta.id) == [
         (0, time(8), time(11)), (2, time(14), time(17)),
     ]
-    # Projeção de grade NÃO uniforme: dias + escalares de hora NULL.
-    _, dias, ini, fim = _turma_state(app, nova_id)
-    assert dias == "Segunda, Quarta"
-    assert ini is None and fim is None
 
 
 # --- oferta nova / oferta editada em modo personalizado -----------------------
@@ -285,10 +267,6 @@ def test_editar_turma_uma_oferta_grava_via_grade_com_projecao():
     assert _grade_rows(app, ids["ofertas"][0]) == [
         (0, time(8), time(11)), (2, time(14), time(17)),
     ]
-    # Nada de agenda foi escrito direto na Turma: só a projeção (NULL no par).
-    _, dias, ini, fim = _turma_state(app, ids["turma"])
-    assert dias == "Segunda, Quarta"
-    assert ini is None and fim is None
 
 
 def test_editar_turma_modo_padrao_atualiza_grade_uniforme():
@@ -305,8 +283,6 @@ def test_editar_turma_modo_padrao_atualiza_grade_uniforme():
     r = client.post(f"/turma/editar/{ids['turma']}", data=form)
     assert r.status_code == 302
     assert _grade_rows(app, ids["ofertas"][0]) == [(1, time(9), time(10))]
-    _, dias, ini, fim = _turma_state(app, ids["turma"])
-    assert dias == "Terça" and ini == time(9) and fim == time(10)
 
 
 def test_editar_turma_duas_ofertas_post_bloqueado_nao_toca_agenda():
@@ -324,9 +300,6 @@ def test_editar_turma_duas_ofertas_post_bloqueado_nao_toca_agenda():
     r = client.post(f"/turma/editar/{ids['turma']}", data=form)
     assert r.status_code == 302
     # Critério "2+ ofertas" permanece no backend: agenda intocada.
-    _, dias, ini, fim = _turma_state(app, ids["turma"])
-    assert dias == "Segunda, Quarta"
-    assert ini == time(8) and fim == time(11)
     assert _grade_rows(app, ids["ofertas"][0]) == [
         (0, time(8), time(11)), (2, time(8), time(11)),
     ]
@@ -442,8 +415,6 @@ def test_reenvio_do_mesmo_formulario_nao_altera_nada():
     r1 = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
     assert r1.status_code == 302
     depois_primeiro = _grade_rows(app, ids["ofertas"][0])
-    estado_primeiro = _turma_state(app, ids["turma"])
     r2 = client.post(f"/turma/oferta/{ids['ofertas'][0]}/editar", data=form)
     assert r2.status_code == 302
     assert _grade_rows(app, ids["ofertas"][0]) == depois_primeiro
-    assert _turma_state(app, ids["turma"]) == estado_primeiro

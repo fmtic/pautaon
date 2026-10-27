@@ -116,13 +116,12 @@ def _seed(app, variavel=False):
         db.session.add_all(cursos)
         db.session.flush()
 
-        def nova_turma(nome, dias, ini, fim, ordenacao, turno="Manhã"):
+        def nova_turma(nome, ordenacao, turno="Manhã"):
             turma = Turma(
                 nome=nome, unidade_id=unidade.id, curso_id=cursos[0].id,
                 professor_id=prof.id, periodo_letivo_id=periodo.id,
                 ativo=True, turno=turno, programa="Profissionalizante",
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
-                dias_semana=dias, hora_inicio=ini, hora_fim=fim,
                 ordenacao=ordenacao,
             )
             db.session.add(turma)
@@ -130,38 +129,32 @@ def _seed(app, variavel=False):
             return turma
 
         # T-UNI: 1 oferta uniforme (Seg/Qua 08:00-09:30).
-        t_uni = nova_turma("T-UNI", "Segunda, Quarta", time(8), time(9, 30), 1)
+        t_uni = nova_turma("T-UNI", 1)
         o_uni = _oferta(
             t_uni, cursos[0], True,
             [(0, time(8), time(9, 30)), (2, time(8), time(9, 30))],
             professor_id=prof.id, turno="Manhã",
-            dias_semana="Segunda, Quarta", hora_inicio=time(8),
-            hora_fim=time(9, 30),
         )
 
         # T-MULTI: principal Seg/Qua 08:00-11:00 + secundária Ter 08:00-09:00.
-        t_multi = nova_turma("T-MULTI", "Segunda, Quarta", time(8), time(11), 2,
-                             turno="Tarde")
+        t_multi = nova_turma("T-MULTI", 2, turno="Tarde")
         o_p = _oferta(
             t_multi, cursos[0], True,
             [(0, time(8), time(11)), (2, time(8), time(11))],
             professor_id=prof.id, turno="Tarde",
-            dias_semana="Segunda, Quarta", hora_inicio=time(8),
-            hora_fim=time(11),
         )
         o_s = _oferta(
             t_multi, cursos[1], False, [(1, time(8), time(9))],
             professor_id=prof.id, turno="Tarde",
-            dias_semana="Terça", hora_inicio=time(8), hora_fim=time(9),
         )
 
-        # T-LEG: oferta ativa SEM grade (projeção escalar = Qui 10:00-11:00).
-        t_leg = nova_turma("T-LEG", "Quinta", time(10), time(11), 3)
+        # T-LEG: oferta ativa SEM grade (estado inválido desde o H5a — as
+        # colunas escalares não são mais lidas nem gravadas).
+        t_leg = nova_turma("T-LEG", 3)
         o_leg = TurmaCurso(
             turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Profissionalizante",
-            professor_id=prof.id, dias_semana="Quinta",
-            hora_inicio=time(10), hora_fim=time(11),
+            professor_id=prof.id,
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(o_leg)
@@ -176,13 +169,11 @@ def _seed(app, variavel=False):
         }
         if variavel:
             # T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00.
-            t_var = nova_turma("T-VAR", "Terça, Quinta", time(14), time(16), 4)
+            t_var = nova_turma("T-VAR", 4)
             o_var = _oferta(
                 t_var, cursos[4], True,
                 [(1, time(8), time(10)), (3, time(14), time(16))],
                 professor_id=prof.id,
-                dias_semana="Terça, Quinta", hora_inicio=time(14),
-                hora_fim=time(16),
             )
             ids["t_var"] = t_var.id
             ids["o_var"] = o_var.id
@@ -330,7 +321,6 @@ def _turma_duas_ofertas_dias_diferentes(app, ids):
             professor_id=ids["prof"], periodo_letivo_id=ids["periodo"],
             ativo=True, turno="Manhã", programa="Profissionalizante",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
-            dias_semana="Terça, Quinta", hora_inicio=time(14), hora_fim=time(16),
             ordenacao=9,
         )
         db.session.add(turma)
@@ -338,12 +328,10 @@ def _turma_duas_ofertas_dias_diferentes(app, ids):
         oferta_a = _oferta(
             turma, curso_d, True, [(1, time(8), time(10))],
             professor_id=ids["prof"], turno="Manhã",
-            dias_semana="Terça", hora_inicio=time(8), hora_fim=time(10),
         )
         oferta_b = _oferta(
             turma, curso_e, False, [(3, time(14), time(16))],
             professor_id=ids["prof"], turno="Tarde",
-            dias_semana="Quinta", hora_inicio=time(14), hora_fim=time(16),
         )
         db.session.commit()
         return {
@@ -490,26 +478,32 @@ class TestMultiOfertaEFallback:
         assert 'data-turma-dias="Quinta"' in html
         assert 'data-turma-horario="14:00 às 16:00"' in html
 
-    def test_fallback_sem_grade_dashboard_usa_escalar(self, app, caplog):
+    def test_sem_grade_dashboard_nao_usa_escalar(self, app, caplog):
         ids = _seed(app)
         _aluno_em(app, ids["unidade"], ids["t_leg"], ids["o_leg"], "Aluno Leg")
         with caplog.at_level(
-            logging.WARNING, logger="app.services.turma_curso_horario"
+            logging.ERROR, logger="app.services.turma_curso_horario"
         ):
             texto = _norm(
                 _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
             )
-        assert "T-LEG — Curso D Quinta 10:00 às 11:00" in texto
+        # H5a: a linha aparece, mas sem dias/horário herdados da coluna escalar.
+        assert "T-LEG — Curso D" in texto
+        assert "T-LEG — Curso D Quinta" not in texto
+        assert "10:00 às 11:00" not in texto
         assert any("sem grade" in r.getMessage() for r in caplog.records)
 
-    def test_fallback_sem_grade_na_tela_do_aluno(self, app):
+    def test_sem_grade_na_tela_do_aluno(self, app):
         ids = _seed(app)
         _aluno_em(app, ids["unidade"], ids["t_leg"], ids["o_leg"], "Aluno Leg")
         html = _client(app, ids["coord"], ids["unidade"]).get(
             "/alunos"
         ).get_data(as_text=True)
-        assert 'data-turma-horario="10:00 às 11:00"' in html
-        assert 'data-turma-dias="Quinta"' in html
+        # H5a: sem grade a tela mostra a ausência — nunca o valor escalar.
+        assert 'data-turma-horario="10:00 às 11:00"' not in html
+        assert 'data-turma-dias="Quinta"' not in html
+        assert 'data-turma-horario="-"' in html
+        assert 'data-turma-dias="-"' in html
 
 
 # --- Sem N+1: consultas de grade constantes ao crescer ofertas ---------------
@@ -537,8 +531,7 @@ class TestSemN1:
                 curso = db.session.get(Curso, curso_id)
                 _oferta(
                     turma, curso, False, [(0, time(8), time(10))],
-                    professor_id=ids["prof"], dias_semana="Segunda",
-                    hora_inicio=time(8), hora_fim=time(10),
+                    professor_id=ids["prof"],
                 )
             db.session.commit()
 

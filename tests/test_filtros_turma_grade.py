@@ -1,13 +1,16 @@
 """H3d — filtros de dia/horário e agregação de dias da listagem pela GRADE.
 
 Cobre:
-    - caracterização ANTES da migração (grades uniformes, oferta legada sem
-      grade e turma sem oferta) — deve continuar idêntica depois;
+    - filtro de dia e de horário em grade uniforme;
     - filtro de dia e de horário em grade NÃO uniforme (casa só no dia certo);
     - dia + horário exigindo os dois na MESMA linha da grade;
     - `min_ch_aula` da turma multi-oferta = menor duração entre TODAS as
       ofertas ativas;
     - agregação de dias da linha da listagem (união das ofertas ativas).
+
+H5a: a agenda vem SÓ da grade. Turma sem oferta (T-SEM) e oferta ativa sem
+grade (T-LEG) são estados sem agenda — não casam nenhum filtro de dia/horário
+e não contribuem dias na linha (antes casavam pelas colunas escalares).
 """
 
 from datetime import date, time
@@ -99,37 +102,36 @@ def _seed(app, variavel=False):
         db.session.add_all(cursos)
         db.session.flush()
 
-        def nova_turma(nome, dias, ini, fim):
+        def nova_turma(nome):
             turma = Turma(
                 nome=nome, unidade_id=unidade.id, curso_id=cursos[0].id,
                 periodo_letivo_id=periodo.id, ativo=True,
                 data_inicio=DATA_INI, data_fim=DATA_FIM,
-                dias_semana=dias, hora_inicio=ini, hora_fim=fim,
             )
             db.session.add(turma)
             db.session.flush()
             return turma
 
-        t_uni = nova_turma("T-UNI", "Segunda, Quarta", time(8), time(9, 30))
+        t_uni = nova_turma("T-UNI")
         o_uni = _oferta(
             t_uni, cursos[1], True,
             [(0, time(8), time(9, 30)), (2, time(8), time(9, 30))],
         )
 
-        t_multi = nova_turma("T-MULTI", "Segunda, Quarta", time(8), time(11))
+        t_multi = nova_turma("T-MULTI")
         o_p = _oferta(
             t_multi, cursos[0], True,
             [(0, time(8), time(11)), (2, time(8), time(11))],
         )
         o_s = _oferta(t_multi, cursos[2], False, [(1, time(8), time(9))])
 
-        t_sem = nova_turma("T-SEM", "Sábado", time(19), time(21))
+        t_sem = nova_turma("T-SEM")
 
-        t_leg = nova_turma("T-LEG", "Quinta", time(10), time(11))
+        # Estado inválido desde o H5a: oferta ativa SEM grade (nenhuma agenda).
+        t_leg = nova_turma("T-LEG")
         o_leg = TurmaCurso(
             turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
-            ativo=True, principal=True, programa="Teste", dias_semana="Quinta",
-            hora_inicio=time(10), hora_fim=time(11),
+            ativo=True, principal=True, programa="Teste",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(o_leg)
@@ -140,8 +142,8 @@ def _seed(app, variavel=False):
             "t_leg": t_leg.id, "o_uni": o_uni.id, "o_p": o_p.id, "o_s": o_s.id,
         }
         if variavel:
-            # Grade NÃO uniforme: o par escalar da turma não representa a oferta.
-            t_var = nova_turma("T-VAR", "Terça, Quinta", time(14), time(16))
+            # Grade NÃO uniforme: nenhuma coluna escalar representa a oferta.
+            t_var = nova_turma("T-VAR")
             o_var = _oferta(
                 t_var, cursos[4], True,
                 [(1, time(8), time(10)), (3, time(14), time(16))],
@@ -158,37 +160,39 @@ def _filtrar(args):
     return {t.nome for t in db.session.execute(stmt).scalars().all()}
 
 
-# --- Caracterização ANTES (grades uniformes / legado / sem oferta) ------------
+# --- Filtros pela GRADE (grades uniformes e não uniformes) --------------------
 class TestCaracterizacaoFiltros:
-    """Resultados fixados ANTES do H3d — idênticos depois, para grades uniformes."""
+    """Grades uniformes: dia/horário casam pela grade da oferta."""
 
     def test_dia_segunda(self, app):
         _seed(app)
         assert _filtrar({"dia": "Segunda"}) == {"T-UNI", "T-MULTI"}
 
-    def test_dia_quinta(self, app):
+    def test_dia_quinta_sem_grade_nao_casa(self, app):
+        """H5a: T-LEG (oferta sem grade) e T-SEM (sem oferta) não têm agenda."""
         _seed(app)
-        assert _filtrar({"dia": "Quinta"}) == {"T-LEG"}
+        assert _filtrar({"dia": "Quinta"}) == set()
 
     def test_dia_terca(self, app):
         _seed(app)
         assert _filtrar({"dia": "Terça"}) == {"T-MULTI"}
 
-    def test_dia_sabado_so_turma_sem_oferta(self, app):
+    def test_dia_sabado_sem_oferta_nao_casa(self, app):
+        """Antes do H5a T-SEM casava Sábado pelo CSV da turma; agora não tem agenda."""
         _seed(app)
-        assert _filtrar({"dia": "Sábado"}) == {"T-SEM"}
+        assert _filtrar({"dia": "Sábado"}) == set()
 
     def test_horario_inicio(self, app):
         _seed(app)
         assert _filtrar({"horario_inicio": "08:00"}) == {"T-UNI", "T-MULTI"}
 
-    def test_horario_inicio_de_oferta_sem_grade(self, app):
+    def test_horario_inicio_de_oferta_sem_grade_nao_casa(self, app):
         _seed(app)
-        assert _filtrar({"horario_inicio": "10:00"}) == {"T-LEG"}
+        assert _filtrar({"horario_inicio": "10:00"}) == set()
 
-    def test_horario_inicio_de_turma_sem_oferta(self, app):
+    def test_horario_inicio_de_turma_sem_oferta_nao_casa(self, app):
         _seed(app)
-        assert _filtrar({"horario_inicio": "19:00"}) == {"T-SEM"}
+        assert _filtrar({"horario_inicio": "19:00"}) == set()
 
     def test_dia_e_horario_na_mesma_oferta(self, app):
         _seed(app)
@@ -213,23 +217,23 @@ class TestCaracterizacaoFiltros:
         for chave, esperado in (
             ("t_uni", (["Segunda", "Quarta"], ["Seg.", "Qua."])),
             ("t_multi", (["Segunda", "Terça", "Quarta"], ["Seg.", "Ter.", "Qua."])),
-            ("t_sem", (["Sábado"], ["Sáb."])),
-            ("t_leg", (["Quinta"], ["Qui."])),
+            # H5a: sem agenda (turma sem oferta / oferta sem grade) → sem dias.
+            ("t_sem", ([], [])),
+            ("t_leg", ([], [])),
         ):
             resumo = _resumo_ofertas(db.session.get(Turma, ids[chave]))
             assert (resumo["dias"], resumo["dias_abreviados"]) == esperado
 
 
 # --- Comportamento novo (grade NÃO uniforme) ---------------------------------
-# Adicionado no P4/P5, depois da migração: filtro por dia/horário e
-# agregação passam a ler a grade.
 class TestFiltrosPelaGradeNaoUniforme:
-    """T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00 (projeção escalar 14:00)."""
+    """T-VAR: Terça 08:00–10:00 e Quinta 14:00–16:00."""
 
     def test_dia_casa_somente_os_dias_da_grade(self, app):
         _seed(app, variavel=True)
         assert _filtrar({"dia": "Terça"}) == {"T-MULTI", "T-VAR"}
-        assert _filtrar({"dia": "Quinta"}) == {"T-LEG", "T-VAR"}
+        # T-LEG não casa mais (oferta sem grade desde o H5a).
+        assert _filtrar({"dia": "Quinta"}) == {"T-VAR"}
         assert _filtrar({"dia": "Sexta"}) == set()
 
     def test_horario_casa_a_hora_de_inicio_de_qualquer_dia(self, app):
@@ -248,12 +252,14 @@ class TestFiltrosPelaGradeNaoUniforme:
         assert "T-VAR" in _filtrar({"dia": "Terça", "horario_inicio": "08:00"})
         assert "T-VAR" in _filtrar({"dia": "Quinta", "horario_inicio": "14:00"})
 
-    def test_fallback_escalar_continua_para_quem_nao_tem_grade(self, app):
+    def test_sem_grade_nao_casa_filtro_algum(self, app):
+        """H5a: T-LEG (oferta ativa sem grade) e T-SEM (sem oferta) ficam fora
+        de TODOS os filtros de agenda — o fallback escalar foi removido."""
         _seed(app, variavel=True)
-        # T-LEG (oferta ativa sem grade) e T-SEM (sem oferta) seguem no CSV.
-        assert _filtrar({"horario_inicio": "10:00"}) == {"T-LEG"}
-        assert _filtrar({"horario_inicio": "19:00"}) == {"T-SEM"}
-        assert _filtrar({"dia": "Sábado"}) == {"T-SEM"}
+        assert "T-LEG" not in _filtrar({"horario_inicio": "10:00"})
+        assert "T-SEM" not in _filtrar({"horario_inicio": "19:00"})
+        assert "T-SEM" not in _filtrar({"dia": "Sábado"})
+        assert _filtrar({"dia": "Sábado"}) == set()
 
     def test_agregacao_de_dias_le_a_grade(self, app):
         ids = _seed(app, variavel=True)
@@ -342,7 +348,6 @@ class TestSemN1:
                     nome=f"T-X{i}", unidade_id=unidade.id, curso_id=curso.id,
                     periodo_letivo_id=periodo.id, ativo=True,
                     data_inicio=DATA_INI, data_fim=DATA_FIM,
-                    dias_semana="Terça", hora_inicio=time(7), hora_fim=time(8),
                 )
                 db.session.add(turma)
                 db.session.flush()

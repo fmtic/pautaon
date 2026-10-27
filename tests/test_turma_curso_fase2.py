@@ -15,10 +15,10 @@ Cobre os cenários do plano (§16) pertinentes à Fase 2:
     - Rotas: tela lista ofertas; POST nova cria oferta; POST duplicado é
       rejeitado com flash e nada cria.
 
-H2 (grade por dia): toda oferta nasce com agenda completa (dias + horas).
-A herança da Turma só vale enquanto a turma não tem vínculo; depois disso,
-as chamadas precisam enviar dias/hora explícitos — chamadas incompletas
-são rejeitadas com ValueError.
+H5a: toda oferta nasce com agenda completa (dias + horas) vinda da grade.
+Não há mais herança a partir das colunas escalares da Turma: `adicionar_oferta`
+sem `agenda=` e sem outra oferta com grade é rejeitada com ValueError; as rotas
+leem a agenda do formulário (`dias_semana` + `hora_inicio`/`hora_fim`).
 """
 
 from datetime import time
@@ -35,6 +35,12 @@ from app.services.turma_curso import (
     ofertas_ativas,
 )
 from config import Config
+
+from _helpers import itens_grade
+
+
+AGENDA = itens_grade("Segunda", time(9), time(10))   # Segunda 09:00–10:00
+FORM_AGENDA = {"dias_semana": "0", "hora_inicio": "09:00", "hora_fim": "10:00"}
 
 
 class SQLiteTestConfig(Config):
@@ -83,7 +89,6 @@ def base(app):
 
     turma = Turma(
         nome="Turma sem curso", unidade_id=unidade_a.id, ativo=True,
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
     db.session.add(turma)
     db.session.commit()
@@ -103,6 +108,12 @@ def _turma(base):
     return db.session.get(Turma, base["turma_id"])
 
 
+def _add(turma, **campos):
+    """`adicionar_oferta` com a agenda padrão (H5a: agenda é obrigatória)."""
+    campos.setdefault("agenda", AGENDA)
+    return adicionar_oferta(turma, **campos)
+
+
 # ---------------------------------------------------------------------------
 # Serviço: regras de negócio
 # ---------------------------------------------------------------------------
@@ -110,7 +121,7 @@ def _turma(base):
 def test_primeira_oferta_sem_principal_e_espelhamento_legado(base):
     """Primeira oferta não exige principal; turma sem curso legado espelha."""
     turma = _turma(base)
-    oferta = adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+    oferta = _add(turma, curso_id=base["curso1"], programa="Teste")
 
     assert oferta.id is not None
     assert oferta.principal is False
@@ -120,30 +131,29 @@ def test_primeira_oferta_sem_principal_e_espelhamento_legado(base):
 
 def test_curso_repetido_na_mesma_turma_e_bloqueado(base):
     turma = _turma(base)
-    adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+    _add(turma, curso_id=base["curso1"], programa="Teste")
 
     with pytest.raises(ValueError, match="já é ofertado"):
-        adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+        _add(turma, curso_id=base["curso1"], programa="Teste")
     assert len(ofertas_ativas(turma.id)) == 1
 
 
 def test_curso_de_outra_unidade_e_bloqueado(base):
     turma = _turma(base)
     with pytest.raises(ValueError, match="não pertence à unidade"):
-        adicionar_oferta(turma, curso_id=base["curso_b"])
+        _add(turma, curso_id=base["curso_b"])
 
 
 def test_segunda_oferta_exige_principal_quando_nenhuma_tem(base):
     """Backfill/legado sem principal: ao entrar o 2º curso, a marca é obrigatória."""
     turma = _turma(base)
-    adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+    _add(turma, curso_id=base["curso1"], programa="Teste")
 
     with pytest.raises(ValueError, match="curso principal"):
-        adicionar_oferta(turma, curso_id=base["curso2"], programa="Teste")
+        _add(turma, curso_id=base["curso2"], programa="Teste")
 
-    oferta2 = adicionar_oferta(
+    oferta2 = _add(
         turma, curso_id=base["curso2"], principal=True, programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
     assert oferta2.principal is True
     assert len(ofertas_ativas(turma.id)) == 2
@@ -152,10 +162,9 @@ def test_segunda_oferta_exige_principal_quando_nenhuma_tem(base):
 def test_segunda_oferta_livre_quando_existe_principal(base):
     """Já havendo principal marcado, a nova oferta pode entrar sem marca."""
     turma = _turma(base)
-    primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(
+    primeira = _add(turma, curso_id=base["curso1"], principal=True, programa="Teste")
+    segunda = _add(
         turma, curso_id=base["curso2"], programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
 
     assert segunda.principal is False
@@ -164,10 +173,9 @@ def test_segunda_oferta_livre_quando_existe_principal(base):
 
 def test_definir_principal_faz_swap_atomico(base):
     turma = _turma(base)
-    primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(
+    primeira = _add(turma, curso_id=base["curso1"], principal=True, programa="Teste")
+    segunda = _add(
         turma, curso_id=base["curso2"], programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
 
     definir_principal(segunda)
@@ -181,7 +189,7 @@ def test_definir_principal_faz_swap_atomico(base):
 
 def test_desativar_oferta_preserva_historico_e_espeleo_nao_regressa(base):
     turma = _turma(base)
-    oferta = adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+    oferta = _add(turma, curso_id=base["curso1"], programa="Teste")
 
     desativar_oferta(oferta)
     db.session.expire_all()
@@ -195,19 +203,17 @@ def test_desativar_oferta_preserva_historico_e_espeleo_nao_regressa(base):
 def test_desativar_oferta_bloqueada_se_deixaria_2_ativas_sem_principal(base):
     """Remover a única principal deixaria 2+ ativas sem principal — bloqueado."""
     turma = _turma(base)
-    principal = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    segunda = adicionar_oferta(
+    principal = _add(turma, curso_id=base["curso1"], principal=True, programa="Teste")
+    segunda = _add(
         turma, curso_id=base["curso2"], programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
     curso3 = Curso(
         nome="Eletrônica", unidade_id=base["unidade_a"], ativo=True,
     )
     db.session.add(curso3)
     db.session.commit()
-    terceira = adicionar_oferta(
+    terceira = _add(
         turma, curso_id=curso3.id, programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
 
     # Desativar uma não-principal é sempre livre (principal permanece).
@@ -232,10 +238,9 @@ def test_desativar_oferta_bloqueada_se_deixaria_2_ativas_sem_principal(base):
 
 def test_editar_oferta_com_duas_ativas_nao_toca_legado(base):
     turma = _turma(base)
-    primeira = adicionar_oferta(turma, curso_id=base["curso1"], principal=True, programa="Teste")
-    adicionar_oferta(
+    primeira = _add(turma, curso_id=base["curso1"], principal=True, programa="Teste")
+    _add(
         turma, curso_id=base["curso2"], programa="Teste",
-        dias_semana="Segunda", hora_inicio=time(9), hora_fim=time(10),
     )
 
     editar_oferta(primeira, turno="Noite", professor_id=base["professor_id"])
@@ -250,7 +255,7 @@ def test_editar_oferta_com_duas_ativas_nao_toca_legado(base):
 
 def test_edicao_de_oferta_rejeita_professor_de_outra_unidade(base):
     turma = _turma(base)
-    oferta = adicionar_oferta(turma, curso_id=base["curso1"], programa="Teste")
+    oferta = _add(turma, curso_id=base["curso1"], programa="Teste")
     outro = User(
         name="Prof B", email="prof.b@example.com",
         role="professor", first_login=False, unidade_id=base["unidade_a"] + 1,
@@ -288,7 +293,10 @@ def test_rota_nova_oferta_cria_incremental(app, base):
     client = _client_admin(app, base)
     resposta = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "turno": "Manhã", "programa": "Teste"},
+        data={
+            "curso_id": base["curso1"], "turno": "Manhã", "programa": "Teste",
+            **FORM_AGENDA,
+        },
         follow_redirects=True,
     )
     assert resposta.status_code == 200
@@ -298,12 +306,12 @@ def test_rota_nova_oferta_cria_incremental(app, base):
     assert len(ofertas_ativas(turma.id)) == 1
 
     # Incremental: segundo curso entra marcado como principal, com agenda própria
-    # (após a 1ª oferta a turma já tem vínculo e a herança de agenda não se aplica).
+    # (H5a: a agenda vem sempre do formulário/grade, nunca das colunas da turma).
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
         data={
             "curso_id": base["curso2"], "principal": "on", "programa": "Teste",
-            "dias_semana": "Segunda", "hora_inicio": "09:00", "hora_fim": "10:00",
+            **FORM_AGENDA,
         },
     )
     assert len(ofertas_ativas(base["turma_id"])) == 2
@@ -313,11 +321,11 @@ def test_rota_curso_duplicado_rejeitada_com_flash(app, base):
     client = _client_admin(app, base)
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste"},
+        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
     )
     resposta = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste"},
+        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
         follow_redirects=True,
     )
     assert "já é ofertado" in resposta.get_data(as_text=True)
@@ -328,11 +336,11 @@ def test_rota_segunda_oferta_sem_principal_rejeitada(app, base):
     client = _client_admin(app, base)
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste"},
+        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
     )
     resposta = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso2"], "programa": "Teste"},
+        data={"curso_id": base["curso2"], "programa": "Teste", **FORM_AGENDA},
         follow_redirects=True,
     )
     assert "curso principal" in resposta.get_data(as_text=True)

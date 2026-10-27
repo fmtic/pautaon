@@ -28,6 +28,7 @@ from app.models import (
     User,
 )
 from app.models.enums import ConceitoFrequencia
+from app.services.turma_curso_horario import definir_grade, grade_da_oferta
 from config import Config
 
 DATA_INI = date(2026, 3, 2)   # segunda-feira
@@ -91,8 +92,7 @@ def _seed(*, ofertas=0, curso_turma=True, com_lancamentos=False):
         turma = Turma(
             nome="T edit", unidade_id=unidade.id, ativo=True,
             curso_id=(cA.id if curso_turma else None),
-            professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            professor_id=p1.id, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(turma)
@@ -103,12 +103,13 @@ def _seed(*, ofertas=0, curso_turma=True, com_lancamentos=False):
             o = TurmaCurso(
                 turma_id=turma.id, curso_id=(cA.id if i == 0 else cB.id),
                 unidade_id=unidade.id, ativo=True, principal=(i == 0),
-                professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-                hora_inicio=time(9, 0), hora_fim=time(10, 0),
+                professor_id=p1.id, turno="Manhã",
                 data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
             )
             db.session.add(o)
             db.session.flush()
+            # H5a: a agenda vive só na grade.
+            definir_grade(o, [(0, time(9, 0), time(10, 0))])
             oferta_ids.append(o.id)
 
         aluno_id = None
@@ -155,6 +156,14 @@ def _post_edit(app, ids, **over):
     return client.post(f"/turma/editar/{ids['turma']}", data=form)
 
 
+def _grade_itens(oferta):
+    """Itens (dia, início, fim) da grade da oferta (fonte única no H5a)."""
+    return [
+        (l.dia_semana, l.hora_inicio, l.hora_fim)
+        for l in grade_da_oferta(oferta)
+    ]
+
+
 # --- 1 oferta: espelha professor/turno/horários/datas na oferta -------------
 def test_edicao_uma_oferta_espelha_campos_na_oferta():
     app, ids = _seed(ofertas=1)
@@ -170,15 +179,10 @@ def test_edicao_uma_oferta_espelha_campos_na_oferta():
         oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
         assert turma.professor_id == ids["p2"]
         assert turma.turno == "Tarde"
-        assert turma.hora_inicio == time(11, 0)
-        assert turma.hora_fim == time(12, 30)
-        assert turma.dias_semana == "Terça"
-        # A oferta acompanha exatamente o que foi gravado na turma.
+        # H5a: a agenda vive só na grade da oferta (a rota não escreve a Turma).
         assert oferta.professor_id == ids["p2"]
         assert oferta.turno == "Tarde"
-        assert oferta.hora_inicio == time(11, 0)
-        assert oferta.hora_fim == time(12, 30)
-        assert oferta.dias_semana == "Terça"
+        assert _grade_itens(oferta) == [(1, time(11, 0), time(12, 30))]
         assert oferta.curso_id == ids["cA"]  # curso não mudou
 
 
@@ -212,10 +216,8 @@ def test_edicao_uma_oferta_com_lancamentos_exige_confirmacao():
     r = _post_edit(app, ids, hora_inicio="14:00", hora_fim="15:00")
     assert r.status_code == 302
     with app.app_context():
-        turma = db.session.get(Turma, ids["turma"])
         oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
-        assert turma.hora_inicio == time(9, 0)
-        assert oferta.hora_inicio == time(9, 0)
+        assert _grade_itens(oferta) == [(0, time(9, 0), time(10, 0))]
         assert Frequencia.query.filter_by(turma_id=ids["turma"]).count() == 1
 
     # Confirmado: limpa os lançamentos e a oferta acompanha o novo horário.
@@ -225,11 +227,8 @@ def test_edicao_uma_oferta_com_lancamentos_exige_confirmacao():
     )
     assert r2.status_code == 302
     with app.app_context():
-        turma = db.session.get(Turma, ids["turma"])
         oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
-        assert turma.hora_inicio == time(14, 0)
-        assert oferta.hora_inicio == time(14, 0)
-        assert oferta.hora_fim == time(15, 0)
+        assert _grade_itens(oferta) == [(0, time(14, 0), time(15, 0))]
         assert Frequencia.query.filter_by(turma_id=ids["turma"]).count() == 0
 
 
@@ -254,14 +253,12 @@ def test_edicao_duas_ofertas_ignora_campos_de_oferta():
         assert turma.curso_id == ids["cA"]
         assert turma.professor_id == ids["p1"]
         assert turma.turno == "Manhã"
-        assert turma.hora_inicio == time(9, 0)
-        assert turma.dias_semana == "Segunda"
         # Nenhuma oferta alterada:
         for oid in ids["ofertas"]:
             o = db.session.get(TurmaCurso, oid)
             assert o.professor_id == ids["p1"]
             assert o.turno == "Manhã"
-            assert o.hora_inicio == time(9, 0)
+            assert _grade_itens(o) == [(0, time(9, 0), time(10, 0))]
 
 
 # --- 2+ ofertas: POST forjado só com campos de oferta é descartado ----------
@@ -278,11 +275,11 @@ def test_edicao_duas_ofertas_post_forjado_descartado():
         turma = db.session.get(Turma, ids["turma"])
         assert turma.professor_id == ids["p1"]
         assert turma.turno == "Manhã"
-        assert turma.hora_inicio == time(9, 0)
         assert turma.curso_id == ids["cA"]
-        assert TurmaCurso.query.filter_by(
-            turma_id=ids["turma"], hora_inicio=time(23, 0)
-        ).count() == 0
+        # Nenhuma oferta recebeu o horário forjado (a agenda é a grade).
+        for oid in ids["ofertas"]:
+            o = db.session.get(TurmaCurso, oid)
+            assert _grade_itens(o) == [(0, time(9, 0), time(10, 0))]
 
 
 # --- turma sem oferta: edição igual a hoje (sem espelhamento) ---------------
@@ -298,7 +295,7 @@ def test_edicao_sem_oferta_comportamento_atual():
         turma = db.session.get(Turma, ids["turma"])
         assert turma.professor_id == ids["p2"]
         assert turma.turno == "Tarde"
-        assert turma.hora_inicio == time(11, 0)
+        # H5a: sem oferta a turma NÃO tem agenda (nada é escrito na Turma).
         assert turma.curso_id == ids["cB"]  # troca de curso permitida sem oferta
         assert TurmaCurso.query.filter_by(turma_id=ids["turma"]).count() == 0
 
@@ -328,8 +325,7 @@ def test_edicao_falha_validacao_rollback_turma_e_oferta(monkeypatch):
         turma = db.session.get(Turma, ids["turma"])
         oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
         assert turma.nome == "T edit"
-        assert turma.hora_inicio == time(9, 0)
-        assert oferta.hora_inicio == time(9, 0)
+        assert _grade_itens(oferta) == [(0, time(9, 0), time(10, 0))]
 
 
 # =============================================================================
@@ -376,7 +372,9 @@ def test_g3_muitas_ofertas_readonly():
     html = r.get_data(as_text=True)
     assert "Com mais de um curso" in html
     assert "readonly" in html
-    assert 'name="dias_semana" value=' in html           # hidden com valor atual
+    # H5a: a agenda é read-only e não há hidden com valor escalar da Turma.
+    assert "Definida por curso em Cursos da Turma" in html
+    assert 'name="dias_semana" value=' not in html
     assert 'name="professor_id" value=' in html
 
 
@@ -398,8 +396,7 @@ def test_g3_oferta_desativada_e_ativa_hidden_e_ativa_e_nome_aceito():
         db.session.flush()
         turma = Turma(
             nome="T mix", unidade_id=unidade.id, ativo=True, curso_id=cA.id,
-            professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            professor_id=p1.id, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(turma)

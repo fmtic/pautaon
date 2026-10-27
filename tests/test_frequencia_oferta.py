@@ -68,7 +68,7 @@ def _base(app):
         def _turma(nome):
             t = Turma(
                 nome=nome, turno="Manhã", data_inicio=DATA_INI,
-                data_fim=DATA_FIM, dias_semana="Segunda",
+                data_fim=DATA_FIM,
                 periodo_letivo_id=periodo.id, unidade_id=un.id, ativo=True,
             )
             db.session.add(t)

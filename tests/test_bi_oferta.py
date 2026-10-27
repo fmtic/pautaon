@@ -141,8 +141,7 @@ def _seed():
                   curso_id=curso.id if curso else None,
                   professor_id=prof.id if prof else None,
                   turno=turno, programa=programa,
-                  data_inicio=per.data_inicio, data_fim=per.data_fim,
-                  dias_semana="Segunda")
+                  data_inicio=per.data_inicio, data_fim=per.data_fim)
         db.session.add(t)
         db.session.flush()
         return t
@@ -855,7 +854,7 @@ def test_sem_n_plus_1_frequencia_agregada(cenario):
         eta = Turma(nome="Eta", ativo=True, unidade_id=s["ua"],
                     periodo_letivo_id=s["p1"], turno="Noite",
                     programa="Padrão", data_inicio=hoje - timedelta(days=30),
-                    data_fim=hoje + timedelta(days=60), dias_semana="Terça")
+                    data_fim=hoje + timedelta(days=60))
         db.session.add(eta)
         db.session.flush()
         oe = nova_oferta(eta.id, s["cn"], s["ua"], principal=True,

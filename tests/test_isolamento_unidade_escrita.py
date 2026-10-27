@@ -107,13 +107,13 @@ def _setup(app, role="admin"):
                              unidade_id=un_b.id)
         turma_a = Turma(
             nome="Turma A", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             periodo_letivo_id=periodo_a.id, unidade_id=un_a.id,
             ativo=True,
         )
         turma_b = Turma(
             nome="Turma B", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             periodo_letivo_id=periodo_b.id, unidade_id=un_b.id,
             ativo=True,
         )

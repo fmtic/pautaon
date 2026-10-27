@@ -87,7 +87,7 @@ def _base(app):
         def _turma(nome, periodo, unidade, ativo=True):
             t = Turma(
                 nome=nome, turno="Manhã", data_inicio=periodo.data_inicio,
-                data_fim=periodo.data_fim, dias_semana="Segunda",
+                data_fim=periodo.data_fim,
                 periodo_letivo_id=periodo.id, unidade_id=unidade.id,
                 ativo=ativo,
             )

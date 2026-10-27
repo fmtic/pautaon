@@ -7,7 +7,7 @@ agenda das ofertas (vigência + dias da semana). REGRA GERAL verificada: com 0
 ou 1 oferta o cálculo continua por turma, exatamente como antes.
 """
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -25,6 +25,8 @@ from app.models import (
 from app.models.enums import ConceitoFrequencia
 from app.utils.frequencia import contar_pendencias_frequencia
 from config import Config
+
+from _helpers import aplicar_grade
 
 HOJE = date.today()
 _DIAS = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
@@ -54,7 +56,7 @@ def app():
 
 
 def _seed(app, ofertas_cfg):
-    """Cria unidade + turma (calendário legado = hoje) e uma oferta por cfg.
+    """Cria unidade + turma e uma oferta por cfg, com agenda na GRADE (H5a).
 
     cada cfg: dict(curso, dias, data_inicio, data_fim, alunos=[(nome, lançado)])
     'lançado=True' grava uma Frequencia da oferta em HOJE.
@@ -67,7 +69,7 @@ def _seed(app, ofertas_cfg):
 
         turma = Turma(
             nome="Turma D3b1", unidade_id=unidade.id, ativo=True, curso_id=None,
-            dias_semana=DIA_HOJE, data_inicio=HOJE, data_fim=HOJE,
+            data_inicio=HOJE, data_fim=HOJE,
         )
         db.session.add(turma)
         db.session.flush()
@@ -78,11 +80,13 @@ def _seed(app, ofertas_cfg):
             db.session.flush()
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-                ativo=True, dias_semana=cfg["dias"], programa="Teste",
+                ativo=True, programa="Teste",
                 data_inicio=cfg["data_inicio"], data_fim=cfg["data_fim"],
             )
             db.session.add(oferta)
             db.session.flush()
+            # H5a: os dias do cenário vão só para a grade.
+            aplicar_grade(oferta, cfg["dias"], time(8), time(10))
             for nome, lancado in cfg["alunos"]:
                 aluno = Aluno(nome=nome, unidade_id=unidade.id, ativo=True)
                 db.session.add(aluno)
