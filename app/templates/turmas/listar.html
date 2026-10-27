@@ -11,6 +11,11 @@
             <a href="{{ url_for('registros.nova_turma') }}" class="btn btn-success shadow-sm">
                 <i class="bi bi-plus-lg me-1"></i> Nova Turma
             </a>
+            {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
+            <a href="{{ url_for('registros.turma_lixeira') }}" class="btn btn-outline-danger shadow-sm">
+                <i class="bi bi-trash3 me-1"></i> Lixeira
+            </a>
+            {% endif %}
         </div>
     </div>
 

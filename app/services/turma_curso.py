@@ -1048,3 +1048,158 @@ def datas_esperadas_oferta(
     passa ``None`` para somar ocorrências de toda a vigência.
     """
     return datas_aula_oferta(oferta, limite=hoje, blocked=blocked)
+
+# =============================================================================
+# REATIVAÇÃO DE TURMA (L4)
+# =============================================================================
+
+
+def preview_reativacao(turma: Turma) -> dict:
+    """Contagens para a listagem de lixeira (MESMA regra da reativação)."""
+    from datetime import date
+
+    from app import db
+    from app.models import Aluno, Inscricao
+
+    MOTIVO = "TURMA_DESATIVADA"
+    ofertas_inativas = [
+        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
+        if not o.ativo
+    ]
+    ofertas_ids = {o.id for o in ofertas_inativas}
+    elegiveis = 0
+    conflitos = 0
+    if ofertas_ids:
+        inscs = (
+            Inscricao.query
+            .filter(
+                Inscricao.turma_id == turma.id,
+                Inscricao.motivo_desativacao == MOTIVO,
+                Inscricao.turma_curso_id.in_(ofertas_ids),
+            )
+            .all()
+        )
+        for insc in inscs:
+            aluno = db.session.get(Aluno, insc.aluno_id)
+            if aluno is None or not aluno.ativo:
+                conflitos += 1
+                continue
+            outra = (
+                Inscricao.query
+                .filter(
+                    Inscricao.aluno_id == insc.aluno_id,
+                    Inscricao.turma_curso_id == insc.turma_curso_id,
+                    Inscricao.ativo.is_(True),
+                    Inscricao.id != insc.id,
+                )
+                .first()
+            )
+            if outra is not None:
+                conflitos += 1
+            else:
+                elegiveis += 1
+
+    periodo = turma.periodo_letivo
+    hoje = None
+    try:
+        from app.utils.timezone import get_local_now
+        hoje = get_local_now().date()
+    except Exception:
+        hoje = date.today()
+    periodo_encerrado = bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
+
+    return {
+        "ofertas_reativar": len(ofertas_inativas),
+        "inscricoes_reativar": elegiveis,
+        "conflitos": conflitos,
+        "periodo_encerrado": periodo_encerrado,
+    }
+
+
+def reativar_turma(turma: Turma, *, confirmar_periodo_encerrado: bool = False) -> dict:
+    """Reativa uma turma logicamente excluída (sem commit)."""
+    from datetime import date
+
+    from app import db
+    from app.models import Aluno, Inscricao, TurmaCurso
+
+    MOTIVO = "TURMA_DESATIVADA"
+
+    periodo = turma.periodo_letivo
+    hoje = None
+    try:
+        from app.utils.timezone import get_local_now
+        hoje = get_local_now().date()
+    except Exception:
+        hoje = date.today()
+    periodo_encerrado = bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
+    if periodo_encerrado and not confirmar_periodo_encerrado:
+        raise ValueError(
+            "O período letivo da turma já encerrou. Confirme a reativação."
+        )
+
+    ofertas_inativas = [
+        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
+        if not o.ativo
+    ]
+
+    ativas_apos = [
+        o for o in TurmaCurso.query.filter_by(turma_id=turma.id).all()
+        if o.ativo or o in ofertas_inativas
+    ]
+    principals = [o for o in ativas_apos if o.principal]
+    if len(ativas_apos) >= 2 and len(principals) != 1:
+        raise ValueError(
+            "Reativação violaria a regra de curso principal (2+ ofertas ativas "
+            "exigem exatamente 1 principal). Ajuste antes de reativar."
+        )
+
+    turma.ativo = True
+
+    ofertas_reativadas = 0
+    for o in ofertas_inativas:
+        o.ativo = True
+        ofertas_reativadas += 1
+
+    ofertas_ids = {o.id for o in ofertas_inativas}
+    inscricoes_reativadas = 0
+    conflitos: list[int] = []
+    if ofertas_ids:
+        inscs = (
+            Inscricao.query
+            .filter(
+                Inscricao.turma_id == turma.id,
+                Inscricao.motivo_desativacao == MOTIVO,
+                Inscricao.turma_curso_id.in_(ofertas_ids),
+            )
+            .all()
+        )
+        for insc in inscs:
+            aluno = db.session.get(Aluno, insc.aluno_id)
+            if aluno is None or not aluno.ativo:
+                conflitos.append(insc.id)
+                continue
+            outra = (
+                Inscricao.query
+                .filter(
+                    Inscricao.aluno_id == insc.aluno_id,
+                    Inscricao.turma_curso_id == insc.turma_curso_id,
+                    Inscricao.ativo.is_(True),
+                    Inscricao.id != insc.id,
+                )
+                .first()
+            )
+            if outra is not None:
+                conflitos.append(insc.id)
+                continue
+            insc.ativo = True
+            insc.data_desativacao = None
+            insc.motivo_desativacao = None
+            inscricoes_reativadas += 1
+
+    return {
+        "ofertas_reativadas": ofertas_reativadas,
+        "inscricoes_reativadas": inscricoes_reativadas,
+        "conflitos": conflitos,
+        "periodo_encerrado": periodo_encerrado,
+    }

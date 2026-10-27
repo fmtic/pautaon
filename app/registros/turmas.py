@@ -1047,10 +1047,104 @@ def turma_listar():
 @bp.route("/turmas/lixeira")
 @login_required
 def turma_lixeira():
-    if current_user.role not in ["admin", "pedagogico", "gerencia", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
-    turmas = Turma.query.filter_by(ativo=False).all()
-    return render_template("turma_lixeira.html", turmas=turmas)
+
+    unidade_id = get_unidade_id()
+    # Visão Global: somente leitura, sem botão.
+    visao_global = unidade_id is None
+
+    stmt = select(Turma).where(Turma.ativo.is_(False))
+    if unidade_id:
+        stmt = stmt.where(Turma.unidade_id == unidade_id)
+    turmas = db.session.execute(
+        stmt.order_by(Turma.nome)
+    ).scalars().all()
+
+    # Contagens em lote (sem N+1).
+    turma_ids = [t.id for t in turmas]
+    ofertas_por_turma: dict[int, list] = {tid: [] for tid in turma_ids}
+    if turma_ids:
+        for o in TurmaCurso.query.filter(
+            TurmaCurso.turma_id.in_(turma_ids)
+        ).all():
+            ofertas_por_turma.setdefault(o.turma_id, []).append(o)
+
+    # inscrições elegíveis por turma (motivo TURMA_DESATIVADA)
+    insc_por_turma: dict[int, list] = {tid: [] for tid in turma_ids}
+    if turma_ids:
+        for insc in Inscricao.query.filter(
+            Inscricao.turma_id.in_(turma_ids),
+            Inscricao.motivo_desativacao == "TURMA_DESATIVADA",
+        ).all():
+            insc_por_turma.setdefault(insc.turma_id, []).append(insc)
+
+    from app.services.turma_curso import preview_reativacao
+
+    previews = {}
+    for t in turmas:
+        previews[t.id] = preview_reativacao(t)
+
+    return render_template(
+        "turmas/turma_lixeira.html",
+        turmas=turmas,
+        visao_global=visao_global,
+        previews=previews,
+        ofertas_por_turma=ofertas_por_turma,
+    )
+
+
+@bp.route("/turmas/reativar/<int:id>", methods=["POST"])
+@login_required
+def reativar_turma_route(id):
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+        abort(403)
+
+    turma_obj = db.session.get(Turma, id)
+    if not turma_obj or turma_obj.ativo:
+        flash("Turma não encontrada na lixeira.", "warning")
+        return redirect(url_for("registros.turma_lixeira"))
+
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+
+    confirmar = request.form.get("confirmar_periodo") == "1"
+
+    from app.services.turma_curso import reativar_turma as _reativar
+
+    try:
+        resultado = _reativar(turma_obj, confirmar_periodo_encerrado=confirmar)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("registros.turma_lixeira"))
+    except Exception as exc:
+        db.session.rollback()
+        from app.utils.errors import flash_and_log
+        flash_and_log(exc, location="registros.reativar_turma_route")
+        return redirect(url_for("registros.turma_lixeira"))
+
+    # LogAcao
+    try:
+        register_security_log(
+            "Reativação de Turma",
+            f"Turma id={id} nome='{turma_obj.nome}' reativada: "
+            f"{resultado['ofertas_reativadas']} oferta(s), "
+            f"{resultado['inscricoes_reativadas']} inscrição(ões), "
+            f"{len(resultado['conflitos'])} conflito(s).",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    msg = (
+        f"Turma reativada: {resultado['ofertas_reativadas']} oferta(s) e "
+        f"{resultado['inscricoes_reativadas']} inscrição(ões) reativadas."
+    )
+    if resultado["conflitos"]:
+        msg += f" {len(resultado['conflitos'])} inscrição(ões) permaneceram inativas por conflito."
+    flash(msg, "success")
+    return redirect(url_for("registros.turma_lixeira"))
 
 
 @bp.route("/turma/nova", methods=["GET", "POST"])

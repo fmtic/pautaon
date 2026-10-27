@@ -54,7 +54,7 @@
 - **D3b-2/J3 — frequência e relatórios por turma_id (parcialmente resolvido em D3b-2.0–2.6):** ramo legado ainda lê por `turma_id` (`app/utils/logica.py`, `app/utils/frequencia.py`); `Turma.freq_geral` (soma das ofertas, decisão D1) e `agregar_por_turma` (painel pedagógico, decisão D1) mantidos como visão por turma; BI `frequencia_por_turma` e indicadores de conselho (CRU-002/CRU-005) ainda filtram pela turma. **Resolvido:** N+1 de `freq_geral`/`freq_geral_oferta` na listagem (D3b-2.2); N+1 do histórico (D3b-2.3); estatísticas do GET `/frequencia` por oferta em 2+ ofertas (D3b-2.4); `min_freq` coerente com o valor exibido (D3b-2.5, D7); `f_prog` por `TurmaCurso.programa` (D3b-2.6); ALU-009/ALU-010 já aplicam `cond_inscricao_enturmada`. **Ainda pendente:** legado NULL sem backfill (decisão D2 — só regra D2); BI que ainda lê `Turma.programa` (projeção) em outros pontos (listagem, filtros, conselho) — fora do escopo da D3b-2.6; `excluir_turma`/limpeza de lançamentos em `editar_turma` ainda apagam por `turma_id` (D3).
 - **Fases 5–7 da Onda 4 (a redefinir):** autorização por professor da oferta, turno e centro de custo por oferta, transferências avançadas. Fases 8–9 e NOT NULL final (`c3d4e5f6a7b8` + `d4e5f6a7b8c9`) **concluídas**.
 - **`Transferencia`:** decidir se a tabela passa a registrar a oferta de origem/destino (hoje só `turma_origem_id`/`turma_destino_id`; rastrear exige `Inscricao`).
-- **`turma_lixeira`:** GET `/turmas/lixeira` renderiza `turma_lixeira.html` inexistente; não há rota para **reativar** turma desativada.
+- **`turma_lixeira`:** resolvido em L4 — template `turma_lixeira.html` criado, rota GET `/turmas/lixeira` corrigida e POST `/turmas/reativar/<id>` adicionado (reativação transacional com regra de principal e período encerrado).
 - **Frequencia/RegistroAula legados com `turma_curso_id IS NULL`:** backfill definitivo **sem fase designada** (a antiga Fase 9 tratava só do NOT NULL de `inscricoes`); as rotas atuais preservam `IS NULL` de propósito. Consequências: turma sem oferta que lança frequência e depois ganha a primeira oferta perde a visão por oferta e relançar o dia cria linha duplicada; turma que desativa todas as ofertas deixa de mostrar o histórico por oferta na tela legada.
 - **Dívida de migrations (§11.1, itens 2–6 e 8 do MER).**
 - **Dump autêntico** para um novo ensaio P1/B5 (não há produção real; o banco local veio de dump antigo — B5-P2).
@@ -154,7 +154,7 @@
 
 ### Pendências e decisões abertas
 
-- `turma_lixeira` (GET `/turmas/lixeira`) renderiza `turma_lixeira.html`, que **não existe**; não há rota para **reativar** turma desativada.
+- `turma_lixeira` (GET `/turmas/lixeira`): resolvido em L4 — template criado e rota de reativação adicionada.
 - **J3:** atribuição por curso no BI pelo **curso da oferta**; `Turma.programa` ainda é lido no BI e na lista (o programa já existe na oferta, `turma_curso.programa`).
 - `excluir_turma` e a limpeza de lançamentos em `editar_turma` apagam por `turma_id`, alcançando as linhas de **todas as ofertas**.
 - Estatísticas do GET `/frequencia` (`core.py` ~L396-400) agregam oferta e legado **sem separar por oferta**.
