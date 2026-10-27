@@ -9,7 +9,8 @@
 - **D3b-2.4:** estatísticas do GET `/frequencia` por oferta em turma com 2+ ofertas (legado NULL não entra). Suíte 673. Commit `344ad9f`.
 - **D3b-2.5:** `min_freq` coerente com a frequência exibida (D7: compara a soma da turma). Suíte 678. Commit `4c307a8`.
 - **D3b-2.6:** `f_prog` por `TurmaCurso.programa` (regra D2 do legado). Suíte 681. Commit ` (implementação + docs)`.
-- **Estado da suíte ao final da D3b-2.6: 681 passed**, 0 falhas; head `8d2e3f4a5b6c` (sem migration); sem push.
+- **Decisões D1–D7 (D3b-2.0):** D1 contrato por leitor (turma=soma vs por oferta); D2 legado NULL (regra D2, backfill só inequívoco); D3 limpeza por oferta; D4 estatísticas por oferta; D5 N+1; D6 ALU-009/010 (já aplicavam) + f_prog por oferta; D7 min_freq compara o valor exibido.
+- **Estado da suíte ao final da D3b-2.7: 684 passed**, 0 falhas; head `8d2e3f4a5b6c` (sem migration); sem push.
 
 
 - **PQ1 — Numeração e lettering das perguntas:** cada pergunta passa a exibir número sequencial (1, 2, 3…) reiniciando por aba (etapa + tipo) e cada opção de resposta recebe letra (A, B, C…), facilitando a referência para quem cadastra e para quem responde. Implementado **sem migration e sem campo novo**: ordenação estável por `id` nas três consultas de `app/conselho.py` (`gerenciar_perguntas` L290, lançamento L489, turma_aval L845) e `loop.index`/`loop.index0` (com `selectattr('tipo','equalto',…)` para o índice bater por aba) nos templates `conselho/perguntas.html`, `conselho/lancamento.html` e `conselho/turma_aval.html`. A letra é só exibição — o valor persistido continua o texto puro da opção e `opcoes` segue separado por `" | "`, sem impacto em `ConselhoResposta` histórico.
