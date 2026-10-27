@@ -416,3 +416,40 @@ def freq_geral_ofertas_em_lote(
         oid: (agregado.get(oid).pct if agregado.get(oid) is not None else 0.0)
         for oid in oferta_ids
     }
+
+# ---------------------------------------------------------------------------
+# Leitura em LOTE do histórico do aluno (D3b-2.3) — UMA consulta para todas
+# as inscrições. Mesma fórmula de `app.utils.logica.calcular_estatisticas_frequencia`
+# (J fora do denominador, 1 casa decimal). Sem N+1.
+# ---------------------------------------------------------------------------
+
+
+def frequencias_aluno_por_inscricao(
+    aluno_id: int,
+    pares: Iterable[tuple[int, int | None]],
+) -> dict[tuple[int, int | None], dict]:
+    """`{(turma_id, oferta_id): stats}` para um aluno — UMA consulta.
+
+    `stats` é o mesmo dict devolvido por `calcular_estatisticas_frequencia`
+    (presenças, faltas, justificadas, total, percentuais). Inscrição sem
+    lançamento devolve o dict zerado (mesmo comportamento do cálculo antigo).
+    A filtragem é EXATA por (`turma_id`, `turma_curso_id`) — o histórico é
+    por inscrição/oferta e não aplica a regra D2 do legado (preserva números).
+    """
+    from collections import defaultdict
+
+    from app.utils.logica import calcular_estatisticas_frequencia
+
+    grupos: dict[tuple[int, int | None], list] = defaultdict(list)
+    from app import db
+    from app.models import Frequencia
+
+    for f in db.session.query(Frequencia).filter(Frequencia.aluno_id == aluno_id).all():
+        grupos[(f.turma_id, f.turma_curso_id)].append(f.conceito)
+
+    resultado: dict[tuple[int, int | None], dict] = {}
+    for turma_id, oferta_id in pares:
+        resultado[(turma_id, oferta_id)] = calcular_estatisticas_frequencia(
+            grupos.get((turma_id, oferta_id), [])
+        )
+    return resultado

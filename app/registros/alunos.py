@@ -920,6 +920,15 @@ def historico_aluno(aluno_id):
     grade_oferta_map = grades_para_exibicao(
         [insc.turma_curso for insc in inscricoes if insc.turma_curso is not None]
     )
+    # Frequência em LOTE (D3b-2.3): UMA consulta para todas as inscrições do
+    # aluno, em vez de uma consulta por inscrição (N+1).
+    from app.services.frequencia_oferta import frequencias_aluno_por_inscricao
+
+    freq_stats_map = frequencias_aluno_por_inscricao(
+        aluno_id,
+        [(insc.turma_id, insc.turma_curso_id) for insc in inscricoes],
+    )
+
     dados = []
     for insc in inscricoes:
         turma = insc.turma
@@ -928,12 +937,11 @@ def historico_aluno(aluno_id):
         oferta = insc.turma_curso
         oferta_id = insc.turma_curso_id
 
-        # Frequência da INSCRIÇÃO: com oferta filtra pela oferta; sem oferta
-        # (legado) cai em turma + turma_curso_id NULL para não misturar turmas.
-        freqs = Frequencia.query.filter_by(
-            aluno_id=aluno_id, turma_id=insc.turma_id, turma_curso_id=oferta_id
-        ).all()
-        estatisticas = calcular_estatisticas_frequencia(freq.conceito for freq in freqs)
+        # Frequência da INSCRIÇÃO: totais já calculados em lote.
+        estatisticas = freq_stats_map.get(
+            (insc.turma_id, oferta_id),
+            calcular_estatisticas_frequencia([]),
+        )
 
         c_inicial = conselhos.get((aluno_id, oferta_id, "INICIAL"))
         c_percurso = conselhos.get((aluno_id, oferta_id, "PERCURSO"))
