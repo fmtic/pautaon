@@ -453,3 +453,45 @@ def frequencias_aluno_por_inscricao(
             grupos.get((turma_id, oferta_id), [])
         )
     return resultado
+
+
+# ---------------------------------------------------------------------------
+# Estatísticas do GET /frequencia por aluno (D3b-2.4) — sem N+1.
+# ---------------------------------------------------------------------------
+
+
+def conceitos_frequencia_por_aluno(
+    aluno_ids: Iterable[int],
+    turma_id: int,
+    oferta_id: int | None = None,
+    somente_oferta: bool = False,
+) -> dict[int, list[str]]:
+    """`{aluno_id: [conceito, ...]}` para a tela de lançamento.
+
+    - `somente_oferta=True` e `oferta_id` informado: apenas linhas da oferta
+      (`turma_curso_id == oferta_id`) — usado em turma com 2+ ofertas.
+    - caso contrário: todas as linhas da turma (`turma_id`), incluindo o
+      legado NULL (oferta única / 0 ofertas) — comportamento anterior.
+    UMA consulta, sem N+1.
+    """
+    from sqlalchemy import func
+
+    from app import db
+    from app.models import Frequencia
+
+    aluno_ids = list(aluno_ids)
+    if not aluno_ids:
+        return {}
+    q = db.session.query(
+        Frequencia.aluno_id, Frequencia.conceito, func.count(Frequencia.id)
+    ).filter(Frequencia.aluno_id.in_(aluno_ids))
+    if somente_oferta and oferta_id is not None:
+        q = q.filter(Frequencia.turma_curso_id == oferta_id)
+    else:
+        q = q.filter(Frequencia.turma_id == turma_id)
+    rows = q.group_by(Frequencia.aluno_id, Frequencia.conceito).all()
+
+    resultado: dict[int, list[str]] = {aid: [] for aid in aluno_ids}
+    for aluno_id, conceito, n in rows:
+        resultado.setdefault(aluno_id, []).extend([conceito] * n)
+    return resultado

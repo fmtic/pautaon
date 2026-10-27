@@ -395,21 +395,23 @@ def frequencia():
         # se o aluno pode receber frequência.
         alunos_ctx = ctx.get('alunos', [])
         aluno_ids = [a.id for a in alunos_ctx]
+        # ETAPA D3b-2.4: estatísticas por oferta em turma com 2+ ofertas.
+        # 0 ou 1 oferta: inalterado (todas as linhas, inclui legado NULL).
+        somente_oferta = (
+            len(ofertas) >= 2 and oferta_atual is not None
+        )
         conceitos_por_aluno: dict = {}
         if aluno_ids:
-            rows = (
-                db.session.query(
-                    Frequencia.aluno_id, Frequencia.conceito, func.count(Frequencia.id)
-                )
-                .filter(
-                    Frequencia.aluno_id.in_(aluno_ids),
-                    Frequencia.turma_id == turma_id,
-                )
-                .group_by(Frequencia.aluno_id, Frequencia.conceito)
-                .all()
+            from app.services.frequencia_oferta import (
+                conceitos_frequencia_por_aluno,
             )
-            for aluno_id, conceito, n in rows:
-                conceitos_por_aluno.setdefault(aluno_id, []).extend([conceito] * n)
+
+            conceitos_por_aluno = conceitos_frequencia_por_aluno(
+                aluno_ids,
+                turma_id,
+                oferta_id=oferta_atual.id if oferta_atual is not None else None,
+                somente_oferta=somente_oferta,
+            )
             inscricoes_por_aluno: dict = {}
             for insc in (
                 Inscricao.query
