@@ -287,7 +287,7 @@ def gerenciar_perguntas():
     # unidade na sessão (perfis operacionais). O resultado não é usado aqui —
     # PerguntaConselho é global.
     get_unidade_id()
-    query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas)
+    query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas, PerguntaConselho.id)
     # PerguntaConselho é global — perguntas são compartilhadas entre unidades
     perguntas_raw = query.all()
 
@@ -301,6 +301,52 @@ def gerenciar_perguntas():
             perguntas_agrupadas[etapa_str] = lista
 
     return render_template('conselho/perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
+
+
+@bp.route('/conselho/imprimir', methods=['GET'])
+@login_required
+def imprimir_conselho():
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):
+        abort(403)
+
+    etapa_raw = request.args.get('etapa')
+    quantidade_raw = request.args.get('quantidade')
+    if etapa_raw is None and quantidade_raw is None:
+        return redirect(url_for('conselho.index_conselho'))
+
+    try:
+        etapa = EtapaConselho(etapa_raw)
+    except (TypeError, ValueError):
+        flash("Selecione uma etapa válida para imprimir.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    try:
+        quantidade = int(quantidade_raw)
+    except (TypeError, ValueError):
+        flash("Informe uma quantidade válida de alunos.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    if not 1 <= quantidade <= 100:
+        flash("A quantidade deve estar entre 1 e 100 alunos.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    perguntas = (
+        PerguntaConselho.query
+        .filter_by(etapa=etapa, ativo=True)
+        .order_by(PerguntaConselho.id)
+        .all()
+    )
+    perguntas_turma = [p for p in perguntas if p.tipo == 'TURMA']
+    perguntas_aluno = [p for p in perguntas if p.tipo == 'ALUNO']
+
+    return render_template(
+        'conselho/imprimir_formulario.html',
+        etapa=etapa,
+        quantidade=quantidade,
+        perguntas_turma=perguntas_turma,
+        perguntas_aluno=perguntas_aluno,
+        now=datetime.now(),
+    )
 
 
 @bp.route('/conselho/pergunta/salvar', methods=['POST'])
@@ -486,7 +532,7 @@ def lancamento_conselho():
         turma_curso_id=oferta.id, etapa=etapa
     ).first()
 
-    perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).all()
+    perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).order_by(PerguntaConselho.id).all()
 
     respostas_db = ConselhoResposta.query.join(ConselhoClasse).filter(
         ConselhoClasse.turma_curso_id == oferta.id,
@@ -844,7 +890,7 @@ def avaliar_turma(turma_id):
 
     perguntas = PerguntaConselho.query.filter_by(
         tipo='TURMA', etapa=etapa_selecionada, ativo=True
-    ).all()
+    ).order_by(PerguntaConselho.id).all()
     respostas = _get_turma_avaliacao_respostas(oferta, etapa_selecionada)
 
     if request.method == 'POST':

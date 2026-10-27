@@ -20,8 +20,9 @@ from test_conselho_oferta import (  # noqa: F401  (fixtures reaproveitadas)
     client,
 )
 
-from app.models import ConselhoResposta
-from app.models.enums import SituacaoFinal
+from app.database import db
+from app.models import ConselhoResposta, PerguntaConselho
+from app.models.enums import EtapaConselho, SituacaoFinal
 
 
 def _token_csrf(html: str) -> str:
@@ -154,3 +155,73 @@ def test_detalhe_sem_modal_morto_e_com_link_da_oferta(app, client):  # noqa: F81
 
     # A avaliação coletiva é alcançável pelo link da OFERTA em uso.
     assert f"/turma/{ids['turma']}/avaliacao?oferta_sel={oferta_id}" in body
+
+
+def test_impressao_conselho_configura_etapa_e_quantidade(app, client):  # noqa: F811
+    ids = _setup(app, ofertas=1)
+    _perguntas(app)
+    with app.app_context():
+        pergunta_percurso = PerguntaConselho(
+            etapa=EtapaConselho.PERCURSO,
+            tipo="ALUNO",
+            texto="Pergunta exclusiva do percurso",
+            ativo=True,
+        )
+        pergunta_inativa = PerguntaConselho(
+            etapa=EtapaConselho.INICIAL,
+            tipo="ALUNO",
+            texto="Pergunta inativa",
+            ativo=False,
+        )
+        db.session.add_all([pergunta_percurso, pergunta_inativa])
+        db.session.commit()
+    _loga(client, ids, unidade_id=ids["un_a"])
+
+    pagina = client.get("/conselho")
+    assert pagina.status_code == 200
+    configuracao = pagina.data.decode("utf-8")
+    assert 'id="modalImprimirConselho"' in configuracao
+    assert 'name="etapa"' in configuracao
+    assert 'name="quantidade"' in configuracao
+    assert 'value="12"' in configuracao
+
+    resposta = client.get("/conselho/imprimir?etapa=INICIAL&quantidade=12")
+    assert resposta.status_code == 200
+    formulario = resposta.data.decode("utf-8")
+    assert "Como o aluno participa das aulas?" in formulario
+    assert "Como a turma como um todo evoluiu?" in formulario
+    assert "Pergunta exclusiva do percurso" not in formulario
+    assert "Pergunta inativa" not in formulario
+    assert formulario.count('class="student-form"') == 12
+    assert formulario.count("Como o aluno participa das aulas?") == 12
+    assert formulario.count("Como a turma como um todo evoluiu?") == 1
+    assert 'size: landscape' in formulario
+    assert 'class="no-print d-flex' in formulario
+
+
+def test_impressao_conselho_rejeita_etapa_e_quantidade_invalidas(app, client):  # noqa: F811
+    ids = _setup(app, ofertas=1)
+    _loga(client, ids, unidade_id=ids["un_a"])
+
+    sem_parametros = client.get("/conselho/imprimir")
+    assert sem_parametros.status_code == 302
+    assert sem_parametros.headers["Location"].endswith("/conselho")
+
+    etapa_invalida = client.get("/conselho/imprimir?etapa=DESCONHECIDA&quantidade=12")
+    assert etapa_invalida.status_code == 302
+    assert etapa_invalida.headers["Location"].endswith("/conselho/imprimir")
+
+    quantidade_invalida = client.get("/conselho/imprimir?etapa=INICIAL&quantidade=0")
+    assert quantidade_invalida.status_code == 302
+    assert quantidade_invalida.headers["Location"].endswith("/conselho/imprimir")
+
+    quantidade_acima_limite = client.get("/conselho/imprimir?etapa=INICIAL&quantidade=101")
+    assert quantidade_acima_limite.status_code == 302
+    assert quantidade_acima_limite.headers["Location"].endswith("/conselho/imprimir")
+
+
+def test_impressao_conselho_exige_perfil_autorizado(app, client):  # noqa: F811
+    ids = _setup(app, ofertas=1, role="professor")
+    _loga(client, ids, unidade_id=ids["un_a"])
+
+    assert client.get("/conselho/imprimir").status_code == 403

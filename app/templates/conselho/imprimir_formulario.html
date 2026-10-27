@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Formulário do Conselho - {{ etapa.value }}</title>
+    <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+    <style>
+        @page {
+            size: landscape;
+            margin: 0.7cm;
+        }
+
+        body {
+            background: #f5f6f8;
+            color: #212529;
+            font-family: Arial, sans-serif;
+        }
+
+        .print-page {
+            max-width: 1400px;
+            margin: 1.5rem auto;
+            padding: 1.5rem;
+            background: #fff;
+        }
+
+        .report-header {
+            border-bottom: 2px solid #343a40;
+        }
+
+        .report-logo {
+            max-width: 130px;
+            max-height: 54px;
+            object-fit: contain;
+        }
+
+        .form-section {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .form-section-title {
+            margin: 0.8rem 0 0.35rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #6c757d;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .student-form {
+            margin-bottom: 0.8rem;
+            border: 1px solid #adb5bd;
+            padding: 0.45rem;
+        }
+
+        .question-table {
+            width: 100%;
+            margin-bottom: 0.45rem;
+            border-collapse: collapse;
+            font-size: 0.76rem;
+        }
+
+        .question-table th,
+        .question-table td {
+            border: 1px solid #adb5bd;
+            padding: 0.35rem;
+            vertical-align: top;
+        }
+
+        .question-table th {
+            background: #e9ecef;
+        }
+
+        .question-cell {
+            width: 58%;
+        }
+
+        .answer-cell {
+            height: 1.8rem;
+        }
+
+        .general-questions .answer-cell {
+            height: 2.8rem;
+        }
+
+        .options {
+            margin-top: 0.2rem;
+            color: #495057;
+            font-size: 0.68rem;
+        }
+
+        .student-identification {
+            margin: 0.35rem 0;
+            font-size: 0.78rem;
+        }
+
+        .print-footer {
+            margin-top: 0.8rem;
+            padding-top: 0.3rem;
+            border-top: 1px solid #adb5bd;
+            color: #6c757d;
+            font-size: 0.68rem;
+            text-align: right;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+            }
+
+            .print-page {
+                max-width: none;
+                margin: 0;
+                padding: 0;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+
+            thead {
+                display: table-header-group;
+            }
+
+            tr {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="print-page">
+        <div class="no-print d-flex justify-content-between align-items-center mb-3">
+            <a href="{{ url_for('conselho.imprimir_conselho') }}" class="btn btn-outline-secondary btn-sm">Voltar</a>
+            <button type="button" onclick="window.print()" class="btn btn-primary btn-sm">
+                Imprimir formulário
+            </button>
+        </div>
+
+        <header class="report-header d-flex justify-content-between align-items-center pb-2 mb-2">
+            <div class="d-flex align-items-center gap-3">
+                {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+                <img class="report-logo" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional">
+                {% endif %}
+                <div>
+                    <div class="text-muted">{{ informacao_padrao.nome_instituicao or 'Instituição' }}</div>
+                    <h1 class="h4 mb-1">Conselho de Classe — {{ etapa.value }}</h1>
+                    <div class="small text-muted">Formulário para preenchimento manual</div>
+                </div>
+            </div>
+            <div class="text-end small">
+                <div><strong>Turma:</strong> ___________________________________</div>
+                <div><strong>Período letivo:</strong> __________________________</div>
+                <div>Emitido por: <strong>{{ current_user.name }}</strong></div>
+            </div>
+        </header>
+
+        <section class="form-section general-questions">
+            <h2 class="form-section-title">Avaliação geral da turma</h2>
+            {% if perguntas_turma %}
+            <table class="question-table">
+                <thead>
+                    <tr>
+                        <th class="question-cell">Pergunta</th>
+                        <th>Resposta</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pergunta in perguntas_turma %}
+                    <tr>
+                        <td class="question-cell">
+                            <strong>{{ loop.index }}. {{ pergunta.texto }}</strong>
+                            {% if pergunta.opcoes %}
+                            <div class="options">Opções: {{ pergunta.opcoes.replace(' | ', ' · ') }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="answer-cell"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="small text-muted">Não há perguntas gerais ativas para esta etapa.</p>
+            {% endif %}
+        </section>
+
+        <section class="form-section">
+            <h2 class="form-section-title">Avaliação individual dos alunos</h2>
+            {% if perguntas_aluno %}
+                {% for numero_aluno in range(1, quantidade + 1) %}
+                <div class="student-form">
+                    <h3 class="h6 fw-bold mb-1">Aluno {{ numero_aluno }}</h3>
+                    <div class="student-identification"><strong>Nome:</strong> ______________________________________________</div>
+                    <table class="question-table mb-0">
+                        <thead>
+                            <tr>
+                                <th class="question-cell">Pergunta</th>
+                                <th>Resposta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pergunta in perguntas_aluno %}
+                            <tr>
+                                <td class="question-cell">
+                                    <strong>{{ loop.index }}. {{ pergunta.texto }}</strong>
+                                    {% if pergunta.opcoes %}
+                                    <div class="options">Opções: {{ pergunta.opcoes.replace(' | ', ' · ') }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="answer-cell"></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+            {% else %}
+            <p class="small text-muted">Não há perguntas individuais ativas para esta etapa.</p>
+            {% endif %}
+        </section>
+
+        <footer class="print-footer">
+            Documento gerado em {{ now.strftime('%d/%m/%Y às %H:%M') }} ·
+            {{ informacao_padrao.nome_instituicao or 'pautaON' }} · pautaON {{ app_version }} {{ app_stage }}
+        </footer>
+    </main>
+</body>
+
+</html>

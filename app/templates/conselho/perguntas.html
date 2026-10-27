@@ -22,6 +22,36 @@
         background-color: #fff;
         border-color: #0d6efd #0d6efd #fff #0d6efd !important; /* Borda azul em cima/lados, branca embaixo */
     }
+
+    /* Layout fixo das tabelas de perguntas: as colunas cabem na largura da tela,
+       o texto quebra em vez de esticar a tabela (sem barra de rolagem horizontal)
+       e a coluna de Ações permanece dentro do campo de visão do usuário. */
+    .table-perguntas {
+        table-layout: fixed;
+        width: 100%;
+    }
+    .table-perguntas th,
+    .table-perguntas td {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        vertical-align: middle;
+    }
+    /* Coluna de ações estreita e fixa: os botões de editar/excluir sempre visíveis. */
+    .table-perguntas .col-acoes {
+        width: 96px;
+        white-space: nowrap;
+    }
+    /* Badges de opção de resposta: frases longas quebram dentro da coluna em vez
+       de estourar a célula e sobrepor a coluna de Ações. */
+    .table-perguntas .badge {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        max-width: 100%;
+        height: auto;
+        line-height: 1.3;
+        text-align: left;
+    }
 </style>
 
 <div class="container mt-4">
@@ -39,6 +69,9 @@
 
     <!-- Definição das Etapas Fixas -->
     {% set etapas_fixas = ['INICIAL', 'PERCURSO', 'FINAL'] %}
+    {# Alfabeto usado para rotular as opções de resposta (A, B, C...) na exibição.
+       O valor persistido continua sendo apenas o texto da opção, sem a letra. #}
+    {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
     
     <!-- NÍVEL 1: Abas Fixas de Etapas -->
     <ul class="nav nav-tabs nav-tabs-etapas mb-4 gap-2" id="etapasTab" role="tablist">
@@ -94,25 +127,24 @@
                         <!-- ABA: TURMA -->
                         <div class="tab-pane fade show active" id="pills-turma-{{ etapa_id }}" role="tabpanel">
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
+                                <table class="table table-hover align-middle mb-0 table-perguntas">
                                     <thead class="table-light text-muted small text-uppercase">
                                         <tr>
-                                            <th class="ps-4" style="width: 60%">Pergunta</th>
-                                            <th style="width: 25%">Opções de Resposta</th>
-                                            <th class="text-center pe-4" style="width: 15%">Ações</th>
+                                            <th class="ps-4" style="width: 55%">Pergunta</th>
+                                            <th style="width: 35%">Opções de Resposta</th>
+                                            <th class="col-acoes text-center pe-4">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {% set tem_turma = false %}
-                                        {% for p in lista_perguntas if p.tipo == 'TURMA' %}
-                                        {% set tem_turma = true %}
+                                        {% set perguntas_turma = lista_perguntas | selectattr('tipo', 'equalto', 'TURMA') | list %}
+                                        {% for p in perguntas_turma %}
                                         <tr>
-                                            <td class="ps-4 fw-medium text-dark text-wrap">{{ p.texto }}</td>
+                                            <td class="ps-4 fw-medium text-dark text-wrap"><span class="text-muted fw-bold me-1">{{ loop.index }}.</span>{{ p.texto }}</td>
                                             <td>
                                                 {% if p.opcoes %}
                                                 <div class="d-flex flex-wrap gap-1">
                                                     {% for opt in p.opcoes.split(' | ') %}
-                                                    <span class="badge border text-dark fw-normal bg-light" style="font-size: 0.75rem;">{{ opt }}</span>
+                                                    <span class="badge border text-dark fw-normal bg-light" style="font-size: 0.75rem;"><span class="text-primary fw-bold me-1">{{ letras[loop.index0] }}</span>{{ opt }}</span>
                                                     {% endfor %}
                                                 </div>
                                                 {% else %}
@@ -120,8 +152,14 @@
                                                 {% endif %}
                                             </td>
                                             <td class="text-center pe-4">
+                                                {# Dados via data-* (autoescapados pelo Jinja): evita quebra do onclick por aspas no texto e usa o valor real dos enums (etapa/tipo) #}
                                                 <button class="btn btn-sm btn-outline-secondary border-0 me-1" title="Editar"
-                                                    onclick="editarPergunta('{{ p.id }}', '{{ p.etapa }}', '{{ p.tipo }}', '{{ p.texto }}', '{{ p.opcoes }}')">
+                                                    data-id="{{ p.id }}"
+                                                    data-etapa="{{ p.etapa.value }}"
+                                                    data-tipo="{{ p.tipo.value }}"
+                                                    data-texto="{{ p.texto }}"
+                                                    data-opcoes="{{ p.opcoes or '' }}"
+                                                    onclick="editarPergunta(this)">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </button>
                                                 <form action="{{ url_for('conselho.excluir_pergunta', id=p.id) }}" method="POST" class="d-inline" onsubmit="return confirmarExclusao(event)">
@@ -134,7 +172,7 @@
                                         </tr>
                                         {% endfor %}
                                         
-                                        {% if not tem_turma %}
+                                        {% if not perguntas_turma %}
                                         <tr>
                                             <td colspan="3" class="text-center text-muted py-5">
                                                 <i class="bi bi-inbox fs-3 d-block mb-2 opacity-50"></i>
@@ -150,25 +188,24 @@
                         <!-- ABA: ALUNO -->
                         <div class="tab-pane fade" id="pills-aluno-{{ etapa_id }}" role="tabpanel">
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0">
+                                <table class="table table-hover align-middle mb-0 table-perguntas">
                                     <thead class="table-light text-muted small text-uppercase">
                                         <tr>
-                                            <th class="ps-4" style="width: 60%">Pergunta</th>
-                                            <th style="width: 25%">Opções de Resposta</th>
-                                            <th class="text-center pe-4" style="width: 15%">Ações</th>
+                                            <th class="ps-4" style="width: 55%">Pergunta</th>
+                                            <th style="width: 35%">Opções de Resposta</th>
+                                            <th class="col-acoes text-center pe-4">Ações</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {% set tem_aluno = false %}
-                                        {% for p in lista_perguntas if p.tipo == 'ALUNO' %}
-                                        {% set tem_aluno = true %}
+                                        {% set perguntas_aluno = lista_perguntas | selectattr('tipo', 'equalto', 'ALUNO') | list %}
+                                        {% for p in perguntas_aluno %}
                                         <tr>
-                                            <td class="ps-4 fw-medium text-dark text-wrap">{{ p.texto }}</td>
+                                            <td class="ps-4 fw-medium text-dark text-wrap"><span class="text-muted fw-bold me-1">{{ loop.index }}.</span>{{ p.texto }}</td>
                                             <td>
                                                 {% if p.opcoes %}
                                                 <div class="d-flex flex-wrap gap-1">
                                                     {% for opt in p.opcoes.split(' | ') %}
-                                                    <span class="badge border text-dark fw-normal bg-light" style="font-size: 0.75rem;">{{ opt }}</span>
+                                                    <span class="badge border text-dark fw-normal bg-light" style="font-size: 0.75rem;"><span class="text-primary fw-bold me-1">{{ letras[loop.index0] }}</span>{{ opt }}</span>
                                                     {% endfor %}
                                                 </div>
                                                 {% else %}
@@ -176,8 +213,14 @@
                                                 {% endif %}
                                             </td>
                                             <td class="text-center pe-4">
+                                                {# Dados via data-* (autoescapados pelo Jinja): evita quebra do onclick por aspas no texto e usa o valor real dos enums (etapa/tipo) #}
                                                 <button class="btn btn-sm btn-outline-secondary border-0 me-1" title="Editar"
-                                                    onclick="editarPergunta('{{ p.id }}', '{{ p.etapa }}', '{{ p.tipo }}', '{{ p.texto }}', '{{ p.opcoes }}')">
+                                                    data-id="{{ p.id }}"
+                                                    data-etapa="{{ p.etapa.value }}"
+                                                    data-tipo="{{ p.tipo.value }}"
+                                                    data-texto="{{ p.texto }}"
+                                                    data-opcoes="{{ p.opcoes or '' }}"
+                                                    onclick="editarPergunta(this)">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </button>
                                                 <form action="{{ url_for('conselho.excluir_pergunta', id=p.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir esta pergunta?')">
@@ -190,7 +233,7 @@
                                         </tr>
                                         {% endfor %}
 
-                                        {% if not tem_aluno %}
+                                        {% if not perguntas_aluno %}
                                         <tr>
                                             <td colspan="3" class="text-center text-muted py-5">
                                                 <i class="bi bi-inbox fs-3 d-block mb-2 opacity-50"></i>
