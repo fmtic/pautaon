@@ -4,9 +4,14 @@ LOGICA.PY - Helpers de negócio (frequência, turmas, relatórios)
 ================================================================================
 
 NOTA SOBRE TIPOS (Onda 2A):
-    `Turma.data_inicio`, `Turma.data_fim`, `Turma.hora_inicio`, `Turma.hora_fim`,
+    `Turma.data_inicio`, `Turma.data_fim`,
     `Frequencia.data`, `RegistroAula.data`, `TemaAula.data` e
     `DiaBloqueadoTurma.data` agora são `date`/`time` nativos.
+
+NOTA SOBRE AGENDA (H5a):
+    dias e horários de aula vivem SÓ em `turma_curso_horario` (grade da
+    oferta). As colunas escalares `dias_semana`/`hora_inicio`/`hora_fim` de
+    `Turma`/`TurmaCurso` não são lidas por este módulo.
 
 NOTA SOBRE ENUMS (Onda 2B):
     Comparações com conceitos de frequência e perfis usam `ConceitoFrequencia`
@@ -225,21 +230,14 @@ def gerar_datas(
     if not turma or not turma.data_inicio or not turma.data_fim:
         return datas
 
-    # H3a: os dias da turma são DERIVADOS da grade das ofertas ativas (uma
-    # consulta). Sem grade (turma 100% legado, sem ofertas), cai no CSV da
-    # turma via conversor único — a projeção segue válida até o H5.
+    # H3a/H5a: os dias da turma são DERIVADOS da grade das ofertas ativas
+    # (uma consulta). Sem grade não há agenda: a lista sai vazia — não existe
+    # mais leitura do CSV escalar de `dias_semana`.
     from app.services.turma_curso_horario import dias_da_turma
-    from app.utils.dias_semana import csv_para_weekdays, csv_tokens_desconhecidos
 
     dias_permitidos = dias_da_turma(turma.id)
     if not dias_permitidos:
-        desconhecidos = csv_tokens_desconhecidos(turma.dias_semana)
-        if desconhecidos:
-            current_app.logger.warning(
-                "Turma %s sem grade: CSV de dias tem tokens desconhecidos %s "
-                "(descartados na geração de datas).", turma.id, desconhecidos,
-            )
-        dias_permitidos = set(csv_para_weekdays(turma.dias_semana))
+        return datas
 
     inicio = datetime.combine(turma.data_inicio, time.min)
     fim = datetime.combine(turma.data_fim, time.min)

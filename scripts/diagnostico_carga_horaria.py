@@ -18,8 +18,10 @@ Uso:
 
 Regra de negócio conferida:
     C.H. Total = C.H. Aula x dias de aula das turmas ATIVAS do curso no período,
-    onde dias de aula = dias da semana da turma entre data_inicio e data_fim,
-    EXCLUINDO os dias sem aula (DiaBloqueado) com exceções por turma (DiaBloqueadoTurma).
+    onde dias de aula = dias da GRADE das ofertas ativas entre data_inicio e
+    data_fim, EXCLUINDO os dias sem aula (DiaBloqueado) com exceções por turma
+    (DiaBloqueadoTurma). H5a: a grade é a única fonte de agenda (sem fallback
+    para as colunas escalares).
 ================================================================================
 """
 
@@ -39,7 +41,7 @@ from app.models.academico import PeriodoLetivo, Turma
 from app.models.calendario import DiaBloqueado, DiaBloqueadoTurma
 from app.models.pedagogico import Curso
 from app.services.turma_curso_horario import dias_da_turma
-from app.utils.dias_semana import csv_para_weekdays, weekday_para_nome
+from app.utils.dias_semana import weekday_para_nome
 from app.utils.logica import (
     _blocked_dates_str,
     calcular_carga_horaria_curso,
@@ -78,14 +80,13 @@ def analisar_turma(turma: Turma) -> None:
     print(f"  Curso             : {curso.nome if curso else '—'}")
     print(f"  C.H. Aula (curso) : {curso.carga_horaria}h" if curso else "  C.H. Aula (curso) : —")
 
-    # Dias derivados da grade das ofertas ativas (H3e). Fallback legado: CSV da
-    # turma, apenas quando não há nenhuma oferta ativa com grade.
+    # Dias derivados da grade das ofertas ativas (H3e/H5a). Sem grade não há
+    # agenda: nenhuma leitura do CSV escalar da turma.
     dias_grade = dias_da_turma(turma.id) if turma.id else set()
     if dias_grade:
         dias_txt = ", ".join(weekday_para_nome(d) for d in sorted(dias_grade))
     else:
-        dias_grade = set(csv_para_weekdays(turma.dias_semana))
-        dias_txt = f"{turma.dias_semana or '—'} (CSV projetado: sem oferta ativa com grade)"
+        dias_txt = "— (sem oferta ativa com grade)"
     print(f"  Dias da semana    : {dias_txt}")
     print(f"  Datas da turma    : {turma.data_inicio} a {turma.data_fim}")
 

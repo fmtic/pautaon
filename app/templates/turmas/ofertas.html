@@ -46,7 +46,8 @@
                     <td class="small">{{ oferta.professor.name if oferta.professor else '—' }}</td>
                     <td class="small">{{ oferta.turno or '—' }}</td>
                     <td class="small">
-                        {# H4: Dias/Horários vêm da GradeExibicao (H3d), não da projeção. #}
+                        {# H4/H5a: Dias/Horários vêm da GradeExibicao (H3d); sem grade
+                           não há agenda (a coluna escalar deixou de ser lida). #}
                         {% set g = grade_map.get(oferta.id) if grade_map else None %}
                         {% if g and (g.dias_texto or g.texto_horario) %}
                         {{ g.dias_texto or '—' }}<br>
@@ -55,10 +56,7 @@
                         <span class="badge bg-info text-dark ms-1" title="Horários diferentes por dia">varia</span>
                         {% endif %}
                         {% else %}
-                        {{ oferta.dias_semana or '—' }}<br>
-                        {% if oferta.hora_inicio and oferta.hora_fim %}
-                        {{ oferta.hora_inicio.strftime('%H:%M') }} às {{ oferta.hora_fim.strftime('%H:%M') }}
-                        {% else %}—{% endif %}
+                        —<br>—
                         {% endif %}
                     </td>
                     <td class="small">
@@ -130,13 +128,13 @@
                                 <label class="form-label fw-bold small" for="ed{{ oferta.id }}_hora_inicio">Hora Início</label>
                                 <input type="time" name="hora_inicio" id="ed{{ oferta.id }}_hora_inicio"
                                     class="form-control form-control-sm"
-                                    value="{{ est['hora_inicio'] if est else (oferta.hora_inicio.strftime('%H:%M') if oferta.hora_inicio else '') }}">
+                                    value="{{ est['hora_inicio'] if est else '' }}">
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label fw-bold small" for="ed{{ oferta.id }}_hora_fim">Hora Fim</label>
                                 <input type="time" name="hora_fim" id="ed{{ oferta.id }}_hora_fim"
                                     class="form-control form-control-sm"
-                                    value="{{ est['hora_fim'] if est else (oferta.hora_fim.strftime('%H:%M') if oferta.hora_fim else '') }}">
+                                    value="{{ est['hora_fim'] if est else '' }}">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label fw-bold small" for="ed{{ oferta.id }}_centro">Centro de Custo</label>

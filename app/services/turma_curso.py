@@ -18,6 +18,9 @@ especificação §4/§5/§14:
       só ocorre em turma com oferta única ativa e que nunca teve curso legado
       (situação criada por esta feature). Turmas do backfill e turmas com
       2+ ofertas mantêm as colunas legadas congeladas — sem dual-write.
+      H5a: o espelho NÃO inclui mais agenda — `dias_semana`/`hora_inicio`/
+      `hora_fim` de `Turma` e `TurmaCurso` não são lidos nem escritos aqui; a
+      grade (`turma_curso_horario`) é a única fonte.
 
 Todas as funções fazem `db.session.commit()` internamente e levantam
 `ValueError` com mensagem de usuário amigável em caso de violação de regra;
@@ -46,12 +49,9 @@ from app.models.base import get_local_now
 from app.services.turma_curso_horario import (
     Linha,
     definir_grade,
-    grade_a_partir_do_legado,
     grade_da_oferta,
 )
 from app.utils.dias_semana import (
-    csv_para_weekdays,
-    csv_tokens_desconhecidos,
     weekday_para_nome,
     weekdays_para_csv,
 )
@@ -282,37 +282,28 @@ def _mensagem_conflito(
     )
 
 
-def _defaults_agenda_da_oferta(
+def _agenda_da_oferta(
     oferta: TurmaCurso,
-) -> tuple[str | None, time | None, time | None]:
-    """(CSV dos dias, início, fim) derivados da **grade atual** da oferta (H3f).
+) -> list[tuple[int, time | None, time | None]] | None:
+    """Itens ``(dia, início, fim)`` da **grade atual** da oferta (H3f/H5a).
 
-    Substitui a leitura das colunas escalares como fonte de defaults em
-    `editar_oferta` e na checagem de conflito. Grade uniforme devolve o mesmo
-    CSV+par que a projeção; grade **não uniforme** devolve o CSV completo e
-    horas ``None`` (não existe par único — o formulário atual vai recusar
-    agenda incompleta até o H4, sem regravar nada). Oferta **sem grade**
-    (100 % legado) cai nos escalares com ``logger.warning`` — fallback
-    explícito removível no H5.
+    Única fonte dos defaults de `editar_oferta` e da checagem de conflito.
+    Oferta **sem grade** é estado inválido desde o H5a: registra ``logger.error``
+    e devolve ``None`` — as colunas escalares nunca são lidas.
     """
     linhas = grade_da_oferta(oferta)
     if linhas:
-        pares = {(l.hora_inicio, l.hora_fim) for l in linhas}
-        ini, fim = next(iter(pares)) if len(pares) == 1 else (None, None)
-        return weekdays_para_csv([l.dia_semana for l in linhas]), ini, fim
-    logger.warning(
-        "Oferta %s sem grade: defaults de agenda usam os escalares legados.",
+        return [(l.dia_semana, l.hora_inicio, l.hora_fim) for l in linhas]
+    logger.error(
+        "Oferta %s sem grade: agenda indefinida (estado inválido desde o H5a).",
         oferta.id,
     )
-    return oferta.dias_semana, oferta.hora_inicio, oferta.hora_fim
+    return None
 
 
 def _conflitos_horario_concomitante(
     turma_id: int,
     *,
-    dias_semana: str | None = None,
-    hora_inicio: time | None = None,
-    hora_fim: time | None = None,
     data_inicio: date | None = None,
     data_fim: date | None = None,
     exclude_oferta_id: int | None = None,
@@ -326,20 +317,16 @@ def _conflitos_horario_concomitante(
     limitando a comparação (sem interseção → sem conflito). Concomitância é
     permitida; as mensagens servem apenas como ALERTA — nunca bloqueiam.
 
-    A grade candidata vem de `agenda` (itens ``(dia, ini, fim)`` ou ``Linha``),
-    necessária quando a oferta ainda não tem linhas no banco (criação) ou tem
-    grade não uniforme. Sem `agenda`, o trio escalar é convertido em grade
-    uniforme por ``grade_a_partir_do_legado``; agenda incompleta → sem checagem
-    (comportamento anterior). As grades das demais ofertas saem em UMA consulta:
-    a relação ``horarios`` é ``selectin`` e vem carregada junto com as ofertas
-    (``grade_da_oferta`` não consulta de novo) — sem N+1. Oferta ainda sem
-    grade cai no CSV legado.
+    A grade candidata vem SEMPRE de `agenda` (itens ``(dia, ini, fim)`` ou
+    ``Linha``), necessária quando a oferta ainda não tem linhas no banco
+    (criação) ou tem grade diferente da atual. Sem `agenda` não há checagem
+    (H5a: não existe mais a conversão do trio escalar). As grades das demais
+    ofertas saem em UMA consulta: a relação ``horarios`` é ``selectin`` e vem
+    carregada junto com as ofertas (``grade_da_oferta`` não consulta de novo)
+    — sem N+1. Oferta ativa **sem grade** não é comparada (estado inválido,
+    ``logger.error``).
     """
-    grade_nova = (
-        _normalizar_agenda(agenda)
-        if agenda is not None
-        else grade_a_partir_do_legado(dias_semana, hora_inicio, hora_fim)
-    )
+    grade_nova = _normalizar_agenda(agenda) if agenda is not None else []
     if not grade_nova:
         return []
 
@@ -363,15 +350,10 @@ def _conflitos_horario_concomitante(
             for l in grade_da_oferta(outra)
         ]
         if not grade_outra:
-            # Oferta 100% legado (sem grade): reproduz a leitura escalar antiga.
-            logger.warning(
-                "Oferta %s sem grade: checagem de conflito usa os escalares "
-                "legados.", outra.id,
+            logger.error(
+                "Oferta %s sem grade: concomitância não comparada (estado "
+                "inválido desde o H5a).", outra.id,
             )
-            grade_outra = grade_a_partir_do_legado(
-                outra.dias_semana, outra.hora_inicio, outra.hora_fim
-            )
-        if not grade_outra:
             continue
         if not _sobreposicao_vigencia(
             data_inicio, data_fim, outra.data_inicio, outra.data_fim
@@ -456,43 +438,14 @@ def _sincronizar_legado(turma: Turma, oferta: TurmaCurso) -> None:
     # Espelha a oferta única nas colunas legadas de Turma, para que a turma
     # criada no fluxo novo (sem curso) passe a exibir os dados do curso no
     # card da listagem e nos leitores que ainda usam as colunas de Turma.
+    # H5a: a agenda NÃO entra no espelho — dias/horários vivem só na grade.
     turma.curso_id = oferta.curso_id
     turma.professor_id = oferta.professor_id
     turma.turno = oferta.turno
-    turma.dias_semana = oferta.dias_semana
-    turma.hora_inicio = oferta.hora_inicio
-    turma.hora_fim = oferta.hora_fim
     turma.data_inicio = oferta.data_inicio
     turma.data_fim = oferta.data_fim
     turma.centro_custo = oferta.centro_custo
     turma.programa = oferta.programa
-
-
-def sincronizar_projecao_turma(turma: Turma) -> bool:
-    """Projeta em `Turma` a agenda da oferta única ativa (H4).
-
-    Desde o H4 a rota de turma **não escreve** mais `dias_semana`/
-    `hora_inicio`/`hora_fim` diretamente: quando a turma tem exatamente uma
-    oferta ativa, essas três colunas são espelho da PROJEÇÃO dela (já
-    reescrita por `sincronizar_projecao_horario` dentro de `definir_grade`).
-    Grade uniforme projeta o par; grade **não uniforme** projeta os dias e
-    `hora_inicio`/`hora_fim` `NULL` — não há um par único que represente a
-    agenda. Turma com 0 ou 2+ ofertas ativas não tem para onde projetar e é
-    devolvida `False` sem alteração.
-
-    Diferente de `_sincronizar_legado` (espelhamento §14, só em turma sem
-    curso legado e só na criação da 1ª oferta): aqui só interessam as colunas
-    de agenda, em turma com vínculo legado incluída. Deve rodar DEPOIS de
-    `definir_grade` na oferta, para ler a projeção já atualizada.
-    """
-    ativas = ofertas_ativas(turma.id)
-    if len(ativas) != 1:
-        return False
-    oferta = ativas[0]
-    turma.dias_semana = oferta.dias_semana
-    turma.hora_inicio = oferta.hora_inicio
-    turma.hora_fim = oferta.hora_fim
-    return True
 
 
 def sincronizar_programa_turma(turma: Turma) -> None:
@@ -526,14 +479,14 @@ def criar_oferta_inicial_da_turma(
     (falha na oferta desfaz a turma). Não valida concomitância: a oferta
     replica exatamente a grade já aceita da turma.
 
-    Desde o H2 a agenda vem da TURMA só quando está COMPLETA (dias + início +
-    fim): a grade da oferta é criada pelo serviço (`definir_grade`) e as
-    colunas escalares da oferta passam a ser projeção. Herança incompleta é
-    recusada com ValueError (nunca se cria oferta com grade parcial).
+    Desde o H2 a agenda da oferta é a GRADE (`definir_grade`): toda oferta
+    nasce com ao menos um dia e o par completo de horários, e as colunas
+    escalares não são fonte nem destino. H5a: sem `agenda`, ou com agenda
+    vazia, a criação é recusada com ValueError — não existe mais herança a
+    partir das colunas da turma (nunca se cria oferta com grade parcial).
 
     H4: `agenda` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a grade por
-    dia enviada pelo formulário — quando vem, é ela que é gravada (pode ser
-    NÃO uniforme) e os escalares da turma são ignorados como fonte.
+    dia enviada pelo formulário — é ela que é gravada (pode ser NÃO uniforme).
     """
     existente = (
         TurmaCurso.query
@@ -550,22 +503,9 @@ def criar_oferta_inicial_da_turma(
     if not turma.programa or not turma.programa.strip():
         raise ValueError("Toda oferta precisa ter um programa.")
 
-    # H3f: caminho **explícito** de turma legada — a função só roda quando a
-    # turma não tem nenhuma oferta (idempotente acima), logo não há grade em
-    # lugar nenhum; os escalares da turma são a única fonte (fallback até o
-    # H5). A grade criada é sempre uniforme — exatamente a agenda da turma.
-    # H4: se o formulário já trouxe a grade por dia, ela é a fonte (com ou
-    # sem uniformidade) e os escalares da turma não são lidos.
-    if agenda is not None:
-        itens = agenda
-    else:
-        logger.warning(
-            "Turma %s sem oferta: agenda da 1ª oferta vem dos escalares legados "
-            "da turma.", turma.id,
-        )
-        itens = grade_a_partir_do_legado(
-            turma.dias_semana, turma.hora_inicio, turma.hora_fim
-        )
+    # H5a: a agenda da oferta inicial vem SEMPRE do formulário (grade por
+    # dia). Os escalares da turma não são lidos em nenhuma hipótese.
+    itens = agenda or None
     if itens is None:
         raise ValueError(
             f"A turma não tem agenda completa — {_AGENDA_INCOMPLETA.lower()}"
@@ -601,9 +541,6 @@ def adicionar_oferta(
     principal: bool = False,
     professor_id=None,
     turno: str | None = None,
-    dias_semana: str | None = None,
-    hora_inicio=None,
-    hora_fim=None,
     data_inicio=None,
     data_fim=None,
     centro_custo: str | None = None,
@@ -613,9 +550,12 @@ def adicionar_oferta(
     """Cria uma oferta incremental na turma, aplicando as regras da Onda 4.
 
     H4: `agenda` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a grade por
-    dia vinda do formulário; quando vem, substitui o trio escalar e a herança
-    de agenda (admite grade NÃO uniforme) e é ela que vai para `definir_grade`
-    e para a checagem de concomitância.
+    dia vinda do formulário e é a fonte da agenda (admite grade NÃO uniforme):
+    vai para `definir_grade` e para a checagem de concomitância.
+
+    H5a: sem `agenda`, a herança de agenda vem da **grade** de uma oferta ativa
+    da turma (se houver); as colunas escalares de `Turma`/`TurmaCurso` não são
+    mais parâmetro nem fonte. Sem agenda resultante → `ValueError`.
     """
     curso = _validar_curso(turma, curso_id)
     programa = (programa or "").strip()
@@ -639,26 +579,20 @@ def adicionar_oferta(
 
     avisos_horario = _conflitos_horario_concomitante(
         turma.id,
-        dias_semana=dias_semana,
-        hora_inicio=hora_inicio,
-        hora_fim=hora_fim,
         data_inicio=data_inicio,
         data_fim=data_fim,
         agenda=agenda,
     )
 
-    # Herança de atributos: primeira oferta de uma turma sem vínculo legado
-    # parte dos valores da própria turma (compatibilidade com a UI antiga).
-    # H3f: sem nenhum campo de agenda no pedido e a turma já tem ofertas com
-    # grade, a herança vem da **grade** (fonte da verdade, preserva inclusive
-    # grade não uniforme); os escalares da turma só valem quando não há grade
-    # nenhuma (caminho legado explícito, com ``logger.warning``).
-    # H4: agenda explícita no pedido desativa a herança de agenda.
+    # Herança de atributos não-agenda: primeira oferta de uma turma sem vínculo
+    # legado parte dos valores da própria turma (compatibilidade com a UI
+    # antiga). A agenda só é herdada da GRADE de uma oferta ativa da turma
+    # (H3f/H5a) — nunca das colunas escalares.
     agenda_herdada: list[tuple[int, time, time]] | None = None
     if turma.curso_id is None:
         professor_id = professor_id or turma.professor_id
         turno = turno or turma.turno
-        if agenda is None and not (dias_semana or hora_inicio or hora_fim):
+        if agenda is None:
             com_grade = [
                 (o, grade_da_oferta(o)) for o in ofertas_ativas(turma.id)
             ]
@@ -670,28 +604,13 @@ def adicionar_oferta(
                 agenda_herdada = [
                     (l.dia_semana, l.hora_inicio, l.hora_fim) for l in g_ref
                 ]
-        if agenda_herdada is None and agenda is None:
-            if not (dias_semana and hora_inicio and hora_fim):
-                logger.warning(
-                    "Turma %s sem grade: herança de agenda lê os escalares "
-                    "legados da turma.", turma.id,
-                )
-                dias_semana = dias_semana or turma.dias_semana
-                hora_inicio = hora_inicio or turma.hora_inicio
-                hora_fim = hora_fim or turma.hora_fim
         data_inicio = data_inicio or turma.data_inicio
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
 
     # H2: a grade da oferta é a fonte dos dias/horários e nasce completa —
     # valida ANTES de qualquer escrita (nada é alterado em caso de erro).
-    itens = (
-        agenda
-        if agenda is not None
-        else agenda_herdada
-        if agenda_herdada is not None
-        else grade_a_partir_do_legado(dias_semana, hora_inicio, hora_fim)
-    )
+    itens = agenda if agenda is not None else agenda_herdada
     if itens is None:
         raise ValueError(_AGENDA_INCOMPLETA)
 
@@ -709,7 +628,7 @@ def adicionar_oferta(
         principal=bool(principal),
         professor_id=professor_id,
         turno=turno,
-        # dias_semana/hora_inicio/hora_fim: projeção gravada pelo definir_grade.
+        # H5a: dias/horários vivem só na grade (definir_grade abaixo).
         data_inicio=data_inicio,
         data_fim=data_fim,
         centro_custo=centro_custo,
@@ -732,21 +651,14 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
     """Atualiza os atributos da oferta. O campo `principal` não é editável
     aqui (use `definir_principal`).
 
-    H2: `dias_semana`/`hora_inicio`/`hora_fim` NÃO são mais gravados por
-    setattr direto — quando algum deles chega, a grade inteira da oferta é
-    substituida por ``definir_grade`` (grade uniforme a partir do CSV + par
-    do formulário) e as colunas escalares passam a ser projeção.
-    Herança/legado incompleto é recusado (nunca grade parcial). Sem campos de
-    agenda no `dados`, a grade não é tocada.
+    H2/H4: a agenda NÃO é gravada por setattr — `dados["agenda"]` (itens
+    ``(dia_semana, hora_inicio, hora_fim)``) substitui a grade inteira via
+    ``definir_grade`` (admite grade NÃO uniforme). Sem `agenda` no `dados`, a
+    grade não é tocada.
 
-    H3f: os defaults dos campos de agenda omitidos saem da **grade atual**
-    (``_defaults_agenda_da_oferta``), não das colunas escalares; oferta sem
-    grade (100 % legado) cai nos escalares com ``logger.warning``.
-
-    H4: `dados["agenda"]` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a
-    grade por dia montada pelo formulário — quando vem, é ela que substitui a
-    grade inteira (admite grade NÃO uniforme) e os campos escalares de agenda
-    são ignorados como fonte.
+    H5a: as colunas escalares de agenda deixaram de ser aceitas como fonte ou
+    default — enviá-las levanta ``ValueError`` (use ``agenda=``); os defaults
+    da checagem de conflito saem da **grade atual** (``_agenda_da_oferta``).
     """
     if "professor_id" in dados:
         dados["professor_id"] = _validar_professor(
@@ -759,50 +671,28 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         if not dados["programa"]:
             raise ValueError("Toda oferta precisa ter um programa.")
 
-    # H4: a grade por dia pode chegar pronta (itens ``(dia, ini, fim)``); ela
-    # tem precedência sobre o trio escalar e dispensa os defaults.
-    itens_agenda = dados.pop("agenda", None)
     escalares = {"dias_semana", "hora_inicio", "hora_fim"} & set(dados)
-    itens: list | None = None
-    # H3f: defaults efetivos a partir da GRADE atual (uniforme = mesmo CSV+par
-    # da projeção; não uniforme = horas None, o formulário atual recusa e
-    # preserva a grade; sem grade = escalares com warning).
-    dias_ref, ini_ref, fim_ref = _defaults_agenda_da_oferta(oferta)
-    if itens_agenda is not None:
-        itens = itens_agenda
-    elif escalares:
-        efetivo = {
-            "dias": dados.get("dias_semana", dias_ref),
-            "ini": dados.get("hora_inicio", ini_ref),
-            "fim": dados.get("hora_fim", fim_ref),
-        }
-        itens = grade_a_partir_do_legado(
-            efetivo["dias"], efetivo["ini"], efetivo["fim"]
+    if escalares:
+        raise ValueError(
+            "Os dias e horários da oferta são definidos pela grade: envie "
+            "`agenda` com os itens (dia, início, fim)."
         )
-        if itens is None:
-            raise ValueError(_AGENDA_INCOMPLETA)
+    # H4: a grade por dia pode chegar pronta (itens ``(dia, ini, fim)``).
+    itens = dados.pop("agenda", None)
 
-    # Concomitância: checar apenas se pelo menos um dos campos de horário/dias mudou
-    campos_horario = {"dias_semana", "hora_inicio", "hora_fim", "data_inicio", "data_fim"}
-    if campos_horario & set(dados) or itens_agenda is not None:
+    # Concomitância: checar ao mexer na vigência ou na agenda. A agenda usada
+    # é a nova (se veio) ou a grade **real** da oferta (relação já carregada —
+    # sem consulta extra); oferta sem grade não é comparada (H5a).
+    if {"data_inicio", "data_fim"} & set(dados) or itens is not None:
         avisos_horario = _conflitos_horario_concomitante(
             oferta.turma_id,
-            # H3f: defaults da checagem também saem da grade atual (só usados
-            # quando não há agenda nem grade — oferta 100 % legado).
-            dias_semana=dados.get("dias_semana", dias_ref),
-            hora_inicio=dados.get("hora_inicio", ini_ref),
-            hora_fim=dados.get("hora_fim", fim_ref),
             data_inicio=dados.get("data_inicio", oferta.data_inicio),
             data_fim=dados.get("data_fim", oferta.data_fim),
             exclude_oferta_id=oferta.id,
-            # H3b/H3f: agenda nova (se veio no `dados`) ou a grade **real** da
-            # oferta (lida da relação carregada — sem consulta extra); oferta
-            # sem grade devolve lista vazia → None, e a checagem cai no
-            # fallback escalar legado interno.
             agenda=(
                 itens
                 if itens is not None
-                else (grade_da_oferta(oferta) or None)
+                else _agenda_da_oferta(oferta)
             ),
         )
     else:
@@ -816,8 +706,7 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
             setattr(oferta, campo, dados[campo])
 
     if itens is not None:
-        # Única escrita dos dias/horários da oferta: substitui a grade e
-        # reprojeta as colunas escalares (sincronizar_projecao_horario).
+        # Única escrita dos dias/horários da oferta: substitui a grade.
         definir_grade(oferta, itens)
 
     sincronizar_programa_turma(oferta.turma)
@@ -925,27 +814,24 @@ def desativar_oferta(
 def _dias_set_da_oferta(oferta: TurmaCurso) -> set[int]:
     """Dias (weekday 0-5) em que a oferta tem aula (H3a).
 
-    Fonte canônica: a grade ``turma_curso_horario`` (lida da relação já
-    carregada — sem consulta por data/oferta). Sem grade (linha 100% legado,
-    anterior ao backfill), cai no CSV projetado via conversor único — a
-    projeção segue correta até o H5, então o fallback preserva o resultado.
+    Fonte única: a grade ``turma_curso_horario`` (lida da relação já carregada
+    — sem consulta por data/oferta). Oferta sem grade devolve conjunto vazio e
+    registra ``logger.error`` (estado inválido desde o H5a: não há leitura das
+    colunas escalares).
     """
     dias = {linha.dia_semana for linha in grade_da_oferta(oferta)}
-    if dias:
-        return dias
-    csv = _dias_efetivos_da_oferta(oferta)
-    desconhecidos = csv_tokens_desconhecidos(csv)
-    if desconhecidos:
-        logger.warning(
-            "Oferta %s sem grade: CSV de dias legado tem tokens desconhecidos %s "
-            "(descartados na leitura de agenda).", oferta.id, desconhecidos,
+    if not dias:
+        logger.error(
+            "Oferta %s sem grade: dias da semana indefinidos (estado inválido "
+            "desde o H5a).",
+            oferta.id,
         )
-    return set(csv_para_weekdays(csv))
+    return dias
 
 
 def _data_bate_dias_semana(oferta: TurmaCurso, data: date) -> bool:
     """True se `data` cai em um dos dias da grade da oferta. Oferta sem dias
-    definidos não impõe restrição (True). H3a: lê a grade (weekday 0-5).
+    em que a grade não define nada não impõe restrição (True).
     """
     dias = _dias_set_da_oferta(oferta)
     if not dias:
@@ -1108,31 +994,20 @@ def _alunos_da_oferta(
     )
 
 
-def _dias_efetivos_da_oferta(oferta: TurmaCurso) -> str | None:
-    """Dias da semana que regem a agenda da oferta; herda os da turma quando a
-    oferta não define os próprios (compatibilidade com o backfill legado)."""
-    if oferta.dias_semana:
-        return oferta.dias_semana
-    if oferta.turma is not None:
-        return oferta.turma.dias_semana
-    return None
-
-
 def datas_aula_oferta(
     oferta: TurmaCurso,
     limite: date | None = None,
     blocked: set | None = None,
 ) -> list[date]:
-    """Datas de aula da OFERTA, respeitando a vigência e os dias da semana
-    próprios da oferta (herdados da turma quando ausentes).
+    """Datas de aula da OFERTA, respeitando a vigência e os dias da GRADE.
 
     - Vigência: janela [data_inicio, data_fim]; NULL nos extremos herda da
       turma; sem início OU fim definíveis → sem datas.
     - `limite`: teto **inclusivo** de projeção. `None` vai até a `data_fim`
       efetiva; quando informado, corta em `min(limite, data_fim)` e a data
       igual ao teto ainda é incluída.
-    - Dias da semana: `_data_bate_dias_semana` com os dias efetivos da
-      oferta. Sem dias em nenhum dos dois → sem datas.
+    - Dias da semana: `_data_bate_dias_semana`/`_dias_set_da_oferta`, lendo
+      apenas a grade. Sem dias na grade → sem datas.
     - `blocked`: conjunto de strings 'YYYY-MM-DD' (feriados / dias sem aula).
     """
     blocked = blocked or set()

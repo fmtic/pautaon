@@ -1,11 +1,9 @@
 """Dashboard do perfil professor: turmas, alunos e pendências de frequência."""
 
-from datetime import date, timedelta
-
 from flask import current_app, flash, render_template, request
 from flask_login import current_user
 
-from app.models import Aluno, DiaBloqueado, Turma, TurmaCurso
+from app.models import DiaBloqueado, Turma, TurmaCurso
 from app.services.turma_curso import (
     _alunos_da_oferta,
     datas_esperadas_oferta,
@@ -16,7 +14,7 @@ from app.services.turma_curso_horario import (
     intervalo_do_dia,
 )
 from app.utils.datetime_parse import parse_date
-from app.utils.dias_semana import csv_para_weekdays, weekday_para_nome
+from app.utils.dias_semana import weekday_para_nome
 from app.utils.frequencia import (
     alunos_ativos_da_turma,
     datas_bloqueadas_str,
@@ -30,25 +28,20 @@ def _nome_curso_oferta(oferta) -> str:
     return oferta.curso.nome if oferta.curso else f"curso #{oferta.curso_id}"
 
 
-def _dias_badges(grade=None, turma=None) -> list[str]:
-    """Nomes dos dias para os badges da linha (grade ou escalar da turma)."""
-    if grade is not None:
-        dias = grade.dias
-    elif turma is not None:
-        dias = tuple(sorted(set(csv_para_weekdays(turma.dias_semana))))
-    else:
-        dias = ()
+def _dias_badges(grade=None) -> list[str]:
+    """Nomes dos dias para os badges da linha (só a grade).
+
+    H5a: sem grade não há dias — as colunas escalares da turma deixaram de
+    ser lidas.
+    """
+    dias = grade.dias if grade is not None else ()
     return [weekday_para_nome(dia) for dia in dias]
 
 
-def _horario_entrada(grade=None, turma=None):
-    """Par de horas formatado da grade; escalar da turma só sem oferta (H3e)."""
+def _horario_entrada(grade=None):
+    """Par de horas formatado da grade; sem grade não há horário (H5a)."""
     if grade is not None and grade.texto_horario:
         return grade.texto_horario
-    if turma is not None and turma.hora_inicio and turma.hora_fim:
-        return (
-            f"{turma.hora_inicio:%H:%M} às {turma.hora_fim:%H:%M}"
-        )
     return None
 
 
@@ -128,13 +121,9 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
         if not aluno_ids:
             continue
 
-        # H3e: com 1 oferta ativa a hora da data sai da grade dela; sem
-        # oferta (turma 100 % legado) valem os escalares da turma.
+        # H3e/H5a: com 1 oferta ativa a hora da data sai da grade dela; sem
+        # oferta (turma sem agenda) a pendência fica com intervalo nulo.
         oferta_ref = ativas[0] if ativas else None
-        intervalo_escalar = (
-            (turma.hora_inicio, turma.hora_fim)
-            if turma.hora_inicio and turma.hora_fim else None
-        )
 
         for data_item in datas_aula:
             # `gerar_datas` ainda pode retornar strings; parse_date normaliza.
@@ -153,7 +142,7 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
                     'total':    len(aluno_ids),
                     'intervalo': (
                         intervalo_do_dia(oferta_ref, data_alvo)
-                        if oferta_ref is not None else intervalo_escalar
+                        if oferta_ref is not None else None
                     ),
                 })
 
@@ -227,11 +216,11 @@ def _entradas_professor(user_id):
             'turma_curso_id': None,
             'curso_nome': curso_nome,
             'label': f"{turma.nome} — {curso_nome}",
-            'dias': turma.dias_semana,
-            'dias_badges': _dias_badges(turma=turma),
+            # H5a: turma sem oferta não tem agenda (nasce com a oferta).
+            'dias': None,
+            'dias_badges': _dias_badges(),
             'grade': None,
-            # Turma sem oferta ativa/grade: fallback escalar (H3e).
-            'horario': _horario_entrada(turma=turma),
+            'horario': None,
             'alunos_count': len(aluno_ids),
             'pendentes_count': 0,
         })

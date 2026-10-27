@@ -948,8 +948,8 @@ def historico_aluno(aluno_id):
         data_inicio = oferta.data_inicio if oferta and oferta.data_inicio else turma.data_inicio
         data_fim = oferta.data_fim if oferta and oferta.data_fim else turma.data_fim
 
-        # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
-        # Desde o H3e o par sai da grade; não uniforme -> lista por dia.
+        # H3e/H5a: o par de horas sai SEMPRE da grade (não uniforme -> lista
+        # por dia); `data_*` seguem DATE. Sem grade -> ausência de horário.
         horario = (
             grade.texto_horario if grade is not None and grade.texto_horario
             else "--:-- às --:--"

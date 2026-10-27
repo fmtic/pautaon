@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -32,7 +32,6 @@ from app.services.turma_curso import (
     editar_oferta,
     ofertas_ativas,
     sincronizar_programa_turma,
-    sincronizar_projecao_turma,
     turma_tem_historico,
     _AGENDA_INCOMPLETA,
     _alunos_da_oferta,
@@ -48,11 +47,9 @@ from app.services.turma_curso_horario import (
 )
 from app.utils.datetime_parse import parse_date, parse_time
 from app.utils.dias_semana import (
-    csv_para_weekdays,
     token_para_weekday,
     weekday_para_abrev,
     weekday_para_nome,
-    weekdays_para_csv,
 )
 from app.utils.formatters import formatar_ch
 from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
@@ -271,14 +268,14 @@ def _estado_agenda(
     }
 
 
-def _estado_agenda_da_grade(linhas, dias_csv=None, hora_inicio=None, hora_fim=None):
-    """Estado a partir das linhas da grade; sem grade, cai nos escalares."""
+def _estado_agenda_da_grade(linhas):
+    """Estado a partir das linhas da grade (H5a: só a grade é fonte).
+
+    Sem linhas devolve estado vazio — o formulário não pré-preenche nada a
+    partir das colunas escalares (elas deixaram de ser lidas).
+    """
     if not linhas:
-        return _estado_agenda(
-            dias=set(csv_para_weekdays(dias_csv)) if dias_csv else set(),
-            hora_inicio=hora_inicio,
-            hora_fim=hora_fim,
-        )
+        return _estado_agenda()
     pares = {(l.hora_inicio, l.hora_fim) for l in linhas}
     por_dia = len(pares) > 1
     if len(pares) == 1:
@@ -447,8 +444,13 @@ def _resumo_ofertas(turma, grades=None):
     ativas, para a linha-agregado da lista.
 
     Desde o H3d os **dias** saem da GRADE das ofertas ativas (a decisão é que
-    a Turma DERIVE os dias da união das ofertas). Fallback com o CSV projetado
-    quando a oferta ativa não tem grade ou quando a turma não tem oferta.
+    a Turma DERIVE os dias da união das ofertas). H5a: sem fallback escalar —
+    oferta ativa sem grade não contribui com dias (estado inválido) e turma
+    sem oferta ativa não tem agenda.
+
+    `grades` é o mapa `oferta_id -> linhas` já carregado pela rota (sem N+1).
+    Quando omitido, a grade de cada oferta ativa é lida sob demanda — caminho
+    usado por chamadas isoladas (testes, telas pontuais), sempre pela grade.
     """
     ativas = _ofertas_ativas_da_turma(turma)
     professores, turnos, dias_set = [], [], set()
@@ -462,13 +464,18 @@ def _resumo_ofertas(turma, grades=None):
         turno = o.turno or turma.turno
         if turno and turno not in turnos:
             turnos.append(turno)
-        linhas = (grades or {}).get(o.id) or []
-        if linhas:
-            dias_set.update(linha.dia_semana for linha in linhas)
+        if grades is None:
+            linhas = grade_da_oferta(o)
         else:
-            dias_set.update(csv_para_weekdays(o.dias_semana or turma.dias_semana))
-    if not ativas:
-        dias_set.update(csv_para_weekdays(turma.dias_semana))
+            linhas = grades.get(o.id) or []
+        if not linhas:
+            current_app.logger.error(
+                "Oferta %s sem grade: dias da listagem ignoram a oferta "
+                "(estado inválido desde o H5a).",
+                o.id,
+            )
+            continue
+        dias_set.update(linha.dia_semana for linha in linhas)
     dias = [weekday_para_nome(d) for d in sorted(dias_set)]
     dias_abreviados = [f"{weekday_para_abrev(d)}." for d in sorted(dias_set)]
     return {
@@ -581,45 +588,25 @@ def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
     if programa:
         stmt = stmt.where(Turma.programa == programa)
 
-    # Dia e horário leem a GRADE (decisão H3d): a turma casa quando uma oferta
-    # ATIVA tem linha de grade com o weekday e/ou a hora de início — os dois
-    # critérios na MESMA linha, então “dia A + hora do dia B” não casa. Turma
-    # sem oferta ativa com grade mantém o comparador escalar anterior
-    # (COALESCE oferta→turma / coluna da turma).
+    # Dia e horário leem SOMENTE a GRADE (H3d/H5a): a turma casa quando uma
+    # oferta ATIVA tem linha de grade com o weekday e/ou a hora de início — os
+    # dois critérios na MESMA linha, então “dia A + hora do dia B” não casa.
+    # Não existe comparador escalar de reserva: turma sem oferta ativa com
+    # grade não casa (a agenda nasce com a oferta).
     dia = (args.get("dia") or "").strip()
     horario = parse_time(args.get("horario_inicio"))
     if dia or horario:
-        cond_escalar = None
-        if dia:
-            cond_escalar = _filtro_por_oferta(
-                func.coalesce(TurmaCurso.dias_semana, Turma.dias_semana).ilike(
-                    f"%{dia}%"
-                ),
-                Turma.dias_semana.ilike(f"%{dia}%"),
-            )
-        if horario is not None:
-            cond_hora = _filtro_por_oferta(
-                func.coalesce(TurmaCurso.hora_inicio, Turma.hora_inicio) == horario,
-                Turma.hora_inicio == horario,
-            )
-            cond_escalar = (
-                cond_hora
-                if cond_escalar is None
-                else and_(cond_escalar, cond_hora)
-            )
         dia_semana = token_para_weekday(dia) if dia else None
         if dia and dia_semana is None:
-            # Token fora do domínio 0–6: mantém estritamente o comparador
-            # antigo (substring do CSV), como antes do H3d.
+            # Token fora do domínio 0–6: não casa nenhuma turma (sem CSV
+            # escalar de reserva desde o H5a).
             current_app.logger.warning(
-                "Filtro de dia com token desconhecido: %r — usando CSV escalar.",
+                "Filtro de dia com token desconhecido: %r — nenhuma turma casa.",
                 dia,
             )
-            stmt = stmt.where(cond_escalar)
+            stmt = stmt.where(false())
         else:
-            stmt = stmt.where(
-                filtro_por_dia_horario(dia_semana, horario, cond_escalar)
-            )
+            stmt = stmt.where(filtro_por_dia_horario(dia_semana, horario))
 
     return stmt
 
@@ -1188,9 +1175,6 @@ def nova_turma():
             db.session.add(nova)
             db.session.flush()  # garante turma.id para vincular a oferta inicial
             criar_oferta_inicial_da_turma(nova, agenda=grade["itens"])
-            # H4: a agenda gravada na oferta volta para a Turma só por
-            # projeção (uniforme: par único; não uniforme: dias + NULLs).
-            sincronizar_projecao_turma(nova)
             db.session.commit()
             flash(
                 f"A turma '{nome_turma}' foi cadastrada. Agora inclua os cursos que serão ofertados.",
@@ -1525,16 +1509,12 @@ def _editar_turma_contexto(turma_obj, rascunho=None):
     # H4: o bloqueio de agenda é apenas "2+ ofertas".
     agenda_bloqueada = n_ofertas >= 2
     grade_atual = grade_da_oferta(ofertas[0]) if n_ofertas == 1 else []
-    if rascunho is not None:
+    if rascunho is not None and n_ofertas == 1:
         estado_agenda = _estado_agenda_do_form(rascunho)
-    elif n_ofertas == 1:
-        estado_agenda = _estado_agenda_da_grade(
-            grade_atual, ofertas[0].dias_semana, ofertas[0].hora_inicio, ofertas[0].hora_fim
-        )
     else:
-        estado_agenda = _estado_agenda_da_grade(
-            [], turma_obj.dias_semana, turma_obj.hora_inicio, turma_obj.hora_fim
-        )
+        # H5a: turma com 0 ofertas não tem agenda (ela nasce com a oferta) e
+        # com 1 oferta o estado vem só da grade dela.
+        estado_agenda = _estado_agenda_da_grade(grade_atual)
     return dict(
         turma=turma_obj,
         professores=professores,
@@ -1576,15 +1556,13 @@ def editar_turma(id):
             # H4: a agenda vem do parsing único dos formulários (mesmo
             # contrato das rotas de oferta — a turma com 1 oferta usa o
             # mesmo componente, inclusive o modo personalizado).
+            # H5a: com 0 ofertas o formulário não tem campos de agenda e o
+            # POST os ignora; nenhuma coluna escalar é lida ou escrita.
             grade = grade_do_formulario(request.form)
-            novo_dias_semana = weekdays_para_csv(grade["dias"]) or ""
 
             # Onda 2A: parse uma vez, use como `date` na comparação abaixo.
             novo_data_inicio_date = parse_date(novo_data_inicio_raw)
             novo_data_fim_date = parse_date(novo_data_fim_raw)
-
-            novo_hora_inicio = grade["hora_inicio"]
-            novo_hora_fim = grade["hora_fim"]
 
             # --- Onda 4 (Fase 4, G2): classificação das ofertas da turma ---
             ativas = ofertas_ativas(id)
@@ -1613,11 +1591,9 @@ def editar_turma(id):
                     and sorted(itens_grade_única) != atuais
                 )
             else:
-                mudou_agenda = (
-                    novo_dias_semana != (turma_obj.dias_semana or "")
-                    or novo_hora_inicio != turma_obj.hora_inicio
-                    or novo_hora_fim != turma_obj.hora_fim
-                )
+                # H5a: sem oferta não há agenda na turma — a agenda nasce com
+                # a oferta e o POST não escreve nada de dias/horários.
+                mudou_agenda = False
 
             # Campos "de oferta" vindos do POST (professor/turno/centro/curso).
             novo_professor_raw = request.form.get("professor_id") or None
@@ -1657,11 +1633,8 @@ def editar_turma(id):
                     novo_curso_id != turma_obj.curso_id
                     or _diff_professor()
                     or novo_turno != turma_obj.turno
-                    or novo_dias_semana != (turma_obj.dias_semana or "")
                     or novo_data_inicio_date != turma_obj.data_inicio
                     or novo_data_fim_date != turma_obj.data_fim
-                    or novo_hora_inicio != turma_obj.hora_inicio
-                    or novo_hora_fim != turma_obj.hora_fim
                     or novo_centro_custo != turma_obj.centro_custo
                 )
                 if divergiu_oferta:
@@ -1733,15 +1706,9 @@ def editar_turma(id):
             turma_obj.turno = novo_turno
             turma_obj.data_inicio = novo_data_inicio_date
             turma_obj.data_fim = novo_data_fim_date
-            if oferta_única is None:
-                # H4: sem oferta a Turma não tem para onde projetar — os
-                # escalares de agenda seguem a escrita direta do caminho
-                # legado (serão a fonte quando a 1ª oferta nascer por herança).
-                turma_obj.hora_inicio = novo_hora_inicio
-                turma_obj.hora_fim = novo_hora_fim
-                turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
-            # Com oferta única NADA de agenda é escrito direto na Turma: a
-            # projeção (sincronizar_projecao_turma) é a única fonte (H4).
+            # H5a: a agenda da turma NUNCA é escrita direto — nem com oferta
+            # única (a grade da oferta é a única fonte) nem sem oferta (a
+            # agenda nasce com a oferta, em Cursos da Turma).
             turma_obj.professor_id = novo_professor_raw
 
             original_periodo_id = turma_obj.periodo_letivo_id
@@ -1830,9 +1797,8 @@ def editar_turma(id):
             # gravado na turma. Conflitos de horário geram apenas aviso; não
             # impedem a gravação transacional de turma e oferta. Desde o H2 os
             # dias/horários vão para a oferta via definir_grade (única fonte);
-            # no H4 a grade pode ser NÃO uniforme (modo personalizado) e os
-            # escalares da Turma deixam de ser escritos pela rota — saem da
-            # projeção da oferta única (sincronizar_projecao_turma).
+            # no H4 a grade pode ser NÃO uniforme (modo personalizado) e no H5a
+            # a rota não toca em coluna escalar de agenda.
             if oferta_única is not None:
                 if mudou_agenda and itens_grade_única is not None:
                     # Concomitância só faz sentido com a grade candidata em
@@ -1848,7 +1814,6 @@ def editar_turma(id):
                 oferta_única.turno = turma_obj.turno
                 if mudou_agenda and itens_grade_única is not None:
                     definir_grade(oferta_única, itens_grade_única)
-                    sincronizar_projecao_turma(turma_obj)
                 oferta_única.data_inicio = turma_obj.data_inicio
                 oferta_única.data_fim = turma_obj.data_fim
                 oferta_única.centro_custo = turma_obj.centro_custo
@@ -1861,18 +1826,20 @@ def editar_turma(id):
             for aviso in avisos_horario:
                 flash(aviso, "warning")
 
-            # Verificar inconsistências após salvar
+            # Verificar inconsistências após salvar (H5a: o critério é haver
+            # oferta com agenda — não mais a coluna `dias_semana` da turma).
+            tem_ofertas = bool(ofertas_ativas(id))
             ch_total = turma_obj.carga_horaria_total
             dias_efetivos = turma_obj.dias_aula_efetivos()
 
-            if turma_obj.dias_semana and ch_total is None:
+            if tem_ofertas and ch_total is None:
                 flash(
                     "Aviso: C.H. não pôde ser calculada — verifique os horários de início e fim.",
                     "warning"
                 )
                 return redirect(url_for("registros.editar_turma", id=id))
 
-            if turma_obj.dias_semana and turma_obj.data_inicio and turma_obj.data_fim and dias_efetivos == 0:
+            if tem_ofertas and turma_obj.data_inicio and turma_obj.data_fim and dias_efetivos == 0:
                 flash(
                     "Aviso: 0 dias de aula encontrados — verifique os dias da semana e o período letivo (todos os dias podem estar bloqueados).",
                     "warning"
@@ -1958,11 +1925,9 @@ def _dados_oferta_form(form, turma_obj, grade: dict | None = None):
         dados["agenda"] = grade["itens"]
     elif grade["itens"] is not None:
         dados["agenda"] = grade["itens"]
-    else:
-        # Sem agenda / agenda parcial: caminho de antes (herda do serviço).
-        dados["dias_semana"] = weekdays_para_csv(grade["dias"])
-        dados["hora_inicio"] = grade["hora_inicio"]
-        dados["hora_fim"] = grade["hora_fim"]
+    # Sem agenda no formulário: o serviço decide (herança da grade de outra
+    # oferta ou erro de agenda incompleta). H5a: nenhum campo escalar de
+    # agenda é enviado.
     return dados
 
 
@@ -2018,10 +1983,7 @@ def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200)
             estados_oferta[oferta_item.id] = _estado_agenda_do_form(rascunho)
         else:
             estados_oferta[oferta_item.id] = _estado_agenda_da_grade(
-                linhas.get(oferta_item.id) or [],
-                oferta_item.dias_semana,
-                oferta_item.hora_inicio,
-                oferta_item.hora_fim,
+                linhas.get(oferta_item.id) or []
             )
     estado_nova = (
         _estado_agenda_do_form(rascunho)

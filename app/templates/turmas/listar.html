@@ -336,13 +336,13 @@
                             <i class="bi bi-clock me-1 text-muted"></i>
                             {% if grade_linha and grade_linha.por_dia_texto %}
                             {{ grade_linha.por_dia_texto }}
+                            {% elif grade_linha and grade_linha.hora_inicio and grade_linha.hora_fim %}
+                            {{ grade_linha.hora_inicio }} -
+                            {{ grade_linha.hora_fim }}
                             {% else %}
-                            {% set hora_ini = grade_linha.hora_inicio if grade_linha and grade_linha.hora_inicio else
-                            (turma.hora_inicio.strftime('%H:%M') if turma.hora_inicio else '--:--') %}
-                            {% set hora_fim_linha = grade_linha.hora_fim if grade_linha and grade_linha.hora_fim else
-                            (turma.hora_fim.strftime('%H:%M') if turma.hora_fim else '--:--') %}
-                            {{ hora_ini }} -
-                            {{ hora_fim_linha }}
+                            {# H5a: sem grade não há horário — nenhuma leitura da
+                               coluna escalar da turma. #}
+                            --:-- - --:--
                             {% endif %}
                             {% if multi %}<div class="small text-muted">principal</div>{% endif %}
                         </td>

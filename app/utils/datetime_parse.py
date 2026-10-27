@@ -11,7 +11,7 @@ Uso:
     from app.utils.datetime_parse import parse_date, parse_time
 
     turma.data_inicio = parse_date(request.form.get('data_inicio'))
-    turma.hora_inicio = parse_time(request.form.get('hora_inicio'))
+    hora_inicio = parse_time(request.form.get('hora_inicio'))  # grade da oferta
 
     # Em filtros:
     de = parse_date(request.args.get('de'))

@@ -26,8 +26,12 @@ NOTAS DE ONDAS
       na oferta e as colunas legadas de `Turma` permanecem até o contrato final.
     - H1 (horário por dia na oferta): `TurmaCursoHorario` nasce como fonte dos
       dias e horários da oferta; `dias_semana`/`hora_inicio`/`hora_fim` da
-      oferta viram PROJEÇÃO transitória (removidas só no H5) e as colunas
-      `dias_semana` de `Turma`/`TurmaCurso` ampliam-se para `String(80)`.
+      oferta viram PROJEÇÃO transitória e as colunas `dias_semana` de
+      `Turma`/`TurmaCurso` ampliam-se para `String(80)`.
+    - H5a: a grade (`turma_curso_horario`) é a ÚNICA fonte de agenda — nenhum
+      código de `app/` ou `scripts/` lê ou escreve as seis colunas escalares
+      (`Turma` e `TurmaCurso`) bem como as colunas escalares de agenda. Elas
+      continuam no schema (e nos modelos) apenas até a remoção física (H5b).
 ================================================================================
 """
 
@@ -101,7 +105,10 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         - Alunos (N:N via Inscricao)       -> alunos (backref)
 
     Regras:
-        - `dias_semana` é uma string CSV (ex.: "Segunda,Quarta,Sexta").
+        - `dias_semana`/`hora_inicio`/`hora_fim` são colunas LEGADAS de agenda:
+          sem uso desde o H5a (a agenda vive na grade da oferta,
+          `turma_curso_horario`); permanecem no schema até a remoção física no
+          H5b — não escreva nem leia.
         - O encerramento do conselho NÃO vive na turma: desde a D5.5 ele é da
           OFERTA (`turma_curso.conselho_concluido`) e a turma é DERIVADA em
           leitura.
@@ -224,7 +231,7 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         Duração uniforme da oferta principal em minutos.
 
         Grades não uniformes não têm uma duração única e retornam ``None``.
-        Sem ofertas ativas, preserva o escalar legado da turma.
+        Sem ofertas ativas não há agenda (H5a): devolve ``None``.
         """
         from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
         return cargas_horarias_turmas_em_lote([self])[self.id].carga_horaria_aula
@@ -234,7 +241,7 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         """
         Tempo físico em minutos da turma. Em cada data, intervalos ativos são
         unidos, contando sobreposições uma vez e somando intervalos disjuntos.
-        Sem oferta ativa, preserva o cálculo escalar legado com aviso.
+        Sem oferta ativa não há agenda (H5a): devolve ``None``.
         """
         from app.services.turma_curso_horario import carga_horaria_total_turma
         return carga_horaria_total_turma(self)
@@ -268,10 +275,13 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
           2+ ofertas ativas é validada pela camada de serviço/UI (Fase 2).
         - `centro_custo` NULL ⇒ herda o valor compartilhado da turma
           (modalidades compartilhado/individual — Fase 3).
-        - Atributos próprios da oferta (professor, turno, dias, horários,
-          datas) foram replicados de `Turma`; durante a transição a camada
-          de compatibilidade mantém as colunas legadas da turma para turmas
+        - Atributos próprios da oferta (professor, turno, datas) foram
+          replicados de `Turma`; durante a transição a camada de
+          compatibilidade mantém as colunas legadas da turma para turmas
           com oferta única (não-remove sem migrar leitores).
+        - H5a: `dias_semana`/`hora_inicio`/`hora_fim` (aqui e em `Turma`) são
+          colunas legadas SEM USO — a agenda é a grade `turma_curso_horario`.
+          Continuam no schema até a remoção física (H5b).
     """
     __tablename__ = 'turma_curso'
     __table_args__ = (
@@ -304,9 +314,9 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         comment='Professor responsável pela oferta do curso na turma',
     )
     turno: str = db.Column(db.String(20))
-    # H1-P2: String(80); desde o H2 esta coluna é PROJEÇÃO da grade
-    # (`TurmaCursoHorario`) gravada por `sincronizar_projecao_horario` —
-    # não escreva nela diretamente. Removida no H5.
+    # LEGADO (H5a): sem uso — a agenda é a grade `TurmaCursoHorario`. A coluna
+    # permanece no schema apenas até a remoção física no H5b; não leia nem
+    # escreva (não há projeção nem fallback).
     dias_semana: str = db.Column(db.String(80))
     hora_inicio: time = db.Column(db.Time)
     hora_fim: time = db.Column(db.Time)
@@ -378,8 +388,8 @@ class TurmaCursoHorario(db.Model):
 
     Fonte dos dias E dos horários da oferta (decisão 5): cada linha é um
     dia da semana (0 = segunda … 6 = domingo, `date.weekday()`) com um par
-    de horários opcional. As colunas escalares de `TurmaCurso` são apenas
-    projeção transitória desta grade (removidas no H5).
+    de horários opcional. As colunas escalares de `TurmaCurso` são legado sem
+    uso desde o H5a (remoção física no H5b).
 
     Regras (decisão 2, garantidas por CHECK no schema):
         - `dia_semana` ∈ 0–6, único por oferta (`uix_turma_curso_horario_dia`).

@@ -146,23 +146,19 @@ def _classe_status(s: StatusAluno) -> str:
 
 
 def _dias_horario(turma: Turma, oferta=None) -> str:
-    """Dias · horários da OFERTA pela grade (H3e).
+    """Dias · horários da OFERTA pela grade (H3e/H5a).
 
     Grade uniforme mantém o texto anterior ("Segunda, Quarta · 08:00–09:30");
-    grade não uniforme lista um segmento por dia. Sem oferta (vínculo legado)
-    cai nos escalares da turma, como antes.
+    grade não uniforme lista um segmento por dia. Sem oferta não há agenda
+    (turma sem curso ofertado): devolve "—" — as colunas escalares da turma
+    deixaram de ser lidas.
     """
     if oferta is not None:
         grade = grades_para_exibicao([oferta]).get(oferta.id)
         if grade is not None and grade.dias_texto:
             horario = grade.texto_horario_curto
             return f"{grade.dias_texto} · {horario}" if horario else grade.dias_texto
-    if not turma.dias_semana:
-        return "—"
-    h = ""
-    if turma.hora_inicio and turma.hora_fim:
-        h = f" · {turma.hora_inicio.strftime('%H:%M')}–{turma.hora_fim.strftime('%H:%M')}"
-    return f"{turma.dias_semana}{h}"
+    return "—"
 
 
 # =============================================================================
