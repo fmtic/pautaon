@@ -10,6 +10,9 @@
 //     valor autoritativo é o do servidor (definir_grade/cargas do H3c).
 //   - H4c: interruptor habilitado só com 2+ dias; voltar a 1 dia volta ao padrão
 //     automaticamente; par padrão visível mas esmaecido no modo personalizado.
+//   - H4d: regras de estado extraídas em funções puras (estadoLinha,
+//     parPadraoAposVolta, valorEspelhado) para teste em node — refactor sem
+//     mudança de comportamento.
 (function (global) {
     'use strict';
 
@@ -136,6 +139,47 @@
     }
 
     /**
+     * H4d (extração pura do estado renderizado por `atualizaVisivel`, mesmo
+     * comportamento): linha de um dia no componente.
+     * - esmaecida: dia desmarcado, ou marcado no modo padrão ("igual ao padrão");
+     * - campos desabilitados: fora do modo personalizado ou dia desmarcado
+     *   (desabilitado ⇒ navegador não envia o campo).
+     */
+    function estadoLinha(marcado, personalizado) {
+        return {
+            esmaecida: !marcado || (!personalizado && marcado),
+            camposDesabilitados: !personalizado || !marcado,
+        };
+    }
+
+    /**
+     * H4d (extração pura da transição de `atualizaVisivel`, mesmo
+     * comportamento): par padrão depois de voltar ao padrão automaticamente.
+     * `diasMarcados` com 1 dia → o par desse dia vira o padrão (campo vazio
+     * mantém o valor atual do padrão); 0 dias → mantém o último par padrão.
+     * `paresPorDia` = {weekday: {inicio, fim}}; `parAtual` = {inicio, fim}.
+     */
+    function parPadraoAposVolta(diasMarcados, paresPorDia, parAtual) {
+        const atual = {
+            inicio: (parAtual && parAtual.inicio) || '',
+            fim: (parAtual && parAtual.fim) || '',
+        };
+        if (!Array.isArray(diasMarcados) || diasMarcados.length !== 1) return atual;
+        const par = (paresPorDia || {})[diasMarcados[0]] || {};
+        return { inicio: par.inicio || atual.inicio, fim: par.fim || atual.fim };
+    }
+
+    /**
+     * H4d (extração pura de `espelhaPadrao`, mesmo comportamento): valor de um
+     * campo por dia no espelhamento — dia marcado no modo padrão recebe o valor
+     * do padrão; desmarcado ou em modo personalizado mantém o valor do dia.
+     */
+    function valorEspelhado(marcado, personalizado, valorPadrao, valorDia) {
+        if (personalizado || !marcado) return valorDia;
+        return valorPadrao;
+    }
+
+    /**
      * Monta a grade a partir de um <form> (mesma lógica do parsing do
      * servidor): modo padrão replica o par padrão; modo personalizado usa o
      * par de cada dia marcado. Devolve [{dia, inicio, fim}] ordenado.
@@ -256,8 +300,10 @@
                 const marcado = marcados.indexOf(w) !== -1;
                 const ini = bloco.querySelector(`input[name="hora_inicio_${w}"]`);
                 const fim = bloco.querySelector(`input[name="hora_fim_${w}"]`);
-                if (marcado && ini && padraoIni) ini.value = padraoIni ? padraoIni.value : '';
-                if (marcado && fim && padraoFim) fim.value = padraoFim ? padraoFim.value : '';
+                // H4d: valorEspelhado é a regra pura (mesmo efeito de antes —
+                // dia desmarcado recebe o próprio valor de volta, no-op).
+                if (ini && padraoIni) ini.value = valorEspelhado(marcado, false, padraoIni.value, ini.value);
+                if (fim && padraoFim) fim.value = valorEspelhado(marcado, false, padraoFim.value, fim.value);
             });
         }
 
@@ -292,15 +338,21 @@
                 // H4c: voltar automaticamente ao padrão ao desmarcar até 1 dia
                 if (on && !podeHabilitar) {
                     switchInput.checked = false;
-                    // O par do dia restante vira o par padrão
+                    // O par do dia restante vira o par padrão (0 dias mantém o
+                    // último par) — regra pura em parPadraoAposVolta (H4d).
                     if (nMarcados === 1) {
                         const w = marcados[0];
                         const bloco = blocoDe(w);
                         if (bloco) {
                             const ini = bloco.querySelector(`input[name="hora_inicio_${w}"]`);
                             const fim = bloco.querySelector(`input[name="hora_fim_${w}"]`);
-                            if (padraoIni && ini && ini.value) padraoIni.value = ini.value;
-                            if (padraoFim && fim && fim.value) padraoFim.value = fim.value;
+                            const novo = parPadraoAposVolta(
+                                marcados,
+                                { [w]: { inicio: ini ? ini.value : '', fim: fim ? fim.value : '' } },
+                                { inicio: padraoIni ? padraoIni.value : '', fim: padraoFim ? padraoFim.value : '' },
+                            );
+                            if (padraoIni && novo.inicio) padraoIni.value = novo.inicio;
+                            if (padraoFim && novo.fim) padraoFim.value = novo.fim;
                         }
                     }
                 }
@@ -314,14 +366,14 @@
                 });
             });
 
-            // Linhas por dia: estado conforme modo e marcação
+            // Linhas por dia: estado conforme modo e marcação (regra pura H4d)
             blocos.forEach((bloco) => {
                 const w = parseInt(bloco.getAttribute('data-grade-dia'), 10);
                 const marcado = marcados.indexOf(w) !== -1;
-                const linhaEsmaecida = !marcado || (!on && marcado);
-                bloco.classList.toggle('opacity-50', linhaEsmaecida);
+                const linha = estadoLinha(marcado, on);
+                bloco.classList.toggle('opacity-50', linha.esmaecida);
                 bloco.querySelectorAll('input').forEach((i) => {
-                    i.disabled = !on || !marcado;
+                    i.disabled = linha.camposDesabilitados;
                 });
             });
         }
@@ -419,6 +471,9 @@
         estimarCHMinutos,
         formatarCH,
         podeHabilitarPorDia,
+        estadoLinha,
+        parPadraoAposVolta,
+        valorEspelhado,
         montarItensGrade,
         serializarGrade,
         deserializarGrade,

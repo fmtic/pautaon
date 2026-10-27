@@ -483,3 +483,185 @@ def test_modo_personalizado_com_1_dia_gera_grade_correta():
     assert r.status_code == 302
     # Grade segue o par por dia (09:00-10:00), não o padrão (08:00-11:00)
     assert _grade_rows(app, ids["ofertas"][0]) == [(0, time(9), time(10))]
+
+
+# --- H4d: render do servidor dos estados do componente -------------------------
+# Lacuna registrada no relatório H4c ("Render do servidor: não testado"). Estado
+# inicial é pré-renderizado pelo servidor (layout estável); aqui cada estado do
+# contrato H4c é verificado no HTML por seletor/atributo (regex estável — o repo
+# não usa BeautifulSoup), sem depender de texto decorativo.
+
+def _input_tag(html, id_attr):
+    """Tag <input> inteira pelo `id` (único por formulário na página)."""
+    m = re.search(rf'<input[^>]*id="{id_attr}"[^>]*>', html, re.S)
+    assert m, f"input id=\"{id_attr}\" não encontrado no HTML"
+    return m.group(0)
+
+
+def _tag_bloco(html, marker, antes_de):
+    """Abertura da <div> do bloco identificado por `marker` mais próximo antes
+de `antes_de` (âncora = id de um input dentro do bloco)."""
+    p = html.rfind(marker, 0, antes_de)
+    assert p != -1, f"bloco {marker} não encontrado antes de {antes_de}"
+    return html[html.rfind("<div", 0, p):html.find(">", p) + 1]
+
+
+def _desabilitado(tag):
+    return re.search(r"\bdisabled\b", tag) is not None
+
+
+def _marcado(tag):
+    return re.search(r"\bchecked\b", tag) is not None
+
+
+def _esmaecido(tag):
+    return "opacity-50" in tag
+
+
+def _ancora(html, id_attr):
+    i = html.find(f'id="{id_attr}"')
+    assert i != -1, f"id=\"{id_attr}\" não encontrado"
+    return i
+
+
+def test_render_uniforme_2_dias_modo_padrao_editar_turma():
+    """H4d: grade uniforme 2+ dias em editar turma — padrão ativo, por dia
+    desabilitado/esmaecido, interruptor habilitado e desligado."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    html = client.get(f"/turma/editar/{ids['turma']}").get_data(as_text=True)
+
+    switch = _input_tag(html, "agenda_horario_por_dia")
+    assert not _desabilitado(switch)
+    assert not _marcado(switch)
+    assert 'aria-describedby="agenda_switch_help"' in switch
+
+    # Par padrão ativo (sem d-none em nenhum momento).
+    ancora = _ancora(html, "agenda_hora_inicio")
+    bloco_padrao = _tag_bloco(html, "data-grade-padrao", ancora)
+    assert "d-none" not in bloco_padrao
+    assert not _esmaecido(bloco_padrao)
+    assert not _desabilitado(_input_tag(html, "agenda_hora_inicio"))
+    assert not _desabilitado(_input_tag(html, "agenda_hora_fim"))
+
+    # Dias marcados (Seg/Qua): linhas esmaecidas, campos desabilitados.
+    for w in (0, 2):
+        tag_ini = _input_tag(html, f"agenda_hora_inicio_{w}")
+        assert _desabilitado(tag_ini)
+        assert _esmaecido(_tag_bloco(html, f'data-grade-dia="{w}"', _ancora(html, f"agenda_hora_inicio_{w}")))
+    # Dia desmarcado (Terça): campos desabilitados também.
+    assert _desabilitado(_input_tag(html, "agenda_hora_inicio_1"))
+
+
+def test_render_uniforme_2_dias_formulario_edicao_oferta():
+    """H4d: mesmo estado na tela Cursos da Turma — formulário de edição da oferta."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    html = client.get(f"/turma/{ids['turma']}/ofertas").get_data(as_text=True)
+    prefixo = f"ed{ids['ofertas'][0]}"
+
+    switch = _input_tag(html, f"{prefixo}_horario_por_dia")
+    assert not _desabilitado(switch) and not _marcado(switch)
+    assert 'aria-describedby="' + f'{prefixo}_switch_help"' in switch
+    assert not _desabilitado(_input_tag(html, f"{prefixo}_hora_inicio"))
+    for w in (0, 2):
+        assert _desabilitado(_input_tag(html, f"{prefixo}_hora_inicio_{w}"))
+
+
+def test_render_0_dias_interruptor_desabilitado_com_texto_apoio():
+    """H4d: nova oferta sem dia marcado — interruptor desabilitado e texto de
+    apoio presente via aria-describedby (elemento id existe)."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    html = client.get(f"/turma/{ids['turma']}/ofertas").get_data(as_text=True)
+
+    switch = _input_tag(html, "novo_horario_por_dia")
+    assert _desabilitado(switch)
+    assert not _marcado(switch)
+    assert 'aria-describedby="novo_switch_help"' in switch
+    assert 'id="novo_switch_help"' in html
+    assert "Marque 2 ou mais dias" in html
+
+
+def test_render_1_dia_interruptor_desabilitado_com_texto_apoio():
+    """H4d: 1 dia marcado — interruptor desabilitado e texto de apoio."""
+    app, ids = _seed(ofertas=1, grade=[(0, time(8), time(11))])
+    client = _loga(app, ids["coord"], ids["unidade"])
+    html = client.get(f"/turma/editar/{ids['turma']}").get_data(as_text=True)
+
+    switch = _input_tag(html, "agenda_horario_por_dia")
+    assert _desabilitado(switch)
+    assert not _marcado(switch)
+    assert 'aria-describedby="agenda_switch_help"' in switch
+    assert 'id="agenda_switch_help"' in html
+
+
+def test_render_nao_uniforme_abre_personalizado_par_padrao_visivel_esmaecido():
+    """H4d: grade NÃO uniforme abre em modo personalizado — interruptor ligado e
+    habilitado, par padrão VISÍVEL (sem d-none) mas esmaecido/desabilitado,
+    campos por dia ativos nos dias marcados e desabilitados nos desmarcados."""
+    app, ids = _seed(
+        ofertas=1, grade=[(0, time(8), time(11)), (2, time(14), time(17))]
+    )
+    client = _loga(app, ids["coord"], ids["unidade"])
+    html = client.get(f"/turma/editar/{ids['turma']}").get_data(as_text=True)
+
+    switch = _input_tag(html, "agenda_horario_por_dia")
+    assert _marcado(switch)
+    assert not _desabilitado(switch)
+
+    bloco_padrao = _tag_bloco(html, "data-grade-padrao", _ancora(html, "agenda_hora_inicio"))
+    assert "d-none" not in bloco_padrao
+    assert _esmaecido(bloco_padrao)
+    assert _desabilitado(_input_tag(html, "agenda_hora_inicio"))
+    assert _desabilitado(_input_tag(html, "agenda_hora_fim"))
+
+    for w, valor in ((0, "08:00"), (2, "14:00")):
+        tag_ini = _input_tag(html, f"agenda_hora_inicio_{w}")
+        assert not _desabilitado(tag_ini)
+        assert f'value="{valor}"' in tag_ini
+        assert not _esmaecido(
+            _tag_bloco(html, f'data-grade-dia="{w}"', _ancora(html, f"agenda_hora_inicio_{w}"))
+        )
+    # Dia desmarcado (Terça): campos desabilitados.
+    assert _desabilitado(_input_tag(html, "agenda_hora_inicio_1"))
+    assert _desabilitado(_input_tag(html, "agenda_hora_fim_1"))
+
+
+def test_render_erro_personalizado_preserva_estado_e_valores():
+    """H4d: re-render de erro em modo personalizado mantém o mesmo estado
+    (interruptor ligado/habilitado, par padrão esmaecido/desabilitado) e os
+    valores digitados."""
+    app, ids = _seed(ofertas=1)
+    client = _loga(app, ids["coord"], ids["unidade"])
+    r = client.post(
+        f"/turma/{ids['turma']}/ofertas/nova",
+        data=_form_oferta(ids, **{
+            "horario_por_dia": "1",
+            "dias_semana": ["0", "2"],
+            "hora_inicio": "08:00", "hora_fim": "11:00",
+            "hora_inicio_0": "08:00", "hora_fim_0": "11:00",
+            "hora_inicio_2": "14:00", "hora_fim_2": "13:00",  # fim < início → erro
+        }),
+    )
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'id="novo_agenda_erro"' in html
+
+    switch = _input_tag(html, "novo_horario_por_dia")
+    assert _marcado(switch)
+    assert not _desabilitado(switch)
+
+    bloco_padrao = _tag_bloco(html, "data-grade-padrao", _ancora(html, "novo_hora_inicio"))
+    assert "d-none" not in bloco_padrao
+    assert _esmaecido(bloco_padrao)
+    assert _desabilitado(_input_tag(html, "novo_hora_inicio"))
+
+    # Valores digitados preservados e campos por dia ativos nos dias marcados.
+    tag_2 = _input_tag(html, "novo_hora_inicio_2")
+    assert 'value="14:00"' in tag_2
+    assert not _desabilitado(tag_2)
+    assert 'value="08:00"' in _input_tag(html, "novo_hora_inicio_0")
+    assert not _desabilitado(_input_tag(html, "novo_hora_fim_0"))
+    # Dia desmarcado segue desabilitado no re-render.
+    assert _desabilitado(_input_tag(html, "novo_hora_inicio_1"))
