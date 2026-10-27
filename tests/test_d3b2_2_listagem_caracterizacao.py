@@ -31,13 +31,13 @@ def test_listagem_exibe_freq_geral_e_por_oferta(app, client):
     assert "75.0%" in body
 
 
-def test_min_freq_turma_multi_ofertas_compara_oferta_principal(app):
+def test_min_freq_turma_multi_ofertas_compara_turma_soma(app):
     s = _base(app)
     with app.app_context():
         alfa = Turma.query.get(s["alfa"])
-        # min_freq=70 deve manter Alfa? oferta principal de Alfa tem freq 75.0
-        # (o1) → passa. min_freq=80 deve excluir.
+        # Após D3b-2.5: min_freq compara a soma da turma (freq_geral=50.0),
+        # não a oferta principal (75.0). min_freq=70 exclui; min_freq=40 mantém.
         res70 = pos_filtrar_turmas([alfa], {"min_freq": "70"})
-        res80 = pos_filtrar_turmas([alfa], {"min_freq": "80"})
-        assert [t.id for t in res70] == [alfa.id]
-        assert res80 == []
+        res40 = pos_filtrar_turmas([alfa], {"min_freq": "40"})
+        assert res70 == []
+        assert [t.id for t in res40] == [alfa.id]
