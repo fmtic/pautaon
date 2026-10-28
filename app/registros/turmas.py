@@ -2705,10 +2705,10 @@ def imprimir_pauta(id):
     #     seletor); com turma_curso, alunos e frequências só da oferta, com
     #     o nome do curso no cabeçalho da impressão.
     #
-    # PARTE B (28/10/2026) — professor da OFERTA, sem herança da turma:
-    #   - a oferta vem de `turma_curso`; sem parâmetro, usa a principal se for
-    #     dele e, senão, a primeira oferta ativa dele (ordem de
-    #     `ofertas_ativas`);
+    # G1 (28/10/2026) — professor da OFERTA, sem herança da turma:
+    #   - a oferta vem de `turma_curso`; sem parâmetro, 1 oferta ativa → ela,
+    #     2+ → a de menor id (ordem de `ofertas_ativas`); a oferta `principal`
+    #     NÃO decide acesso (R2 do G1);
     #   - oferta de outro professor, oferta sem professor ou turma sem oferta
     #     ativa dele => 403 (nenhum perfil professor herda `turma.professor_id`);
     #   - a lista de alunos é SEMPRE a da oferta dele (`_alunos_da_oferta`) e a
@@ -2721,16 +2721,7 @@ def imprimir_pauta(id):
         if turma_curso_id is not None:
             oferta = next((o for o in ofertas if o.id == turma_curso_id), None)
         else:
-            oferta = next(
-                (
-                    o for o in ofertas
-                    if o.principal and professor_da_oferta(o, current_user)
-                ),
-                None,
-            ) or next(
-                (o for o in ofertas if professor_da_oferta(o, current_user)),
-                None,
-            )
+            oferta = ofertas[0] if ofertas else None
         if not professor_da_oferta(oferta, current_user):
             abort(403)
     elif len(ofertas) >= 2:

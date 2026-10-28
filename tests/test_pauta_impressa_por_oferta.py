@@ -59,7 +59,10 @@ def _seed(app, *, ofertas=2):
         prof_c = _usuario("Professor da Turma", "pc.pb@x.com", "professor", un.id)
         admin = _usuario("Admin PB", "admin.pb@x.com", "admin", un.id)
         secretaria = _usuario("Secretaria PB", "sec.pb@x.com", "secretaria", un.id)
-        db.session.add_all([prof_a, prof_b, prof_c, admin, secretaria])
+        pedagogico = _usuario("Pedagogico PB", "ped.pb@x.com", "pedagogico", un.id)
+        db.session.add_all(
+            [prof_a, prof_b, prof_c, admin, secretaria, pedagogico]
+        )
         db.session.flush()
 
         periodo = PeriodoLetivo(
@@ -115,6 +118,7 @@ def _seed(app, *, ofertas=2):
             "prof_c": prof_c.id,
             "admin": admin.id,
             "secretaria": secretaria.id,
+            "pedagogico": pedagogico.id,
             "turma": turma.id,
             "o1": o1.id,
             "o2": o2.id if o2 is not None else None,
@@ -208,24 +212,11 @@ def test_oferta_inativa_do_professor_recebe_403(app, client):
 
 
 # ---------------------------------------------------------------------------
-# 3. Sem parâmetro: principal se for dele, senão a primeira oferta ativa dele
+# 3. Sem parâmetro: 1 oferta ativa → ela; 2+ → a de menor id (P3 do G1)
 # ---------------------------------------------------------------------------
 
-def test_sem_parametro_usa_a_primeira_oferta_ativa_do_professor(app, client):
-    """`prof_b` não leciona a principal (O1) — cai na oferta dele (O2)."""
-    ids = _seed(app)
-    login_as(client, ids["prof_b"], ids["un"])
-
-    resposta = _impressao(client, ids)
-    corpo = resposta.get_data(as_text=True)
-
-    assert resposta.status_code == 200
-    assert "Curso PB 1" in corpo
-    assert "Aluno B" in corpo
-    assert "Aluno A" not in corpo
-
-
-def test_sem_parametro_prefere_a_principal_quando_e_dele(app, client):
+def test_sem_parametro_usa_a_oferta_de_menor_id_quando_e_dele(app, client):
+    """`prof_a` é dono da O1, a de menor id: sem parâmetro imprime a O1."""
     ids = _seed(app)
     login_as(client, ids["prof_a"], ids["un"])
 
@@ -236,6 +227,34 @@ def test_sem_parametro_prefere_a_principal_quando_e_dele(app, client):
     assert "Curso PB 0" in corpo
     assert "Aluno A" in corpo
     assert "Aluno B" not in corpo
+
+
+def test_sem_parametro_da_oferta_de_menor_id_de_outro_recebe_403(app, client):
+    """G1 (P3): sem parâmetro vale a oferta de **menor id**, não a dele."""
+    ids = _seed(app)
+    login_as(client, ids["prof_b"], ids["un"])
+
+    assert _impressao(client, ids).status_code == 403
+
+
+def test_oferta_principal_nao_altera_acesso(app, client):
+    """R2: trocar a `principal` não muda nenhum acesso (só a listagem/a ordem)."""
+    ids = _seed(app)
+    with app.app_context():
+        db.session.get(TurmaCurso, ids["o1"]).principal = False
+        db.session.get(TurmaCurso, ids["o2"]).principal = True
+        db.session.commit()
+
+    login_as(client, ids["prof_a"], ids["un"])
+    assert _impressao(client, ids, ids["o1"]).status_code == 200
+    assert _impressao(client, ids, ids["o2"]).status_code == 403
+    # Sem parâmetro continua valendo a de menor id (O1), agora não principal.
+    assert _impressao(client, ids).status_code == 200
+
+    login_as(client, ids["prof_b"], ids["un"])
+    assert _impressao(client, ids, ids["o2"]).status_code == 200
+    assert _impressao(client, ids, ids["o1"]).status_code == 403
+    assert _impressao(client, ids).status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +291,31 @@ def test_admin_sem_parametro_mantem_redirecionamento(app, client):
 
     assert resposta.status_code == 302
     assert "/frequencia" in resposta.headers["Location"]
+
+
+def test_secretaria_e_pedagogico_inalterados(app, client):
+    ids = _seed(app)
+
+    login_as(client, ids["secretaria"], ids["un"])
+    assert _impressao(client, ids, ids["o2"]).status_code == 200
+
+    login_as(client, ids["pedagogico"], ids["un"])
+    assert _impressao(client, ids, ids["o1"]).status_code == 200
+
+
+def test_professor_de_outra_unidade_recebe_403(app, client):
+    ids = _seed(app)
+    with app.app_context():
+        un2 = Unidade(nome="Unidade PB 2", ativo=True)
+        db.session.add(un2)
+        db.session.flush()
+        outro = _usuario("Prof Outra Unidade", "pu.pb@x.com", "professor", un2.id)
+        db.session.add(outro)
+        db.session.commit()
+        outro_id = outro.id
+
+    login_as(client, outro_id, ids["un"])
+    assert _impressao(client, ids, ids["o1"]).status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -333,3 +377,23 @@ def test_i1_impressao_dele_mostra_as_linhas_do_aluno(app, client):
 
     assert "Quem acompanha:" in corpo
     assert "Precisa de apoio." in corpo
+
+
+def test_i1_periodo_encerrado_continua_bloqueado(app, client):
+    """O resto da regra do I1 não muda: período encerrado ⇒ 403 / linhas fora."""
+    ids = _seed(app)
+    conteudo(app, ids["aluno_a"], acompanhante="Mãe", vai=True,
+             instrucoes="Precisa de apoio.")
+    hoje = get_local_now().date()
+    with app.app_context():
+        periodo = PeriodoLetivo.query.filter_by(nome="P PB").one()
+        periodo.data_inicio = hoje - timedelta(days=60)
+        periodo.data_fim = hoje - timedelta(days=1)
+        db.session.commit()
+
+    login_as(client, ids["prof_a"], ids["un"])
+    assert info(client, ids["aluno_a"]).status_code == 403
+
+    corpo = _impressao(client, ids, ids["o1"]).get_data(as_text=True)
+    assert "Quem acompanha:" not in corpo
+    assert "Precisa de apoio." not in corpo
