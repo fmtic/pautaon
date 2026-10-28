@@ -5,14 +5,11 @@
 {% set cursos_ordenados = cursos|sort(attribute='nome') %}
 
 {# ────────────────────────────────────────────────────────────────
-   Config para o JS (lida do data-*)
-   ──────────────────────────────────────────────────────────────── #}
-<div id="planejamentoConfig"
-     data-csrf="{{ csrf_token() }}"
-     hidden></div>
+Config para o JS (lida do data-*)
+──────────────────────────────────────────────────────────────── #}
+<div id="planejamentoConfig" data-csrf="{{ csrf_token() }}" hidden></div>
 
-<link rel="stylesheet"
-      href="{{ url_for('static', filename='css/planejamento/planejamento.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/planejamento/planejamento.css') }}">
 
 <div class="container-fluid mt-4 pb-5">
 
@@ -62,6 +59,19 @@
         </div>
       </div>
     </div>
+
+    <div class="col-6 col-lg-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3">
+          <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-bar-chart-fill"></i></div>
+          <div>
+            <div class="kpi-label">Valores do Esportista</div>
+            <div class="h4 mb-0 fw-bold">{{ valores_esportista|length }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="col-6 col-lg-4">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
@@ -78,15 +88,24 @@
   {# ═══════════════ ABAS ═══════════════ #}
   <ul class="nav nav-pills mb-3 gap-2" id="planejamentoTabs" role="tablist">
     <li class="nav-item" role="presentation">
-      <button class="nav-link active fw-semibold" id="pill-temas" data-bs-toggle="pill"
-        data-bs-target="#tabTemas" type="button" role="tab">
+      <button class="nav-link active fw-semibold" id="pill-temas" data-bs-toggle="pill" data-bs-target="#tabTemas"
+        type="button" role="tab">
         <i class="bi bi-card-checklist me-1"></i>Temas - Aulas
         <span class="badge bg-white text-primary ms-1">{{ temas|length }}</span>
       </button>
     </li>
+
     <li class="nav-item" role="presentation">
-      <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill"
-        data-bs-target="#tabNiveis" type="button" role="tab">
+      <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill" data-bs-target="#tabNiveis"
+        type="button" role="tab">
+        <i class="bi bi-bar-chart-fill me-1"></i>Valores do Esportista
+        <span class="badge bg-white text-secondary ms-1">{{ valores_esportista|length }}</span>
+      </button>
+    </li>
+
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill" data-bs-target="#tabNiveis"
+        type="button" role="tab">
         <i class="bi bi-bar-chart-fill me-1"></i>Níveis - Alunos
         <span class="badge bg-white text-secondary ms-1">{{ niveis|length }}</span>
       </button>
@@ -96,14 +115,14 @@
   <div class="tab-content">
 
     {# ═══════════════════════════════════════════════════════
-       ABA TEMAS — Layout lado a lado (form | lista)
-       ═══════════════════════════════════════════════════════ #}
+    ABA TEMAS — Layout lado a lado (form | lista)
+    ═══════════════════════════════════════════════════════ #}
     <div class="tab-pane fade show active" id="tabTemas" role="tabpanel">
       <div class="row g-3">
 
         {# ─────────────────────────────────────────────
-           COLUNA ESQUERDA — Formulário "Adicionar Novo Tema"
-           ───────────────────────────────────────────── #}
+        COLUNA ESQUERDA — Formulário "Adicionar Novo Tema"
+        ───────────────────────────────────────────── #}
         <div class="col-lg-4">
           <div class="card shadow-sm border-0 card-novo-tema">
             <div class="card-header bg-white py-3 border-bottom">
@@ -157,8 +176,8 @@
         </div>
 
         {# ─────────────────────────────────────────────
-           COLUNA DIREITA — Lista de Temas Cadastrados
-           ───────────────────────────────────────────── #}
+        COLUNA DIREITA — Lista de Temas Cadastrados
+        ───────────────────────────────────────────── #}
         <div class="col-lg-8">
           <div class="card shadow-sm border-0">
             <div class="card-header bg-white py-3 border-bottom">
@@ -167,16 +186,19 @@
                   <i class="bi bi-list-ul text-secondary me-1"></i>Temas Cadastrados
                 </h6>
                 <div class="d-flex gap-2 align-items-center flex-wrap">
-                  <form id="temaFiltroForm" method="GET" action="{{ url_for('registros.planejamento') }}" class="d-flex gap-2 align-items-center flex-wrap">
+                  <form id="temaFiltroForm" method="GET" action="{{ url_for('registros.planejamento') }}"
+                    class="d-flex gap-2 align-items-center flex-wrap">
                     <div class="input-group input-group-sm" style="width:220px;">
-                      <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                      <span class="input-group-text bg-white border-end-0"><i
+                          class="bi bi-search text-muted"></i></span>
                       <input type="search" id="temaSearch" name="q" value="{{ busca_tema }}"
                         class="form-control border-start-0" placeholder="Buscar tema…" aria-label="Buscar temas">
                     </div>
-                    <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:130px;">
+                    <select name="curso_id" class="form-select form-select-sm" onchange="this.form.submit()"
+                      style="min-width:130px;">
                       <option value="">Todos os Cursos</option>
                       {% for c in cursos_ordenados %}
-                      <option value="{{ c.id }}" {{ 'selected' if c.id|string == filtro_curso }}>{{ c.nome }}</option>
+                      <option value="{{ c.id }}" {{ 'selected' if c.id|string==filtro_curso }}>{{ c.nome }}</option>
                       {% endfor %}
                     </select>
                     <button type="submit" class="btn btn-sm btn-outline-secondary">Buscar</button>
@@ -199,84 +221,83 @@
                   </thead>
                   <tbody id="temasTbody">
                     {% if temas %}
-                      {% for curso_id, temas_do_curso in temas|groupby('curso_id') %}
-                        {% set curso_obj = temas_do_curso[0].curso %}
-                        {% set curso_hash = curso_cores.get(curso_obj.id, 7) if curso_obj else 7 %}
-                        {% set group_id = 'grupo-curso-' ~ (curso_obj.id if curso_obj else 'sem') ~ '-' ~ loop.index %}
-                        <tr class="curso-group-header bg-light" data-group="{{ group_id }}"
-                            role="button" tabindex="0" aria-expanded="false">
-                          <td colspan="2" class="py-2">
-                            <div class="d-flex align-items-center gap-2">
-                              <i class="bi bi-chevron-right curso-group-chevron"></i>
-                              {% if curso_obj %}
-                              <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=curso_obj.id) }}"
-                                 class="badge rounded-pill border curso-badge-{{ curso_hash }} text-decoration-none"
-                                 title="Ver turmas do curso {{ curso_obj.nome }}">
-                                {{ curso_obj.nome }}
-                              </a>
-                              {% else %}
-                              <span class="badge rounded-pill border curso-badge-7">—</span>
-                              {% endif %}
-                              <span class="badge bg-secondary ms-1">{{ temas_do_curso|length }}</span>
-                              <span class="text-muted small ms-auto">Clique para expandir</span>
-                            </div>
-                          </td>
-                        </tr>
-                        {% for tema in temas_do_curso %}
-                        <tr class="align-middle curso-group-member d-none {{ 'opacity-50 bg-light' if not tema.ativo }}"
-                          data-group="{{ group_id }}"
-                          data-tema-id="{{ tema.id }}"
-                          data-tema="{{ '%02d'|format(tema.ordem) }} {{ tema.titulo|lower }} {{ (tema.curso.nome if tema.curso else '')|lower }}">
+                    {% for curso_id, temas_do_curso in temas|groupby('curso_id') %}
+                    {% set curso_obj = temas_do_curso[0].curso %}
+                    {% set curso_hash = curso_cores.get(curso_obj.id, 7) if curso_obj else 7 %}
+                    {% set group_id = 'grupo-curso-' ~ (curso_obj.id if curso_obj else 'sem') ~ '-' ~ loop.index %}
+                    <tr class="curso-group-header bg-light" data-group="{{ group_id }}" role="button" tabindex="0"
+                      aria-expanded="false">
+                      <td colspan="2" class="py-2">
+                        <div class="d-flex align-items-center gap-2">
+                          <i class="bi bi-chevron-right curso-group-chevron"></i>
+                          {% if curso_obj %}
+                          <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=curso_obj.id) }}"
+                            class="badge rounded-pill border curso-badge-{{ curso_hash }} text-decoration-none"
+                            title="Ver turmas do curso {{ curso_obj.nome }}">
+                            {{ curso_obj.nome }}
+                          </a>
+                          {% else %}
+                          <span class="badge rounded-pill border curso-badge-7">—</span>
+                          {% endif %}
+                          <span class="badge bg-secondary ms-1">{{ temas_do_curso|length }}</span>
+                          <span class="text-muted small ms-auto">Clique para expandir</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {% for tema in temas_do_curso %}
+                    <tr class="align-middle curso-group-member d-none {{ 'opacity-50 bg-light' if not tema.ativo }}"
+                      data-group="{{ group_id }}" data-tema-id="{{ tema.id }}"
+                      data-tema="{{ '%02d'|format(tema.ordem) }} {{ tema.titulo|lower }} {{ (tema.curso.nome if tema.curso else '')|lower }}">
 
-                          {# ─── Coluna Tema (número + título) ─── #}
-                          <td class="fw-medium text-dark col-tema">
-                            <span class="tema-linha">
-                              <span class="tema-numero" title="Ordem sugerida de ministração">
-                                {{ '%02d'|format(tema.ordem) }}
-                              </span>
-                              <span class="tema-titulo">{{ tema.titulo }}</span>
-                            </span>
-                            {% if not tema.ativo %}
-                            <span class="badge bg-secondary-subtle text-secondary border ms-2"
-                              style="font-size:.65rem;">INATIVO</span>
-                            {% endif %}
-                          </td>
+                      {# ─── Coluna Tema (número + título) ─── #}
+                      <td class="fw-medium text-dark col-tema">
+                        <span class="tema-linha">
+                          <span class="tema-numero" title="Ordem sugerida de ministração">
+                            {{ '%02d'|format(tema.ordem) }}
+                          </span>
+                          <span class="tema-titulo">{{ tema.titulo }}</span>
+                        </span>
+                        {% if not tema.ativo %}
+                        <span class="badge bg-secondary-subtle text-secondary border ms-2"
+                          style="font-size:.65rem;">INATIVO</span>
+                        {% endif %}
+                      </td>
 
-                          {# ─── Coluna Ações ─── #}
-                          <td class="text-center pe-4">
-                            <div class="btn-group shadow-sm">
-                              <button type="button" class="btn btn-sm btn-white border text-primary"
-                                title="Editar Tema" data-bs-toggle="modal"
-                                data-bs-target="#modalEditTema{{ tema.id }}">
-                                <i class="bi bi-pencil-square"></i>
-                              </button>
+                      {# ─── Coluna Ações ─── #}
+                      <td class="text-center pe-4">
+                        <div class="btn-group shadow-sm">
+                          <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Tema"
+                            data-bs-toggle="modal" data-bs-target="#modalEditTema{{ tema.id }}">
+                            <i class="bi bi-pencil-square"></i>
+                          </button>
 
-                              <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST"
-                                class="d-inline">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit"
-                                  class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}"
-                                  title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
-                                  <i class="bi {{ 'bi-toggle-off' if not tema.ativo else 'bi-toggle-on' }}"></i>
-                                </button>
-                              </form>
-                            </div>
-                          </td>
-                        </tr>
-                        {% endfor %}
-                      {% endfor %}
+                          <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST"
+                            class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                              class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}"
+                              title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
+                              <i class="bi {{ 'bi-toggle-off' if not tema.ativo else 'bi-toggle-on' }}"></i>
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
                     {% else %}
-                      <tr>
-                        <td colspan="2" class="text-center p-5">
-                          <div class="text-muted">
-                            <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
-                            <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
-                            <small>Utilize o formulário ao lado para adicionar um novo tema.</small>
-                          </div>
-                        </td>
-                      </tr>
+                    <tr>
+                      <td colspan="2" class="text-center p-5">
+                        <div class="text-muted">
+                          <i class="bi bi-card-list d-block mb-3 display-6 opacity-25"></i>
+                          <p class="mb-0 fw-medium">Nenhum tema planejado para esta seleção.</p>
+                          <small>Utilize o formulário ao lado para adicionar um novo tema.</small>
+                        </div>
+                      </td>
+                    </tr>
                     {% endif %}
-                  </tbody>                </table>
+                  </tbody>
+                </table>
               </div>
 
               {# Modais de Edição de Tema (posicionados fora da tabela para W3C compliance) #}
@@ -297,14 +318,13 @@
                         <div class="row g-3">
                           <div class="col-4">
                             <label class="form-label small fw-bold text-muted text-uppercase">Ordem</label>
-                            <input type="number" name="ordem" class="form-control"
-                              value="{{ tema.ordem }}" min="1" max="999"
-                              title="Posição sugerida na sequência do curso">
+                            <input type="number" name="ordem" class="form-control" value="{{ tema.ordem }}" min="1"
+                              max="999" title="Posição sugerida na sequência do curso">
                           </div>
                           <div class="col-8">
-                            <label class="form-label small fw-bold text-muted text-uppercase">Título do Tema / Assunto</label>
-                            <input type="text" name="titulo" class="form-control"
-                              value="{{ tema.titulo }}" required>
+                            <label class="form-label small fw-bold text-muted text-uppercase">Título do Tema /
+                              Assunto</label>
+                            <input type="text" name="titulo" class="form-control" value="{{ tema.titulo }}" required>
                           </div>
                         </div>
 
@@ -321,8 +341,10 @@
                         </div>
                       </div>
                       <div class="modal-footer bg-light border-0">
-                        <button type="button" class="btn btn-sm btn-secondary fw-bold" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar Alterações</button>
+                        <button type="button" class="btn btn-sm btn-secondary fw-bold"
+                          data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar
+                          Alterações</button>
                       </div>
                     </form>
                   </div>
@@ -332,15 +354,18 @@
 
               {% if paginacao.total %}
               <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3 border-top">
-                <small class="text-muted">Exibindo {{ (paginacao.page - 1) * paginacao.per_page + 1 }}–{{ [paginacao.page * paginacao.per_page, paginacao.total]|min }} de {{ paginacao.total }} temas</small>
+                <small class="text-muted">Exibindo {{ (paginacao.page - 1) * paginacao.per_page + 1 }}–{{
+                  [paginacao.page * paginacao.per_page, paginacao.total]|min }} de {{ paginacao.total }} temas</small>
                 <nav aria-label="Paginação dos temas">
                   <div class="btn-group btn-group-sm">
                     {% if paginacao.has_prev %}
-                    <a class="btn btn-outline-secondary" href="{{ url_for('registros.planejamento', page=paginacao.prev_num, curso_id=filtro_curso, q=busca_tema) }}">Anterior</a>
+                    <a class="btn btn-outline-secondary"
+                      href="{{ url_for('registros.planejamento', page=paginacao.prev_num, curso_id=filtro_curso, q=busca_tema) }}">Anterior</a>
                     {% else %}<span class="btn btn-outline-secondary disabled">Anterior</span>{% endif %}
                     <span class="btn btn-light disabled">Página {{ paginacao.page }} de {{ paginacao.pages }}</span>
                     {% if paginacao.has_next %}
-                    <a class="btn btn-outline-secondary" href="{{ url_for('registros.planejamento', page=paginacao.next_num, curso_id=filtro_curso, q=busca_tema) }}">Próxima</a>
+                    <a class="btn btn-outline-secondary"
+                      href="{{ url_for('registros.planejamento', page=paginacao.next_num, curso_id=filtro_curso, q=busca_tema) }}">Próxima</a>
                     {% else %}<span class="btn btn-outline-secondary disabled">Próxima</span>{% endif %}
                   </div>
                 </nav>
@@ -354,8 +379,8 @@
     </div>
 
     {# ═══════════════════════════════════════════════════════
-       ABA NÍVEIS
-       ═══════════════════════════════════════════════════════ #}
+    ABA NÍVEIS
+    ═══════════════════════════════════════════════════════ #}
     <div class="tab-pane fade" id="tabNiveis" role="tabpanel">
       <div class="card shadow-sm border-0">
         <div class="card-header bg-white py-3 border-bottom">
@@ -397,9 +422,8 @@
                   </td>
                   <td class="text-end pe-2">
                     <div class="btn-group shadow-sm">
-                      <button type="button" class="btn btn-sm btn-white border text-primary"
-                        title="Editar Nível" data-bs-toggle="modal"
-                        data-bs-target="#modalEditNivel{{ nivel.id }}">
+                      <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Nível"
+                        data-bs-toggle="modal" data-bs-target="#modalEditNivel{{ nivel.id }}">
                         <i class="bi bi-pencil-square"></i>
                       </button>
 
@@ -447,8 +471,10 @@
                     </div>
                   </div>
                   <div class="modal-footer bg-light border-0">
-                    <button type="button" class="btn btn-sm btn-secondary fw-bold" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar Alterações</button>
+                    <button type="button" class="btn btn-sm btn-secondary fw-bold"
+                      data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar
+                      Alterações</button>
                   </div>
                 </form>
               </div>
@@ -463,9 +489,120 @@
   </div>{# /tab-content #}
 </div>
 
+{# ═══════════════════════════════════════════════════════
+  ABA Valores do Esportista
+  ═══════════════════════════════════════════════════════ #}
+  <div class="tab-pane fade" id="tabValores" role="tabpanel">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-white py-3 border-bottom">
+        <h6 class="mb-0 fw-bold text-dark">
+          <i class="bi bi-bar-chart-fill text-info me-1"></i>Valores do Esportista
+        </h6>
+      </div>
+      <div class="card-body p-3">
+        <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="tipo_post" value="valor">
+          <label class="form-label small text-muted mb-1 fw-semibold">Adicionar Valores</label>
+          <div class="input-group shadow-sm">
+            <input type="text" name="nome_valor" class="form-control border-end-0"
+              placeholder="Ex: Alegria" required>
+            <button class="btn btn-success px-3" type="submit" title="Adicionar Valor">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+        </form>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light text-muted small text-uppercase">
+              <tr>
+                <th class="ps-2">Valores / Postura do Esportista</th>
+                <th class="text-end pe-2" style="width:80px;">Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for valor in valores %}
+              <tr class="{{ 'opacity-50 bg-light' if not valor.ativo }}">
+                <td class="fw-semibold text-secondary ps-2">
+                  <i class="bi bi-bar-chart-fill me-2 small opacity-50"></i>{{ valor.nome }}
+                  {% if not valor.ativo %}
+                  <span class="badge bg-secondary-subtle text-secondary border ms-2"
+                    style="font-size:.65rem;">INATIVO</span>
+                  {% endif %}
+                </td>
+                <td class="text-end pe-2">
+                  <div class="btn-group shadow-sm">
+                    <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Nível"
+                      data-bs-toggle="modal" data-bs-target="#modalEditValor{{ valor.id }}">
+                      <i class="bi bi-pencil-square"></i>
+                    </button>
+
+                    <form action="{{ url_for('registros.inativar_valor', id=valor.id) }}" method="POST"
+                      class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit"
+                        class="btn btn-sm btn-white border {{ 'text-success' if not valor.ativo else 'text-warning' }}"
+                        title="{{ 'Ativar' if not valor.ativo else 'Inativar' }}">
+                        <i class="bi {{ 'bi-toggle-off' if not valor.ativo else 'bi-toggle-on' }}"></i>
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="2" class="text-center text-muted py-5">
+                  <i class="bi bi-info-circle d-block mb-2 opacity-25 fs-3"></i>
+                  <small>Nenhum valor cadastrado ainda.</small>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {# Modais de Edição dos Valores (posicionados fora da tabela) #}
+        {% for valor in valores %}
+        <div class="modal fade" id="modalEditValor{{ valor.id }}" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+              <div class="modal-header bg-light">
+                <h5 class="modal-title h6 fw-bold text-dark">
+                  <i class="bi bi-pencil-square me-2"></i>Editar Valor
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <form action="{{ url_for('registros.editar_valor', id=valor.id) }}" method="POST">
+                <div class="modal-body p-4">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted text-uppercase">Nome do Valor</label>
+                    <input type="text" name="nome_valor" class="form-control" value="{{ valor.nome }}" required>
+                  </div>
+                </div>
+                <div class="modal-footer bg-light border-0">
+                  <button type="button" class="btn btn-sm btn-secondary fw-bold"
+                    data-bs-dismiss="modal">Cancelar</button>
+                  <button type="submit" class="btn btn-sm btn-primary px-4 fw-bold shadow-sm">Salvar
+                    Alterações</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+      </div>
+    </div>
+  </div>
+
+</div>{# /tab-content #}
+</div>
+
 {# ═══════════════════════════════════════════════════════════════
-   MODAL — Cursos
-   ═══════════════════════════════════════════════════════════════ #}
+MODAL — Cursos
+═══════════════════════════════════════════════════════════════ #}
 <div class="modal fade" id="modalCursos" tabindex="-1" aria-labelledby="modalCursosLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content border-0 shadow-lg">
@@ -491,8 +628,8 @@
           </h6>
           <div class="row g-2">
             <div class="col-md-5">
-              <input type="text" id="cursoNomeInput" class="form-control form-control-sm"
-                placeholder="Nome do curso *" maxlength="150">
+              <input type="text" id="cursoNomeInput" class="form-control form-control-sm" placeholder="Nome do curso *"
+                maxlength="150">
             </div>
             <div class="col-md-5">
               <input type="text" id="cursoDescInput" class="form-control form-control-sm"
@@ -521,9 +658,8 @@
             <tr data-id="{{ c.id }}">
               <td class="ps-3 fw-semibold">
                 <a href="{{ url_for('registros.carga_horaria_turmas', curso_id=c.id) }}"
-                   class="text-decoration-none text-dark link-primary-hover"
-                   title="Ver turmas e carga horária de {{ c.nome }}"
-                   target="_blank">
+                  class="text-decoration-none text-dark link-primary-hover"
+                  title="Ver turmas e carga horária de {{ c.nome }}" target="_blank">
                   {{ c.nome }}
                   <i class="bi bi-box-arrow-up-right ms-1 small opacity-50"></i>
                 </a>
@@ -533,14 +669,12 @@
                 <span class="badge bg-success-subtle text-success-emphasis">Ativo</span>
               </td>
               <td class="text-center">
-                <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso"
-                  data-id="{{ c.id }}" data-nome="{{ c.nome }}"
-                  data-desc="{{ c.descricao or '' }}"
-                  title="Editar curso">
+                <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso" data-id="{{ c.id }}"
+                  data-nome="{{ c.nome }}" data-desc="{{ c.descricao or '' }}" title="Editar curso">
                   <i class="bi bi-pencil"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-secondary border-0 btn-inativar-curso"
-                  data-id="{{ c.id }}" data-nome="{{ c.nome }}" title="Inativar curso">
+                <button class="btn btn-sm btn-outline-secondary border-0 btn-inativar-curso" data-id="{{ c.id }}"
+                  data-nome="{{ c.nome }}" title="Inativar curso">
                   <i class="bi bi-archive"></i>
                 </button>
               </td>
@@ -590,12 +724,12 @@
           <div class="row g-2">
             <input type="hidden" id="editCursoId">
             <div class="col-md-5">
-              <input type="text" id="editCursoNome" class="form-control form-control-sm"
-                placeholder="Nome *" maxlength="150">
+              <input type="text" id="editCursoNome" class="form-control form-control-sm" placeholder="Nome *"
+                maxlength="150">
             </div>
             <div class="col-md-5">
-              <input type="text" id="editCursoDesc" class="form-control form-control-sm"
-                placeholder="Descrição" maxlength="300">
+              <input type="text" id="editCursoDesc" class="form-control form-control-sm" placeholder="Descrição"
+                maxlength="300">
             </div>
             <div class="col-md-2 d-flex gap-1">
               <button class="btn btn-warning btn-sm flex-fill" id="btnSalvarEditCurso">
@@ -622,8 +756,8 @@
 </div>
 
 {# ═══════════════════════════════════════════════════════════════
-   MODAL — Calendário de Dias Bloqueados
-   ═══════════════════════════════════════════════════════════════ #}
+MODAL — Calendário de Dias Bloqueados
+═══════════════════════════════════════════════════════════════ #}
 <div class="modal fade" id="modalCalendario" tabindex="-1" aria-labelledby="modalCalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content border-0 shadow-lg">
@@ -657,11 +791,11 @@
 
         <div class="d-flex gap-3 flex-wrap px-3 py-2 border-bottom small">
           {% for cod, label, cor in [
-            ('FERIADO', 'Feriado', '#dc3545'),
-            ('ATIVIDADE_PEDAGOGICA', 'Atividade Pedagógica', '#0d6efd'),
-            ('REUNIAO_PAIS', 'Reunião de Pais', '#6f42c1'),
-            ('ATIVIDADE_INTERNA', 'Atividade Interna', '#fd7e14'),
-            ('MANUTENCAO', 'Manutenção', '#6c757d'),
+          ('FERIADO', 'Feriado', '#dc3545'),
+          ('ATIVIDADE_PEDAGOGICA', 'Atividade Pedagógica', '#0d6efd'),
+          ('REUNIAO_PAIS', 'Reunião de Pais', '#6f42c1'),
+          ('ATIVIDADE_INTERNA', 'Atividade Interna', '#fd7e14'),
+          ('MANUTENCAO', 'Manutenção', '#6c757d'),
           ] %}
           <button type="button" class="btn btn-sm tipo-btn border" data-tipo="{{ cod }}" data-cor="{{ cor }}">
             <span class="dot me-1" style="background:{{ cor }}"></span>{{ label }}

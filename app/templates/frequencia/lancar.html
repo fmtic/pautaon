@@ -9,26 +9,30 @@
     </a>
 </div>
 <div class="btn-group">
-    <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown"
-            {% if not turma %}disabled{% endif %}>
+    <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown" {% if not turma
+        %}disabled{% endif %}>
         <i class="bi bi-printer"></i> Imprimir Pauta
     </button>
     {% if turma %}
     {# Onda 4 (D3b-1): se há oferta escolhida na tela, o link de impressão
-       já carrega a pauta daquela oferta (evita o redirect "selecione o curso"). #}
+    já carrega a pauta daquela oferta (evita o redirect "selecione o curso"). #}
     {% set tc = oferta_atual.id if oferta_atual else None %}
     <ul class="dropdown-menu">
         {% for mes in meses %}
         <li>
-            <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero, **({'turma_curso': tc} if tc else {})) }}"
+            <a class="dropdown-item"
+                href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero, **({'turma_curso': tc} if tc else {})) }}"
                 target="_blank">
                 Pauta de {{ mes.nome }}
             </a>
         </li>
         {% endfor %}
-        <li><hr class="dropdown-divider"></li>
         <li>
-            <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id, **({'turma_curso': tc} if tc else {})) }}"
+            <hr class="dropdown-divider">
+        </li>
+        <li>
+            <a class="dropdown-item text-primary"
+                href="{{ url_for('registros.imprimir_pauta', id=turma.id, **({'turma_curso': tc} if tc else {})) }}"
                 target="_blank">
                 Pauta Completa (Todos os meses)
             </a>
@@ -45,7 +49,7 @@
     <input type="hidden" name="turma" value="{{ turma_id or '' }}">
     <input type="hidden" name="data_hidden" value="{{ data or '' }}">
     {# Onda 4 (D2): turma com oferta única ativa — oferta resolvida
-       automaticamente, sem seletor; o hidden leva turma_curso ao POST. #}
+    automaticamente, sem seletor; o hidden leva turma_curso ao POST. #}
     {% if oferta_atual and ofertas|length == 1 %}
     <input type="hidden" name="turma_curso" value="{{ oferta_atual.id }}">
     {% endif %}
@@ -71,12 +75,12 @@
             </div>
 
             {# Onda 4 (D2): 2+ ofertas ativas — exige escolha do curso antes
-               de carregar a pauta; a data selecionada é preservada na troca. #}
+            de carregar a pauta; a data selecionada é preservada na troca. #}
             {% if ofertas|length >= 2 %}
             <div class="col-md-6">
                 <label class="form-label fw-bold">Curso da oferta</label>
                 <select name="turma_curso" id="select-turma-curso" class="form-select border-primary"
-                        onchange="atualizarUrl()">
+                    onchange="atualizarUrl()">
                     <option value="">Selecione o curso</option>
                     {% for o in ofertas %}
                     {# H3e: horário do curso no seletor vem da GRADE da oferta. #}
@@ -84,7 +88,8 @@
                     <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
                         {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
                         {%- if o.turno %} — {{ o.turno }}{% endif -%}
-                        {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto }}){% endif -%}
+                        {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto
+                        }}){% endif -%}
                     </option>
                     {% endfor %}
                 </select>
@@ -121,16 +126,21 @@
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-secondary">Temas da Aula (Planejamento)</label>
-                        <div id="select-tema-aula" class="border rounded p-2 bg-white" style="max-height: 12rem; overflow-y: auto;" aria-describedby="ajuda-temas-aula">
+                        <div id="select-tema-aula" class="border rounded p-2 bg-white"
+                            style="max-height: 12rem; overflow-y: auto;" aria-describedby="ajuda-temas-aula">
                             {% for tema in temas %}
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="tema_ids" id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado %}checked{% endif %}>
+                                <input class="form-check-input" type="checkbox" name="tema_ids"
+                                    id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado
+                                    %}checked{% endif %}>
                                 <label class="form-check-label" for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
                             </div>
                             {% endfor %}
-                            {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{% endif %}
+                            {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{%
+                            endif %}
                         </div>
-                        <small id="ajuda-temas-aula" class="text-muted d-block mt-1">Marque um ou mais temas trabalhados nesta aula.</small>
+                        <small id="ajuda-temas-aula" class="text-muted d-block mt-1">Marque um ou mais temas trabalhados
+                            nesta aula.</small>
                     </div>
                 </div>
 
@@ -141,7 +151,7 @@
                                 <i class="bi bi-chat-left-dots-fill me-2"></i>Observações/Descrição da Aula
                             </label>
                             <textarea id="observacoes_aula" name="observacoes" class="form-control border-0 shadow-none"
-                                rows="3" placeholder="Ex: Alunos demonstraram dificuldade no tema X..."
+                                rows="3" placeholder="Ex.: Observação da direção do vento..."
                                 style="background: transparent;">{{ obs_salva or '' }}</textarea>
                         </div>
                         <div class="card-footer bg-white py-1 border-0">
@@ -199,13 +209,29 @@
                                 <div class="btn-group w-100 mt-2" role="group">
                                     {% for c in ['A', 'B', 'C', 'D', 'F', 'J'] %}
                                     <input type="radio" class="btn-check" name="aluno_{{ aluno.id }}"
-                                        id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}"
-                                        {% if frequencias.get(aluno.id)==c %}checked{% endif %}
-                                        {% if not aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
+                                        id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}" {% if
+                                        frequencias.get(aluno.id)==c %}checked{% endif %} {% if not
+                                        aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}
+                                        onchange="tratarConceitoAluno('{{ aluno.id }}', '{{ c }}')">
                                     <label class="btn btn-sm btn-outline-secondary label-conceito conceito-{{ c }}"
                                         for="aluno_{{ aluno.id }}_{{ c }}">{{ c }}</label>
                                     {% endfor %}
                                 </div>
+
+                                <!-- Select: Valor / Postura do Esportista -->
+                                <div class="mt-2">
+                                    <label for="postura_{{ aluno.id }}"
+                                        class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
+                                        Esportista</label>
+                                    <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
+                                        class="form-select form-select-sm" {% set freq_atual=frequencias.get(aluno.id)
+                                        %} {% if not freq_atual or freq_atual not in ['A', 'B' , 'C' , 'D' ] or not
+                                        aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
+                                        <option value="">Selecione a opção</option>
+                                        <!-- Opções pré-definidas serão inseridas aqui futuramente -->
+                                    </select>
+                                </div>
+
                                 {% if not aluno.pode_receber_frequencia %}
                                 <small class="text-warning mt-1 d-block"><i class="bi bi-exclamation-triangle"></i>
                                     Aluno transferido - frequência não aplicável</small>
@@ -234,5 +260,19 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="{{ url_for('static', filename='js/frequencia.js') }}?v={{ range(1000,9999) | random }}"></script>
+
+<script>
+    function tratarConceitoAluno(alunoId, conceito) {
+        const selectPostura = document.getElementById('postura_' + alunoId);
+        if (!selectPostura) return;
+
+        if (['A', 'B', 'C', 'D'].includes(conceito)) {
+            selectPostura.removeAttribute('disabled');
+        } else {
+            selectPostura.value = ''; // Limpa o valor ao desabilitar
+            selectPostura.setAttribute('disabled', 'true');
+        }
+    }
+</script>
 
 {% endblock %}
