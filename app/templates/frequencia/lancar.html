@@ -44,7 +44,21 @@
     Não esqueça de registrar a frequência dos alunos para cada aula e o tema.
 </p>
 
-<form method="POST" action="{{ url_for('registros.frequencia') }}">
+{# V2: unidade sem catálogo de valores ativos — a regra de obrigatoriedade não
+se aplica. O aviso só aparece para quem gerencia o planejamento (é lá que o
+catálogo é cadastrado). #}
+{% if not valores_esportista_ativos and pode_gerenciar_planejamento %}
+<div class="alert alert-warning py-2" role="alert">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    Cadastre os valores no Planejamento — sem nenhum valor ativo, o Valor/Postura
+    do Esportista não é exigido ao lançar presença.
+</div>
+{% endif %}
+
+{# V2: `data-valor-obrigatorio` liga a validação de cliente (frequencia.js)
+somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
+<form method="POST" action="{{ url_for('registros.frequencia') }}"
+    {% if valores_esportista_ativos %}data-valor-obrigatorio="1"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="turma" value="{{ turma_id or '' }}">
     <input type="hidden" name="data_hidden" value="{{ data or '' }}">
@@ -231,12 +245,19 @@
                                 {% set valor_salvo = valores_por_aluno.get(aluno.id) %}
                                 {# Valor inativo já lançado continua disponível para o aluno. #}
                                 {% set valor_inativo = valor_salvo if valor_salvo and not valor_salvo.ativo else None %}
+                                {# V2: A–D com catálogo ativo exige o valor; o select habilitado
+                                passa a `required`. F/J/sem conceito ficam desabilitados e sem
+                                `required` (o `disabled` impede o envio do campo). #}
+                                {% set postura_obrigatoria = freq_atual in ['A', 'B', 'C', 'D']
+                                    and aluno.pode_receber_frequencia and not is_readonly
+                                    and (valores_esportista_ativos|length) > 0 %}
                                 <div class="mt-2">
                                     <label for="postura_{{ aluno.id }}"
                                         class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
                                         Esportista</label>
                                     <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
-                                        class="form-select form-select-sm" {% if not freq_atual or freq_atual not in ['A', 'B', 'C', 'D'] or not aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
+                                        class="form-select form-select-sm" {% if not postura_obrigatoria %}disabled{% endif %}
+                                        {% if postura_obrigatoria %}required{% endif %}>
                                         <option value="">Selecione a opção</option>
                                         {% for v in valores_esportista_ativos %}
                                         <option value="{{ v.id }}" {% if valor_salvo and valor_salvo.id == v.id %}selected{% endif %}>{{ v.nome }}</option>
@@ -261,6 +282,11 @@
                 {% endfor %}
             </div>
 
+        </div>
+
+        <div id="aviso-valor-pendente" class="alert alert-warning py-2 mt-3 mb-0 d-none" role="alert">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            <span id="aviso-valor-pendente-texto"></span>
         </div>
 
         <div class="d-flex justify-content-end mt-3">
