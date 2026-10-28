@@ -1,3 +1,13 @@
+### Alterações do dia — 28/10/2026 (Frequência — Valor/Postura obrigatório para presença)
+
+- **Pedido:** não permitir lançar presença (A–D) sem o Valor/Postura do Esportista, sem que a pauta grave nada pela metade; e limpar o template de frequência (card sem `</div>` e cópia morta do template).
+- **Regra (servidor):** `salvar_frequencia` (`app/utils/logica.py`) monta o plano de gravação em `_planejar_frequencia` **antes de qualquer escrita**. Havendo A–D sem valor válido, levanta `PendenciaValorEsportista` e **nada** é gravado — nem conceitos, nem `registro_aula` (temas/observações/atividades). A rota `POST /frequencia` flasha `mensagem_valor_obrigatorio` (até 10 nomes + "e mais N") e volta para a mesma turma/data/oferta.
+- **Exceção:** unidade da turma sem **nenhum** valor ativo no catálogo (`unidade_tem_valores_ativos`) — a pauta não trava; a tela mostra "Cadastre os valores no Planejamento" só para ADMIN/PEDAGOGICO/SECRETARIA. Valor **inativo já salvo** continua valendo (`valor_atual_id`); inativo novo, inexistente ou de outra unidade conta como ausente. F, J e aluno sem conceito não exigem (F/J seguem limpando; sem conceito preserva a linha). Vale para qualquer data, inclusive histórico reescrito.
+- **Cliente:** `lancar.html` marca `required` no select quando o conceito é A–D (com catálogo) e o form leva `data-valor-obrigatorio` só nesse caso; `frequencia.js` bloqueia o submit com `is-invalid` + mensagem (`#aviso-valor-pendente`) e trata o evento `invalid` do `required` nativo.
+- **Limpeza:** `frequencia/lancar.html` fechava o card da pauta só no `</form>` (31 × 30 desde antes de `a5b34c8`) — corrigido antes da regra, com teste de estrutura por `HTMLParser`. A cópia `lancar copy.html`, sem nenhuma referência em `app/`, `tests/` ou `scripts/`, já havia sido removida em `2185afe`.
+- **Escopo:** sem migration (coluna continua nullable); nada muda em conceito, P/F/J, `estats_freq`, pauta impressa, relatórios, exportações ou permissões. Testes: `tests/test_valor_obrigatorio.py` (26), `tests/test_valor_obrigatorio_ui.py` (12), `tests/test_valor_obrigatorio_caracterizacao.py` (4, antigo × novo), `tests/test_lancar_template_estrutura.py` (2) e ajustes em `test_valor_esportista_lancamento.py` (5) e `test_valor_esportista_nao_regressao.py` (4). Suíte: **826 → 870 passed**. Regra em MER §7.19/§8.1; relatório `docs/Relatórios/V2_ValorObrigatorio.md`.
+
+
 ### Alterações do dia — 28/10/2026 (Diário de Observações — visão global com filtros)
 
 - **Pedido:** botão no Painel Pedagógico para abrir o diário com filtros por período letivo, turma, curso (oferta) e professor, restrito a quem já acessa o painel.
