@@ -2799,6 +2799,19 @@ def imprimir_pauta(id):
             "outras_ofertas": outras_ofertas_por_aluno.get(aluno.id, []),
         }
 
+    # I1: para o professor, as linhas de acompanhante e de instruções só saem
+    # dos alunos que ele leciona hoje — MESMA regra de /aluno/<id>/info-professor
+    # (professor efetivo da oferta, inscrição/turma/oferta ativas, unidade e
+    # período não encerrado). Outros perfis: `None` = sem restrição (inalterado).
+    # Medicação não passa por aqui.
+    alunos_com_info = None
+    if current_user.role == UserRole.PROFESSOR:
+        from app.services.aluno_info_professor import (
+            alunos_com_info_professor,
+        )
+
+        alunos_com_info = alunos_com_info_professor(alunos_ids, current_user)
+
     nomes_meses = {
         "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
         "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
@@ -2870,5 +2883,6 @@ def imprimir_pauta(id):
         datas_por_mes=datas_por_mes,
         oferta_atual=oferta,
         dados_alunos_impressao=dados_alunos_impressao,
+        alunos_com_info=alunos_com_info,
         now=datetime.now(),
     )

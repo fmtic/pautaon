@@ -239,14 +239,20 @@
                   {% if dados_aluno.outras_ofertas %}
                   <div><strong>Outras ofertas:</strong> {{ dados_aluno.outras_ofertas|join(', ') }}</div>
                   {% endif %}
-                  {% if dados_aluno.acompanhante %}
+                  {# I1: acompanhante e instruções seguem a regra de acesso do
+                  professor (professor efetivo da oferta, inscrição/turma/oferta
+                  ativas, unidade e período não encerrado). Para os demais perfis
+                  — e para o professor sem acesso — essas linhas não saem.
+                  Medicação continua inalterada. #}
+                  {% set pode_ver_info = alunos_com_info is not defined or alunos_com_info is none or aluno.id in alunos_com_info %}
+                  {% if pode_ver_info and dados_aluno.acompanhante %}
                   <div><strong>Quem acompanha:</strong> {{ dados_aluno.acompanhante }}</div>
                   {% endif %}
                   {% if dados_aluno.medicacao %}
                   <div><strong>Medicação regular:</strong> Sim{% if dados_aluno.medicacao != 'Sim' %} — {{
                     dados_aluno.medicacao }}{% endif %}</div>
                   {% endif %}
-                  {% if dados_aluno.informacoes_professor %}
+                  {% if pode_ver_info and dados_aluno.informacoes_professor %}
                   <div><strong>Informações para o professor:</strong> {{ dados_aluno.informacoes_professor }}</div>
                   {% endif %}
                 </div>
