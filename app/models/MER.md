@@ -5,7 +5,7 @@
 > Documento vivo do esquema do banco de dados. **Atualize sempre que criar,
 > alterar ou remover uma tabela/coluna.** Cada alteração deve vir acompanhada
 > da migration correspondente.
-**Última atualização:** 2026-10-28 — Sincronizado com as etapas T1, P1, B1–B7, M1, M1.1, M2, M4, L1, L2, **D5.0–D5.5**, **H1–H5b** e **A1** (frequência do histórico pela regra D2; BI com `turma.ativo`). **Inscrição exige oferta:** `inscricoes.turma_curso_id` NOT NULL (`c3d4e5f6a7b8`, endurecida na B5 com checagens de NULL/duplicata); índice único parcial `uix_inscricao_ativa_aluno_oferta` `(aluno_id, turma_curso_id) WHERE ativo IS TRUE`. **Programa obrigatório:** `turma_curso.programa` NOT NULL (`d4e5f6a7b8c9`, endurecida na B5 com `COALESCE` preservando `turma.programa` e recusa explícita sem programa padrão). **Serviço único de enturmação** (`app/services/enturmacao.py`, M2); desenturmar/transferir/desativar oferta por oferta. **Guarda de desativar oferta** (M4): recusa se houver aluno ativo em período em andamento. **Oferta efetiva** (M4): `cond_oferta_efetiva()` preserva histórico em período encerrado. **Isolamento por unidade** (B3/B4): vale para todos os perfis; Visão Global somente leitura. **Conselho de classe POR OFERTA (D5.1–D5.5, concluído):** `conselho_classe.turma_curso_id` **NOT NULL** (`e5f6a7b8c9d0` + endurecimento `f6a7b8c9d0e1`); `Turma.conselho_concluido` **removida** (encerramento por oferta, turma derivada); histórico, ficha 360°, painel por turma, resultado do conselho e certificado leem por oferta. **H1 (26/10):** grade de horário por dia na oferta (§7.32a) criada por `5730d7c594ba` com backfill da herança campo a campo (COALESCE oferta→turma); serviço `turma_curso_horario` (leitura/escrita/projeção) e conversor `dias_semana`; nenhum comportamento visível alterado — leitores/escritores da grade chegam em H2–H5 (§12.25). **H5b (26/10):** removidas fisicamente as seis colunas escalares de agenda (`8d2e3f4a5b6c`) e `ck_tch_dia` apertado para 0–5 (`7c1d2e3f4a5b`); a grade é a fonte única e o downgrade reconstrói a projeção com perda documentada; **aplicada no principal em 27/10/2026** (3 turmas / 5 ofertas / 8 linhas de grade, 6 colunas ausentes, CHECK 0–5). Suíte: **684 passed**, 0 falhas. **Head Alembic:** `8d2e3f4a5b6c`. **D3b-2.0–2.6 (27/10):** frequência/diário por oferta — mapas em lote (`freq_geral_turmas_em_lote`/`freq_geral_ofertas_em_lote`), histórico sem N+1 (`frequencias_aluno_por_inscricao`), estatísticas do GET `/frequencia` por oferta em 2+ ofertas (`conceitos_frequencia_por_aluno`), `min_freq` coerente com o valor exibido (D7), `f_prog` por `TurmaCurso.programa`. Suíte: 662 → 684 passed.
+**Última atualização:** 2026-10-28 — Sincronizado com as etapas T1, P1, B1–B7, M1, M1.1, M2, M4, L1, L2, **D5.0–D5.5**, **H1–H5b** e **A1** (frequência do histórico pela regra D2; BI com `turma.ativo`). **Inscrição exige oferta:** `inscricoes.turma_curso_id` NOT NULL (`c3d4e5f6a7b8`, endurecida na B5 com checagens de NULL/duplicata); índice único parcial `uix_inscricao_ativa_aluno_oferta` `(aluno_id, turma_curso_id) WHERE ativo IS TRUE`. **Programa obrigatório:** `turma_curso.programa` NOT NULL (`d4e5f6a7b8c9`, endurecida na B5 com `COALESCE` preservando `turma.programa` e recusa explícita sem programa padrão). **Serviço único de enturmação** (`app/services/enturmacao.py`, M2); desenturmar/transferir/desativar oferta por oferta. **Guarda de desativar oferta** (M4): recusa se houver aluno ativo em período em andamento. **Oferta efetiva** (M4): `cond_oferta_efetiva()` preserva histórico em período encerrado. **Isolamento por unidade** (B3/B4): vale para todos os perfis; Visão Global somente leitura. **Conselho de classe POR OFERTA (D5.1–D5.5, concluído):** `conselho_classe.turma_curso_id` **NOT NULL** (`e5f6a7b8c9d0` + endurecimento `f6a7b8c9d0e1`); `Turma.conselho_concluido` **removida** (encerramento por oferta, turma derivada); histórico, ficha 360°, painel por turma, resultado do conselho e certificado leem por oferta. **H1 (26/10):** grade de horário por dia na oferta (§7.32a) criada por `5730d7c594ba` com backfill da herança campo a campo (COALESCE oferta→turma); serviço `turma_curso_horario` (leitura/escrita/projeção) e conversor `dias_semana`; nenhum comportamento visível alterado — leitores/escritores da grade chegam em H2–H5 (§12.25). **H5b (26/10):** removidas fisicamente as seis colunas escalares de agenda (`8d2e3f4a5b6c`) e `ck_tch_dia` apertado para 0–5 (`7c1d2e3f4a5b`); a grade é a fonte única e o downgrade reconstrói a projeção com perda documentada; **aplicada no principal em 27/10/2026** (3 turmas / 5 ofertas / 8 linhas de grade, 6 colunas ausentes, CHECK 0–5). Suíte: **684 passed**, 0 falhas. **Head Alembic:** `b7c8d9e0f1a2`. **D3b-2.0–2.6 (27/10):** frequência/diário por oferta — mapas em lote (`freq_geral_turmas_em_lote`/`freq_geral_ofertas_em_lote`), histórico sem N+1 (`frequencias_aluno_por_inscricao`), estatísticas do GET `/frequencia` por oferta em 2+ ofertas (`conceitos_frequencia_por_aluno`), `min_freq` coerente com o valor exibido (D7), `f_prog` por `TurmaCurso.programa`. Suíte: 662 → 684 passed. **A1 — Valores do Esportista (28/10):** catálogo `valor_esportista` (escopo por unidade, único `lower(nome)` + `unidade_id`, `ativo`) e coluna adicional `frequencia.valor_esportista_id` (FK `ON DELETE SET NULL`, migration `b7c8d9e0f1a2`, sem backfill); o valor só é gravado com conceito A–D e **não** entra em nenhuma conta de presença/falta/pauta/diário/relatório/exportação (§7.5a, §7.19, §8.1). **Abas do Planejamento (28/10):** a aba ativa passou a viver na querystring (`?aba=temas|valores|niveis`) — escrita volta para a aba de origem e preserva os filtros da lista de temas (§9.3); sem mudança de schema. **Abas do Conselho de Perguntas (28/10):** etapa e foco também vão para a querystring (`?etapa=inicial|percurso|final&foco=turma|aluno`); salvar volta para a aba da pergunta gravada e excluir para a aba de origem (§9.3); sem mudança de schema. Suíte: 735 → 791 passed (38 da feature + 10 das abas do planejamento + 8 das abas do conselho). **Atividades da aula (28/10):** `registro_aula.atividades` (TEXT, nullable, migration `c8d9e0f1a2b3`, **aplicada no principal em 28/10/2026**); texto independente das observações, sem efeito em frequência, estatísticas, pauta impressa ou relatórios; o Diário de Observações passou a exibir as duas seções e a listar aulas com qualquer um dos dois textos (§7.20). Suíte: 791 → 805 passed (14 novos). **Diário de Observações (28/10):** `ver_observacoes` passa a exigir a unidade da turma e, para professor, o vínculo `turma.professor_id`; botão no painel (`/painel`) e no detalhe da turma (§7.20). Sem schema. Suíte: 805 → 813 passed.
 
 ---
 
@@ -252,6 +252,7 @@ erDiagram
     ALUNO ||--o{ FREQUENCIA : registra
     TURMA ||--o{ FREQUENCIA : pauta
     TURMA_CURSO |o--o{ FREQUENCIA : oferta
+    VALOR_ESPORTISTA |o--o{ FREQUENCIA : qualifica
     ALUNO ||--o{ TRANSFERENCIA : movimenta
 ```
 
@@ -394,6 +395,23 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 | unidade_id | int          | sim  | —       | FK → unidade      |
 
 **UNIQUE:** (`nome`, `unidade_id`) via `uq_nivel_nome_unidade`. Níveis de unidades diferentes podem ter o mesmo nome; níveis legados sem unidade mantêm `unidade_id = NULL`. No PostgreSQL, `NULL` não colide em UNIQUE; logo a restrição não impede nomes duplicados entre níveis legados sem unidade.
+
+### 7.5a `valor_esportista` (A1)
+
+Catálogo do planejamento pedagógico — o "Valor / Postura do Esportista" escolhido no lançamento de frequência. Sem mixins: é catálogo simples, não participa de soft delete de domínio nem de auditoria de edição.
+
+| Coluna     | Tipo         | Nulo | Default | Descrição                          |
+|------------|--------------|------|---------|------------------------------------|
+| id         | int          | não  | auto    | PK                                 |
+| nome       | varchar(100) | não  | —       | Único por unidade, sem case        |
+| ativo      | bool         | não  | true    | `false` esconde do seletor         |
+| unidade_id | int          | não  | —       | FK → unidade (`fk_valor_esportista_unidade`) |
+| created_at | timestamp    | sim  | now     | —                                  |
+| updated_at | timestamp    | sim  | onupdate| —                                  |
+
+**UNIQUE funcional:** `uix_valor_esportista_nome_unidade` em (`lower(nome)`, `unidade_id`) — a unicidade é por unidade e **não** diferencia maiúsculas de minúsculas. A rota valida com `func.lower` antes do `INSERT` para devolver mensagem amigável (o índice segue como garantia final). `unidade_id` é **NOT NULL** (não há valor global, ao contrário de `nivel` legado): criar/editar/inativar exige unidade efetiva na sessão — a Visão Global é somente leitura.
+
+**Exclusão:** com uso, o valor **nunca** é apagado — apenas inativado (`Registros de cadastro: registros.planejamento` com `tipo_post="valor"`, `registros.editar_valor`, `registros.inativar_valor`). Registros históricos continuam exibindo o valor inativo.
 
 ### 7.6 `periodo_letivo`
 
@@ -712,13 +730,14 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **turma_curso_id** | **int** | sim | —      | FK → turma_curso; NULL = registro legado (Onda 4, Fase 4) |
 | **data**     | **date** | não  | —       | Onda 2A                              |
 | **conceito** | **enum** | sim  | —       | `conceito_frequencia_enum` (Onda 2B) |
+| **valor_esportista_id** | **int** | sim | — | FK → `valor_esportista`, `ON DELETE SET NULL` (A1); **dado adicional**, não entra em nenhuma conta |
 | unidade_id   | int      | sim  | —       | FK → unidade                         |
 
 **Unicidade (Onda 4, Fase 4):** o antigo `UNIQUE (aluno_id, turma_id, data)` (`uix_frequencia_aluno_turma_data`) foi **substituído** por dois índices únicos **parciais**:
 - `uix_freq_legado` — UNIQUE (`aluno_id`, `turma_id`, `data`) **WHERE `turma_curso_id IS NULL`** (uma linha legada por aluno/turma/dia);
 - `uix_freq_oferta` — UNIQUE (`aluno_id`, `turma_curso_id`, `data`) **WHERE `turma_curso_id IS NOT NULL`** (uma linha por oferta; o mesmo aluno/turma/dia pode existir em ofertas diferentes).
 
-**Índices:** `ix_frequencia_turma_data` (`turma_id`, `data`), `ix_frequencia_aluno_data` (`aluno_id`, `data`) e **novo** `ix_frequencia_turma_curso_data` (`turma_curso_id`, `data`), para a "pauta da oferta".
+**Índices:** `ix_frequencia_turma_data` (`turma_id`, `data`), `ix_frequencia_aluno_data` (`aluno_id`, `data`) e **novo** `ix_frequencia_turma_curso_data` (`turma_curso_id`, `data`), para a "pauta da oferta". **A1:** `ix_frequencia_valor_esportista` (`valor_esportista_id`).
 
 **Nota (`turma_id` espelhado):** `turma_id` continua sendo gravado inclusive nos registros de oferta (backfill e `salvar_frequencia` preenchem ambos), para leitura retrocompatível por turma. A busca **legada** (`turma_curso_id IS NULL`) e a busca **por oferta** (`turma_curso_id = X`) são mutuamente exclusivas — ver §8.10.
 **Property híbrida:** `presente` (A/B/C/D).
@@ -734,7 +753,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **turma_curso_id**  | **int**          | sim  | —            | FK → turma_curso; NULL = registro legado (Onda 4, Fase 4) |
 | **data**            | **date**         | não  | —            | Onda 2A                                          |
 | tema_id             | int              | sim  | —            | FK → tema_aula; espelho do primeiro tema para compatibilidade durante a transição |
-| observacoes         | text             | sim  | —            | —                                                |
+| observacoes         | text             | sim  | —            | Observações/Descrição da aula                    |
+| **atividades**      | **text**         | sim  | —            | Atividades da aula (A1) — texto independente das observações |
 | instrutor_id        | int              | sim  | —            | FK → user                                        |
 | created_at          | timestamp        | sim  | now          | —                                                |
 | unidade_id          | int              | sim  | —            | FK → unidade                                     |
@@ -743,6 +763,10 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **updated_at**      | **timestamp**    | sim  | now/onupdate | Última modificação (AuditoriaMixin)              |
 
 **Índice novo (Onda 4, Fase 4):** `ix_registro_aula_turma_curso_data` (`turma_curso_id`, `data`). O diário é buscado por (`turma_curso_id`, `data`) quando há oferta e por (`turma_id`, `data`) **com `turma_curso_id IS NULL`** no caminho legado — ver §8.10.
+
+**Atividades da aula (A1, migration `c8d9e0f1a2b3`):** coluna `atividades` TEXT nullable, **sem backfill** (registros antigos ficam NULL). Campo de texto adicional ao lado de `observacoes`: `salvar_frequencia` grava os dois de forma independente (`form.get(...).strip() or None`) e `carregar_frequencias_e_valores` devolve `(conceitos, valores, temas, observacoes, atividades)` — `carregar_frequencias` continua com 3 valores e descarta as atividades. **Não** participa de frequência, estatísticas, pauta impressa, BI, relatórios ou exportações. O Diário de Observações (`/turma/<id>/observacoes`) passou a listar aulas com **qualquer um** dos dois textos e exibe as duas seções.
+
+**Acesso ao Diário de Observações (28/10/2026):** `ver_observacoes` aplica `assert_unidade_context(turma.unidade_id, get_unidade_id())` e, para `UserRole.PROFESSOR`, exige `turma.professor_id == current_user.id` — mesma guarda de `ver_turma`/`imprimir_pauta`. A tela é alcançável pelo painel (`/painel`, botão por turma) e pelo detalhe da turma (`/turma/<id>`).
 
 **Temas múltiplos (migration `a8b9c0d1e2f3`):** o vínculo normalizado fica em `registro_aula_tema` (`registro_aula_id`, `tema_aula_id`), com PK composta e FKs para `registro_aula` (CASCADE) e `tema_aula` (RESTRICT). O backfill copia os valores não nulos de `registro_aula.tema_id`. A coluna antiga permanece temporariamente como espelho do primeiro tema; leituras novas usam a relação `RegistroAula.temas`. **Contrato de leitura da pauta (`carregar_frequencias`, `app/utils/logica.py`):** o segundo elemento devolvido é **sempre a lista** de `tema_aula.id` marcados no dia — `RegistroAula.temas`, com fallback no espelho `tema_id` quando a relação estiver vazia, e **lista vazia** (nunca `None`) quando não há diário ainda ou quando `turma_id`/`data` são inválidos; o template testa a expressão `tema.id in tema_selecionado` e `None` derrubava o GET `/frequencia` de um dia ainda não lançado (`TypeError: argument of type 'NoneType' is not a container or iterable`; corrigido em 27/10/2026).
 
@@ -999,6 +1023,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - F = falta. J = justificada (não entra no denominador).
 - Fórmula: `freq = presentes / (presentes + faltas) * 100`.
 - Implementação (`Turma.freq_geral`): arredonda a 1 casa decimal e retorna `0.0` quando não há registros contáveis; registros com `conceito` nulo (coluna nullable) não entram na conta.
+- **Valor / Postura do Esportista (A1, 28/10/2026):** `frequencia.valor_esportista_id` é **dado adicional**. Só é gravado quando o conceito é A/B/C/D; F, J, campo vazio ou aluno sem frequência gravam `NULL` (limpando valor anterior). A ausência do campo (`select` desabilitado) **não** altera conceito nem apaga frequência. Valor inexistente, de outra unidade ou inativo (quando não era o já salvo) é ignorado sem derrubar o restante da pauta; valor inativo já salvo é preservado. Escrita em `salvar_frequencia` (`_resolver_valor_esportista`), leitura em `carregar_frequencias_e_valores` (mesma consulta de `frequencia`, via `joinedload`) — nenhum leitor de estatística, pauta, diário, relatório ou exportação lê a coluna.
 - **Regra D2 do legado no histórico do aluno (A1, 28/10/2026):** as linhas com `turma_curso_id IS NULL` pertencem à **oferta única ativa** da turma, e não a nenhuma oferta quando a turma tem 2+ ofertas ativas (ou nenhuma ativa). Essa regra, já aplicada por `agregar_por_oferta` (e pelos filtros do BI via `cond_linha_por_oferta`), passou a valer também em `frequencias_aluno_por_inscricao` (histórico do aluno): a célula de frequência da inscrição na oferta soma o legado da turma **somente** se essa oferta é a única ativa (`ofertas_unicas_ativas`); o par `(turma_id, None)` — inscrição anterior a `c3d4e5f6a7b8` — lê só o legado. Custo continua em **uma** consulta agregada de frequência, independente do número de inscrições.
 
 ### 8.2 Conselho de Classe (por OFERTA desde a D5.1–D5.5)
@@ -1170,6 +1195,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 - **Novos campos JSON** só com justificativa clara. Prefira colunas/tabelas.
 - **Toda leitura/escrita de perfil do aluno** via `services.aluno_perfil`.
 - Nunca interpolar Jinja com espaço entre chaves (`{ { } }`) — só `{{ }}`.
+- **Abas com formulários (Planejamento e Conselho de Perguntas):** o estado ativo vive na querystring, não apenas no DOM. Planejamento: `?aba=temas|valores|niveis`; Conselho de Perguntas: `?etapa=inicial|percurso|final&foco=turma|aluno`. Toda escrita usa um helper de retorno (`_voltar_planejamento()` em `app/registros/core.py`; `_voltar_perguntas()` em `app/conselho.py`), que lê o hidden correspondente por whitelist e devolve a querystring; o GET valida e passa a aba ativa ao template. Valor inválido ou ausente cai na aba padrão, preservando o comportamento anterior. Qualquer aba nova deve seguir o mesmo contrato.
 
 ---
 
@@ -1466,9 +1492,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | `a8b9c0d1e2f3` | `f6a7b8c9d0e1` | **Múltiplos temas por aula**: tabela associativa `registro_aula_tema` + backfill dos vínculos únicos | ✅       |
 | `5730d7c594ba` | `a8b9c0d1e2f3` | **H1**: grade por dia `turma_curso_horario` (UNIQUE/CHECKs/FK CASCADE); `dias_semana` → varchar(80) em `turma`/`turma_curso` (batch no SQLite); pré-checagens (i)–(v) num único `RuntimeError` + informativo (vi); backfill herança campo a campo idempotente; downgrade com guarda de grade não uniforme, sem redução do varchar | ✅       |
 | `7c1d2e3f4a5b` | `5730d7c594ba` | **H5b-A**: aperta `ck_tch_dia` de 0–6 para 0–5; pré-checagem read-only recusa dia 6 listando ids; downgrade volta a 0–6 | ✅       |
-| `8d2e3f4a5b6c` | `7c1d2e3f4a5b` | **H5b-B**: drop das 6 colunas escalares de agenda (`turma`/`turma_curso`); pré-checagem read-only de oferta sem grade; downgrade recria colunas e recompõe a projeção da grade (perda documentada) (**head atual; aplicada no principal em 27/10/2026**) | ✅       |
+| `8d2e3f4a5b6c` | `7c1d2e3f4a5b` | **H5b-B**: drop das 6 colunas escalares de agenda (`turma`/`turma_curso`); pré-checagem read-only de oferta sem grade; downgrade recria colunas e recompõe a projeção da grade (perda documentada) | ✅       |
+| `b7c8d9e0f1a2` | `8d2e3f4a5b6c` | **A1 — Valores do Esportista**: tabela `valor_esportista` (FK unidade; UNIQUE funcional `lower(nome)`+`unidade_id`) + `frequencia.valor_esportista_id` (nullable, FK `ON DELETE SET NULL`, índice); sem backfill. Downgrade remove só a feature, preservando as linhas de `frequencia` | ✅       |
+| `c8d9e0f1a2b3` | `b7c8d9e0f1a2` | **A1 — Atividades da aula**: `registro_aula.atividades` (text, nullable, sem backfill); downgrade remove só a coluna, preservando as linhas. **Aplicada no principal em 28/10/2026** (**head atual**) | ✅       |
 
-> **Head atual:** `8d2e3f4a5b6c` (H5b-B). `flask db heads` devolve apenas esse hash; `7c1d2e3f4a5b` (H5b-A) e `5730d7c594ba` (H1) são as revisões anteriores.
+> **Head atual:** `c8d9e0f1a2b3` (A1 — Atividades da aula). `flask db heads` devolve apenas esse hash; `b7c8d9e0f1a2` (A1 — Valores do Esportista), `8d2e3f4a5b6c` (H5b-B), `7c1d2e3f4a5b` (H5b-A) e `5730d7c594ba` (H1) são as revisões anteriores.
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 
