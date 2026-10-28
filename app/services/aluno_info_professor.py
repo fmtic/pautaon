@@ -8,10 +8,14 @@ na unidade do usuário e período letivo **não encerrado** (`data_fim` nula ou
 `>= hoje` local; período que ainda vai começar entra). Basta **uma** inscrição
 qualificada.
 
-"Professor efetivo da oferta" é a regra que o sistema já usa em
-`ofertas_do_painel_conselho` (`oferta.professor or turma.professor`) e nos
-filtros de turma (`coalesce(TurmaCurso.professor_id, Turma.professor_id)`):
-professor da oferta; se a oferta não tiver, o da turma.
+**Professor da oferta (PARTE B, 28/10/2026):** a condição é SOMENTE
+``turma_curso.professor_id == usuário`` — **sem herança** de
+``turma.professor_id`` (a turma é um agregador de ofertas). Oferta sem professor
+cadastrado não libera nada para perfil professor. A mesma expressão é usada pela
+pauta impressa (``imprimir_pauta``) e por aqui: ``condicao_professor_da_oferta``
+(SQL) e ``professor_da_oferta`` (objeto já carregado). A herança continua nos
+demais leitores (listagem de turmas, painel do conselho, dashboard) — pendência
+registrada no backlog.
 
 Blocos exibidos — cada um **somente quando preenchido**:
 
@@ -30,7 +34,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Iterable, Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 
 from app.database import db
 from app.models import (
@@ -53,6 +57,28 @@ def hoje_local() -> date:
     return get_local_now().date()
 
 
+def condicao_professor_da_oferta(user_id) -> object:
+    """A ÚNICA expressão de "professor da oferta" (PARTE B): sem herança.
+
+    Usada pela regra do I1 (endpoint + pauta) e pela guarda da pauta impressa;
+    qualquer alteração de semântica deve passar por aqui.
+    """
+    return TurmaCurso.professor_id == user_id
+
+
+def professor_da_oferta(oferta, usuario) -> bool:
+    """Mesma regra de `condicao_professor_da_oferta`, para oferta já carregada.
+
+    Existe para quem já tem a lista de ofertas em memória (a impressão resolve a
+    oferta antes da guarda e não faz consulta extra). `None` nunca é
+    "professor da oferta" — oferta sem professor não libera nada.
+    """
+    if oferta is None or usuario is None:
+        return False
+    usuario_id = getattr(usuario, "id", usuario)
+    return oferta.professor_id is not None and oferta.professor_id == usuario_id
+
+
 def _condicoes_acesso(user) -> list:
     """Condições da inscrição qualificada (item 3 das decisões do I1)."""
     return [
@@ -60,10 +86,9 @@ def _condicoes_acesso(user) -> list:
         Aluno.ativo.is_(True),
         TurmaCurso.ativo.is_(True),
         Turma.ativo.is_(True),
-        # Professor efetivo da oferta (oferta → turma), com a unidade da turma
-        # igual à do usuário. Professor sem unidade não tem inscrição
-        # qualificada (comparação com NULL nunca casa).
-        func.coalesce(TurmaCurso.professor_id, Turma.professor_id) == user.id,
+        # Professor da oferta (PARTE B): turma_curso.professor_id == usuário,
+        # SEM fallback para a turma. A unidade da turma continua obrigatória.
+        condicao_professor_da_oferta(user.id),
         Turma.unidade_id == user.unidade_id,
         # Período não encerrado: sem período na turma conta como "sem data de
         # fim"; período futuro entra.

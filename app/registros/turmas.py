@@ -2689,8 +2689,11 @@ def imprimir_pauta(id):
 
     turma = Turma.query.get_or_404(id)
     assert_unidade_context(turma.unidade_id, get_unidade_id())
-    if current_user.role == "professor" and turma.professor_id != current_user.id:
-        abort(403)
+
+    from app.services.aluno_info_professor import (
+        alunos_com_info_professor,
+        professor_da_oferta,
+    )
 
     # Onda 4 (Fase 4, D3a): `turma_curso` opcional na querystring.
     #   - 0 ofertas ativas: igual a hoje (pauta e frequências por turma).
@@ -2701,10 +2704,36 @@ def imprimir_pauta(id):
     #     (flash pedindo o curso e retorno à tela de frequência, que tem o
     #     seletor); com turma_curso, alunos e frequências só da oferta, com
     #     o nome do curso no cabeçalho da impressão.
+    #
+    # PARTE B (28/10/2026) — professor da OFERTA, sem herança da turma:
+    #   - a oferta vem de `turma_curso`; sem parâmetro, usa a principal se for
+    #     dele e, senão, a primeira oferta ativa dele (ordem de
+    #     `ofertas_ativas`);
+    #   - oferta de outro professor, oferta sem professor ou turma sem oferta
+    #     ativa dele => 403 (nenhum perfil professor herda `turma.professor_id`);
+    #   - a lista de alunos é SEMPRE a da oferta dele (`_alunos_da_oferta`) e a
+    #     indicação de "outras ofertas" não é exibida (ele não as leciona).
+    #   Demais perfis (admin/pedagógico/secretaria) mantêm o comportamento.
     ofertas = ofertas_ativas(id)
     oferta = None
     turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
-    if len(ofertas) >= 2:
+    if current_user.role == UserRole.PROFESSOR:
+        if turma_curso_id is not None:
+            oferta = next((o for o in ofertas if o.id == turma_curso_id), None)
+        else:
+            oferta = next(
+                (
+                    o for o in ofertas
+                    if o.principal and professor_da_oferta(o, current_user)
+                ),
+                None,
+            ) or next(
+                (o for o in ofertas if professor_da_oferta(o, current_user)),
+                None,
+            )
+        if not professor_da_oferta(oferta, current_user):
+            abort(403)
+    elif len(ofertas) >= 2:
         if turma_curso_id is None:
             flash(
                 "Esta turma tem mais de um curso ativo. Selecione o curso "
@@ -2727,9 +2756,13 @@ def imprimir_pauta(id):
         )
         return redirect(url_for("registros.ver_turma", id=id))
 
-    if oferta is not None and len(ofertas) >= 2:
-        # Pauta da oferta (multi-oferta): inscrição sempre apontada para a
-        # oferta — Inscricao.turma_curso_id é NOT NULL desde a Onda 4.
+    if oferta is not None and (
+        len(ofertas) >= 2 or current_user.role == UserRole.PROFESSOR
+    ):
+        # Pauta da oferta: inscrição sempre apontada para a oferta —
+        # Inscricao.turma_curso_id é NOT NULL desde a Onda 4. Para o professor
+        # vale também com 1 oferta ativa: só entram alunos inscritos na
+        # oferta dele (PARTE B, item 3).
         ctx["alunos"] = _alunos_da_oferta(
             id, oferta.id,
         )
@@ -2746,7 +2779,8 @@ def imprimir_pauta(id):
 
     alunos_ids = [aluno.id for aluno in ctx["alunos"]]
     outras_ofertas_por_aluno = {aluno_id: [] for aluno_id in alunos_ids}
-    if alunos_ids:
+    # PARTE B: o professor não vê a indicação de ofertas que não leciona.
+    if alunos_ids and current_user.role != UserRole.PROFESSOR:
         stmt_ofertas_alunos = (
             select(Inscricao.aluno_id, TurmaCurso.id, Curso.nome)
             .join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
@@ -2806,10 +2840,6 @@ def imprimir_pauta(id):
     # Medicação não passa por aqui.
     alunos_com_info = None
     if current_user.role == UserRole.PROFESSOR:
-        from app.services.aluno_info_professor import (
-            alunos_com_info_professor,
-        )
-
         alunos_com_info = alunos_com_info_professor(alunos_ids, current_user)
 
     nomes_meses = {
