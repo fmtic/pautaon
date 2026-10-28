@@ -1,3 +1,9 @@
+### Alterações do dia — 28/10/2026 (Diário de Observações — visão global com filtros)
+
+- **Pedido:** botão no Painel Pedagógico para abrir o diário com filtros por período letivo, turma, curso (oferta) e professor, restrito a quem já acessa o painel.
+- **Entrega:** rota `GET /relatorios/observacoes` (`app/relatorios/observacoes.py`, endpoint `relatorios.observacoes`) com `ROLES_RELATORIOS`; template `turmas/observacoes.html` em `modo_global` (filtros encadeados, badge da turma, aviso de limite de 500); botão no painel levando período e turma selecionados. O fluxo `/turma/<id>/observacoes` continua sem filtros.
+- **Escopo:** sem migration e sem mudar conteúdo/regra da tela por turma. Testes: `tests/test_relatorios_observacoes.py` (13). Suíte: **813 → 826 passed**. Detalhes em `docs/Relatórios/REL_ObservacoesFiltros.md`; regra em MER §7.20.
+
 ### Alterações do dia — 28/10/2026 (Diário de Observações — acesso e navegação)
 
 - **Problema:** a página `/turma/<id>/observacoes` não tinha nenhum link na interface (só URL manual) e `ver_observacoes` aceitava qualquer professor para qualquer turma — sem vínculo com a turma e sem escopo de unidade.
