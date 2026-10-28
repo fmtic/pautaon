@@ -1,7 +1,7 @@
 # Atividades da aula (frequência)
 
 **Data:** 28/10/2026
-**Escopo:** novo campo de texto "Atividades da aula" na tela de lançamento de frequência, ao lado de Observações/Descrição da Aula.
+**Escopo:** novo campo de texto "Atividades da aula" na tela de lançamento de frequência, ao lado de Observações da Aula.
 **Natureza:** coluna nova no diário (`registro_aula`) + ajuste de UI e do Diário de Observações. **Nenhuma regra de frequência, permissão ou saída existente foi alterada.**
 
 ## 1. Decisões (confirmadas antes da execução)
@@ -43,7 +43,7 @@ Antes, a coluna direita do bloco do diário tinha apenas o card de Observações
 <label for="atividades_aula">… Atividades da aula</label>
 <textarea id="atividades_aula" name="atividades" rows="3" …>{{ atividades_salvas or '' }}</textarea>
 <hr class="my-2">
-<label for="observacoes_aula">… Observações/Descrição da Aula</label>
+<label for="observacoes_aula">… Observações da Aula</label>
 <textarea id="observacoes_aula" name="observacoes" rows="3" …>{{ obs_salva or '' }}</textarea>
 ```
 
@@ -52,7 +52,7 @@ Mesmas classes/estilo do campo existente (`form-control border-0 shadow-none`, f
 ## 6. Diário de Observações da turma
 
 - `app/registros/turmas.py::ver_observacoes`: o filtro passou de "`observacoes` não vazia" para `OR` entre `observacoes` e `atividades` preenchidas. Registros com os dois vazios continuam fora.
-- `app/templates/turmas/observacoes.html`: seções "Atividades da aula" e "Observações/Descrição da aula" renderizadas condicionalmente, na ordem atividades → observações; texto do estado vazio atualizado.
+- `app/templates/turmas/observacoes.html`: seções "Atividades da aula" e "Observações da aula" renderizadas condicionalmente, na ordem atividades → observações; texto do estado vazio atualizado.
 - **Bug pré-existente corrigido (necessário para a tela funcionar):** a data usava slicing de string (`registro.data[8:10]`), mas `RegistroAula.data` é `date` desde a Onda 2A — a tela levantava `TypeError: 'datetime.date' object is not subscriptable` (HTTP 500) sempre que havia registros. Trocado por `registro.data.strftime('%d/%m/%Y')`, o mesmo padrão dos demais templates.
 - **Acesso e navegação:** tratados depois, em `docs/Relatórios/DIARIO_ObservacoesAcesso.md` (a tela não tinha link e aceitava qualquer professor).
 

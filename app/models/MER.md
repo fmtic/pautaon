@@ -753,7 +753,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **turma_curso_id**  | **int**          | sim  | —            | FK → turma_curso; NULL = registro legado (Onda 4, Fase 4) |
 | **data**            | **date**         | não  | —            | Onda 2A                                          |
 | tema_id             | int              | sim  | —            | FK → tema_aula; espelho do primeiro tema para compatibilidade durante a transição |
-| observacoes         | text             | sim  | —            | Observações/Descrição da aula                    |
+| observacoes         | text             | sim  | —            | Observações da aula                    |
 | **atividades**      | **text**         | sim  | —            | Atividades da aula (A1) — texto independente das observações |
 | instrutor_id        | int              | sim  | —            | FK → user                                        |
 | created_at          | timestamp        | sim  | now          | —                                                |

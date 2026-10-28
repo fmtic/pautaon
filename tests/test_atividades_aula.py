@@ -1,7 +1,7 @@
 # ruff: noqa: F811
 """A1 — "Atividades da aula" no diário de frequência.
 
-O campo é um texto ADICIONAL ao lado de Observações/Descrição da Aula:
+O campo é um texto ADICIONAL ao lado de Observações da Aula:
 grava em `registro_aula.atividades`, é independente das observações e não
 participa de frequência, estatísticas, pauta impressa, BI ou relatórios.
 O Diário de Observações da turma passou a exibir as duas seções e a listar
@@ -271,7 +271,7 @@ def test_diario_exibe_as_duas_secoes(app, client):
 
     corpo = client.get(f"/turma/{ids['turma']}/observacoes").get_data(as_text=True)
     assert corpo.index(TEXTO_ATIV) < corpo.index(TEXTO_OBS)
-    assert "Observações/Descrição da aula" in corpo
+    assert "Observações da aula" in corpo
 
 
 def test_diario_sem_textos_continua_vazio(app, client):

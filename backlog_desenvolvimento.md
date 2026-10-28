@@ -12,7 +12,7 @@
 
 ### Alterações do dia — 28/10/2026 (Frequência — Atividades da aula)
 
-- **Pedido:** novo campo de texto "Atividades da aula" na tela de frequência, igual ao Observações/Descrição da Aula.
+- **Pedido:** novo campo de texto "Atividades da aula" na tela de frequência, igual ao Observações da Aula.
 - **Entrega:** `registro_aula.atividades` (TEXT, nullable, migration `c8d9e0f1a2b3`, **aplicada no principal em 28/10/2026** após backup) e segundo textarea no **mesmo card** da coluna direita (`lancar.html`), acima das observações. `salvar_frequencia` grava os dois campos de forma independente; `carregar_frequencias_e_valores` devolve 5 valores e `carregar_frequencias` mantém os 3 atuais.
 - **Diário de Observações:** passou a listar aulas com atividades **ou** observações e a exibir as duas seções. No caminho, corrigido bug pré-existente: `registro.data` é `date` e o template fazia slicing de string (`TypeError` → HTTP 500).
 - **Escopo:** nada de frequência, estatísticas, pauta impressa, BI ou relatórios mudou. Testes: `tests/test_atividades_aula.py` (14). Suíte: **791 → 805 passed**, nenhum teste existente alterado. Detalhes em `docs/Relatórios/FREQ_AtividadesDaAula.md`; schema em MER §7.20/§11.

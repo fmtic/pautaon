@@ -5,7 +5,7 @@ Revises: b7c8d9e0f1a2
 Create Date: 2026-10-28
 
 Contexto: a tela de lançamento de frequência ganha um segundo campo de texto,
-ao lado das Observações/Descrição da Aula. O conteúdo é gravado no diário
+ao lado das Observações da Aula. O conteúdo é gravado no diário
 (`registro_aula`), é independente das observações e NÃO participa de
 frequência, pauta impressa, BI, relatórios ou exportações.
 
