@@ -1339,3 +1339,43 @@ def foto_aluno(aluno_id: int):
     info = get_informacao_padrao_context()
     default_url = info.get("foto_default_aluno_url", "/static/img/default.png")
     return redirect(default_url)
+
+
+@bp.route('/aluno/<int:aluno_id>/info-professor')
+@login_required
+def info_professor(aluno_id):
+    """I1 — blocos do aluno para o professor da oferta (JSON, sem cache).
+
+    Regra de acesso em `app/services/aluno_info_professor.py` (a MESMA usada
+    pela pauta e pela impressão). Respostas: 403 para quem não é professor ou
+    não tem inscrição qualificada; 404 para aluno inexistente ou sem nenhum
+    bloco preenchido; 200 com `acompanhante`/`instrucoes` só quando preenchidos.
+    Sem log de acesso (decidido).
+    """
+    if current_user.role != UserRole.PROFESSOR:
+        abort(403)
+
+    aluno = db.session.get(Aluno, aluno_id)
+    if aluno is None:
+        abort(404)
+
+    from app.services.aluno_info_professor import (
+        BLOCO_ACOMPANHANTE,
+        BLOCO_INSTRUCOES,
+        consultar_aluno_para_professor,
+    )
+
+    tem_acesso, blocos = consultar_aluno_para_professor(aluno.id, current_user)
+    if not tem_acesso:
+        abort(403)
+    if not blocos:
+        abort(404)
+
+    resposta = jsonify(
+        aluno_id=aluno.id,
+        nome=aluno.nome_social or aluno.nome,
+        acompanhante=blocos.get(BLOCO_ACOMPANHANTE),
+        instrucoes=blocos.get(BLOCO_INSTRUCOES),
+    )
+    resposta.headers['Cache-Control'] = 'no-store'
+    return resposta
