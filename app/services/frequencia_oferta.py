@@ -428,30 +428,81 @@ def frequencias_aluno_por_inscricao(
     aluno_id: int,
     pares: Iterable[tuple[int, int | None]],
 ) -> dict[tuple[int, int | None], dict]:
-    """`{(turma_id, oferta_id): stats}` para um aluno — UMA consulta.
+    """`{(turma_id, oferta_id): stats}` para um aluno — UMA consulta de frequência.
 
     `stats` é o mesmo dict devolvido por `calcular_estatisticas_frequencia`
     (presenças, faltas, justificadas, total, percentuais). Inscrição sem
     lançamento devolve o dict zerado (mesmo comportamento do cálculo antigo).
-    A filtragem é EXATA por (`turma_id`, `turma_curso_id`) — o histórico é
-    por inscrição/oferta e não aplica a regra D2 do legado (preserva números).
+
+    Regra D2 do legado (a MESMA de `agregar_por_oferta`): as linhas com
+    `turma_curso_id IS NULL` entram na inscrição da oferta apenas quando ela é
+    a única ativa da turma (`ofertas_unicas_ativas`); em turma com 2+ ofertas
+    ativas, ou sem oferta ativa, o legado não entra em nenhuma. O par com
+    `oferta_id=None` (inscrição legada, schema anterior a `c3d4e5f6a7b8`) lê
+    somente as linhas legadas da própria turma.
     """
     from collections import defaultdict
 
     from app.utils.logica import calcular_estatisticas_frequencia
 
-    grupos: dict[tuple[int, int | None], list] = defaultdict(list)
+    pares = list(dict.fromkeys(pares))
+    if not pares:
+        return {}
+
+    # Regra D2: candidatas a absorver o legado da turma (helper único).
+    oferta_ids = sorted({oferta_id for _, oferta_id in pares if oferta_id is not None})
+    unicas = ofertas_unicas_ativas(oferta_ids)
+    turmas_unicas = {turma_id for turma_id, oferta_id in pares if oferta_id in unicas}
+    turmas_legadas = {turma_id for turma_id, oferta_id in pares if oferta_id is None}
+
     from app import db
     from app.models import Frequencia
 
-    for f in db.session.query(Frequencia).filter(Frequencia.aluno_id == aluno_id).all():
-        grupos[(f.turma_id, f.turma_curso_id)].append(f.conceito)
+    condicoes = []
+    if oferta_ids:
+        condicoes.append(Frequencia.turma_curso_id.in_(oferta_ids))
+    if turmas_unicas:
+        condicoes.append(
+            db.and_(
+                Frequencia.turma_curso_id.is_(None),
+                Frequencia.turma_id.in_(turmas_unicas),
+            )
+        )
+    if turmas_legadas:
+        condicoes.append(
+            db.and_(
+                Frequencia.turma_curso_id.is_(None),
+                Frequencia.turma_id.in_(turmas_legadas),
+            )
+        )
+
+    contagens: dict[tuple[int, int | None], list[str]] = defaultdict(list)
+    if condicoes:
+        linhas = (
+            db.session.query(
+                Frequencia.turma_id,
+                Frequencia.turma_curso_id,
+                Frequencia.conceito,
+                func.count(Frequencia.id),
+            )
+            .filter(Frequencia.aluno_id == aluno_id, db.or_(*condicoes))
+            .group_by(
+                Frequencia.turma_id,
+                Frequencia.turma_curso_id,
+                Frequencia.conceito,
+            )
+            .all()
+        )
+        for turma_id, oferta_id, conceito, n in linhas:
+            contagens[(turma_id, oferta_id)].extend([conceito] * n)
 
     resultado: dict[tuple[int, int | None], dict] = {}
     for turma_id, oferta_id in pares:
-        resultado[(turma_id, oferta_id)] = calcular_estatisticas_frequencia(
-            grupos.get((turma_id, oferta_id), [])
-        )
+        conceitos = list(contagens.get((turma_id, oferta_id), ()))
+        if oferta_id is not None and oferta_id in unicas:
+            # D2: a oferta única ativa absorve as linhas legadas da turma.
+            conceitos.extend(contagens.get((turma_id, None), ()))
+        resultado[(turma_id, oferta_id)] = calcular_estatisticas_frequencia(conceitos)
     return resultado
 
 
