@@ -1196,6 +1196,17 @@ Basta **uma** inscrição qualificada. Professor que não leciona mais ao aluno 
 
 **Decisão pendente com a instituição (medicação):** "Medicação regular" informada como "sim" é impressa na pauta para **qualquer** professor com acesso à pauta da turma (inclusive de períodos encerrados, via URL). Verificar se há necessidade de expor a medicação ao professor da oferta — nem toda medicação precisa ser conhecida por ele. Se não houver, retirar da pauta; se houver só em parte, a secretaria informa o necessário no campo "Informações para o professor da turma", que está sob a regra de acesso do I1. **Nada muda no comportamento da medicação enquanto a decisão não for tomada.**
 
+### 8.13 Engajamento da turma (V3b, 28/10/2026)
+
+Bloco do **Painel Pedagógico do professor** (`/professor/painel-pedagogico`, template `dashboard/painel_pedagogico.html`), logo **abaixo** do gráfico "Evolução de Assiduidade Aula a Aula": mostra os **3 valores/posturas do esportista** mais atribuídos na **oferta** escolhida em "Turma / Curso Selecionado:", com nome, contagem, percentual (1 casa decimal) e barra de progresso do Bootstrap (sem biblioteca nova). Rodapé: "Baseado em N registros de presença com valor.".
+
+- **Serviço:** `app/services/engajamento_turma.py::valores_mais_atribuidos(turma_id, turma_curso_id, limite=3)` → `{"itens": [{"nome", "quantidade", "percentual"}], "total"}`.
+- **Contagem:** linhas de `frequencia` **da oferta** com `valor_esportista_id` preenchido, em todas as datas; empate pelo nome (ordem alfabética); valor **inativo** já lançado continua contando (o histórico não é escondido, §7 `ValorEsportista`); menos de 3 → mostra os que houver; nenhum → "Ainda não há valores registrados nesta oferta.". O percentual é sobre o **total da oferta**, nunca sobre o top 3.
+- **Regra D2 do legado:** linhas com `turma_curso_id` NULL entram **somente** quando a oferta é a ÚNICA ativa da turma (`ofertas_unicas_ativas` de `services/frequencia_oferta.py` — nenhuma regra nova). Turma sem oferta ativa (entrada legada do painel) conta as linhas da turma.
+- **Escopo dos dados:** uma única consulta agregada (`GROUP BY valor`), **sem** N+1 e **sem** dado por aluno; a oferta vem de `_entradas_professor` (guarda já existente do painel — a rota também atende admin/gerência/pedagógico, inalterado). Administrador/pedagógico/secretaria e a pauta não foram tocados.
+- **Filtro:** o `select` navega por **GET** (`turma_id` + `turma_curso`, `navegarTurma`), então o bloco é renderizado no servidor junto com o restante do painel — sem endpoint JSON nem JS novo.
+- Nada muda em frequência, pauta, relatórios, permissões ou no gráfico existente.
+
 ---
 
 ## 9. Convenções de código
