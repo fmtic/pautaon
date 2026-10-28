@@ -166,14 +166,14 @@ somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
                                 <i class="bi bi-list-check me-2"></i>Atividades da aula
                             </label>
                             <textarea id="atividades_aula" name="atividades" class="form-control border-0 shadow-none"
-                                rows="3" placeholder="Ex.: Aquecimento, fundamentos e jogo reduzido."
+                                rows="3" placeholder="Ex.: Observação da direção do vento..."
                                 style="background: transparent;">{{ atividades_salvas or '' }}</textarea>
                             <hr class="my-2">
                             <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
                                 <i class="bi bi-chat-left-dots-fill me-2"></i>Observações da Aula
                             </label>
                             <textarea id="observacoes_aula" name="observacoes" class="form-control border-0 shadow-none"
-                                rows="3" placeholder="Ex.: Observação da direção do vento..."
+                                rows="3" placeholder="Ex.: Turma com dificuldades no no tema..."
                                 style="background: transparent;">{{ obs_salva or '' }}</textarea>
                         </div>
                         <div class="card-footer bg-white py-1 border-0">
@@ -216,7 +216,7 @@ somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
                                         data-aluno-id="{{ aluno.id }}"
                                         data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
                                         title="Informações do aluno" aria-label="Informações do aluno">
-                                        <i class="bi bi-chat-left-dots-fill"></i>
+                                        <i class="bi-chat-text-fill"></i>
                                     </button>
                                     {% endif %}
                                 </h6>
