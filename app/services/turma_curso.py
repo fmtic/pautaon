@@ -1394,6 +1394,12 @@ def reativar_turma(
 
     Toda validação roda antes de qualquer mutação: violação recusa a operação
     inteira, sem alteração parcial (quem chama faz `rollback` no `ValueError`).
+
+    L4.2: ao voltar ao menos uma oferta, `Turma.programa` é reprojetado pelo
+    programa da oferta principal ativa (`sincronizar_programa_turma`) na mesma
+    transação — a reativação pode mudar a referência (volta só uma oferta que
+    não era a principal). Turma sem ofertas reativadas não tem projeção a
+    recalcular e mantém o programa atual.
     """
     contexto = _contexto_reativacao_em_lote([turma])
     hoje = _hoje_local()
@@ -1428,6 +1434,14 @@ def reativar_turma(
         insc.ativo = True
         insc.data_desativacao = None
         insc.motivo_desativacao = None
+
+    # L4.2: `Turma.programa` é projeção da oferta principal ativa (§8.10) e a
+    # volta muda a referência (ex.: volta só uma oferta não principal). Só
+    # reprojeta quando alguma oferta volta: turma sem ofertas (estado legado)
+    # não tem referência e não pode perder o programa que ainda alimenta
+    # listagem e filtros. Sem commit — a transação é a do chamador.
+    if avaliacao["selecionadas"]:
+        sincronizar_programa_turma(turma)
 
     return {
         "ofertas_reativadas": len(avaliacao["selecionadas"]),
