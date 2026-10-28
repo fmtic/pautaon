@@ -296,6 +296,41 @@
             </div>
         </div>
 
+        <!-- ENGAJAMENTO DA TURMA (V3b) — logo abaixo do gráfico de assiduidade,
+        dados SEMPRE agregados por valor da oferta selecionada. -->
+        <div class="card shadow-sm border-0 mb-4" id="engajamento-turma">
+            <div class="card-header bg-white border-0 py-3">
+                <h5 class="fw-bold mb-1">
+                    <i class="bi bi-award text-primary me-2"></i>Engajamento da turma
+                </h5>
+                <p class="text-muted small mb-0">Valores/Posturas do Esportista mais atribuídos</p>
+            </div>
+            <div class="card-body pt-0">
+                {% if engajamento and engajamento.itens %}
+                <ul class="list-unstyled mb-0">
+                    {% for item in engajamento.itens %}
+                    <li class="mb-3">
+                        <div class="d-flex justify-content-between align-items-baseline mb-1 gap-2">
+                            <span class="fw-semibold">{{ item.nome }}</span>
+                            <span class="text-muted small text-nowrap">{{ item.quantidade }} · {{ item.percentual }}%</span>
+                        </div>
+                        <div class="progress" style="height: 8px;" role="progressbar"
+                             aria-label="{{ item.nome }}" aria-valuenow="{{ item.percentual }}"
+                             aria-valuemin="0" aria-valuemax="100">
+                            <div class="progress-bar bg-primary" style="width: {{ item.percentual }}%"></div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <div class="text-muted small border-top pt-2 mt-1">
+                    Baseado em {{ engajamento.total }} registros de presença com valor.
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">Ainda não há valores registrados nesta oferta.</p>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- TABELA ANALÍTICA DE ALUNOS -->
         <div class="card shadow-sm border-0 mb-4" id="tabela-alunos">
             <div class="card-header bg-white border-bottom py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">

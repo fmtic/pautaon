@@ -380,8 +380,20 @@ def render_painel_pedagogico_professor():
             turma_curso_id=turma_curso_id,
         )
 
+        # V3b: bloco "Engajamento da turma" — mesma oferta do filtro, mesmo
+        # escopo de dados (a oferta vem das entradas do próprio professor).
+        from app.services.engajamento_turma import valores_mais_atribuidos
+
+        entrada = stats.get("entrada_selecionada")
+        engajamento = {"itens": [], "total": 0}
+        if entrada is not None:
+            engajamento = valores_mais_atribuidos(
+                entrada["turma"].id, entrada["turma_curso_id"],
+            )
+
         return render_template(
             "dashboard/painel_pedagogico.html",
+            engajamento=engajamento,
             **stats,
         )
     except Exception:
@@ -402,6 +414,7 @@ def render_painel_pedagogico_professor():
             cobertura_pauta=_cobertura_vazia(),
             alertas_busca_ativa=[],
             alunos_destaque=[],
+            engajamento={"itens": [], "total": 0},
         )
 
 
