@@ -2632,6 +2632,17 @@ def ver_observacoes(turma_id):
     if current_user.role not in ["admin", "pedagogico", "secretaria", "professor"]:
         abort(403)
 
+    # Mesma guarda de `ver_turma`/`imprimir_pauta`: isolamento por unidade e,
+    # para professor, apenas as próprias turmas (antes qualquer professor
+    # abria o diário de qualquer turma pelo id).
+    turma_obj = Turma.query.get_or_404(turma_id)
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+    if (
+        current_user.role == UserRole.PROFESSOR
+        and turma_obj.professor_id != current_user.id
+    ):
+        abort(403)
+
     # Onda 4 (Fase 4, D3a): filtro opcional por oferta (querystring
     # `turma_curso`). Com 2+ ofertas ativas cada observação ganha o rótulo
     # do curso; registros com turma_curso_id NULL aparecem sem rótulo.
@@ -2640,10 +2651,14 @@ def ver_observacoes(turma_id):
     mostrar_curso = len(ofertas) >= 2
     turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
 
+    # A1: a aula entra no diário quando tem atividades OU observações;
+    # registros com os dois vazios continuam fora (comportamento anterior).
     filtros = [
         RegistroAula.turma_id == turma_id,
-        RegistroAula.observacoes != None,
-        RegistroAula.observacoes != "",
+        or_(
+            and_(RegistroAula.observacoes != None, RegistroAula.observacoes != ""),
+            and_(RegistroAula.atividades != None, RegistroAula.atividades != ""),
+        ),
     ]
     if turma_curso_id is not None:
         if any(o.id == turma_curso_id for o in ofertas):
@@ -2656,7 +2671,6 @@ def ver_observacoes(turma_id):
         .order_by(RegistroAula.data.desc())
         .all()
     )
-    turma_obj = Turma.query.get_or_404(turma_id)
     return render_template(
         "turmas/observacoes.html",
         obs=observacoes,

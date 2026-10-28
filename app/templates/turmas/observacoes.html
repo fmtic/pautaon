@@ -12,7 +12,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <span class="badge rounded-pill bg-primary px-3 py-2">
                     <i class="bi bi-calendar3 me-1"></i>
-                    {{ registro.data[8:10] }}/{{ registro.data[5:7] }}/{{ registro.data[0:4] }}
+                    {{ registro.data.strftime('%d/%m/%Y') }}
                 </span>
                 {% if mostrar_curso and registro.turma_curso %}
                 <span class="badge rounded-pill bg-info text-dark px-3 py-2 ms-2">
@@ -39,19 +39,37 @@
                 </span>
             </h6>
 
-            <div class="p-3 bg-light rounded shadow-sm border-0 position-relative">
-                <p class="mb-0 text-dark" style="line-height: 1.6;">
-                    <i class="bi bi-quote text-muted opacity-25 me-2"></i>
-                    {{ registro.observacoes }}
-                </p>
+            {% if registro.atividades %}
+            <div class="mb-3">
+                <div class="text-uppercase text-muted fw-bold" style="font-size: 0.75rem;">
+                    <i class="bi bi-list-check me-1"></i>Atividades da aula
+                </div>
+                <div class="p-3 bg-light rounded shadow-sm border-0 position-relative mt-1">
+                    <p class="mb-0 text-dark" style="line-height: 1.6;">{{ registro.atividades }}</p>
+                </div>
             </div>
+            {% endif %}
+
+            {% if registro.observacoes %}
+            <div>
+                <div class="text-uppercase text-muted fw-bold" style="font-size: 0.75rem;">
+                    <i class="bi bi-chat-left-dots-fill me-1"></i>Observações/Descrição da aula
+                </div>
+                <div class="p-3 bg-light rounded shadow-sm border-0 position-relative mt-1">
+                    <p class="mb-0 text-dark" style="line-height: 1.6;">
+                        <i class="bi bi-quote text-muted opacity-25 me-2"></i>
+                        {{ registro.observacoes }}
+                    </p>
+                </div>
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <div class="alert alert-info">Nenhuma observação registrada para esta turma até o momento.</div>
+    <div class="alert alert-info">Nenhuma observação ou atividade registrada para esta turma até o momento.</div>
     {% endif %}
 
-    <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-secondary mt-3">Voltar</a>
+    <a href="{{ url_for('main.painel') }}" class="btn btn-secondary mt-3">Voltar</a>
 </div>
 {% endblock %}
