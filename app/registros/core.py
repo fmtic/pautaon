@@ -15,6 +15,7 @@ import json
 from flask import current_app, flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
@@ -32,6 +33,7 @@ from app.models import (
     PeriodoLetivo,
     Inscricao,
     Curso,
+    ValorEsportista,
 )
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
@@ -40,7 +42,7 @@ from app.utils.logica import (
     calcular_dias_aula_turma,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
-    carregar_frequencias,
+    carregar_frequencias_e_valores,
     get_unidade_id,
     salvar_frequencia,
 )
@@ -53,6 +55,64 @@ from app.services.turma_curso import (
 from app.services.turma_curso_horario import grades_para_exibicao
 from . import bp
 from .shared import assert_unidade_context
+
+
+# ---------------------------------------------------------------------------
+# ABAS DO PLANEJAMENTO — preservar a aba (e os filtros) após uma escrita
+# ---------------------------------------------------------------------------
+_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis')
+
+
+def _aba_planejamento(valor) -> str | None:
+    """Normaliza a aba do planejamento; `None` quando não é uma aba válida."""
+    aba = (valor or '').strip().lower()
+    return aba if aba in _ABAS_PLANEJAMENTO else None
+
+
+def _voltar_planejamento(aba=None):
+    """Redirect pós-escrita mantendo a aba e os filtros da aba Temas.
+
+    A aba vem do `hidden` `aba` (ou do argumento) e os filtros do contexto em
+    que o formulário foi aberto (`filtro_curso`, `filtro_q`, `filtro_page`).
+    Tudo passa por whitelist/validação: valor inválido cai na aba padrão
+    (Temas) sem querystring, como o redirect antigo fazia.
+    """
+    aba = _aba_planejamento(aba) or _aba_planejamento(request.form.get('aba'))
+    params = {}
+    if aba and aba != 'temas':
+        params['aba'] = aba
+
+    curso_id = (request.form.get('filtro_curso') or '').strip()
+    if curso_id.isdigit():
+        params['curso_id'] = int(curso_id)
+    termo = (request.form.get('filtro_q') or '').strip()
+    if termo:
+        params['q'] = termo
+    pagina = (request.form.get('filtro_page') or '').strip()
+    if pagina.isdigit() and int(pagina) > 1:
+        params['page'] = int(pagina)
+
+    return redirect(url_for('registros.planejamento', **params))
+
+
+def _valor_esportista_duplicado(
+    nome: str, unidade_id: int | None, ignorar_id: int | None = None,
+) -> bool:
+    """Já existe valor com esse nome na unidade? (sem diferenciar maiúsculas).
+
+    Espelha o índice funcional `uix_valor_esportista_nome_unidade`
+    (`lower(nome)`, `unidade_id`) para devolver mensagem amigável antes do
+    `IntegrityError`. `ignorar_id` permite renomear o próprio registro.
+    """
+    if unidade_id is None:
+        return False
+    query = ValorEsportista.query.filter(
+        ValorEsportista.unidade_id == unidade_id,
+        func.lower(ValorEsportista.nome) == nome.lower(),
+    )
+    if ignorar_id is not None:
+        query = query.filter(ValorEsportista.id != ignorar_id)
+    return query.first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -286,8 +346,17 @@ def frequencia():
                 form_data.pop('turma_curso', None)
             ignorados = 0
             for chave in list(form_data.keys()):
-                if chave.startswith('aluno_'):
-                    aluno_raw = chave[len('aluno_'):]
+                # `postura_aluno_<id>` é o Valor do Esportista da mesma pauta:
+                # sai junto com o conceito quando o aluno não pertence à oferta.
+                prefixo = next(
+                    (
+                        p for p in ('aluno_', 'postura_aluno_')
+                        if chave.startswith(p)
+                    ),
+                    None,
+                )
+                if prefixo:
+                    aluno_raw = chave[len(prefixo):]
                     if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
                         form_data.pop(chave)
                         ignorados += 1
@@ -344,6 +413,8 @@ def frequencia():
     obs = ""
     ofertas = []
     oferta_atual = None
+    valores_por_aluno = {}
+    atividades_salvas = ""
 
     if turma_id:
         # Onda 4 (Fase 4, D2): 0 ofertas ativas = legado (pauta por turma);
@@ -383,9 +454,13 @@ def frequencia():
             ).all()
 
         if data and not exigir_escolha:
-            freqs, tema_sel, obs = carregar_frequencias(
-                turma_id, data,
-                turma_curso_id=oferta_atual.id if oferta_atual else None,
+            # A1: conceitos + Valor do Esportista de cada aluno/aula na MESMA
+            # leitura de `frequencia` (sem consulta adicional na pauta).
+            freqs, valores_por_aluno, tema_sel, obs, atividades_salvas = (
+                carregar_frequencias_e_valores(
+                    turma_id, data,
+                    turma_curso_id=oferta_atual.id if oferta_atual else None,
+                )
             )
 
         # ETAPA D3b.2: estatísticas em lote — o loop anterior fazia 2 queries
@@ -436,13 +511,29 @@ def frequencia():
                 insc = inscricoes_por_aluno.get(aluno.id)
                 aluno.pode_receber_frequencia = bool(insc and insc.ativo)
 
+    # A1: opções do seletor de Valor do Esportista — SEMPRE ativas, no escopo
+    # da unidade da turma (a sessão pode estar em Visão Global). Um valor
+    # inativo já gravado entra como opção extra no loop do template.
+    escopo_valores = (
+        ctx.get('turma').unidade_id if ctx.get('turma') else unidade_id
+    )
+    q_valores = ValorEsportista.query.filter(ValorEsportista.ativo.is_(True))
+    if escopo_valores:
+        q_valores = q_valores.filter(ValorEsportista.unidade_id == escopo_valores)
+    valores_esportista_ativos = q_valores.order_by(
+        func.lower(ValorEsportista.nome)
+    ).all()
+
     return render_template('frequencia/lancar.html',
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,
                            frequencias=freqs,
+                           valores_esportista_ativos=valores_esportista_ativos,
+                           valores_por_aluno=valores_por_aluno,
                            tema_selecionado=tema_sel or [],
                            obs_salva=obs,
+                           atividades_salvas=atividades_salvas,
                            turma=ctx.get('turma'),
                            alunos=ctx.get('alunos', []),
                            datas=ctx.get('datas', []),
@@ -785,7 +876,48 @@ def planejamento():
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
-            return redirect(url_for('registros.planejamento'))
+            return _voltar_planejamento()
+
+        if tipo_post == 'valor':
+            # A1 — Valores do Esportista: catálogo usado no lançamento de
+            # frequência como dado ADICIONAL (não entra em conta alguma).
+            nome_valor = request.form.get('nome_valor', '').strip()
+            valor_unidade_id = get_unidade_id()
+            # Mesmo escopo do nível: escrever exige unidade efetiva; a Visão
+            # Global (unidade None) é somente leitura.
+            assert_unidade_context(valor_unidade_id, valor_unidade_id)
+            if not nome_valor:
+                flash("Informe o nome do valor.", 'warning')
+            elif len(nome_valor) > 100:
+                flash(
+                    "O nome do valor deve ter no máximo 100 caracteres.",
+                    'warning',
+                )
+            elif _valor_esportista_duplicado(nome_valor, valor_unidade_id):
+                flash(
+                    f"Já existe um valor com o nome '{nome_valor}' "
+                    "nesta unidade.",
+                    'warning',
+                )
+            else:
+                try:
+                    db.session.add(ValorEsportista(
+                        nome=nome_valor,
+                        ativo=True,
+                        unidade_id=valor_unidade_id,
+                    ))
+                    db.session.commit()
+                    flash(f"Valor '{nome_valor}' adicionado com sucesso!", 'success')
+                except IntegrityError:
+                    db.session.rollback()
+                    flash(
+                        "Já existe um valor com esse nome nesta unidade.",
+                        'warning',
+                    )
+                except Exception:
+                    db.session.rollback()
+                    flash("Erro ao salvar valor.", 'danger')
+            return _voltar_planejamento()
 
         curso_id  = request.form.get('curso_id')
         titulo_tema = request.form.get('titulo')
@@ -800,7 +932,7 @@ def planejamento():
                         "Não é possível adicionar temas a um curso inativo. Reative-o primeiro.",
                         "warning",
                     )
-                    return redirect(url_for('registros.planejamento'))
+                    return _voltar_planejamento()
 
                 ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
                     curso_id=int(curso_id)
@@ -829,7 +961,7 @@ def planejamento():
             flash("Selecione um curso.", "warning")
         elif not titulo_tema:
             flash("Informe o título do tema.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
 
     conf_i = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho').first()
     conf_f = ConfiguracaoSistema.query.filter_by(chave='fim_conselho').first()
@@ -879,6 +1011,16 @@ def planejamento():
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
 
+    # A1: catálogo de valores do esportista da unidade, ordenado por nome sem
+    # diferenciar maiúsculas (mesma variável usada no KPI, na aba e no loop).
+    q_valores = ValorEsportista.query
+    if unidade_id:
+        q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
+    valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
+
+    # Aba que o usuário estava usando; um valor inválido cai em Temas.
+    aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
+
     q_periodos = PeriodoLetivo.query.filter_by(ativo=True)
     if unidade_id:
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
@@ -900,10 +1042,12 @@ def planejamento():
                            prog_filtro=prog_filtro,
                            filtro_curso=filtro_curso,
                            niveis=niveis,
+                           valores_esportista=valores_esportista,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
                            unidade_id=unidade_id,
+                           aba_ativa=aba_ativa,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
@@ -928,7 +1072,7 @@ def editar_tema(id):
     assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de editar seus temas.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
 
     novo_titulo = request.form.get('titulo', '').strip()
     nova_ordem = request.form.get('ordem')
@@ -957,7 +1101,7 @@ def editar_tema(id):
             flash("Erro ao atualizar tema.", 'danger')
     else:
         flash("Título não pode ser vazio.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 @bp.route('/planejamento/tema/inativar/<int:id>', methods=['POST'])
@@ -976,7 +1120,7 @@ def inativar_tema(id):
     assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de alterar o status de seus temas.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
     try:
         tema.ativo = not tema.ativo
         db.session.commit()
@@ -985,7 +1129,7 @@ def inativar_tema(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do tema.", 'danger')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 # ---------------------------------------------------------------------------
@@ -1015,7 +1159,7 @@ def editar_nivel(id):
             flash("Erro ao atualizar nível.", 'danger')
     else:
         flash("O nome do nível não pode ser vazio.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
@@ -1037,7 +1181,66 @@ def inativar_nivel(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
+
+
+# ---------------------------------------------------------------------------
+# VALORES DO ESPORTISTA — edição e inativação (A1)
+# ---------------------------------------------------------------------------
+
+@bp.route('/planejamento/valor/editar/<int:id>', methods=['POST'])
+@login_required
+def editar_valor(id):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    valor = db.get_or_404(ValorEsportista, id)
+    # Mesmo isolamento dos níveis: sem isenção de ADMIN e sessão sem unidade
+    # efetiva recusada pelo assert (a Visão Global é somente leitura).
+    unidade_id = get_unidade_id()
+    assert_unidade_context(valor.unidade_id, unidade_id)
+
+    novo_nome = request.form.get('nome_valor', '').strip()
+    if not novo_nome:
+        flash("O nome do valor não pode ser vazio.", 'warning')
+    elif len(novo_nome) > 100:
+        flash("O nome do valor deve ter no máximo 100 caracteres.", 'warning')
+    elif _valor_esportista_duplicado(novo_nome, valor.unidade_id, ignorar_id=valor.id):
+        flash(
+            f"Já existe um valor com o nome '{novo_nome}' nesta unidade.",
+            'warning',
+        )
+    else:
+        try:
+            valor.nome = novo_nome
+            db.session.commit()
+            flash("Valor atualizado com sucesso!", 'success')
+        except IntegrityError:
+            db.session.rollback()
+            flash("Já existe um valor com esse nome nesta unidade.", 'warning')
+        except Exception:
+            db.session.rollback()
+            flash("Erro ao atualizar valor.", 'danger')
+    return _voltar_planejamento()
+
+
+@bp.route('/planejamento/valor/inativar/<int:id>', methods=['POST'])
+@login_required
+def inativar_valor(id):
+    """Alterna ativo/inativo. Valor NUNCA é apagado com uso (histórico)."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    valor = db.get_or_404(ValorEsportista, id)
+    unidade_id = get_unidade_id()
+    assert_unidade_context(valor.unidade_id, unidade_id)
+    try:
+        valor.ativo = not valor.ativo
+        db.session.commit()
+        status = 'ativado' if valor.ativo else 'inativado'
+        flash(f"Valor '{valor.nome}' {status}!", 'success')
+    except Exception:
+        db.session.rollback()
+        flash("Erro ao alterar status do valor.", 'danger')
+    return _voltar_planejamento()
 
 
 # ---------------------------------------------------------------------------

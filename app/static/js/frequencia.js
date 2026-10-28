@@ -35,4 +35,30 @@ document.addEventListener('DOMContentLoaded', function () {
             hiddenData.value = this.value;
         });
     }
+
+    // A1: estado inicial do select de Valor/Postura. O servidor já renderiza
+    // `disabled` conforme o conceito salvo; repetir aqui cobre o radio
+    // restaurado pelo navegador (voltar pelo histórico / recarregar).
+    document.querySelectorAll('input.btn-check[name^="aluno_"]').forEach(radio => {
+        if (!radio.checked) return;
+        tratarConceitoAluno(radio.name.slice('aluno_'.length), radio.value);
+    });
 });
+
+/**
+ * A1 — habilita o select de Valor/Postura só com conceito A/B/C/D.
+ *
+ * Ao desabilitar o valor é limpo: um select desabilitado não é enviado no
+ * POST e o servidor grava NULL para F/J (o contrato do lançamento).
+ */
+function tratarConceitoAluno(alunoId, conceito) {
+    const selectPostura = document.getElementById('postura_' + alunoId);
+    if (!selectPostura) return;
+
+    if (['A', 'B', 'C', 'D'].includes(conceito)) {
+        selectPostura.removeAttribute('disabled');
+    } else {
+        selectPostura.value = '';
+        selectPostura.setAttribute('disabled', 'true');
+    }
+}

@@ -147,6 +147,14 @@
                 <div class="col-md-6">
                     <div class="card border-0 bg-light shadow-sm">
                         <div class="card-body p-2">
+                            {# A1: Atividades da aula — registro independente das observações. #}
+                            <label for="atividades_aula" class="form-label fw-bold text-primary mb-1">
+                                <i class="bi bi-list-check me-2"></i>Atividades da aula
+                            </label>
+                            <textarea id="atividades_aula" name="atividades" class="form-control border-0 shadow-none"
+                                rows="3" placeholder="Ex.: Aquecimento, fundamentos e jogo reduzido."
+                                style="background: transparent;">{{ atividades_salvas or '' }}</textarea>
+                            <hr class="my-2">
                             <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
                                 <i class="bi bi-chat-left-dots-fill me-2"></i>Observações/Descrição da Aula
                             </label>
@@ -218,18 +226,28 @@
                                     {% endfor %}
                                 </div>
 
-                                <!-- Select: Valor / Postura do Esportista -->
+                                <!-- Select: Valor / Postura do Esportista (A1) -->
+                                {% set freq_atual = frequencias.get(aluno.id) %}
+                                {% set valor_salvo = valores_por_aluno.get(aluno.id) %}
+                                {# Valor inativo já lançado continua disponível para o aluno. #}
+                                {% set valor_inativo = valor_salvo if valor_salvo and not valor_salvo.ativo else None %}
                                 <div class="mt-2">
                                     <label for="postura_{{ aluno.id }}"
                                         class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
                                         Esportista</label>
                                     <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
-                                        class="form-select form-select-sm" {% set freq_atual=frequencias.get(aluno.id)
-                                        %} {% if not freq_atual or freq_atual not in ['A', 'B' , 'C' , 'D' ] or not
-                                        aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
+                                        class="form-select form-select-sm" {% if not freq_atual or freq_atual not in ['A', 'B', 'C', 'D'] or not aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
                                         <option value="">Selecione a opção</option>
-                                        <!-- Opções pré-definidas serão inseridas aqui futuramente -->
+                                        {% for v in valores_esportista_ativos %}
+                                        <option value="{{ v.id }}" {% if valor_salvo and valor_salvo.id == v.id %}selected{% endif %}>{{ v.nome }}</option>
+                                        {% endfor %}
+                                        {% if valor_inativo %}
+                                        <option value="{{ valor_inativo.id }}" selected>{{ valor_inativo.nome }} (inativo)</option>
+                                        {% endif %}
                                     </select>
+                                    {% if not valores_esportista_ativos and not valor_inativo %}
+                                    <small class="text-muted d-block mt-1">Nenhum valor cadastrado no planejamento.</small>
+                                    {% endif %}
                                 </div>
 
                                 {% if not aluno.pode_receber_frequencia %}
@@ -260,19 +278,5 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="{{ url_for('static', filename='js/frequencia.js') }}?v={{ range(1000,9999) | random }}"></script>
-
-<script>
-    function tratarConceitoAluno(alunoId, conceito) {
-        const selectPostura = document.getElementById('postura_' + alunoId);
-        if (!selectPostura) return;
-
-        if (['A', 'B', 'C', 'D'].includes(conceito)) {
-            selectPostura.removeAttribute('disabled');
-        } else {
-            selectPostura.value = ''; // Limpa o valor ao desabilitar
-            selectPostura.setAttribute('disabled', 'true');
-        }
-    }
-</script>
 
 {% endblock %}

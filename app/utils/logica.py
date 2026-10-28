@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app, session
 from flask_login import current_user
+from sqlalchemy.orm import joinedload
 
 from app.database import db
 from app.models import (
@@ -60,6 +61,11 @@ NAME_LOWER_EXCEPTIONS = {
     'da', 'de', 'do', 'dos', 'das', 'e', 'van', 'von', 'del',
     'da', 'di', 'du', 'la', 'le', 'y', 'al',
 }
+
+# A1: conceitos que habilitam o lançamento de um Valor do Esportista.
+# Comparação por TEXTO porque o formulário de frequência envia strings
+# (`form.get`), não o Enum `ConceitoFrequencia`.
+_CONCEITOS_PRESENCA_TEXTO = frozenset({'A', 'B', 'C', 'D'})
 
 
 # =============================================================================
@@ -369,6 +375,53 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
 # FREQUÊNCIA - leitura e escrita
 # =============================================================================
 
+def _ler_registros_aula(
+    turma_id: int,
+    data_alvo: date,
+    turma_curso_id: Optional[int] = None,
+) -> Tuple[List[Frequencia], Optional[RegistroAula]]:
+    """Linhas de frequência (com o valor do esportista) + diário da aula.
+
+    O `joinedload` traz o catálogo do Valor do Esportista na MESMA consulta de
+    frequência — a tela de lançamento não precisa de uma segunda leitura.
+    """
+    if turma_curso_id is not None:
+        registros = (
+            Frequencia.query
+            .options(joinedload(Frequencia.valor_esportista))
+            .filter_by(turma_curso_id=turma_curso_id, data=data_alvo)
+            .all()
+        )
+        diario = RegistroAula.query.filter_by(
+            turma_curso_id=turma_curso_id, data=data_alvo
+        ).first()
+    else:
+        # Legado (sem oferta): filtra turma_curso_id IS NULL para não
+        # reaproveitar/reescrever registros de ofertas (mesma turma_id/data).
+        registros = (
+            Frequencia.query
+            .options(joinedload(Frequencia.valor_esportista))
+            .filter_by(turma_id=turma_id, data=data_alvo, turma_curso_id=None)
+            .all()
+        )
+        diario = RegistroAula.query.filter_by(
+            turma_id=turma_id, data=data_alvo, turma_curso_id=None
+        ).first()
+    return registros, diario
+
+
+def _resumo_diario(
+    diario: Optional[RegistroAula],
+) -> Tuple[List[int], str, str]:
+    """Temas marcados no dia (nunca `None`), observações e atividades."""
+    if diario is None:
+        return [], "", ""
+    temas = [tema.id for tema in diario.temas]
+    if not temas and diario.tema_id is not None:
+        temas = [diario.tema_id]
+    return temas, diario.observacoes or "", diario.atividades or ""
+
+
 def carregar_frequencias(
     turma_id: int,
     data: str | date,
@@ -391,39 +444,93 @@ def carregar_frequencias(
 
     :return: (dict{aluno_id: conceito}, tema_ids_selecionados | [], observacoes)
     """
-    frequencias: Dict[int, str] = {}
-    tema_selecionado: List[int] = []
-    obs_salva: str = ""
-
     data_alvo = parse_date(data)
     if not turma_id or not data_alvo:
-        return frequencias, tema_selecionado, obs_salva
+        return {}, [], ""
 
-    if turma_curso_id is not None:
-        registros = Frequencia.query.filter_by(
-            turma_curso_id=turma_curso_id, data=data_alvo
-        ).all()
-        diario = RegistroAula.query.filter_by(
-            turma_curso_id=turma_curso_id, data=data_alvo
-        ).first()
-    else:
-        # Legado (sem oferta): filtra turma_curso_id IS NULL para não
-        # reaproveitar/reescrever registros de ofertas (mesmo turma_id/data).
-        registros = Frequencia.query.filter_by(
-            turma_id=turma_id, data=data_alvo, turma_curso_id=None
-        ).all()
-        diario = RegistroAula.query.filter_by(
-            turma_id=turma_id, data=data_alvo, turma_curso_id=None
-        ).first()
+    registros, diario = _ler_registros_aula(turma_id, data_alvo, turma_curso_id)
     frequencias = {f.aluno_id: f.conceito for f in registros}
-
-    if diario:
-        tema_selecionado = [tema.id for tema in diario.temas]
-        if not tema_selecionado and diario.tema_id is not None:
-            tema_selecionado = [diario.tema_id]
-        obs_salva = diario.observacoes or ""
+    tema_selecionado, obs_salva, _atividades = _resumo_diario(diario)
 
     return frequencias, tema_selecionado, obs_salva
+
+
+def carregar_frequencias_e_valores(
+    turma_id: int,
+    data: str | date,
+    turma_curso_id: Optional[int] = None,
+) -> Tuple[Dict[int, str], Dict[int, Any], List[int], str, str]:
+    """Como `carregar_frequencias`, acrescido do Valor do Esportista (A1).
+
+    Devolve `(conceitos, {aluno_id: ValorEsportista}, temas, observacoes,
+    atividades)` a partir da MESMA leitura de `frequencia` feita por
+    `carregar_frequencias`, sem consulta adicional na tela de lançamento.
+    Só entram alunos com valor gravado; o valor **inativo** já salvo continua
+    sendo devolvido de propósito, para o template exibi-lo como opção extra do
+    aluno e não perder o histórico.
+    """
+    data_alvo = parse_date(data)
+    if not turma_id or not data_alvo:
+        return {}, {}, [], "", ""
+
+    registros, diario = _ler_registros_aula(turma_id, data_alvo, turma_curso_id)
+    frequencias = {f.aluno_id: f.conceito for f in registros}
+    valores = {
+        f.aluno_id: f.valor_esportista
+        for f in registros
+        if f.valor_esportista is not None
+    }
+    tema_selecionado, obs_salva, atividades_salvas = _resumo_diario(diario)
+
+    return frequencias, valores, tema_selecionado, obs_salva, atividades_salvas
+
+
+def _resolver_valor_esportista(
+    valor_raw,
+    conceito: str,
+    unidade_id: Optional[int],
+    valor_atual_id: Optional[int],
+) -> Optional[int]:
+    """Id do Valor do Esportista a gravar na linha de frequência (A1).
+
+    Devolve `None` (limpa o campo) quando:
+        - o conceito não é A/B/C/D (F e J nunca têm valor);
+        - o campo veio vazio, não numérico ou <= 0;
+        - o id não existe, é de outra unidade ou está inativo.
+
+    Exceção: se o id é o **mesmo já salvo** na linha, ele é preservado mesmo
+    inativo — reabrir a pauta e salvar não pode apagar o histórico de um valor
+    que acabou de ser inativado no cadastro.
+
+    O valor é um dado ADICIONAL: nada aqui toca `conceito` ou qualquer conta
+    de presença/falta.
+    """
+    if conceito not in _CONCEITOS_PRESENCA_TEXTO:
+        return None
+    texto = str(valor_raw or '').strip()
+    if not texto.isdigit():
+        return None
+    valor_id = int(texto)
+    if valor_id <= 0:
+        return None
+    if valor_atual_id is not None and valor_id == valor_atual_id:
+        return valor_id
+
+    from app.models import ValorEsportista
+
+    valor = db.session.get(ValorEsportista, valor_id)
+    if valor is None or not valor.ativo:
+        current_app.logger.warning(
+            'Frequência: valor %s ignorado (inexistente ou inativo).', valor_id,
+        )
+        return None
+    if unidade_id is not None and valor.unidade_id != unidade_id:
+        current_app.logger.warning(
+            'Frequência: valor %s ignorado (unidade %s != %s).',
+            valor_id, valor.unidade_id, unidade_id,
+        )
+        return None
+    return valor_id
 
 
 def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
@@ -464,6 +571,8 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         tema_ids = list(dict.fromkeys(int(valor) for valor in temas_raw))
         tema_id = tema_ids[0] if tema_ids else None
         texto_observacoes = form.get('observacoes', '').strip() or None
+        # A1: atividades da aula — campo independente das observações.
+        texto_atividades = form.get('atividades', '').strip() or None
 
         turma_curso_raw = form.get('turma_curso', '').strip()
         turma_curso_id = (
@@ -494,6 +603,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             ).first()
         if registro:
             registro.observacoes = texto_observacoes
+            registro.atividades = texto_atividades
             registro.tema_id = tema_id  # compatibilidade com leitores legados
             registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             registro.instrutor_id = current_user.id
@@ -504,6 +614,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 data=data_alvo,
                 tema_id=tema_id,  # espelho temporário durante a transição
                 observacoes=texto_observacoes,
+                atividades=texto_atividades,
                 instrutor_id=current_user.id,
             )
             registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
@@ -520,9 +631,18 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             .all()
         )
 
+        # A1: o valor/postura do esportista pertence à unidade da TURMA — o
+        # mesmo escopo do GET (a sessão pode estar em Visão Global).
+        turma_obj = db.session.get(Turma, turma_id)
+        valor_unidade_id = (
+            turma_obj.unidade_id if turma_obj is not None else get_unidade_id()
+        )
+
         for aluno in alunos_post:
             conceito = form.get(f'aluno_{aluno.id}', '').strip()
             if not conceito:
+                # Sem conceito: mantém a linha como está (o select de valor
+                # desabilitado não envia campo e não pode apagar nada).
                 continue
 
             if oferta_id is not None:
@@ -535,16 +655,23 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                     turma_curso_id=None,
                 ).first()
 
-            if freq:
-                freq.conceito = conceito
-            else:
-                db.session.add(Frequencia(
+            if freq is None:
+                freq = Frequencia(
                     aluno_id=aluno.id,
                     turma_id=turma_id,
                     turma_curso_id=oferta_id,
                     data=data_alvo,
-                    conceito=conceito,
-                ))
+                )
+                db.session.add(freq)
+            freq.conceito = conceito
+            # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
+            # sem tocar em nenhuma outra coluna.
+            freq.valor_esportista_id = _resolver_valor_esportista(
+                form.get(f'postura_aluno_{aluno.id}', ''),
+                conceito,
+                unidade_id=valor_unidade_id,
+                valor_atual_id=freq.valor_esportista_id,
+            )
 
         db.session.commit()
         return turma_id, data_alvo.strftime('%Y-%m-%d')

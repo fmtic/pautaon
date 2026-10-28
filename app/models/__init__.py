@@ -17,7 +17,7 @@ MAPA DE MÓDULOS
     enums            -> Enumerações de domínio
     organizacao      -> Unidade, ConfiguracaoSistema
     usuarios         -> User
-    pedagogico       -> Curso, Nivel
+    pedagogico       -> Curso, CentroCusto, Nivel, ValorEsportista
     academico        -> PeriodoLetivo, Turma, TurmaCurso, TurmaCursoHorario, TemaAula
     pessoas          -> Aluno, SituacaoEscolar
     perfis           -> EnderecoAluno, ResponsavelAluno,
@@ -37,7 +37,7 @@ MAPA DE MÓDULOS
 # A ordem abaixo segue a dependência conceitual entre domínios.
 from app.models.organizacao import Unidade, ConfiguracaoSistema
 from app.models.usuarios import User
-from app.models.pedagogico import Curso, CentroCusto, Nivel
+from app.models.pedagogico import CentroCusto, Curso, Nivel, ValorEsportista
 from app.models.academico import (
     PeriodoLetivo, Turma, TurmaCurso, TurmaCursoHorario, TemaAula,
 )
@@ -70,7 +70,7 @@ __all__ = [
     # Usuários
     'User',
     # Pedagógico
-    'Curso', 'CentroCusto', 'Nivel',
+    'Curso', 'CentroCusto', 'Nivel', 'ValorEsportista',
     # Acadêmico
     'PeriodoLetivo', 'Turma', 'TurmaCurso', 'TurmaCursoHorario', 'TemaAula',
     # Pessoas
