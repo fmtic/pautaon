@@ -23,7 +23,12 @@ do modelo nunca recebe as colunas escalares.
 
 ``nova_inscricao`` cria e persiste uma ``Inscricao`` sempre vinculada a uma
 oferta (``turma_curso_id`` obrigatório).
+
+``login_as`` fixa a identidade do ``test_client`` e **descarta o cache do
+Flask-Login em ``g``** — necessário quando o teste troca de perfil no meio.
 """
+
+from flask import g, has_app_context
 
 from app import db
 from app.models import Inscricao, TurmaCurso
@@ -32,6 +37,30 @@ from app.utils.dias_semana import csv_para_weekdays
 
 #: Programa padrão usado pelas sementes quando o teste não exige um específico.
 PROGRAMA_PADRAO = "Programa de Teste"
+
+
+def login_as(client, user, unidade_id=None):
+    """Loga `user` (id ou objeto) no `client` e invalida o cache de `g`.
+
+    O fixture `app` da suíte mantém um app context aberto durante o teste e o
+    Flask reutiliza esse AppContext em cada request; como `flask.g` vive no
+    AppContext, o `_login_user` cacheado pelo Flask-Login vaza para as
+    requisições seguintes e trocar só o `_user_id` da sessão **não** troca o
+    usuário (o segundo cliente age como o primeiro). Em produção cada request
+    empurra seu próprio AppContext, então não é bug de aplicação.
+
+    Este helper é o caminho único para quem precisa de mais de um perfil na
+    mesma função: limpa `g._login_user` (o próximo request recarrega o usuário
+    pela sessão) e grava a sessão. Testes com um único usuário continuam
+    usando seus helpers locais — o resultado deles não muda.
+    """
+    if has_app_context():
+        g.pop("_login_user", None)
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(getattr(user, "id", user))
+        sess["_fresh"] = True
+        if unidade_id is not None:
+            sess["unidade_id"] = unidade_id
 
 
 def itens_grade(dias_semana, hora_inicio, hora_fim):
