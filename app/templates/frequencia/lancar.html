@@ -8,14 +8,12 @@
         <i class="bi bi-arrow-left me-1"></i>Voltar
     </a>
 </div>
-<div class="btn-group">
+<div class="btn-group mb-3">
     <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown" {% if not turma
         %}disabled{% endif %}>
         <i class="bi bi-printer"></i> Imprimir Pauta
     </button>
     {% if turma %}
-    {# Onda 4 (D3b-1): se há oferta escolhida na tela, o link de impressão
-    já carrega a pauta daquela oferta (evita o redirect "selecione o curso"). #}
     {% set tc = oferta_atual.id if oferta_atual else None %}
     <ul class="dropdown-menu">
         {% for mes in meses %}
@@ -44,9 +42,6 @@
     Não esqueça de registrar a frequência dos alunos para cada aula e o tema.
 </p>
 
-{# V2: unidade sem catálogo de valores ativos — a regra de obrigatoriedade não
-se aplica. O aviso só aparece para quem gerencia o planejamento (é lá que o
-catálogo é cadastrado). #}
 {% if not valores_esportista_ativos and pode_gerenciar_planejamento %}
 <div class="alert alert-warning py-2" role="alert">
     <i class="bi bi-exclamation-triangle me-1"></i>
@@ -55,272 +50,256 @@ catálogo é cadastrado). #}
 </div>
 {% endif %}
 
-{# V2: `data-valor-obrigatorio` liga a validação de cliente (frequencia.js)
-somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
 <form method="POST" action="{{ url_for('registros.frequencia') }}"
     {% if valores_esportista_ativos %}data-valor-obrigatorio="1"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="turma" value="{{ turma_id or '' }}">
     <input type="hidden" name="data_hidden" value="{{ data or '' }}">
-    {# Onda 4 (D2): turma com oferta única ativa — oferta resolvida
-    automaticamente, sem seletor; o hidden leva turma_curso ao POST. #}
+    
     {% if oferta_atual and ofertas|length == 1 %}
     <input type="hidden" name="turma_curso" value="{{ oferta_atual.id }}">
     {% endif %}
+    
+    <!-- QUADRO DE DADOS DA AULA -->
     <div class="card mb-4 p-3">
+        <div class="row g-3">
+            
+            <!-- COLUNA ESQUERDA: Selects e Temas -->
+            <div class="col-md-{% if ofertas|length >= 2 %}6{% else %}4{% endif %} d-flex flex-column gap-3">
+                
+                <!-- Selects -->
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label fw-bold">Turma</label>
+                        <select name="turma" id="select-turma" class="form-select form-select-sm" onchange="atualizarUrl()">
+                            <option value="">Selecione</option>
+                            {% for t in turmas %}
+                            <option value="{{ t.id }}" {% if turma_id|string==t.id|string %}selected{% endif %}>
+                                {{ t.nome }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if turma %}
+                        <div class="mt-2 text-primary small fw-bold">
+                            <i class="bi bi-clock-history me-1"></i> Turno: {{ turma.turno or '-' }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if ofertas|length >= 2 %}
+                    <div class="col-6">
+                        <label class="form-label fw-bold">Curso da oferta</label>
+                        <select name="turma_curso" id="select-turma-curso" class="form-select form-select-sm border-primary"
+                            onchange="atualizarUrl()">
+                            <option value="">Selecione o curso</option>
+                            {% for o in ofertas %}
+                            {% set grade_oferta = grade_oferta_map.get(o.id) %}
+                            <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
+                                {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
+                                {%- if o.turno %} — {{ o.turno }}{% endif -%}
+                                {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto
+                                }}){% endif -%}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not oferta_atual %}
+                        <div class="alert alert-info py-2 mt-2 mb-0" style="font-size: 0.7rem;">
+                            <i class="bi bi-info-circle me-1"></i> Selecione o curso.
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="col-6">
+                        <label class="form-label fw-bold">Data da Aula</label>
+                        {% if datas %}
+                        <select name="data" id="select-data" class="form-select form-select-sm border-primary" onchange="atualizarUrl()">
+                            <option value="">Selecione a data</option>
+                            {% for d in datas|sort %}
+                            <option value="{{ d }}" {% if data==d %}selected{% endif %}>
+                                {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <div class="alert alert-info py-2 mb-0" style="font-size: 0.7rem;">
+                            <i class="bi bi-calendar-x me-1"></i>
+                            Nenhuma aula disponível.
+                        </div>
+                        <input type="hidden" name="data" value="">
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Temas (logo abaixo dos selects na coluna da esquerda) -->
+                <div>
+                    <label class="form-label fw-bold text-secondary">Temas (Planejamento)</label>
+                    <div id="select-tema-aula" class="border rounded p-2 bg-white d-flex flex-wrap gap-3"
+                        style="max-height: 6rem; overflow-y: auto; font-size: 0.8rem;" aria-describedby="ajuda-temas-aula">
+                        {% for tema in temas %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="tema_ids"
+                                id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado
+                                %}checked{% endif %}>
+                            <label class="form-check-label" for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
+                        </div>
+                        {% endfor %}
+                        {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{%
+                        endif %}
+                    </div>
+                    
+                    <small id="ajuda-temas-aula" class="text-muted d-block mt-1" style="font-size: 0.7rem;">Marque os temas trabalhados.</small>
+                </div>
+                
+            </div>
+
+            <!-- COLUNA DIREITA: Textareas empilhadas -->
+            <div class="col-md-{% if ofertas|length >= 2 %}6{% else %}8{% endif %}">
+                <div class="mb-2">
+                    <label for="atividades_aula" class="form-label fw-bold text-primary mb-1">
+                        <i class="bi bi-list-check me-2"></i>Atividades da aula
+                    </label>
+                    <textarea id="atividades_aula" name="atividades" class="form-control form-control-sm border-secondary shadow-none"
+                        rows="2" placeholder="Ex.: Observação da direção do vento...">{{ atividades_salvas or '' }}</textarea>
+                </div>
+                
+                <div>
+                     <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
+                         <i class="bi bi-chat-left-dots-fill me-2"></i>Observações da Aula
+                     </label>
+                     <textarea id="observacoes_aula" name="observacoes" class="form-control form-control-sm border-secondary shadow-none"
+                         rows="2" placeholder="Ex.: Turma com dificuldades no tema...">{{ obs_salva or '' }}</textarea>
+                </div>
+
+                <div class="mt-2 text-end">
+                     <small class="text-muted" style="font-size: 0.75rem;">
+                         <i class="bi bi-info-circle me-1"></i>O conteúdo de atividades e observações será arquivado no diário de classe da turma.
+                     </small>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- QUADRO DE FREQUÊNCIA -->
+    <div class="card p-3">
+        <h5 class="mb-3">Frequência</h5>
 
         <div class="row g-3">
-
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Turma</label>
-                <select name="turma" id="select-turma" class="form-select" onchange="atualizarUrl()">
-                    <option value="">Selecione</option>
-                    {% for t in turmas %}
-                    <option value="{{ t.id }}" {% if turma_id|string==t.id|string %}selected{% endif %}>
-                        {{ t.nome }}
-                    </option>
-                    {% endfor %}
-                </select>
-                {% if turma %}
-                <div class="mt-2 text-primary small fw-bold">
-                    <i class="bi bi-clock-history me-1"></i> Turno: {{ turma.turno or '-' }}
-                </div>
-                {% endif %}
-            </div>
-
-            {# Onda 4 (D2): 2+ ofertas ativas — exige escolha do curso antes
-            de carregar a pauta; a data selecionada é preservada na troca. #}
-            {% if ofertas|length >= 2 %}
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Curso da oferta</label>
-                <select name="turma_curso" id="select-turma-curso" class="form-select border-primary"
-                    onchange="atualizarUrl()">
-                    <option value="">Selecione o curso</option>
-                    {% for o in ofertas %}
-                    {# H3e: horário do curso no seletor vem da GRADE da oferta. #}
-                    {% set grade_oferta = grade_oferta_map.get(o.id) %}
-                    <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
-                        {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
-                        {%- if o.turno %} — {{ o.turno }}{% endif -%}
-                        {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto
-                        }}){% endif -%}
-                    </option>
-                    {% endfor %}
-                </select>
-                {% if not oferta_atual %}
-                <div class="alert alert-info py-2 mt-2 mb-0">
-                    <i class="bi bi-info-circle me-1"></i> Selecione o curso para carregar a pauta.
-                </div>
-                {% endif %}
-            </div>
-            {% endif %}
-
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Data da Aula</label>
-                {% if datas %}
-                <select name="data" id="select-data" class="form-select border-primary" onchange="atualizarUrl()">
-                    <option value="">Selecione a data</option>
-                    {% for d in datas|sort %}
-                    <option value="{{ d }}" {% if data==d %}selected{% endif %}>
-                        {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}
-                    </option>
-                    {% endfor %}
-                </select>
-                {% else %}
-                <div class="alert alert-info py-2 mb-0">
-                    <i class="fas fa-calendar-info me-2"></i>
-                    Nenhuma aula disponível para lançamento até o momento.
-                </div>
-                {# Input hidden para manter o nome do campo no POST se necessário #}
-                <input type="hidden" name="data" value="">
-                {% endif %}
-            </div>
-
-            <div class="row g-3 mb-4">
-                <div class="col-md-6">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-secondary">Temas da Aula (Planejamento)</label>
-                        <div id="select-tema-aula" class="border rounded p-2 bg-white"
-                            style="max-height: 12rem; overflow-y: auto;" aria-describedby="ajuda-temas-aula">
-                            {% for tema in temas %}
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="tema_ids"
-                                    id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado
-                                    %}checked{% endif %}>
-                                <label class="form-check-label" for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
-                            </div>
-                            {% endfor %}
-                            {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{%
-                            endif %}
+            {% for aluno in alunos %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm border-0 card-aluno">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="me-3">
+                            <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
+                                class="avatar-aluno shadow-sm" alt="Foto de {{ aluno.nome }}"
+                                style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 2px solid #f2ab1c;">
                         </div>
-                        <small id="ajuda-temas-aula" class="text-muted d-block mt-1">Marque um ou mais temas trabalhados
-                            nesta aula.</small>
-                    </div>
-                </div>
 
-                <div class="col-md-6">
-                    <div class="card border-0 bg-light shadow-sm">
-                        <div class="card-body p-2">
-                            {# A1: Atividades da aula — registro independente das observações. #}
-                            <label for="atividades_aula" class="form-label fw-bold text-primary mb-1">
-                                <i class="bi bi-list-check me-2"></i>Atividades da aula
-                            </label>
-                            <textarea id="atividades_aula" name="atividades" class="form-control border-0 shadow-none"
-                                rows="3" placeholder="Ex.: Observação da direção do vento..."
-                                style="background: transparent;">{{ atividades_salvas or '' }}</textarea>
-                            <hr class="my-2">
-                            <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
-                                <i class="bi bi-chat-left-dots-fill me-2"></i>Observações da Aula
-                            </label>
-                            <textarea id="observacoes_aula" name="observacoes" class="form-control border-0 shadow-none"
-                                rows="3" placeholder="Ex.: Turma com dificuldades no no tema..."
-                                style="background: transparent;">{{ obs_salva or '' }}</textarea>
-                        </div>
-                        <div class="card-footer bg-white py-1 border-0">
-                            <small class="text-muted" style="font-size: 0.75rem;">
-                                <i class="bi bi-info-circle me-1"></i>Este conteúdo será arquivado no diário de classe
-                                da turma.
-                            </small>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-
-        <div class="card p-3">
-
-            <h5 class="mb-3">Frequência</h5>
-
-            <div class="row g-3">
-                {% for aluno in alunos %}
-                <div class="col-md-6 col-lg-4">
-                    <div class="card h-100 shadow-sm border-0 card-aluno">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="me-3">
-                                <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}"
-                                    class="avatar-aluno shadow-sm" alt="Foto de {{ aluno.nome }}"
-                                    style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 2px solid #f2ab1c;">
-                            </div>
-
-                            <div class="flex-grow-1">
-                                <h6 class="mb-0 fw-bold text-primary">
-                                    {{ aluno.nome }}
-                                    {# I1: só professor, e só para aluno com acompanhante e/ou
-                                    instruções que ele pode ver. Os textos NÃO ficam no HTML:
-                                    o clique busca /aluno/<id>/info-professor. #}
-                                    {% if current_user.role == 'professor' and aluno.id in (alunos_com_info or []) %}
-                                    <button type="button"
-                                        class="btn btn-link p-0 ms-1 align-baseline btn-info-professor"
-                                        data-aluno-id="{{ aluno.id }}"
-                                        data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
-                                        title="Informações do aluno" aria-label="Informações do aluno">
-                                        <i class="bi-chat-text-fill"></i>
-                                    </button>
-                                    {% endif %}
-                                </h6>
-                                {% if aluno.nome_social and aluno.nome_social != '-' %}
-                                <small class="text-muted d-block">Social: {{ aluno.nome_social }}</small>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-0 fw-bold text-primary">
+                                {{ aluno.nome }}
+                                {% if current_user.role == 'professor' and aluno.id in (alunos_com_info or []) %}
+                                <button type="button"
+                                    class="btn btn-link p-0 ms-1 align-baseline btn-info-professor"
+                                    data-aluno-id="{{ aluno.id }}"
+                                    data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                                    title="Informações do aluno" aria-label="Informações do aluno">
+                                    <i class="bi bi-chat-text-fill"></i>
+                                </button>
                                 {% endif %}
+                            </h6>
+                            {% if aluno.nome_social and aluno.nome_social != '-' %}
+                            <small class="text-muted d-block">Social: {{ aluno.nome_social }}</small>
+                            {% endif %}
 
-                                <div class="d-flex gap-2 mt-1">
-                                    <span class="badge bg-light text-dark border">Nível: {{ aluno.nivel or 'N/A'
-                                        }}</span>
-                                    <span class="badge bg-light text-dark border">Idade: {{ aluno.idade_calculada }}
-                                        anos</span>
-                                </div>
+                            <div class="d-flex gap-2 mt-1">
+                                <span class="badge bg-light text-dark border">Nível: {{ aluno.nivel or 'N/A'
+                                    }}</span>
+                                <span class="badge bg-light text-dark border">Idade: {{ aluno.idade_calculada }}
+                                    anos</span>
+                            </div>
 
-                                <!-- Estatísticas Rápidas -->
-                                <div class="mt-2 d-flex gap-2" style="font-size: 0.75rem;">
-                                    <span class="text-success fw-bold" title="Presença">P: {{ aluno.estats_freq.presenca
-                                        }}%</span>
-                                    <span class="text-danger fw-bold" title="Faltas">F: {{ aluno.estats_freq.falta
-                                        }}%</span>
-                                    <span class="text-info fw-bold" title="Faltas justificadas">J: {{
-                                        aluno.estats_freq.justificadas }}</span>
-                                    <span class="text-muted ms-auto">({{ aluno.estats_freq.total_aulas }} aulas)</span>
-                                </div>
+                            <!-- Estatísticas Rápidas -->
+                            <div class="mt-2 d-flex gap-2" style="font-size: 0.75rem;">
+                                <span class="text-success fw-bold" title="Presença">P: {{ aluno.estats_freq.presenca
+                                    }}%</span>
+                                <span class="text-danger fw-bold" title="Faltas">F: {{ aluno.estats_freq.falta
+                                    }}%</span>
+                                <span class="text-info fw-bold" title="Faltas justificadas">J: {{
+                                    aluno.estats_freq.justificadas }}</span>
+                                <span class="text-muted ms-auto">({{ aluno.estats_freq.total_aulas }} aulas)</span>
+                            </div>
 
-                                <div class="btn-group w-100 mt-2" role="group">
-                                    {% for c in ['A', 'B', 'C', 'D', 'F', 'J'] %}
-                                    <input type="radio" class="btn-check" name="aluno_{{ aluno.id }}"
-                                        id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}" {% if
-                                        frequencias.get(aluno.id)==c %}checked{% endif %} {% if not
-                                        aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}
-                                        onchange="tratarConceitoAluno('{{ aluno.id }}', '{{ c }}')">
-                                    <label class="btn btn-sm btn-outline-secondary label-conceito conceito-{{ c }}"
-                                        for="aluno_{{ aluno.id }}_{{ c }}">{{ c }}</label>
+                            <div class="btn-group w-100 mt-2" role="group">
+                                {% for c in ['A', 'B', 'C', 'D', 'F', 'J'] %}
+                                <input type="radio" class="btn-check" name="aluno_{{ aluno.id }}"
+                                    id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}" {% if
+                                    frequencias.get(aluno.id)==c %}checked{% endif %} {% if not
+                                    aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}
+                                    onchange="tratarConceitoAluno('{{ aluno.id }}', '{{ c }}')">
+                                <label class="btn btn-sm btn-outline-secondary label-conceito conceito-{{ c }}"
+                                    for="aluno_{{ aluno.id }}_{{ c }}">{{ c }}</label>
+                                {% endfor %}
+                            </div>
+
+                            {% set freq_atual = frequencias.get(aluno.id) %}
+                            {% set valor_salvo = valores_por_aluno.get(aluno.id) %}
+                            {% set valor_inativo = valor_salvo if valor_salvo and not valor_salvo.ativo else None %}
+                            {% set postura_obrigatoria = freq_atual in ['A', 'B', 'C', 'D']
+                                and aluno.pode_receber_frequencia and not is_readonly
+                                and (valores_esportista_ativos|length) > 0 %}
+                            <div class="mt-2">
+                                <label for="postura_{{ aluno.id }}"
+                                    class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
+                                    Esportista</label>
+                                <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
+                                    class="form-select form-select-sm" {% if not postura_obrigatoria %}disabled{% endif %}
+                                    {% if postura_obrigatoria %}required{% endif %}>
+                                    <option value="">Selecione a opção</option>
+                                    {% for v in valores_esportista_ativos %}
+                                    <option value="{{ v.id }}" {% if valor_salvo and valor_salvo.id == v.id %}selected{% endif %}>{{ v.nome }}</option>
                                     {% endfor %}
-                                </div>
-
-                                <!-- Select: Valor / Postura do Esportista (A1) -->
-                                {% set freq_atual = frequencias.get(aluno.id) %}
-                                {% set valor_salvo = valores_por_aluno.get(aluno.id) %}
-                                {# Valor inativo já lançado continua disponível para o aluno. #}
-                                {% set valor_inativo = valor_salvo if valor_salvo and not valor_salvo.ativo else None %}
-                                {# V2: A–D com catálogo ativo exige o valor; o select habilitado
-                                passa a `required`. F/J/sem conceito ficam desabilitados e sem
-                                `required` (o `disabled` impede o envio do campo). #}
-                                {% set postura_obrigatoria = freq_atual in ['A', 'B', 'C', 'D']
-                                    and aluno.pode_receber_frequencia and not is_readonly
-                                    and (valores_esportista_ativos|length) > 0 %}
-                                <div class="mt-2">
-                                    <label for="postura_{{ aluno.id }}"
-                                        class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
-                                        Esportista</label>
-                                    <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
-                                        class="form-select form-select-sm" {% if not postura_obrigatoria %}disabled{% endif %}
-                                        {% if postura_obrigatoria %}required{% endif %}>
-                                        <option value="">Selecione a opção</option>
-                                        {% for v in valores_esportista_ativos %}
-                                        <option value="{{ v.id }}" {% if valor_salvo and valor_salvo.id == v.id %}selected{% endif %}>{{ v.nome }}</option>
-                                        {% endfor %}
-                                        {% if valor_inativo %}
-                                        <option value="{{ valor_inativo.id }}" selected>{{ valor_inativo.nome }} (inativo)</option>
-                                        {% endif %}
-                                    </select>
-                                    {% if not valores_esportista_ativos and not valor_inativo %}
-                                    <small class="text-muted d-block mt-1">Nenhum valor cadastrado no planejamento.</small>
+                                    {% if valor_inativo %}
+                                    <option value="{{ valor_inativo.id }}" selected>{{ valor_inativo.nome }} (inativo)</option>
                                     {% endif %}
-                                </div>
-
-                                {% if not aluno.pode_receber_frequencia %}
-                                <small class="text-warning mt-1 d-block"><i class="bi bi-exclamation-triangle"></i>
-                                    Aluno transferido - frequência não aplicável</small>
+                                </select>
+                                {% if not valores_esportista_ativos and not valor_inativo %}
+                                <small class="text-muted d-block mt-1">Nenhum valor cadastrado no planejamento.</small>
                                 {% endif %}
                             </div>
+
+                            {% if not aluno.pode_receber_frequencia %}
+                            <small class="text-warning mt-1 d-block"><i class="bi bi-exclamation-triangle"></i>
+                                Aluno transferido - frequência não aplicável</small>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
-                {% endfor %}
             </div>
-
+            {% endfor %}
         </div>
+    </div>
 
-        <div id="aviso-valor-pendente" class="alert alert-warning py-2 mt-3 mb-0 d-none" role="alert">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            <span id="aviso-valor-pendente-texto"></span>
-        </div>
+    <div id="aviso-valor-pendente" class="alert alert-warning py-2 mt-3 mb-0 d-none" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        <span id="aviso-valor-pendente-texto"></span>
+    </div>
 
-        <div class="d-flex justify-content-end mt-3">
-            {% if not is_readonly %}
-            <button class="btn btn-success px-5">Salvar</button>
-            {% else %}
-            <span class="text-muted small fst-italic">
-                <i class="bi bi-eye me-1"></i><b>Modo visualização — sem permissão para lançar frequência</b>
-            </span>
-            {% endif %}
-        </div>
-
+    <div class="d-flex justify-content-end mt-3 mb-4">
+        {% if not is_readonly %}
+        <button class="btn btn-success px-5">Salvar</button>
+        {% else %}
+        <span class="text-muted small fst-italic">
+            <i class="bi bi-eye me-1"></i><b>Modo visualização — sem permissão para lançar frequência</b>
+        </span>
+        {% endif %}
     </div>
 </form>
-
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="{{ url_for('static', filename='js/frequencia.js') }}?v={{ range(1000,9999) | random }}"></script>
 
-{# I1: modal do professor — carregado sob demanda pelo JS, um por página. #}
 {% if current_user.role == 'professor' %}
 <div class="modal fade" id="modal-info-professor" tabindex="-1"
     aria-labelledby="modal-info-professor-titulo" aria-hidden="true">
