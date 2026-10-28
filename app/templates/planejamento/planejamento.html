@@ -20,7 +20,7 @@ Config para o JS (lida do data-*)
         <i class="bi bi-journal-text text-primary me-2"></i>Planejamento Pedagógico
       </h2>
       <p class="text-muted mb-0">
-        Cronograma de temas por curso e gestão de níveis de alunos.
+        Cronograma de temas por curso, gestão de níveis de alunos e valores do esportista.
       </p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
@@ -37,7 +37,7 @@ Config para o JS (lida do data-*)
 
   {# ═══════════════ CARDS KPI ═══════════════ #}
   <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-4">
+    <div class="col-6 col-xl-3">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-mortarboard-fill"></i></div>
@@ -48,7 +48,7 @@ Config para o JS (lida do data-*)
         </div>
       </div>
     </div>
-    <div class="col-6 col-lg-4">
+    <div class="col-6 col-xl-3">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-card-checklist"></i></div>
@@ -60,10 +60,10 @@ Config para o JS (lida do data-*)
       </div>
     </div>
 
-    <div class="col-6 col-lg-4">
+    <div class="col-6 col-xl-3">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
-          <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-bar-chart-fill"></i></div>
+          <div class="kpi-icon bg-warning-subtle text-warning"><i class="bi bi-award-fill"></i></div>
           <div>
             <div class="kpi-label">Valores do Esportista</div>
             <div class="h4 mb-0 fw-bold">{{ valores_esportista|length }}</div>
@@ -72,7 +72,7 @@ Config para o JS (lida do data-*)
       </div>
     </div>
 
-    <div class="col-6 col-lg-4">
+    <div class="col-6 col-xl-3">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-body d-flex align-items-center gap-3 py-3">
           <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-bar-chart-fill"></i></div>
@@ -88,7 +88,7 @@ Config para o JS (lida do data-*)
   {# ═══════════════ ABAS ═══════════════ #}
   <ul class="nav nav-pills mb-3 gap-2" id="planejamentoTabs" role="tablist">
     <li class="nav-item" role="presentation">
-      <button class="nav-link active fw-semibold" id="pill-temas" data-bs-toggle="pill" data-bs-target="#tabTemas"
+      <button class="nav-link fw-semibold{{ ' active' if aba_ativa == 'temas' }}" id="pill-temas" data-bs-toggle="pill" data-bs-target="#tabTemas"
         type="button" role="tab">
         <i class="bi bi-card-checklist me-1"></i>Temas - Aulas
         <span class="badge bg-white text-primary ms-1">{{ temas|length }}</span>
@@ -96,15 +96,15 @@ Config para o JS (lida do data-*)
     </li>
 
     <li class="nav-item" role="presentation">
-      <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill" data-bs-target="#tabNiveis"
+      <button class="nav-link fw-semibold{{ ' active' if aba_ativa == 'valores' }}" id="pill-valores" data-bs-toggle="pill" data-bs-target="#tabValores"
         type="button" role="tab">
-        <i class="bi bi-bar-chart-fill me-1"></i>Valores do Esportista
+        <i class="bi bi-award-fill me-1"></i>Valores do Esportista
         <span class="badge bg-white text-secondary ms-1">{{ valores_esportista|length }}</span>
       </button>
     </li>
 
     <li class="nav-item" role="presentation">
-      <button class="nav-link fw-semibold" id="pill-niveis" data-bs-toggle="pill" data-bs-target="#tabNiveis"
+      <button class="nav-link fw-semibold{{ ' active' if aba_ativa == 'niveis' }}" id="pill-niveis" data-bs-toggle="pill" data-bs-target="#tabNiveis"
         type="button" role="tab">
         <i class="bi bi-bar-chart-fill me-1"></i>Níveis - Alunos
         <span class="badge bg-white text-secondary ms-1">{{ niveis|length }}</span>
@@ -117,7 +117,7 @@ Config para o JS (lida do data-*)
     {# ═══════════════════════════════════════════════════════
     ABA TEMAS — Layout lado a lado (form | lista)
     ═══════════════════════════════════════════════════════ #}
-    <div class="tab-pane fade show active" id="tabTemas" role="tabpanel">
+    <div class="tab-pane fade{{ ' show active' if aba_ativa == 'temas' }}" id="tabTemas" role="tabpanel">
       <div class="row g-3">
 
         {# ─────────────────────────────────────────────
@@ -134,6 +134,10 @@ Config para o JS (lida do data-*)
               <form method="POST" action="{{ url_for('registros.planejamento') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="tipo_post" value="tema">
+                <input type="hidden" name="aba" value="temas">
+                <input type="hidden" name="filtro_curso" value="{{ filtro_curso }}">
+                <input type="hidden" name="filtro_q" value="{{ busca_tema }}">
+                <input type="hidden" name="filtro_page" value="{{ paginacao.page }}">
 
                 <div class="mb-3">
                   <label class="form-label small text-muted mb-1 fw-semibold">Curso</label>
@@ -274,6 +278,10 @@ Config para o JS (lida do data-*)
                           <form action="{{ url_for('registros.inativar_tema', id=tema.id) }}" method="POST"
                             class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="aba" value="temas">
+                            <input type="hidden" name="filtro_curso" value="{{ filtro_curso }}">
+                            <input type="hidden" name="filtro_q" value="{{ busca_tema }}">
+                            <input type="hidden" name="filtro_page" value="{{ paginacao.page }}">
                             <button type="submit"
                               class="btn btn-sm btn-white border {{ 'text-success' if not tema.ativo else 'text-warning' }}"
                               title="{{ 'Ativar' if not tema.ativo else 'Inativar' }}">
@@ -314,6 +322,10 @@ Config para o JS (lida do data-*)
                     <form action="{{ url_for('registros.editar_tema', id=tema.id) }}" method="POST">
                       <div class="modal-body p-4">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="aba" value="temas">
+                        <input type="hidden" name="filtro_curso" value="{{ filtro_curso }}">
+                        <input type="hidden" name="filtro_q" value="{{ busca_tema }}">
+                        <input type="hidden" name="filtro_page" value="{{ paginacao.page }}">
 
                         <div class="row g-3">
                           <div class="col-4">
@@ -381,7 +393,7 @@ Config para o JS (lida do data-*)
     {# ═══════════════════════════════════════════════════════
     ABA NÍVEIS
     ═══════════════════════════════════════════════════════ #}
-    <div class="tab-pane fade" id="tabNiveis" role="tabpanel">
+    <div class="tab-pane fade{{ ' show active' if aba_ativa == 'niveis' }}" id="tabNiveis" role="tabpanel">
       <div class="card shadow-sm border-0">
         <div class="card-header bg-white py-3 border-bottom">
           <h6 class="mb-0 fw-bold text-dark">
@@ -392,6 +404,7 @@ Config para o JS (lida do data-*)
           <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="tipo_post" value="nivel">
+            <input type="hidden" name="aba" value="niveis">
             <label class="form-label small text-muted mb-1 fw-semibold">Adicionar novo nível</label>
             <div class="input-group shadow-sm">
               <input type="text" name="nome_nivel" class="form-control border-end-0"
@@ -430,6 +443,7 @@ Config para o JS (lida do data-*)
                       <form action="{{ url_for('registros.inativar_nivel', id=nivel.id) }}" method="POST"
                         class="d-inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="aba" value="niveis">
                         <button type="submit"
                           class="btn btn-sm btn-white border {{ 'text-success' if not nivel.ativo else 'text-warning' }}"
                           title="{{ 'Ativar' if not nivel.ativo else 'Inativar' }}">
@@ -465,6 +479,7 @@ Config para o JS (lida do data-*)
                 <form action="{{ url_for('registros.editar_nivel', id=nivel.id) }}" method="POST">
                   <div class="modal-body p-4">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="aba" value="niveis">
                     <div class="mb-3">
                       <label class="form-label small fw-bold text-muted text-uppercase">Nome do Nível</label>
                       <input type="text" name="nome_nivel" class="form-control" value="{{ nivel.nome }}" required>
@@ -486,24 +501,22 @@ Config para o JS (lida do data-*)
       </div>
     </div>
 
-  </div>{# /tab-content #}
-</div>
-
-{# ═══════════════════════════════════════════════════════
-  ABA Valores do Esportista
-  ═══════════════════════════════════════════════════════ #}
-  <div class="tab-pane fade" id="tabValores" role="tabpanel">
+    {# ═══════════════════════════════════════════════════════
+    ABA VALORES DO ESPORTISTA (A1)
+    ═══════════════════════════════════════════════════════ #}
+    <div class="tab-pane fade{{ ' show active' if aba_ativa == 'valores' }}" id="tabValores" role="tabpanel">
     <div class="card shadow-sm border-0">
       <div class="card-header bg-white py-3 border-bottom">
         <h6 class="mb-0 fw-bold text-dark">
-          <i class="bi bi-bar-chart-fill text-info me-1"></i>Valores do Esportista
+          <i class="bi bi-award-fill text-warning me-1"></i>Valores do Esportista
         </h6>
       </div>
       <div class="card-body p-3">
         <form method="POST" action="{{ url_for('registros.planejamento') }}" class="mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="tipo_post" value="valor">
-          <label class="form-label small text-muted mb-1 fw-semibold">Adicionar Valores</label>
+          <input type="hidden" name="aba" value="valores">
+          <label class="form-label small text-muted mb-1 fw-semibold">Adicionar valor</label>
           <div class="input-group shadow-sm">
             <input type="text" name="nome_valor" class="form-control border-end-0"
               placeholder="Ex: Alegria" required>
@@ -522,10 +535,10 @@ Config para o JS (lida do data-*)
               </tr>
             </thead>
             <tbody>
-              {% for valor in valores %}
+              {% for valor in valores_esportista %}
               <tr class="{{ 'opacity-50 bg-light' if not valor.ativo }}">
                 <td class="fw-semibold text-secondary ps-2">
-                  <i class="bi bi-bar-chart-fill me-2 small opacity-50"></i>{{ valor.nome }}
+                  <i class="bi bi-award-fill me-2 small opacity-50"></i>{{ valor.nome }}
                   {% if not valor.ativo %}
                   <span class="badge bg-secondary-subtle text-secondary border ms-2"
                     style="font-size:.65rem;">INATIVO</span>
@@ -533,7 +546,7 @@ Config para o JS (lida do data-*)
                 </td>
                 <td class="text-end pe-2">
                   <div class="btn-group shadow-sm">
-                    <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Nível"
+                    <button type="button" class="btn btn-sm btn-white border text-primary" title="Editar Valor"
                       data-bs-toggle="modal" data-bs-target="#modalEditValor{{ valor.id }}">
                       <i class="bi bi-pencil-square"></i>
                     </button>
@@ -541,6 +554,7 @@ Config para o JS (lida do data-*)
                     <form action="{{ url_for('registros.inativar_valor', id=valor.id) }}" method="POST"
                       class="d-inline">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="aba" value="valores">
                       <button type="submit"
                         class="btn btn-sm btn-white border {{ 'text-success' if not valor.ativo else 'text-warning' }}"
                         title="{{ 'Ativar' if not valor.ativo else 'Inativar' }}">
@@ -563,7 +577,7 @@ Config para o JS (lida do data-*)
         </div>
 
         {# Modais de Edição dos Valores (posicionados fora da tabela) #}
-        {% for valor in valores %}
+        {% for valor in valores_esportista %}
         <div class="modal fade" id="modalEditValor{{ valor.id }}" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
@@ -576,6 +590,7 @@ Config para o JS (lida do data-*)
               <form action="{{ url_for('registros.editar_valor', id=valor.id) }}" method="POST">
                 <div class="modal-body p-4">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="aba" value="valores">
                   <div class="mb-3">
                     <label class="form-label small fw-bold text-muted text-uppercase">Nome do Valor</label>
                     <input type="text" name="nome_valor" class="form-control" value="{{ valor.nome }}" required>

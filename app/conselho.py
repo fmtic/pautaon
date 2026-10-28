@@ -269,6 +269,44 @@ def index_conselho():
 # ---------------------------------------------------------------------------
 # GERENCIAMENTO DE PERGUNTAS
 # ---------------------------------------------------------------------------
+# Abas da tela: etapa (INICIAL/PERCURSO/FINAL) e foco (TURMA/ALUNO). O estado
+# ativo vive na querystring (`?etapa=...&foco=...`) para sobreviver ao POST.
+_ETAPAS_ABA_PERGUNTAS = ('inicial', 'percurso', 'final')
+_FOCOS_ABA_PERGUNTAS = ('turma', 'aluno')
+
+
+def _aba_pergunta_etapa(valor) -> str | None:
+    """Normaliza a etapa da aba; `None` quando não é uma etapa válida."""
+    etapa = (valor or '').strip().lower()
+    return etapa if etapa in _ETAPAS_ABA_PERGUNTAS else None
+
+
+def _aba_pergunta_foco(valor) -> str | None:
+    """Normaliza o foco da aba (`turma`/`aluno`); `None` se inválido."""
+    foco = (valor or '').strip().lower()
+    return foco if foco in _FOCOS_ABA_PERGUNTAS else None
+
+
+def _voltar_perguntas(etapa=None, foco=None):
+    """Redirect pós-escrita mantendo a etapa e o foco de onde se estava.
+
+    `etapa`/`foco` explícitos vencem; sem eles, usa os hidden `aba_etapa` e
+    `aba_foco` do formulário. Valores inválidos caem na aba padrão
+    (INICIAL/TURMA) com redirect limpo.
+    """
+    etapa = _aba_pergunta_etapa(etapa) or _aba_pergunta_etapa(
+        request.form.get('aba_etapa')
+    )
+    foco = _aba_pergunta_foco(foco) or _aba_pergunta_foco(
+        request.form.get('aba_foco')
+    )
+    params = {}
+    if etapa:
+        params['etapa'] = etapa
+    if foco:
+        params['foco'] = foco
+    return redirect(url_for('conselho.gerenciar_perguntas', **params))
+
 
 @bp.route('/conselho/perguntas')
 @login_required
@@ -300,7 +338,16 @@ def gerenciar_perguntas():
         if lista:
             perguntas_agrupadas[etapa_str] = lista
 
-    return render_template('conselho/perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
+    # Aba ativa: `?etapa=` e `?foco=` (inválido/ausente cai no padrão).
+    etapa_ativa = _aba_pergunta_etapa(request.args.get('etapa')) or 'inicial'
+    foco_ativo = _aba_pergunta_foco(request.args.get('foco')) or 'turma'
+
+    return render_template(
+        'conselho/perguntas.html',
+        perguntas_agrupadas=perguntas_agrupadas,
+        etapa_ativa=etapa_ativa,
+        foco_ativo=foco_ativo,
+    )
 
 
 @bp.route('/conselho/imprimir', methods=['GET'])
@@ -377,7 +424,8 @@ def salvar_pergunta():
 
     db.session.commit()
     flash("Pergunta salva com sucesso!", "success")
-    return redirect(url_for('conselho.gerenciar_perguntas'))
+    # Volta para a aba onde a pergunta aparece (etapa + foco escolhidos).
+    return _voltar_perguntas(etapa=etapa, foco=tipo)
 
 
 @bp.route('/conselho/pergunta/excluir/<int:id>', methods=['POST'])
@@ -390,7 +438,7 @@ def excluir_pergunta(id):
     pergunta.ativo = False
     db.session.commit()
     flash("Pergunta removida com sucesso!", "info")
-    return redirect(url_for('conselho.gerenciar_perguntas'))
+    return _voltar_perguntas()
 
 
 # ---------------------------------------------------------------------------

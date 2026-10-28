@@ -78,8 +78,8 @@
         {% for etapa in etapas_fixas %}
         {% set etapa_id = etapa | lower %}
         <li class="nav-item" role="presentation">
-            <!-- Note que agora apenas a classe 'active' é colocada no loop.first. O CSS cuida do resto! -->
-            <button class="nav-link {% if loop.first %}active{% endif %} px-4 py-3 rounded-top-3" 
+            <!-- Note que apenas a classe 'active' é aplicada à etapa da querystring. O CSS cuida do resto! -->
+            <button class="nav-link {% if etapa_ativa == etapa_id %}active{% endif %} px-4 py-3 rounded-top-3"
                 id="tab-{{ etapa_id }}" 
                 data-bs-toggle="tab" 
                 data-bs-target="#pane-{{ etapa_id }}" 
@@ -98,7 +98,7 @@
         {# Pega a lista de perguntas desta etapa ou uma lista vazia caso não existam #}
         {% set lista_perguntas = perguntas_agrupadas.get(etapa, []) %}
         
-        <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="pane-{{ etapa_id }}" role="tabpanel">
+        <div class="tab-pane fade {% if etapa_ativa == etapa_id %}show active{% endif %}" id="pane-{{ etapa_id }}" role="tabpanel">
             
             <!-- Card de Conteúdo da Etapa -->
             <div class="card shadow-sm border-0 border-top border-primary border-4 mb-4">
@@ -108,12 +108,12 @@
                     <div class="px-4 pt-4 pb-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-3 bg-white">
                         <ul class="nav nav-pills" id="pills-tab-{{ etapa_id }}" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active rounded-pill px-4" id="pills-turma-tab-{{ etapa_id }}" data-bs-toggle="pill" data-bs-target="#pills-turma-{{ etapa_id }}" type="button" role="tab">
+                                <button class="nav-link {% if foco_ativo == 'turma' %}active{% endif %} rounded-pill px-4" id="pills-turma-tab-{{ etapa_id }}" data-bs-toggle="pill" data-bs-target="#pills-turma-{{ etapa_id }}" type="button" role="tab">
                                     <i class="bi bi-people me-2"></i>Geral (Turma)
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link rounded-pill px-4" id="pills-aluno-tab-{{ etapa_id }}" data-bs-toggle="pill" data-bs-target="#pills-aluno-{{ etapa_id }}" type="button" role="tab">
+                                <button class="nav-link {% if foco_ativo == 'aluno' %}active{% endif %} rounded-pill px-4" id="pills-aluno-tab-{{ etapa_id }}" data-bs-toggle="pill" data-bs-target="#pills-aluno-{{ etapa_id }}" type="button" role="tab">
                                     <i class="bi bi-person me-2"></i>Individual (Aluno)
                                 </button>
                             </li>
@@ -125,7 +125,7 @@
                     <div class="tab-content" id="pills-tabContent-{{ etapa_id }}">
                         
                         <!-- ABA: TURMA -->
-                        <div class="tab-pane fade show active" id="pills-turma-{{ etapa_id }}" role="tabpanel">
+                        <div class="tab-pane fade {% if foco_ativo == 'turma' %}show active{% endif %}" id="pills-turma-{{ etapa_id }}" role="tabpanel">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0 table-perguntas">
                                     <thead class="table-light text-muted small text-uppercase">
@@ -164,6 +164,8 @@
                                                 </button>
                                                 <form action="{{ url_for('conselho.excluir_pergunta', id=p.id) }}" method="POST" class="d-inline" onsubmit="return confirmarExclusao(event)">
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <input type="hidden" name="aba_etapa" value="{{ p.etapa.value | lower }}">
+                                                    <input type="hidden" name="aba_foco" value="{{ p.tipo.value | lower }}">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="Excluir">
                                                         <i class="bi bi-trash3"></i>
                                                     </button>
@@ -186,7 +188,7 @@
                         </div>
 
                         <!-- ABA: ALUNO -->
-                        <div class="tab-pane fade" id="pills-aluno-{{ etapa_id }}" role="tabpanel">
+                        <div class="tab-pane fade {% if foco_ativo == 'aluno' %}show active{% endif %}" id="pills-aluno-{{ etapa_id }}" role="tabpanel">
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0 table-perguntas">
                                     <thead class="table-light text-muted small text-uppercase">
@@ -225,6 +227,8 @@
                                                 </button>
                                                 <form action="{{ url_for('conselho.excluir_pergunta', id=p.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir esta pergunta?')">
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <input type="hidden" name="aba_etapa" value="{{ p.etapa.value | lower }}">
+                                                    <input type="hidden" name="aba_foco" value="{{ p.tipo.value | lower }}">
                                                     <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="Excluir">
                                                         <i class="bi bi-trash3"></i>
                                                     </button>
