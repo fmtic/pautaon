@@ -205,7 +205,21 @@ somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
                             </div>
 
                             <div class="flex-grow-1">
-                                <h6 class="mb-0 fw-bold text-primary">{{ aluno.nome }}</h6>
+                                <h6 class="mb-0 fw-bold text-primary">
+                                    {{ aluno.nome }}
+                                    {# I1: só professor, e só para aluno com acompanhante e/ou
+                                    instruções que ele pode ver. Os textos NÃO ficam no HTML:
+                                    o clique busca /aluno/<id>/info-professor. #}
+                                    {% if current_user.role == 'professor' and aluno.id in (alunos_com_info or []) %}
+                                    <button type="button"
+                                        class="btn btn-link p-0 ms-1 align-baseline btn-info-professor"
+                                        data-aluno-id="{{ aluno.id }}"
+                                        data-aluno-nome="{{ aluno.nome_social or aluno.nome }}"
+                                        title="Informações do aluno" aria-label="Informações do aluno">
+                                        <i class="bi bi-chat-left-dots-fill"></i>
+                                    </button>
+                                    {% endif %}
+                                </h6>
                                 {% if aluno.nome_social and aluno.nome_social != '-' %}
                                 <small class="text-muted d-block">Social: {{ aluno.nome_social }}</small>
                                 {% endif %}
@@ -305,5 +319,25 @@ somente quando a unidade tem catálogo ativo — mesma exceção do servidor. #}
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="{{ url_for('static', filename='js/frequencia.js') }}?v={{ range(1000,9999) | random }}"></script>
+
+{# I1: modal do professor — carregado sob demanda pelo JS, um por página. #}
+{% if current_user.role == 'professor' %}
+<div class="modal fade" id="modal-info-professor" tabindex="-1"
+    aria-labelledby="modal-info-professor-titulo" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-info-professor-titulo">Informações para o professor</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body" id="modal-info-professor-corpo"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/aluno_info_professor.js') }}"></script>
+{% endif %}
 
 {% endblock %}

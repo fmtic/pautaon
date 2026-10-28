@@ -533,7 +533,23 @@ def frequencia():
         func.lower(ValorEsportista.nome)
     ).all()
 
+    # I1: ícone "Informações para o professor". Só para PROFESSOR e só para
+    # aluno com inscrição qualificada E pelo menos um bloco preenchido — uma
+    # consulta para a pauta inteira (sem N+1).
+    alunos_com_info: set[int] = set()
+    if current_user.role == UserRole.PROFESSOR:
+        alunos_do_ctx = [aluno.id for aluno in ctx.get('alunos', [])]
+        if alunos_do_ctx:
+            from app.services.aluno_info_professor import (
+                alunos_com_info_professor,
+            )
+
+            alunos_com_info = alunos_com_info_professor(
+                alunos_do_ctx, current_user,
+            )
+
     return render_template('frequencia/lancar.html',
+                           alunos_com_info=alunos_com_info,
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,
