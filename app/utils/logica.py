@@ -533,6 +533,109 @@ def _resolver_valor_esportista(
     return valor_id
 
 
+class PendenciaValorEsportista(ValueError):
+    """Lançamento recusado: aluno com presença (A–D) sem Valor do Esportista.
+
+    Carrega os `Aluno` pendentes para a rota montar a mensagem sem refazer a
+    validação. É levantada **antes** de qualquer escrita — nem conceito, nem
+    linha de frequência, nem diário (temas/observações/atividades).
+    """
+
+    def __init__(self, alunos: List[Aluno]):
+        self.alunos = list(alunos)
+        super().__init__(mensagem_valor_obrigatorio(self.alunos))
+
+
+def mensagem_valor_obrigatorio(alunos: List[Aluno]) -> str:
+    """Mensagem única da pendência: até 10 nomes + "e mais N"."""
+    nomes = [aluno.nome for aluno in alunos[:10]]
+    restantes = len(alunos) - len(nomes)
+    lista = ", ".join(nomes)
+    if restantes > 0:
+        lista += f" e mais {restantes}"
+    return (
+        "Valor/Postura do Esportista é obrigatório para presença (A–D). "
+        f"Alunos pendentes: {lista}. Nada foi salvo."
+    )
+
+
+def unidade_tem_valores_ativos(unidade_id: Optional[int]) -> bool:
+    """A obrigatoriedade só vale se a unidade tem catálogo ativo (V2).
+
+    Unidade sem nenhum valor ativo não pode travar a pauta: a tela não teria
+    opção para o professor escolher. `unidade_id=None` (turma sem unidade)
+    olha o catálogo global — o mesmo escopo do seletor da pauta.
+    """
+    from app.models import ValorEsportista
+
+    consulta = ValorEsportista.query.filter(ValorEsportista.ativo.is_(True))
+    if unidade_id is not None:
+        consulta = consulta.filter(ValorEsportista.unidade_id == unidade_id)
+    return bool(db.session.query(consulta.exists()).scalar())
+
+
+def _planejar_frequencia(
+    form: Dict[str, str],
+    alunos: List[Aluno],
+    *,
+    oferta_id: Optional[int],
+    turma_id: int,
+    data_alvo: date,
+    unidade_id: Optional[int],
+    exige_valor: bool,
+) -> Tuple[List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]], List[Aluno]]:
+    """Plano de gravação da pauta + alunos pendentes de Valor do Esportista.
+
+    Fase de LEITURA: resolve, por aluno com conceito enviado, a linha de
+    frequência existente e o valor a gravar. Devolve
+    `([(aluno, conceito, freq|None, valor_id|None)], [alunos_pendentes])`.
+
+    Pendência (V2) = conceito A–D com `valor_id` nulo quando a unidade tem
+    catálogo ativo. Valor inativo já salvo conta como preenchido
+    (`_resolver_valor_esportista` preserva); inativo novo, inexistente ou de
+    outra unidade conta como AUSENTE.
+
+    Aluno sem conceito não entra no plano: a linha existente fica intocada
+    (contrato da A1 — o select desabilitado não envia campo).
+    """
+    plano: List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]] = []
+    pendentes: List[Aluno] = []
+
+    for aluno in alunos:
+        conceito = form.get(f'aluno_{aluno.id}', '').strip()
+        if not conceito:
+            continue
+
+        if oferta_id is not None:
+            freq = Frequencia.query.filter_by(
+                aluno_id=aluno.id, turma_curso_id=oferta_id, data=data_alvo
+            ).first()
+        else:
+            freq = Frequencia.query.filter_by(
+                aluno_id=aluno.id, turma_id=turma_id, data=data_alvo,
+                turma_curso_id=None,
+            ).first()
+
+        valor_id = _resolver_valor_esportista(
+            form.get(f'postura_aluno_{aluno.id}', ''),
+            conceito,
+            unidade_id=unidade_id,
+            valor_atual_id=freq.valor_esportista_id if freq is not None else None,
+        )
+
+        if (
+            exige_valor
+            and conceito in _CONCEITOS_PRESENCA_TEXTO
+            and valor_id is None
+        ):
+            pendentes.append(aluno)
+            continue
+
+        plano.append((aluno, conceito, freq, valor_id))
+
+    return plano, pendentes
+
+
 def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
     """
     Consolida os lançamentos de frequência e o diário da aula em um único commit.
@@ -592,6 +695,38 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         )
         oferta_id = oferta.id if oferta else None
 
+        # --- Alunos da pauta + plano de gravação (V2) ---
+        alunos_post = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id == turma_id,
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
+            .all()
+        )
+
+        # A1: o valor/postura do esportista pertence à unidade da TURMA — o
+        # mesmo escopo do GET (a sessão pode estar em Visão Global).
+        turma_obj = db.session.get(Turma, turma_id)
+        valor_unidade_id = (
+            turma_obj.unidade_id if turma_obj is not None else get_unidade_id()
+        )
+
+        # V2: tudo é validado em memória ANTES de qualquer escrita. Havendo
+        # pendência, nada é gravado — nem conceitos, nem diário.
+        plano, pendentes = _planejar_frequencia(
+            form,
+            alunos_post,
+            oferta_id=oferta_id,
+            turma_id=turma_id,
+            data_alvo=data_alvo,
+            unidade_id=valor_unidade_id,
+            exige_valor=unidade_tem_valores_ativos(valor_unidade_id),
+        )
+        if pendentes:
+            raise PendenciaValorEsportista(pendentes)
+
         # --- Registro de aula (diário do educador) ---
         if oferta_id is not None:
             registro = RegistroAula.query.filter_by(
@@ -620,41 +755,8 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             db.session.add(registro)
 
-        # --- Frequência por aluno ---
-        alunos_post = (
-            Aluno.query.join(Inscricao)
-            .filter(
-                Inscricao.turma_id == turma_id,
-                Inscricao.ativo == True,
-                Aluno.ativo == True,
-            )
-            .all()
-        )
-
-        # A1: o valor/postura do esportista pertence à unidade da TURMA — o
-        # mesmo escopo do GET (a sessão pode estar em Visão Global).
-        turma_obj = db.session.get(Turma, turma_id)
-        valor_unidade_id = (
-            turma_obj.unidade_id if turma_obj is not None else get_unidade_id()
-        )
-
-        for aluno in alunos_post:
-            conceito = form.get(f'aluno_{aluno.id}', '').strip()
-            if not conceito:
-                # Sem conceito: mantém a linha como está (o select de valor
-                # desabilitado não envia campo e não pode apagar nada).
-                continue
-
-            if oferta_id is not None:
-                freq = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_curso_id=oferta_id, data=data_alvo
-                ).first()
-            else:
-                freq = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_id=turma_id, data=data_alvo,
-                    turma_curso_id=None,
-                ).first()
-
+        # --- Frequência por aluno (plano já validado) ---
+        for aluno, conceito, freq, valor_id in plano:
             if freq is None:
                 freq = Frequencia(
                     aluno_id=aluno.id,
@@ -666,16 +768,14 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             freq.conceito = conceito
             # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
             # sem tocar em nenhuma outra coluna.
-            freq.valor_esportista_id = _resolver_valor_esportista(
-                form.get(f'postura_aluno_{aluno.id}', ''),
-                conceito,
-                unidade_id=valor_unidade_id,
-                valor_atual_id=freq.valor_esportista_id,
-            )
+            freq.valor_esportista_id = valor_id
 
         db.session.commit()
         return turma_id, data_alvo.strftime('%Y-%m-%d')
 
+    except PendenciaValorEsportista:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         current_app.logger.exception(

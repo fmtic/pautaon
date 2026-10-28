@@ -39,35 +39,50 @@ def _pauta(client, ids, mes=None):
     return resposta.get_data(as_text=True)
 
 
+def _anular_valor(app, aluno_id):
+    """Simula registro antigo/sem valor: anula a coluna direto no banco.
+
+    Desde a V2 o caminho HTTP não produz mais A–D com valor NULL (é
+    pendência), então a comparação "com e sem valor" é feita anulando a coluna
+    fora da rota — que é exatamente o estado dos registros anteriores à A1.
+    """
+    with app.app_context():
+        linha = Frequencia.query.filter_by(aluno_id=aluno_id).first()
+        linha.valor_esportista_id = None
+        db.session.commit()
+
+
 def test_pauta_impressa_identica_com_e_sem_valor(app, client):
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
-    _post(client, ids, conceito="A", valor_id=None)
-
-    mes = ids["data"][5:7]
-    completa_antes = _pauta(client, ids)
-    mes_antes = _pauta(client, ids, mes=mes)
-
     _post(client, ids, conceito="A", valor_id=ids["ativo"])
 
-    assert _pauta(client, ids) == completa_antes
-    assert _pauta(client, ids, mes=mes) == mes_antes
+    mes = ids["data"][5:7]
+    completa_com = _pauta(client, ids)
+    mes_com = _pauta(client, ids, mes=mes)
+
+    _anular_valor(app, ids["aluno"])
+
+    assert _pauta(client, ids) == completa_com
+    assert _pauta(client, ids, mes=mes) == mes_com
 
 
 def test_relatorio_de_frequencia_identico(app, client):
     ids = _cenario(app)
     _login_pedagogico(app, client, ids)
-    _post(client, ids, conceito="A", valor_id=None)
-
-    url = f"/frequencia_relatorio?turma={ids['turma']}"
-    antes = client.get(url)
-    assert antes.status_code == 200
-
     _post(client, ids, conceito="A", valor_id=ids["ativo"])
 
-    depois = client.get(url)
-    assert depois.status_code == 200
-    assert depois.get_data(as_text=True) == antes.get_data(as_text=True)
+    url = f"/frequencia_relatorio?turma={ids['turma']}"
+    # Consome o flash "Frequência salva com sucesso!" antes de comparar.
+    client.get(url)
+    com_valor = client.get(url)
+    assert com_valor.status_code == 200
+
+    _anular_valor(app, ids["aluno"])
+
+    sem_valor = client.get(url)
+    assert sem_valor.status_code == 200
+    assert sem_valor.get_data(as_text=True) == com_valor.get_data(as_text=True)
 
 
 def _abas_xlsx(resposta):
@@ -88,21 +103,22 @@ def _abas_xlsx(resposta):
 def test_exportacao_xlsx_identica(app, client):
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
-    _post(client, ids, conceito="A", valor_id=None)
-    antes = _abas_xlsx(client.get("/relatorios/exportar"))
-
     _post(client, ids, conceito="A", valor_id=ids["ativo"])
-    depois = _abas_xlsx(client.get("/relatorios/exportar"))
+    com_valor = _abas_xlsx(client.get("/relatorios/exportar"))
 
-    assert antes == depois
-    assert antes.get("xl/sharedStrings.xml")  # pelo menos uma aba com texto
+    _anular_valor(app, ids["aluno"])
+    sem_valor = _abas_xlsx(client.get("/relatorios/exportar"))
+
+    assert com_valor == sem_valor
+    assert com_valor.get("xl/sharedStrings.xml")  # pelo menos uma aba com texto
 
 
 def test_registro_antigo_sem_valor_carrega(app, client):
     """Linha anterior à A1 (valor NULL) continua abrindo a pauta e o histórico."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
-    _post(client, ids, conceito="B", valor_id=None)
+    _post(client, ids, conceito="B", valor_id=ids["ativo"])
+    _anular_valor(app, ids["aluno"])
 
     with app.app_context():
         linha = Frequencia.query.filter_by(aluno_id=ids["aluno"]).first()

@@ -39,11 +39,13 @@ from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
 from app.utils.logica import (
+    PendenciaValorEsportista,
     calcular_dias_aula_turma,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
     carregar_frequencias_e_valores,
     get_unidade_id,
+    mensagem_valor_obrigatorio,
     salvar_frequencia,
 )
 from app.services.enturmado import cond_inscricao_enturmada
@@ -367,7 +369,14 @@ def frequencia():
                     ignorados, oferta_post.id, turma_post_id,
                 )
 
-        turma_id, data = salvar_frequencia(form_data)
+        try:
+            turma_id, data = salvar_frequencia(form_data)
+        except PendenciaValorEsportista as exc:
+            # V2: nada foi gravado (nem conceitos, nem diário). A pauta reabre
+            # com a lista de quem faltou; o que foi digitado não é preservado
+            # (TRAVA leve de UI registrada no relatório da V2).
+            flash(mensagem_valor_obrigatorio(exc.alunos), 'warning')
+            return redirect(url_for('registros.frequencia', **redirect_back))
         if not data:
             flash("Preencha a data da aula antes de salvar.", "warning")
             return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
@@ -531,6 +540,12 @@ def frequencia():
                            frequencias=freqs,
                            valores_esportista_ativos=valores_esportista_ativos,
                            valores_por_aluno=valores_por_aluno,
+                           # V2: aviso "Cadastre os valores no Planejamento" só
+                           # para quem gerencia o planejamento (mesmos perfis da
+                           # rota /planejamento, onde o catálogo é cadastrado).
+                           pode_gerenciar_planejamento=current_user.role in (
+                               UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+                           ),
                            tema_selecionado=tema_sel or [],
                            obs_salva=obs,
                            atividades_salvas=atividades_salvas,

@@ -163,28 +163,40 @@ def test_valor_sem_conceito_e_ignorado(app, client):
     assert _linha(app, ids) is None
 
 
-def test_valor_de_outra_unidade_e_ignorado(app, client):
+def _corpo_pauta(client, ids):
+    """Corpo da pauta (é aqui que o flash da pendência aparece)."""
+    return client.get(
+        f"/frequencia?turma_id={ids['turma']}&data={ids['data']}"
+    ).get_data(as_text=True)
+
+
+def test_valor_de_outra_unidade_vira_pendencia(app, client):
+    """V2: valor de outra unidade conta como AUSENTE (nada é gravado)."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
     resposta = _post(client, ids, conceito="A", valor_id=ids["externo"])
     assert resposta.status_code == 302
-    assert _valor_gravado(app, ids) == ("A", None)
+    assert _linha(app, ids) is None
+    assert "obrigatório para presença" in _corpo_pauta(client, ids)
 
 
-def test_valor_inativo_e_ignorado(app, client):
+def test_valor_inativo_novo_vira_pendencia(app, client):
+    """V2: valor inativo que nunca foi salvo conta como AUSENTE."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
     _post(client, ids, conceito="A", valor_id=ids["inativo"])
-    assert _valor_gravado(app, ids) == ("A", None)
+    assert _linha(app, ids) is None
+    assert "obrigatório para presença" in _corpo_pauta(client, ids)
 
 
-def test_valor_inexistente_nao_derruba_o_salvamento(app, client):
+def test_valor_inexistente_vira_pendencia_sem_derrubar(app, client):
+    """V2: id inexistente é pendência (302), nunca erro 500."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
     resposta = _post(client, ids, conceito="A", valor_id=999999)
     assert resposta.status_code == 302
-    # O conceito da pauta foi salvo normalmente; só o valor foi descartado.
-    assert _valor_gravado(app, ids) == ("A", None)
+    assert _linha(app, ids) is None
+    assert "obrigatório para presença" in _corpo_pauta(client, ids)
 
 
 def test_valor_inativo_ja_salvo_preserva_no_get_e_no_post(app, client):
@@ -213,11 +225,13 @@ def test_valor_inativo_ja_salvo_preserva_no_get_e_no_post(app, client):
     assert _valor_gravado(app, ids) == ("A", ids["inativo"])
 
 
-def test_sem_campo_de_valor_nao_apaga_conceito(app, client):
+def test_a_d_sem_valor_vira_pendencia(app, client):
+    """V2: A–D sem valor recusa o lançamento inteiro (antes salvava NULL)."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
     _post(client, ids, conceito="A", valor_id=None)
-    assert _valor_gravado(app, ids) == ("A", None)
+    assert _linha(app, ids) is None
+    assert "obrigatório para presença" in _corpo_pauta(client, ids)
 
 
 def test_secretaria_nao_lanca(app, client):
@@ -266,19 +280,28 @@ def test_duas_ofertas_gravam_no_registro_da_oferta(app, client):
 
 
 def test_estatisticas_nao_mudam_com_valor(app, client):
-    """Não regressão: P/F/J/aulas são idênticos com e sem valor preenchido."""
+    """Não regressão: P/F/J/aulas são idênticos qualquer que seja o valor."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
     url = f"/frequencia?turma_id={ids['turma']}&data={ids['data']}"
 
-    _post(client, ids, conceito="A", valor_id=None)
-    antes = _estatisticas(client.get(url).get_data(as_text=True))
+    with app.app_context():
+        outro = ValorEsportista(
+            nome="Disciplina", unidade_id=ids["un"], ativo=True,
+        )
+        db.session.add(outro)
+        db.session.commit()
+        outro_id = outro.id
 
     _post(client, ids, conceito="A", valor_id=ids["ativo"])
+    antes = _estatisticas(client.get(url).get_data(as_text=True))
+
+    _post(client, ids, conceito="A", valor_id=outro_id)
     depois = _estatisticas(client.get(url).get_data(as_text=True))
 
     assert antes == depois
     assert antes  # a pauta trouxe as estatísticas do aluno
+    assert _valor_gravado(app, ids) == ("A", outro_id)
 
 
 def _estatisticas(corpo):

@@ -1,18 +1,17 @@
 # ruff: noqa: F811
-"""V2 — caracterização do comportamento ANTES da regra de obrigatoriedade.
+"""V2 — caracterização ANTIGO × NOVO da regra de obrigatoriedade.
 
-Esta é a "linha de base" pedida na P2: fixa o que a pauta faz **hoje** (branch
-`nova_feature`, HEAD `26c52e4`) para que a inversão da regra seja uma mudança
-explícita e verificável, não um efeito colateral.
+Com a implementação da regra (`_planejar_frequencia` em `logica.py`), os
+mesmos cenários passam a ser pendência. O que muda, caso a caso:
 
-Estado atual (a ser invertido na implementação):
+    | cenário                                   | antes (A1)        | agora (V2)   |
+    |-------------------------------------------|-------------------|--------------|
+    | A/B/C/D sem valor, unidade com catálogo   | salva, valor NULL | recusa tudo  |
+    | valor inativo novo, inexistente, externo  | salva, valor NULL | recusa tudo  |
 
-    - conceito A/B/C/D sem valor: o conceito é salvo e o valor fica NULL;
-    - valor inativo novo, inexistente ou de outra unidade: descartado em
-      silêncio, mas o conceito é salvo normalmente.
-
-Depois da regra, os dois casos passam a ser PENDÊNCIA: nada é gravado e a
-pauta mostra a mensagem com os alunos pendentes.
+"Recusa tudo" = nenhuma linha de `frequencia` e nenhuma linha de diário; a
+mensagem da pauta lista os alunos pendentes. A exceção por unidade sem catálogo
+ativo é coberta em `test_valor_obrigatorio.py`.
 """
 
 import pytest
@@ -25,6 +24,8 @@ from test_valor_esportista_lancamento import (  # noqa: F401
     _valor_gravado,
 )
 
+from app.models import Frequencia
+
 
 #: chave do cenário -> id enviado no campo `postura_aluno_<id>`.
 VALORES_INVALIDOS = {
@@ -34,24 +35,31 @@ VALORES_INVALIDOS = {
 }
 
 
-def test_caracterizacao_a_d_sem_valor_salva_hoje(app, client):
-    """A–D sem valor: o conceito entra e o valor fica NULL (comportamento antigo)."""
+def _linhas(app):
+    with app.app_context():
+        return Frequencia.query.count()
+
+
+def test_a_d_sem_valor_agora_e_pendencia(app, client):
+    """ANTES: salvava ("A", None). AGORA: recusa e não grava."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
 
     resposta = _post(client, ids, conceito="A", valor_id=None)
 
     assert resposta.status_code == 302
-    assert _valor_gravado(app, ids) == ("A", None)
+    assert _linhas(app) == 0
+    assert _valor_gravado(app, ids) == (None, None)
 
 
 @pytest.mark.parametrize("caso", list(VALORES_INVALIDOS))
-def test_caracterizacao_valor_invalido_descarta_e_salva_conceito(app, client, caso):
-    """Valor inativo/inexistente/de outra unidade: descartado, conceito salvo."""
+def test_valor_invalido_agora_e_pendencia(app, client, caso):
+    """ANTES: descartava o valor e salvava o conceito. AGORA: recusa."""
     ids = _cenario(app)
     login_as(client, ids["user"], ids["un"])
 
     resposta = _post(client, ids, conceito="A", valor_id=VALORES_INVALIDOS[caso](ids))
 
     assert resposta.status_code == 302, caso
-    assert _valor_gravado(app, ids) == ("A", None), caso
+    assert _linhas(app) == 0, caso
+    assert _valor_gravado(app, ids) == (None, None), caso
