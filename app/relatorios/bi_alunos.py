@@ -54,12 +54,17 @@ _CONCEITOS_CONTABEIS = ["A", "B", "C", "D", "F"]
 def _base_frequencia(filtros, conceitos=None):
     """Query base de linhas `Frequencia` com os filtros do BI por OFERTA.
 
-    unidade/turma/datas são colunas diretas; período joina `Turma` apenas
-    quando filtrado; curso/professor casam pela OFERTA da linha
-    (`cond_linha_por_oferta`) — legado só entra em turma de oferta única
-    ativa (regra D2 da decisão 3).
+    unidade/turma/datas são colunas diretas; período e o critério de turma
+    ativa vêm do join ÚNICO em `Turma` (A1: turma excluída logicamente,
+    `Turma.ativo = False`, não entra em nenhuma contagem — mesmo critério de
+    Resumo, FRE-009/FRE-010 e painel pedagógico); curso/professor casam pela
+    OFERTA da linha (`cond_linha_por_oferta`) — legado só entra em turma de
+    oferta única ativa (regra D2 da decisão 3).
     """
-    query = Frequencia.query
+    query = Frequencia.query.join(
+        Turma,
+        Turma.id == Frequencia.turma_id,
+    ).filter(Turma.ativo.is_(True))
 
     if filtros.get("unidade_id"):
         query = query.filter(Frequencia.unidade_id == filtros["unidade_id"])
@@ -74,10 +79,7 @@ def _base_frequencia(filtros, conceitos=None):
         query = query.filter(Frequencia.data <= filtros["data_fim"])
 
     if filtros.get("periodo_letivo_id"):
-        query = query.join(
-            Turma,
-            Turma.id == Frequencia.turma_id,
-        ).filter(Turma.periodo_letivo_id == filtros["periodo_letivo_id"])
+        query = query.filter(Turma.periodo_letivo_id == filtros["periodo_letivo_id"])
 
     cond = cond_linha_por_oferta(
         Frequencia.turma_curso_id,
@@ -97,13 +99,14 @@ def _base_frequencia(filtros, conceitos=None):
 def _base_registro_aula(filtros):
     """Query base de `RegistroAula` com join ÚNICO em Turma (corrige o join
     duplo caracterizado em D3b.4a: unidade + curso/prof/período geravam
-    `ambiguous column name: turma.unidade_id` — 500 na rota) e filtros de
-    curso/professor pela OFERTA via `cond_linha_por_oferta`.
+    `ambiguous column name: turma.unidade_id` — 500 na rota), filtros de
+    curso/professor pela OFERTA via `cond_linha_por_oferta` e o critério de
+    turma ativa dos demais agregados (A1: `Turma.ativo = False` fora).
     """
     query = RegistroAula.query.join(
         Turma,
         Turma.id == RegistroAula.turma_id,
-    )
+    ).filter(Turma.ativo.is_(True))
 
     if filtros.get("unidade_id"):
         query = query.filter(Turma.unidade_id == filtros["unidade_id"])
