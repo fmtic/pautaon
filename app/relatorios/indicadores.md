@@ -32,12 +32,12 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 
 ### ALU-002: Alunos com cadastro ativo
 - **O que faz:** Retorna o total de alunos cujo cadastro está ativo (`Aluno.ativo=True`). Esse indicador representa a situação cadastral, não a enturmação no período.
-- **Onde busca os dados:** Tabela/Modelo `Aluno`.
+- **Onde busca os dados:** Tabela/Modelo `Aluno`; filtros de curso/professor resolvem pela OFERTA (`Inscricao.turma_curso_id` → `TurmaCurso`).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### ALU-003: Alunos com cadastro inativo
 - **O que faz:** Retorna o total de alunos cujo cadastro está inativo (`Aluno.ativo=False`). Esse indicador representa a situação cadastral, não a enturmação no período.
-- **Onde busca os dados:** Tabela/Modelo `Aluno`.
+- **Onde busca os dados:** Tabela/Modelo `Aluno`; filtros de curso/professor resolvem pela OFERTA (`Inscricao.turma_curso_id` → `TurmaCurso`).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### ALU-004: Novos cadastros
@@ -66,13 +66,13 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### ALU-009: Alunos enturmados por curso
-- **O que faz:** Agrupa por curso e conta alunos distintos enturmados em P/D (Novo + Renovado + Retornante), com inscrição vigente. Sem período explícito, usa o período vigente de cada unidade.
-- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `Curso` e `PeriodoLetivo`.
+- **O que faz:** Agrupa por curso e conta alunos distintos enturmados em P/D (Novo + Renovado + Retornante), com inscrição vigente. O curso vem da OFERTA da inscrição (`TurmaCurso.curso_id`), não da turma. Cada aluno conta uma vez dentro de cada curso, de modo que a soma dos cursos pode exceder o total de alunos distintos da unidade. Sem período explícito, usa o período vigente de cada unidade.
+- **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `TurmaCurso`, `Curso` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### ALU-010: Alunos por turma
-- **O que faz:** Agrupa e conta a quantidade de alunos distintos vinculados a cada turma.
-- **Onde busca os dados:** Tabelas `Aluno`, `Inscricao` e `Turma`.
+- **O que faz:** Agrupa e conta a quantidade de alunos distintos vinculados a cada turma. Cada aluno conta UMA vez por turma, mesmo inscrito em mais de uma oferta; filtros de curso/professor resolvem pela OFERTA (`TurmaCurso`).
+- **Onde busca os dados:** Tabelas `Aluno`, `Inscricao`, `TurmaCurso` e `Turma`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### ALU-011: Alunos enturmados no período
@@ -122,13 +122,13 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 ## 2. Categoria: Inscrições
 
 ### INS-001: Total de inscrições
-- **O que faz:** Retorna o volume total de registros de inscrições conforme os filtros aplicados.
-- **Onde busca os dados:** Tabela/Modelo `Inscricao` vinculada a `Turma`.
+- **O que faz:** Retorna o volume total de registros de inscrições conforme os filtros aplicados; curso/professor resolvem pela OFERTA da inscrição (`Inscricao.turma_curso_id` → `TurmaCurso`).
+- **Onde busca os dados:** Tabela/Modelo `Inscricao` vinculada a `Turma` e `TurmaCurso`.
 - **O que retorna:** Um número inteiro (`int`).
 
 ### INS-002: Inscrições ativas
-- **O que faz:** Retorna o total de inscrições com status ativo (`ativo.is_(True)`).
-- **Onde busca os dados:** Tabela/Modelo `Inscricao`.
+- **O que faz:** Retorna o total de inscrições com status ativo (`ativo.is_(True)`); curso/professor pela OFERTA (`TurmaCurso`).
+- **Onde busca os dados:** Tabela/Modelo `Inscricao` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### INS-003: Inscrições encerradas
@@ -153,8 +153,8 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **Motivo:** Não há registros com `data_desativacao` preenchida no banco.
 
 ### INS-008: Inscrições por curso
-- **O que faz:** Agrupa e conta o total de inscrições vinculadas a cada curso.
-- **Onde busca os dados:** Tabelas `Inscricao`, `Turma` e `Curso`.
+- **O que faz:** Agrupa e conta o total de inscrições vinculadas a cada curso; o curso vem da OFERTA da inscrição (`Inscricao.turma_curso_id` → `TurmaCurso.curso_id`).
+- **Onde busca os dados:** Tabelas `Inscricao`, `TurmaCurso` e `Curso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ---
@@ -162,53 +162,53 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 ## 3. Categoria: Frequência
 
 ### FRE-001: Total de lançamentos de frequência
-- **O que faz:** Retorna o número total de registros de frequência lançados.
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Retorna o número total de registros de frequência lançados. Filtros de curso/professor resolvem pela OFERTA da linha (`Frequencia.turma_curso_id` → `TurmaCurso`); linhas legadas (NULL) entram quando a oferta é a única ativa da turma (regra D2).
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-002: Total de presenças
-- **O que faz:** Conta o total de registros onde o conceito de presença está contabilizado (`A`, `B`, `C`, `D`).
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta o total de registros onde o conceito de presença está contabilizado (`A`, `B`, `C`, `D`); curso/professor pela OFERTA da linha (legado segue a regra D2).
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-003: Total de faltas
-- **O que faz:** Conta o total de registros de faltas não justificadas (`F`).
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta o total de registros de faltas não justificadas (`F`); curso/professor pela OFERTA da linha (legado segue a regra D2).
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-004: Total de faltas justificadas
-- **O que faz:** Conta o total de registros de faltas justificadas (`J`).
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta o total de registros de faltas justificadas (`J`); curso/professor pela OFERTA da linha (legado segue a regra D2).
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-005: Frequência média
-- **O que faz:** Calcula a taxa percentual média global de frequência dos alunos, desconsiderando faltas justificadas.
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Calcula a taxa percentual média global de frequência dos alunos, desconsiderando faltas justificadas. Percentual = presenças / (presenças + faltas), arredondado a 1 casa, pelo serviço `app/services/frequencia_oferta.py`; curso/professor pela OFERTA da linha (legado segue a regra D2).
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um valor percentual arredondado (`float`).
 
 ### FRE-006: Alunos com frequência ≥ 90%
-- **O que faz:** Identifica e conta o número de alunos cuja frequência individual calculada é maior ou igual a 90%.
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta os alunos cuja frequência individual, **arredondada a 1 casa**, é ≥ 90 (faixa hi do serviço `app/services/frequencia_oferta.py`). Um aluno com 89,96 vira 90,0 e entra aqui. As três faixas (FRE-006/007/008) somam exatamente o total de alunos com frequência contável.
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-007: Alunos com frequência entre 75% e 89%
-- **O que faz:** Identifica e conta o número de alunos com frequência individual situada na faixa entre 75% e 89%.
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta os alunos cuja frequência individual, **arredondada a 1 casa**, está entre 75 e 89,9 (faixa mid do serviço `app/services/frequencia_oferta.py`). Valores como 89,95 arredondam para 90,0 e pertencem à faixa FRE-006.
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-008: Alunos com frequência inferior a 75%
-- **O que faz:** Identifica e conta o número de alunos cuja frequência individual está abaixo do limite crítico de 75%.
-- **Onde busca os dados:** Tabela/Modelo `Frequencia`.
+- **O que faz:** Conta os alunos cuja frequência individual, **arredondada a 1 casa**, está abaixo de 75 (faixa lo do serviço `app/services/frequencia_oferta.py`); 74,9 é lo e 75,0 é mid.
+- **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-009: Frequência por turma
-- **O que faz:** Calcula a taxa média de frequência agrupada por cada turma.
-- **Onde busca os dados:** Tabelas `Turma` e `Frequencia`.
+- **O que faz:** Calcula a taxa média de frequência agrupada por cada turma, em lote pelo serviço `app/services/frequencia_oferta.py` (`agregar_por_turma`), sem iterar turma a turma. O percentual é POR TURMA sobre todas as suas linhas (inclusive legado); com filtro de curso/professor, as turmas são selecionadas pela OFERTA.
+- **Onde busca os dados:** Tabelas `Turma`, `Frequencia` e `TurmaCurso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": float}, ...]`.
 
 ### FRE-010: Frequência por curso
-- **O que faz:** Calcula a taxa média de frequência agrupada por curso.
-- **Onde busca os dados:** Tabelas `Frequencia`, `Turma` e `Curso`.
+- **O que faz:** Calcula a taxa média de frequência agrupada por curso, em lote pelo serviço `app/services/frequencia_oferta.py` (`agregar_por_oferta`). Usa somente linhas da OFERTA; linhas legadas entram no curso da oferta quando ela é a única ativa da turma (regra D2) e, nos demais casos, só nos totais da unidade/turma.
+- **Onde busca os dados:** Tabelas `Frequencia`, `TurmaCurso` e `Curso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": float}, ...]`.
 
 ---
@@ -260,13 +260,13 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 ## 5. Categoria: Aulas
 
 ### AUL-001: Total de aulas registradas
-- **O que faz:** Retorna o total consolidado de aulas ministradas e registradas.
-- **Onde busca os dados:** Tabela/Modelo `RegistroAula`.
+- **O que faz:** Retorna o total consolidado de aulas ministradas e registradas. Filtros de curso/professor resolvem pela OFERTA do registro (`RegistroAula.turma_curso_id` → `TurmaCurso`); registros legados (NULL) entram quando a oferta é a única ativa da turma (regra D2).
+- **Onde busca os dados:** Tabela/Modelo `RegistroAula` (com `Turma` para período e `TurmaCurso` para curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### AUL-002: Aulas por turma
-- **O que faz:** Agrupa e conta a quantidade de aulas registradas por turma.
-- **Onde busca os dados:** Tabelas `RegistroAula` e `Turma`.
+- **O que faz:** Agrupa e conta a quantidade de aulas registradas por turma; com filtro de curso/professor, as turmas são selecionadas pela OFERTA (`TurmaCurso`).
+- **Onde busca os dados:** Tabelas `RegistroAula`, `Turma` e `TurmaCurso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### AUL-003: Aulas por período
@@ -275,13 +275,13 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### AUL-004: Aulas por professor
-- **O que faz:** Agrupa e conta a quantidade de aulas registradas por professor.
-- **Onde busca os dados:** Tabelas `RegistroAula`, `Turma` e `User`.
+- **O que faz:** Agrupa e conta a quantidade de aulas registradas por professor. A distribuição é pelo PROFESSOR DA OFERTA do registro (`TurmaCurso.professor_id`), não pelas colunas da turma; registros legados seguem a oferta única ativa da turma (regra D2).
+- **Onde busca os dados:** Tabelas `RegistroAula`, `TurmaCurso` e `User`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### AUL-005: Aulas por curso
-- **O que faz:** Agrupa e conta a quantidade de aulas registradas por curso.
-- **Onde busca os dados:** Tabelas `RegistroAula`, `Turma` e `Curso`.
+- **O que faz:** Agrupa e conta a quantidade de aulas registradas por curso. A distribuição é pelo CURSO DA OFERTA do registro (`TurmaCurso.curso_id`); registros legados entram só quando a oferta é a única ativa da turma (regra D2).
+- **Onde busca os dados:** Tabelas `RegistroAula`, `TurmaCurso` e `Curso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### AUL-006: Aulas por unidade
@@ -334,13 +334,13 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 Indicadores que cruzam duas ou mais dimensões de dados para análises integradas.
 
 ### CRU-001: Frequência crítica (< 75%) por vulnerabilidade social
-- **O que faz:** Identifica alunos com frequência crítica (< 75%) cruzando com o perfil de vulnerabilidade socioeconômica.
-- **Onde busca os dados:** Tabelas `Frequencia` e `PerfilSocioeconomico`.
+- **O que faz:** Identifica alunos com frequência crítica — percentual **arredondado a 1 casa** abaixo de 75 (faixa lo do serviço `app/services/frequencia_oferta.py`) — cruzando com o perfil de vulnerabilidade socioeconômica.
+- **Onde busca os dados:** Tabelas `Frequencia`, `TurmaCurso` e `PerfilSocioeconomico`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
 ### CRU-002: Alunos por raça/cor no Conselho de Classe
-- **O que faz:** Distribui os alunos participantes do Conselho de Classe por raça/cor declarada.
-- **Onde busca os dados:** Tabelas `ConselhoClasse` e `PerfilDiversidade`.
+- **O que faz:** Distribui os alunos participantes do Conselho de Classe por raça/cor declarada; filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
+- **Onde busca os dados:** Tabelas `ConselhoClasse`, `TurmaCurso` e `PerfilDiversidade`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
 ### CRU-003: Alunos sem acesso à internet por bairro e zona
@@ -354,8 +354,8 @@ Indicadores que cruzam duas ou mais dimensões de dados para análises integrada
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### CRU-005: Desempenho no Conselho de Classe por faixa de renda
-- **O que faz:** Cruza os resultados do Conselho de Classe com a faixa de renda familiar dos alunos.
-- **Onde busca os dados:** Tabelas `ConselhoClasse` e `PerfilSocioeconomico`.
+- **O que faz:** Cruza os resultados do Conselho de Classe com a faixa de renda familiar dos alunos; filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
+- **Onde busca os dados:** Tabelas `ConselhoClasse`, `TurmaCurso` e `PerfilSocioeconomico`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
 ---

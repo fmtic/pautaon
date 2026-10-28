@@ -2,11 +2,12 @@
 
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_
 
 from app.database import db
-from app.models import Aluno, Inscricao, PeriodoLetivo, Turma, TurmaCurso
+from app.models import Aluno, Inscricao, PeriodoLetivo, Turma
 from app.models.enums import JANELA_RENOVACAO_DIAS, StatusAluno
+from app.services.enturmado import cond_oferta_efetiva
 from app.utils.timezone import get_local_now
 
 TURNOS_CONHECIDOS = ("Manhã", "Tarde", "Noite", "EAD")
@@ -142,38 +143,6 @@ def status_alunos_para_bi(
     return resultado
 
 
-def _cond_oferta_efetiva():
-    """Predicado (referencia `Inscricao`): a oferta apontada conta quando está
-    ativa OU quando o período letivo da turma já encerrou
-    (`data_fim < hoje`). Espelha exatamente
-    `app.relatorios.bi_filtros.cond_oferta_efetiva` (ETAPA M4) — duplicado
-    de propósito: importar de `app.relatorios` criaria ciclo
-    (bi_alunos → aluno_status). Regras idênticas: oferta inativa em período
-    em andamento/futuro ou turma sem período não conta; `data_fim` NULL é
-    conservador (em andamento); oferta precisa pertencer à turma da
-    inscrição.
-    """
-    hoje = get_local_now().date()
-    return (
-        select(TurmaCurso.id)
-        .join(Turma, Turma.id == TurmaCurso.turma_id)
-        .join(PeriodoLetivo, PeriodoLetivo.id == Turma.periodo_letivo_id)
-        .where(
-            TurmaCurso.id == Inscricao.turma_curso_id,
-            TurmaCurso.turma_id == Inscricao.turma_id,
-            or_(
-                TurmaCurso.ativo.is_(True),
-                and_(
-                    PeriodoLetivo.data_fim.isnot(None),
-                    PeriodoLetivo.data_fim < hoje,
-                ),
-            ),
-        )
-        .correlate_except(TurmaCurso)
-        .exists()
-    )
-
-
 def status_aluno(
     aluno_id: int,
     periodo_id: int,
@@ -234,13 +203,16 @@ def status_alunos(
         inscricao_ate_data = True
         # ETAPA M4: além de Inscricao.ativo, a oferta apontada precisa ser
         # "efetiva" (ativa, ou inativa em período da turma já encerrado —
-        # mesmo predicado do BI em bi_filtros.cond_oferta_efetiva). Assim,
-        # desativar oferta de período encerrado não altera o status
-        # retroativamente; oferta inativa em período em andamento passa a
-        # não contar como enturmado, alinhando status ao BI.
+        # predicado canônico em app.services.enturmado, compartilhado com o
+        # BI). Assim, desativar oferta de período encerrado não altera o
+        # status retroativamente; oferta inativa em período em andamento
+        # passa a não contar como enturmado, alinhando status ao BI.
+        # ETAPA D3b.3: o espelho `_cond_oferta_efetiva` foi removido — o
+        # módulo neutro não importa `app.relatorios`, então o ciclo de
+        # import (MER §12.13) que justificava a duplicação desapareceu.
         vinculo_em_data = and_(
             Inscricao.ativo.is_(True),
-            _cond_oferta_efetiva(),
+            cond_oferta_efetiva(),
         )
 
     inscricoes_periodo = (

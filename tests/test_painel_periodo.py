@@ -49,7 +49,7 @@ def _turma(app, ids, nome, *, unidade_id=None, programa="Programa Base"):
     with app.app_context():
         turma = Turma(
             nome=nome, turno="Manhã", programa=programa,
-            data_inicio=DATA_INI, data_fim=DATA_FIM, dias_semana="Segunda",
+            data_inicio=DATA_INI, data_fim=DATA_FIM,
             periodo_letivo_id=ids["periodo"],
             unidade_id=unidade_id or ids["un_a"], ativo=True,
         )

@@ -86,8 +86,7 @@ def _loga(app, user_id):
 def _turma(unidade_id, curso_id, professor_id, nome):
     turma = Turma(
         nome=nome, unidade_id=unidade_id, ativo=True, curso_id=curso_id,
-        professor_id=professor_id, turno="Manhã", dias_semana="Segunda",
-        hora_inicio=time(9, 0), hora_fim=time(10, 0),
+        professor_id=professor_id, turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
     )
     db.session.add(turma)

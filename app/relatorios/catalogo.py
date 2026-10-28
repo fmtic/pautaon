@@ -94,7 +94,7 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Aluno",
+        "fonte": "Aluno / Inscricao / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -106,7 +106,7 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Aluno",
+        "fonte": "Aluno / Inscricao / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -132,7 +132,7 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo / PerfilDiversidade",
+        "fonte": "Aluno / Inscricao / Turma / TurmaCurso / PeriodoLetivo / PerfilDiversidade",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -143,7 +143,7 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "fonte": "Aluno / Inscricao / Turma / TurmaCurso / PeriodoLetivo",
         "dimensoes": [
             "unidade",
             "faixa_etaria",
@@ -154,7 +154,7 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo / PerfilDiversidade",
+        "fonte": "Aluno / Inscricao / Turma / TurmaCurso / PeriodoLetivo / PerfilDiversidade",
         "dimensoes": [
             "unidade",
             "sexo",
@@ -176,7 +176,14 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / Curso / PeriodoLetivo",
+        "fonte": "Aluno / Inscricao / TurmaCurso / Curso / PeriodoLetivo",
+        "descricao": (
+            "Alunos enturmados (Aluno.ativo) contados como DISTINTOS dentro "
+            "de cada curso; o curso vem da OFERTA da inscrição "
+            "(TurmaCurso.curso_id). Um aluno matriculado em dois cursos conta "
+            "uma vez em cada, de modo que a soma dos cursos pode exceder o "
+            "total de alunos distintos da unidade."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -188,7 +195,11 @@ INDICADORES = {
         "categoria": "alunos",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Aluno / Inscricao / Turma / PeriodoLetivo",
+        "fonte": "Aluno / Inscricao / TurmaCurso / Turma / PeriodoLetivo",
+        "descricao": (
+            "Cada aluno conta UMA vez por turma, mesmo inscrito em mais de "
+            "uma oferta (curso/professor da oferta para o filtro)."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -268,7 +279,7 @@ INDICADORES = {
         "categoria": "inscricoes",
         "tipo": "contagem",
         "unidade": "inscrições",
-        "fonte": "Inscricao",
+        "fonte": "Inscricao / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -281,7 +292,7 @@ INDICADORES = {
         "categoria": "inscricoes",
         "tipo": "contagem",
         "unidade": "inscrições",
-        "fonte": "Inscricao",
+        "fonte": "Inscricao / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -361,7 +372,7 @@ INDICADORES = {
         "categoria": "inscricoes",
         "tipo": "distribuicao",
         "unidade": "inscrições",
-        "fonte": "Inscricao / Turma / Curso",
+        "fonte": "Inscricao / TurmaCurso / Curso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -376,7 +387,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "lançamentos",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -390,7 +401,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "presenças",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -404,7 +415,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "faltas",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -418,7 +429,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "faltas justificadas",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -432,7 +443,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "media",
         "unidade": "%",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -446,7 +457,13 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
+        "descricao": (
+            "Faixa hi do serviço frequencia_oferta: percentual "
+            "(presenças / (presenças+faltas), J fora) ARREDONDADO a 1 casa "
+            "e >= 90. As três faixas (hi/mid/lo) somam exatamente o total de "
+            "alunos com frequência contável."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -459,7 +476,11 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
+        "descricao": (
+            "Faixa mid do serviço frequencia_oferta: valor ARREDONDADO a 1 "
+            "casa entre 75 e 89,9. Um 89,95 vira 90,0 e pertence à faixa hi."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -472,7 +493,11 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "contagem",
         "unidade": "alunos",
-        "fonte": "Frequencia",
+        "fonte": "Frequencia / TurmaCurso",
+        "descricao": (
+            "Faixa lo do serviço frequencia_oferta: valor ARREDONDADO a 1 "
+            "casa abaixo de 75."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -485,7 +510,12 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "distribuicao",
         "unidade": "%",
-        "fonte": "Frequencia / Turma",
+        "fonte": "Frequencia / Turma / TurmaCurso",
+        "descricao": (
+            "Percentual POR TURMA sobre todas as suas linhas (inclusive "
+            "legado); com filtro de curso/professor, as turmas são "
+            "selecionadas pela OFERTA."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -498,7 +528,13 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "distribuicao",
         "unidade": "%",
-        "fonte": "Frequencia / Turma / Curso",
+        "fonte": "Frequencia / TurmaCurso / Curso",
+        "descricao": (
+            "Agregação por curso usando apenas linhas da OFERTA; linhas "
+            "legadas (turma_curso_id NULL) entram no curso quando a oferta é "
+            "a única ativa da turma (regra D2), caso contrário só nos totais "
+            "da unidade/turma."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -614,7 +650,7 @@ INDICADORES = {
         "categoria": "aulas",
         "tipo": "contagem",
         "unidade": "aulas",
-        "fonte": "RegistroAula",
+        "fonte": "RegistroAula / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -628,7 +664,7 @@ INDICADORES = {
         "categoria": "aulas",
         "tipo": "distribuicao",
         "unidade": "aulas",
-        "fonte": "RegistroAula / Turma",
+        "fonte": "RegistroAula / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -652,7 +688,12 @@ INDICADORES = {
         "categoria": "aulas",
         "tipo": "distribuicao",
         "unidade": "aulas",
-        "fonte": "RegistroAula / Turma / User",
+        "fonte": "RegistroAula / TurmaCurso / User",
+        "descricao": (
+            "Distribuição pelo PROFESSOR DA OFERTA do registro "
+            "(TurmaCurso.professor_id); registros legados (turma_curso_id "
+            "NULL) seguem a oferta única ativa da turma (regra D2)."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -664,7 +705,12 @@ INDICADORES = {
         "categoria": "aulas",
         "tipo": "distribuicao",
         "unidade": "aulas",
-        "fonte": "RegistroAula / Turma / Curso",
+        "fonte": "RegistroAula / TurmaCurso / Curso",
+        "descricao": (
+            "Distribuição pelo CURSO DA OFERTA do registro; registros "
+            "legados entram só quando a oferta é a única ativa da turma "
+            "(regra D2)."
+        ),
         "dimensoes": [
             "unidade",
             "periodo",
@@ -750,7 +796,7 @@ INDICADORES = {
         "categoria": "atendimento",
         "tipo": "contagem",
         "unidade": "atendimentos",
-        "fonte": "Atendimento",
+        "fonte": "Atendimento / Inscricao / Turma / TurmaCurso",
         "dimensoes": [
             "unidade",
             "periodo",
@@ -764,7 +810,7 @@ INDICADORES = {
         "categoria": "frequencia",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "Frequencia / PerfilSocioeconomico",
+        "fonte": "Frequencia / TurmaCurso / PerfilSocioeconomico",
         "dimensoes": ["unidade", "periodo", "curso", "turma"],
     },
     "CRU-002": {
@@ -772,7 +818,7 @@ INDICADORES = {
         "categoria": "conselho",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "ConselhoClasse / PerfilDiversidade",
+        "fonte": "ConselhoClasse / TurmaCurso / PerfilDiversidade",
         "dimensoes": ["unidade", "periodo", "curso", "turma"],
     },
     "CRU-003": {
@@ -796,7 +842,7 @@ INDICADORES = {
         "categoria": "conselho",
         "tipo": "distribuicao",
         "unidade": "alunos",
-        "fonte": "ConselhoClasse / PerfilSocioeconomico",
+        "fonte": "ConselhoClasse / TurmaCurso / PerfilSocioeconomico",
         "dimensoes": ["unidade", "periodo", "curso", "turma"],
     },
 }

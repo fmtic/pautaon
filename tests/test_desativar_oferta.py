@@ -123,7 +123,6 @@ def _seed(periodo="andamento", *, alunos_ativos=1, alunos_inativos=0,
 
     turma = Turma(
         nome="Turma M4", unidade_id=unidade.id, ativo=True, turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=(periodo_obj.data_inicio if periodo_obj
                      else HOJE - timedelta(days=30)),
         data_fim=(periodo_obj.data_fim if periodo_obj
@@ -141,7 +140,6 @@ def _seed(periodo="andamento", *, alunos_ativos=1, alunos_inativos=0,
         o = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=(k == 0), turno="Manhã",
-            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=turma.data_inicio, data_fim=turma.data_fim,
             programa="Teste",
         )

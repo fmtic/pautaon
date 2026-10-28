@@ -39,10 +39,8 @@
                                 {% endif %}
                                 <div><span class="text-muted">Turno:</span> {{ turma_origem.turno or 'Não informado' }}
                                 </div>
-                                <div><span class="text-muted">Dias:</span> {{ turma_origem.dias_semana or 'Não
-                                    informado' }}</div>
-                                <div><span class="text-muted">Horário:</span> {{ turma_origem.hora_inicio or '--:--' }}
-                                    às {{ turma_origem.hora_fim or '--:--' }}</div>
+                                <div><span class="text-muted">Dias:</span> {{ grade_origem.dias_texto if grade_origem and grade_origem.dias_texto else 'Não informado' }}</div>
+                                <div><span class="text-muted">Horário:</span> {{ grade_origem.texto_horario if grade_origem and grade_origem.texto_horario else '--:-- às --:--' }}</div>
                             </div>
                             <input type="hidden" name="turma_origem_id" value="{{ turma_origem.id }}">
                             <input type="hidden" name="turma_curso_id" value="{{ oferta_origem.id }}">
@@ -123,9 +121,8 @@
                             <br><small class="text-muted">
                                 {% if turma_origem.programa %}Programa: {{ turma_origem.programa }}<br>{% endif %}
                                 Turno: {{ turma_origem.turno or 'Não informado' }}<br>
-                                Dias: {{ turma_origem.dias_semana or 'Não informado' }}<br>
-                                Horário: {{ turma_origem.hora_inicio or '--:--' }} às {{ turma_origem.hora_fim or
-                                '--:--' }}
+                                Dias: {{ grade_origem.dias_texto if grade_origem and grade_origem.dias_texto else 'Não informado' }}<br>
+                                Horário: {{ grade_origem.texto_horario if grade_origem and grade_origem.texto_horario else '--:-- às --:--' }}
                             </small>
                         </div>
                     </div>

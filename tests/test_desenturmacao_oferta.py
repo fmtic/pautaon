@@ -88,8 +88,7 @@ def _loga(client, user_id, unidade_id=None):
 def _seed_turma(unidade, curso, nome="Turma M2"):
     turma = Turma(
         nome=nome, unidade_id=unidade.id, ativo=True,
-        professor_id=None, turno="Manhã", dias_semana="Segunda",
-        hora_inicio=time(9, 0), hora_fim=time(10, 0),
+        professor_id=None, turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
@@ -101,8 +100,7 @@ def _seed_oferta(turma, curso, unidade, *, ativo=True, principal=False):
     oferta = TurmaCurso(
         turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
         ativo=ativo, principal=principal, professor_id=None,
-        turno="Manhã", dias_semana="Segunda",
-        hora_inicio=time(9, 0), hora_fim=time(10, 0),
+        turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
     )
     db.session.add(oferta)

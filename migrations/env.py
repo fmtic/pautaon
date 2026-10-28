@@ -19,7 +19,10 @@ from alembic import context
 # ---------------------------------------------------------------------------
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # B5-P1: disable_existing_loggers=False preserva os loggers já criados
+    # pela aplicação (app.logger etc.), que o fileConfig desativaria por
+    # padrão — sem isso, mensagens de erro das migrations ficam invisíveis.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 logger = logging.getLogger("alembic.env")
 
 

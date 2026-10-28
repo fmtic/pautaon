@@ -28,6 +28,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
 from app.database import db
@@ -50,7 +51,9 @@ from app.services.aluno_perfil import (
     upsert_responsavel,
 )
 from app.services.conselho_leitura import conselhos_por_oferta
+from app.services.enturmado import cond_aluno_enturmado
 from app.services.enturmacao import enturmar_aluno
+from app.services.turma_curso_horario import grades_para_exibicao
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
@@ -290,6 +293,36 @@ def atualizar_nivel_aluno(aluno_id):
 # =============================================================================
 
 
+def _grade_por_aluno(aluno_ids) -> dict[int, object]:
+    """Grade de exibição por aluno (oferta da inscrição ativa) — H3e.
+
+    Uma consulta de inscrições (com a grade via ``selectinload``) e uma
+    leitura em lote de ``GradeExibicao``; a primeira inscrição ativa do aluno
+    define a oferta exibida, como no template (``aluno.turmas|first``).
+    """
+    if not aluno_ids:
+        return {}
+    inscricoes = (
+        Inscricao.query.options(
+            joinedload(Inscricao.turma_curso).selectinload(TurmaCurso.horarios),
+        )
+        .filter(Inscricao.aluno_id.in_(list(aluno_ids)), Inscricao.ativo.is_(True))
+        .order_by(Inscricao.id)
+        .all()
+    )
+    grade_oferta = grades_para_exibicao(
+        [insc.turma_curso for insc in inscricoes if insc.turma_curso is not None]
+    )
+    resultado = {}
+    for insc in inscricoes:
+        if insc.aluno_id in resultado:
+            continue
+        grade = grade_oferta.get(insc.turma_curso_id)
+        if grade is not None:
+            resultado[insc.aluno_id] = grade
+    return resultado
+
+
 @bp.route("/alunos")
 @login_required
 def gerenciar_alunos():
@@ -367,6 +400,9 @@ def gerenciar_alunos():
             self.next_num = page + 1
 
     pagination = Paginator(items, page, per_page, total_filtrado)
+    # H3e: dias/horário de cada aluno da página pela GRADE da oferta da
+    # inscrição ativa (uma consulta de inscrições + uma leitura de grade).
+    grade_aluno_map = _grade_por_aluno([aluno.id for aluno in items])
     total_q = Aluno.query.filter_by(ativo=True)
     enturm_q = Aluno.query.filter_by(ativo=True)
     if unidade_id:
@@ -376,8 +412,13 @@ def gerenciar_alunos():
     return render_template(
         "alunos/gerenciar.html",
         pagination=pagination,
+        grade_aluno_map=grade_aluno_map,
         total_alunos=total_q.count(),
-        total_enturmados=enturm_q.filter(Aluno.turmas.any(Turma.ativo == True)).count(),
+        # ETAPA D3b.3: card "Enturmados" pela definição única (serviço
+        # `enturmado`): Aluno.ativo + inscrição ativa em turma ativa + oferta
+        # efetiva (M4). Antes bastava QUALQUER linha de inscrição (até
+        # inativa) em turma ativa — número do card cai no cenário do teste.
+        total_enturmados=enturm_q.filter(cond_aluno_enturmado()).count(),
         search_nome=search_nome,
         search_matr=search_matr,
         search_cpf=search_cpf,
@@ -865,10 +906,29 @@ def historico_aluno(aluno_id):
     # D5.4: uma linha por INSCRIÇÃO (aluno × oferta). O status de cada etapa
     # vem do conselho da OFERTA, buscado em lote (uma consulta; sem N+1).
     # Linhas legadas (turma_curso_id NULL) não são exibidas.
-    inscricoes = Inscricao.query.filter_by(aluno_id=aluno_id).all()
+    inscricoes = (
+        Inscricao.query.options(
+            joinedload(Inscricao.turma_curso).selectinload(TurmaCurso.horarios),
+        )
+        .filter_by(aluno_id=aluno_id)
+        .all()
+    )
     conselhos = conselhos_por_oferta(
         (insc.aluno_id, insc.turma_curso_id) for insc in inscricoes
     )
+    # H3e: dias/horário exibidos vêm da GRADE da oferta (uma leitura em lote).
+    grade_oferta_map = grades_para_exibicao(
+        [insc.turma_curso for insc in inscricoes if insc.turma_curso is not None]
+    )
+    # Frequência em LOTE (D3b-2.3): UMA consulta para todas as inscrições do
+    # aluno, em vez de uma consulta por inscrição (N+1).
+    from app.services.frequencia_oferta import frequencias_aluno_por_inscricao
+
+    freq_stats_map = frequencias_aluno_por_inscricao(
+        aluno_id,
+        [(insc.turma_id, insc.turma_curso_id) for insc in inscricoes],
+    )
+
     dados = []
     for insc in inscricoes:
         turma = insc.turma
@@ -877,12 +937,11 @@ def historico_aluno(aluno_id):
         oferta = insc.turma_curso
         oferta_id = insc.turma_curso_id
 
-        # Frequência da INSCRIÇÃO: com oferta filtra pela oferta; sem oferta
-        # (legado) cai em turma + turma_curso_id NULL para não misturar turmas.
-        freqs = Frequencia.query.filter_by(
-            aluno_id=aluno_id, turma_id=insc.turma_id, turma_curso_id=oferta_id
-        ).all()
-        estatisticas = calcular_estatisticas_frequencia(freq.conceito for freq in freqs)
+        # Frequência da INSCRIÇÃO: totais já calculados em lote.
+        estatisticas = freq_stats_map.get(
+            (insc.turma_id, oferta_id),
+            calcular_estatisticas_frequencia([]),
+        )
 
         c_inicial = conselhos.get((aluno_id, oferta_id, "INICIAL"))
         c_percurso = conselhos.get((aluno_id, oferta_id, "PERCURSO"))
@@ -893,16 +952,15 @@ def historico_aluno(aluno_id):
         professor = (
             oferta.professor if oferta and oferta.professor else turma.professor
         )
-        hora_inicio = oferta.hora_inicio if oferta and oferta.hora_inicio else turma.hora_inicio
-        hora_fim = oferta.hora_fim if oferta and oferta.hora_fim else turma.hora_fim
+        grade = grade_oferta_map.get(oferta_id) if oferta_id else None
         data_inicio = oferta.data_inicio if oferta and oferta.data_inicio else turma.data_inicio
         data_fim = oferta.data_fim if oferta and oferta.data_fim else turma.data_fim
 
-        # Onda 2A: turma.hora_inicio/hora_fim são TIME, data_* são DATE.
+        # H3e/H5a: o par de horas sai SEMPRE da grade (não uniforme -> lista
+        # por dia); `data_*` seguem DATE. Sem grade -> ausência de horário.
         horario = (
-            f"{hora_inicio.strftime('%H:%M') if hora_inicio else '--:--'}"
-            f" às "
-            f"{hora_fim.strftime('%H:%M') if hora_fim else '--:--'}"
+            grade.texto_horario if grade is not None and grade.texto_horario
+            else "--:-- às --:--"
         )
 
         dados.append(
@@ -919,8 +977,8 @@ def historico_aluno(aluno_id):
                 "professor": professor.name if professor else "—",
                 "periodo": (turma.periodo_letivo.nome_exibicao if turma.periodo_letivo else "—"),
                 "dias": (
-                    oferta.dias_semana if oferta and oferta.dias_semana
-                    else (turma.dias_semana or "—")
+                    grade.dias_texto if grade is not None and grade.dias_texto
+                    else "—"
                 ),
                 "horario": horario,
                 "data_inicio": (
@@ -935,9 +993,18 @@ def historico_aluno(aluno_id):
                 "faltas": estatisticas["faltas"],
                 "justificadas": estatisticas["justificadas"],
                 "pct_presenca": estatisticas["presenca_percentual"],
-                "status_inicial": (c_inicial.situacao_final if c_inicial else "—"),
-                "status_percurso": (c_percurso.situacao_final if c_percurso else "—"),
-                "situacao_final": (c_final.situacao_final if c_final else "—"),
+                # A1: conselho existente mas sem `situacao_final` (lançamento
+                # aberto) é valor AUSENTE — o contrato das telas é "—"
+                # (`or` cobre None e string vazia, que imprimiam "None").
+                "status_inicial": (
+                    (c_inicial.situacao_final if c_inicial else None) or "—"
+                ),
+                "status_percurso": (
+                    (c_percurso.situacao_final if c_percurso else None) or "—"
+                ),
+                "situacao_final": (
+                    (c_final.situacao_final if c_final else None) or "—"
+                ),
                 "ativo": insc.ativo,
             }
         )
@@ -1077,6 +1144,7 @@ def transferir_aluno(aluno_id):
             aluno=aluno,
             turma_origem=turma_origem,
             oferta_origem=oferta_origem,
+            grade_origem=grades_para_exibicao([oferta_origem]).get(oferta_origem.id),
             ofertas_destino=ofertas_destino,
             hoje=get_local_now().date(),
         )
@@ -1271,3 +1339,43 @@ def foto_aluno(aluno_id: int):
     info = get_informacao_padrao_context()
     default_url = info.get("foto_default_aluno_url", "/static/img/default.png")
     return redirect(default_url)
+
+
+@bp.route('/aluno/<int:aluno_id>/info-professor')
+@login_required
+def info_professor(aluno_id):
+    """I1 — blocos do aluno para o professor da oferta (JSON, sem cache).
+
+    Regra de acesso em `app/services/aluno_info_professor.py` (a MESMA usada
+    pela pauta e pela impressão). Respostas: 403 para quem não é professor ou
+    não tem inscrição qualificada; 404 para aluno inexistente ou sem nenhum
+    bloco preenchido; 200 com `acompanhante`/`instrucoes` só quando preenchidos.
+    Sem log de acesso (decidido).
+    """
+    if current_user.role != UserRole.PROFESSOR:
+        abort(403)
+
+    aluno = db.session.get(Aluno, aluno_id)
+    if aluno is None:
+        abort(404)
+
+    from app.services.aluno_info_professor import (
+        BLOCO_ACOMPANHANTE,
+        BLOCO_INSTRUCOES,
+        consultar_aluno_para_professor,
+    )
+
+    tem_acesso, blocos = consultar_aluno_para_professor(aluno.id, current_user)
+    if not tem_acesso:
+        abort(403)
+    if not blocos:
+        abort(404)
+
+    resposta = jsonify(
+        aluno_id=aluno.id,
+        nome=aluno.nome_social or aluno.nome,
+        acompanhante=blocos.get(BLOCO_ACOMPANHANTE),
+        instrucoes=blocos.get(BLOCO_INSTRUCOES),
+    )
+    resposta.headers['Cache-Control'] = 'no-store'
+    return resposta

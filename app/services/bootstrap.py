@@ -1,3 +1,5 @@
+import os
+
 import click
 from flask import Flask
 
@@ -9,8 +11,21 @@ def initialize_database() -> None:
     Cria as tabelas conhecidas no banco atual.
 
     Mantém o comportamento simples do projeto original, mas remove a migração
-    implícita durante import. A evolução natural daqui é Alembic/Flask-Migrate.
+    implícita durante import.
+
+    Guard (H3a-P0): contra PostgreSQL o ``create_all`` é recusado sem opt-in
+    explícito — foi assim que uma execução acidental deixou uma tabela órfã no
+    banco principal durante a H1. A evolução de schema do banco principal é
+    exclusivamente por ``flask db upgrade`` (Alembic); para criar um banco
+    novo diretamente, defina ``PAUTAON_ALLOW_CREATE_ALL=1``.
     """
+    backend = db.engine.url.get_backend_name()
+    if backend == "postgresql" and os.getenv("PAUTAON_ALLOW_CREATE_ALL") != "1":
+        raise RuntimeError(
+            "create_all está bloqueado em PostgreSQL para proteger o banco "
+            "principal. Use `flask db upgrade`; para criar um banco novo a "
+            "partir dos modelos, defina PAUTAON_ALLOW_CREATE_ALL=1."
+        )
     db.create_all()
 
 

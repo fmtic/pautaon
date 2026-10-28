@@ -2,101 +2,80 @@
 
 Os filtros que dependem de contexto acadêmico utilizam o vínculo:
 
-    Aluno -> Inscricao -> Turma
+    Aluno -> Inscricao -> TurmaCurso (oferta) / Turma
 
 Isso preserva o histórico das inscrições e evita depender de uma coluna
 unidade_id inexistente em Aluno.
+
+ETAPA D3b.4a (decisão 1): `curso_id` e `professor_id` passam a ser resolvidos
+pela OFERTA (`TurmaCurso.curso_id` / `TurmaCurso.professor_id`), sem fallback
+para a turma. Consultas de inscrição juntam `TurmaCurso` por
+`Inscricao.turma_curso_id` (NOT NULL desde c3d4e5f6a7b8); consultas de
+linhas com oferta nullable (`Frequencia`, `RegistroAula`) usam
+`cond_linha_por_oferta`, que aplica a regra (3) do responsável: a linha própria
+casa pela sua oferta; linhas legadas (`turma_curso_id IS NULL`) só contam
+quando a turma tem exatamente UMA oferta ativa e ela casa com o filtro.
+`programa` e `turno` continuam como estão (D3b.7).
 """
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
-from app.models import Aluno, Inscricao, PeriodoLetivo, Turma, TurmaCurso
-from app.models.base import get_local_now
+from app.models import Aluno, Inscricao, Turma, TurmaCurso
+from app.services.enturmado import (  # noqa: F401 — reexporta os nomes originais
+    cond_inscricao_enturmada,
+    cond_oferta_efetiva,
+)
+
+# ETAPA D3b.3: `cond_oferta_efetiva` e `cond_inscricao_enturmada` foram movidos
+# para o módulo neutro `app.services.enturmado` (fonte única de "enturmado").
+# Este módulo os reexporta para que NENHUM chamador do BI precise mudar.
 
 
-def cond_oferta_efetiva():
-    """Condição SQL (referencia `Inscricao`): a oferta apontada pela inscrição
-    "conta" quando está ativa OU quando o período letivo da turma já encerrou.
+def cond_linha_por_oferta(col_turma_curso_id, col_turma_id, curso_id=None,
+                          professor_id=None):
+    """Condição SQL para LINHAS com `turma_curso_id` nullable (Frequencia,
+    RegistroAula) que casa curso/professor pela OFERTA, com a regra do legado
+    (decisão 3 da ETAPA D3b.4a):
 
-    Regra do responsável (ETAPA M4): desativar uma oferta de período
-    encerrado não pode alterar retroativamente BI e status. Casos:
-
-        - oferta ativa                                    → conta;
-        - oferta inativa, período da turma encerrado
-          (`data_fim < hoje`)                             → conta (histórico);
-        - oferta inativa, período em andamento ou futuro  → NÃO conta;
-        - oferta inativa, turma sem `periodo_letivo_id`   → NÃO conta
-          (sem período não há como atestar encerramento);
-        - período com `data_fim` NULL                     → trata como em
-          andamento (conservador, espelha a guarda de desativar_oferta).
-
-    A oferta precisa pertencer à turma da inscrição (`turma_id` coerente) —
-    mesmo aperto aplicado a `cond_inscricao_enturmada`.
+        - linha com oferta própria → vale se a OFERTA da linha casa o filtro
+          (sem exigir `TurmaCurso.ativo`: curso/professor são atributos da
+          oferta, inclusive de oferta inativa em período encerrado);
+        - linha legada (`turma_curso_id IS NULL`) → só vale quando a turma da
+          linha tem exatamente UMA oferta ATIVA e essa oferta casa o filtro
+          (regra D2, espelhando `frequencia_oferta.ofertas_unicas_ativas`);
+          em turma com 2+ ofertas ativas o legado fica apenas nos totais de
+          unidade/turma.
     """
-    hoje = get_local_now().date()
-    return (
-        select(TurmaCurso.id)
-        .join(Turma, Turma.id == TurmaCurso.turma_id)
-        .join(PeriodoLetivo, PeriodoLetivo.id == Turma.periodo_letivo_id)
-        .where(
-            TurmaCurso.id == Inscricao.turma_curso_id,
-            TurmaCurso.turma_id == Inscricao.turma_id,
-            or_(
-                TurmaCurso.ativo.is_(True),
-                and_(
-                    PeriodoLetivo.data_fim.isnot(None),
-                    PeriodoLetivo.data_fim < hoje,
-                ),
-            ),
+    casam = []
+    if curso_id is not None:
+        casam.append(TurmaCurso.curso_id == curso_id)
+    if professor_id is not None:
+        casam.append(TurmaCurso.professor_id == professor_id)
+    if not casam:
+        return None
+
+    oferta_da_linha = col_turma_curso_id.in_(
+        select(TurmaCurso.id).where(*casam)
+    )
+
+    # Turmas com exatamente UMA oferta ativa, e essa oferta casando o filtro.
+    # O HAVING conta só ofertas ativas (não o filtro): 2+ ofertas ativas
+    # desqualifica a turma mesmo que uma delas case.
+    turmas_unica_match = (
+        select(TurmaCurso.turma_id)
+        .where(TurmaCurso.ativo.is_(True))
+        .group_by(TurmaCurso.turma_id)
+        .having(
+            func.count(TurmaCurso.id) == 1,
+            func.max(case((and_(*casam), 1), else_=0)) == 1,
         )
-        # Manter TurmaCurso no FROM mesmo quando a query externa já o junta
-        # (evita auto-correlação que zeraria o FROM do subselect).
-        .correlate_except(TurmaCurso)
-        .exists()
+    )
+    legado_unico = (
+        col_turma_curso_id.is_(None)
+        & col_turma_id.in_(turmas_unica_match)
     )
 
-
-def cond_inscricao_enturmada():
-    """Condição SQL: a LINHA de Inscricao conta como enturmada em oferta efetiva.
-
-    Regras (decisão do responsável — Etapa J2, endurecida na ETAPA B6,
-    ajustada pela ETAPA M4 para o histórico de período encerrado):
-        - Turma.ativo=False significa turma excluída/desativada: não entra
-          em contagens agregadas.
-        - Inscrição conta quando: Inscricao.ativo=True, a Turma da inscrição
-          está ativa E a oferta apontada por `turma_curso_id` é efetiva
-          (ativa, ou inativa em período da turma já encerrado — ver
-          `cond_oferta_efetiva`), pertencendo à mesma turma.
-
-    O antigo ramo de fallback (`turma_curso_id` NULL em turma com exatamente
-    1 oferta ativa) tornou-se código morto: desde a migration da Onda 4
-    (c3d4e5f6a7b8) Inscricao.turma_curso_id é NOT NULL, então nenhuma
-    inscrição nova pode ficar sem oferta — o ramo foi removido.
-
-    A condição referencia apenas `Inscricao`, portanto é reutilizável tanto
-    em queries com JOIN em Turma quanto em queries baseadas só em Inscricao
-    (EXISTS correlacionados). Chamada típica: `.filter(cond_inscricao_enturmada())`.
-    """
-    turma_ativa = (
-        select(Turma.id)
-        .where(
-            Turma.id == Inscricao.turma_id,
-            Turma.ativo.is_(True),
-        )
-        # Manter Turma no FROM do EXISTS mesmo quando a query externa já
-        # junta Turma (evita auto-correlação que zeraria o FROM do subselect).
-        .correlate_except(Turma)
-        .exists()
-    )
-    return and_(
-        Inscricao.ativo.is_(True),
-        turma_ativa,
-        # ETAPA M4: oferta inativa em período encerrado conta (histórico);
-        # em período em andamento/futuro ou sem período, exige-se oferta
-        # ativa — comportamento J2/B6 preservado pelo `cond_oferta_efetiva`,
-        # que também exige turma coerente com a oferta.
-        cond_oferta_efetiva(),
-    )
+    return or_(oferta_da_linha, legado_unico)
 
 
 def aplicar_filtros_aluno(query, filtros):
@@ -104,7 +83,7 @@ def aplicar_filtros_aluno(query, filtros):
 
     A unidade pertence diretamente ao Aluno.
     Filtros acadêmicos são resolvidos pelo vínculo:
-        Aluno -> Inscricao -> Turma
+        Aluno -> Inscricao -> Turma (período/turma) -> TurmaCurso (curso/prof)
     """
     precisa_inscricao = any(
         filtros.get(campo)
@@ -136,14 +115,24 @@ def aplicar_filtros_aluno(query, filtros):
                 Turma.periodo_letivo_id == filtros["periodo_letivo_id"]
             )
 
-        if filtros.get("curso_id"):
-            query = query.filter(Turma.curso_id == filtros["curso_id"])
-
         if filtros.get("turma_id"):
             query = query.filter(Turma.id == filtros["turma_id"])
 
-        if filtros.get("professor_id"):
-            query = query.filter(Turma.professor_id == filtros["professor_id"])
+        # D3b.4a (decisão 1): curso/professor pela OFERTA da inscrição
+        # (Inscricao.turma_curso_id é NOT NULL — não há fallback para a turma).
+        if filtros.get("curso_id") or filtros.get("professor_id"):
+            query = query.join(
+                TurmaCurso,
+                TurmaCurso.id == Inscricao.turma_curso_id,
+            )
+            if filtros.get("curso_id"):
+                query = query.filter(
+                    TurmaCurso.curso_id == filtros["curso_id"]
+                )
+            if filtros.get("professor_id"):
+                query = query.filter(
+                    TurmaCurso.professor_id == filtros["professor_id"]
+                )
 
         query = query.distinct()
 
@@ -175,14 +164,19 @@ def aplicar_filtros_inscricao(query, filtros):
     if filtros.get("periodo_letivo_id"):
         query = query.filter(Turma.periodo_letivo_id == filtros["periodo_letivo_id"])
 
-    if filtros.get("curso_id"):
-        query = query.filter(Turma.curso_id == filtros["curso_id"])
-
     if filtros.get("turma_id"):
         query = query.filter(Turma.id == filtros["turma_id"])
 
-    if filtros.get("professor_id"):
-        query = query.filter(Turma.professor_id == filtros["professor_id"])
+    # D3b.4a (decisão 1): curso/professor pela OFERTA da inscrição.
+    if filtros.get("curso_id") or filtros.get("professor_id"):
+        query = query.join(
+            TurmaCurso,
+            TurmaCurso.id == Inscricao.turma_curso_id,
+        )
+        if filtros.get("curso_id"):
+            query = query.filter(TurmaCurso.curso_id == filtros["curso_id"])
+        if filtros.get("professor_id"):
+            query = query.filter(TurmaCurso.professor_id == filtros["professor_id"])
 
     if filtros.get("data_inicio"):
         query = query.filter(Inscricao.data_inicio >= filtros["data_inicio"])

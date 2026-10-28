@@ -116,7 +116,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
 
         turma = Turma(
             nome="Turma D52", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             periodo_letivo_id=periodo.id, unidade_id=un_a.id,
             ativo=True,
         )
@@ -243,7 +243,7 @@ def test_lancamento_oferta_de_outra_turma_recusada(client, app):
         db.session.flush()
         turma2 = Turma(
             nome="Turma Z", turno="Tarde", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Terca",
+            data_fim=DATA_FIM,
             unidade_id=ids["un_a"], ativo=True,
         )
         db.session.add(turma2)
@@ -568,7 +568,7 @@ def _turma_de_unidade_b(app, ids):
         db.session.flush()
         turma_b = Turma(
             nome="Turma B", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             unidade_id=un_b.id, ativo=True,
         )
         db.session.add(turma_b)

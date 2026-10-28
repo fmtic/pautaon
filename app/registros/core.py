@@ -15,6 +15,7 @@ import json
 from flask import current_app, flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
@@ -32,25 +33,88 @@ from app.models import (
     PeriodoLetivo,
     Inscricao,
     Curso,
+    ValorEsportista,
 )
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
 from app.utils.logica import (
+    PendenciaValorEsportista,
     calcular_dias_aula_turma,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
-    carregar_frequencias,
+    carregar_frequencias_e_valores,
     get_unidade_id,
+    mensagem_valor_obrigatorio,
     salvar_frequencia,
 )
+from app.services.enturmado import cond_inscricao_enturmada
 from app.services.turma_curso import (
     ofertas_ativas,
     resolver_oferta_lancamento,
     _alunos_da_oferta,
 )
+from app.services.turma_curso_horario import grades_para_exibicao
 from . import bp
 from .shared import assert_unidade_context
+
+
+# ---------------------------------------------------------------------------
+# ABAS DO PLANEJAMENTO — preservar a aba (e os filtros) após uma escrita
+# ---------------------------------------------------------------------------
+_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis')
+
+
+def _aba_planejamento(valor) -> str | None:
+    """Normaliza a aba do planejamento; `None` quando não é uma aba válida."""
+    aba = (valor or '').strip().lower()
+    return aba if aba in _ABAS_PLANEJAMENTO else None
+
+
+def _voltar_planejamento(aba=None):
+    """Redirect pós-escrita mantendo a aba e os filtros da aba Temas.
+
+    A aba vem do `hidden` `aba` (ou do argumento) e os filtros do contexto em
+    que o formulário foi aberto (`filtro_curso`, `filtro_q`, `filtro_page`).
+    Tudo passa por whitelist/validação: valor inválido cai na aba padrão
+    (Temas) sem querystring, como o redirect antigo fazia.
+    """
+    aba = _aba_planejamento(aba) or _aba_planejamento(request.form.get('aba'))
+    params = {}
+    if aba and aba != 'temas':
+        params['aba'] = aba
+
+    curso_id = (request.form.get('filtro_curso') or '').strip()
+    if curso_id.isdigit():
+        params['curso_id'] = int(curso_id)
+    termo = (request.form.get('filtro_q') or '').strip()
+    if termo:
+        params['q'] = termo
+    pagina = (request.form.get('filtro_page') or '').strip()
+    if pagina.isdigit() and int(pagina) > 1:
+        params['page'] = int(pagina)
+
+    return redirect(url_for('registros.planejamento', **params))
+
+
+def _valor_esportista_duplicado(
+    nome: str, unidade_id: int | None, ignorar_id: int | None = None,
+) -> bool:
+    """Já existe valor com esse nome na unidade? (sem diferenciar maiúsculas).
+
+    Espelha o índice funcional `uix_valor_esportista_nome_unidade`
+    (`lower(nome)`, `unidade_id`) para devolver mensagem amigável antes do
+    `IntegrityError`. `ignorar_id` permite renomear o próprio registro.
+    """
+    if unidade_id is None:
+        return False
+    query = ValorEsportista.query.filter(
+        ValorEsportista.unidade_id == unidade_id,
+        func.lower(ValorEsportista.nome) == nome.lower(),
+    )
+    if ignorar_id is not None:
+        query = query.filter(ValorEsportista.id != ignorar_id)
+    return query.first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -164,14 +228,20 @@ def painel_professor():
     ids_turmas = [t.id for t in todas_turmas]
     total_alunos = 0
     if ids_turmas:
+        # ETAPA D3b.3: contagem pela definição única de "enturmado"
+        # (app.services.enturmado): inscrição ativa + turma ativa + oferta
+        # efetiva (M4). Antes não havia filtro de oferta efetiva, e o
+        # `.distinct(Aluno.id)` (DISTINCT ON, só PostgreSQL) é emitido com
+        # `with_entities(...).distinct()`, equivalente em todos os bancos.
         total_alunos = (
-            Aluno.query.join(Inscricao)
+            Aluno.query.join(Inscricao, Inscricao.aluno_id == Aluno.id)
             .filter(
                 Inscricao.turma_id.in_(ids_turmas),
-                Inscricao.ativo == True,
-                Aluno.ativo == True,
+                cond_inscricao_enturmada(),
+                Aluno.ativo.is_(True),
             )
-            .distinct(Aluno.id)
+            .with_entities(Aluno.id)
+            .distinct()
             .count()
         )
 
@@ -224,8 +294,16 @@ def frequencia():
         # mensagem e retorno sem gravar.
         oferta_raw_post = (request.form.get('turma_curso') or '').strip()
         oferta_id_post = int(oferta_raw_post) if oferta_raw_post.isdigit() else None
-        tema_raw_post = (request.form.get('tema_id') or '').strip()
-        tema_id_post = int(tema_raw_post) if tema_raw_post.isdigit() else None
+        temas_raw_post = request.form.getlist('tema_ids')
+        if not temas_raw_post:
+            tema_raw_post = (request.form.get('tema_id') or '').strip()
+            temas_raw_post = [tema_raw_post] if tema_raw_post else []
+        if any(not valor.isdigit() or int(valor) <= 0 for valor in temas_raw_post):
+            flash('Um ou mais temas selecionados são inválidos.', 'warning')
+            return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
+        tema_ids_post = list(dict.fromkeys(
+            int(valor) for valor in temas_raw_post
+        ))
         data_alvo_post = parse_date(data_post)
 
         redirect_back = {'turma_id': turma_post_id, 'data': data_post}
@@ -242,7 +320,7 @@ def frequencia():
                 oferta_post = resolver_oferta_lancamento(
                     int(turma_post_id), data_alvo_post,
                     turma_curso_id=oferta_id_post if exigir_validacao_oferta else None,
-                    tema_id=tema_id_post,
+                    tema_ids=tema_ids_post,
                 )
             except ValueError as exc:
                 flash(str(exc), 'warning')
@@ -259,7 +337,9 @@ def frequencia():
                     int(turma_post_id), oferta_post.id,
                 )
             }
-            form_data = request.form.to_dict()
+            # Mantém os campos repetidos (`tema_ids`) ao fazer a cópia mutável
+            # usada para remover alunos que não pertencem à pauta da oferta.
+            form_data = request.form.copy()
             if not exigir_validacao_oferta:
                 # Oferta única: retira o id do form para que o resolver
                 # interno de salvar_frequencia reautoescolha a mesma oferta
@@ -268,8 +348,17 @@ def frequencia():
                 form_data.pop('turma_curso', None)
             ignorados = 0
             for chave in list(form_data.keys()):
-                if chave.startswith('aluno_'):
-                    aluno_raw = chave[len('aluno_'):]
+                # `postura_aluno_<id>` é o Valor do Esportista da mesma pauta:
+                # sai junto com o conceito quando o aluno não pertence à oferta.
+                prefixo = next(
+                    (
+                        p for p in ('aluno_', 'postura_aluno_')
+                        if chave.startswith(p)
+                    ),
+                    None,
+                )
+                if prefixo:
+                    aluno_raw = chave[len(prefixo):]
                     if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
                         form_data.pop(chave)
                         ignorados += 1
@@ -280,7 +369,14 @@ def frequencia():
                     ignorados, oferta_post.id, turma_post_id,
                 )
 
-        turma_id, data = salvar_frequencia(form_data)
+        try:
+            turma_id, data = salvar_frequencia(form_data)
+        except PendenciaValorEsportista as exc:
+            # V2: nada foi gravado (nem conceitos, nem diário). A pauta reabre
+            # com a lista de quem faltou; o que foi digitado não é preservado
+            # (TRAVA leve de UI registrada no relatório da V2).
+            flash(mensagem_valor_obrigatorio(exc.alunos), 'warning')
+            return redirect(url_for('registros.frequencia', **redirect_back))
         if not data:
             flash("Preencha a data da aula antes de salvar.", "warning")
             return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
@@ -322,10 +418,12 @@ def frequencia():
 
     ctx = {}
     freqs = {}
-    tema_sel = None
+    tema_sel = []
     obs = ""
     ofertas = []
     oferta_atual = None
+    valores_por_aluno = {}
+    atividades_salvas = ""
 
     if turma_id:
         # Onda 4 (Fase 4, D2): 0 ofertas ativas = legado (pauta por turma);
@@ -365,47 +463,116 @@ def frequencia():
             ).all()
 
         if data and not exigir_escolha:
-            freqs, tema_sel, obs = carregar_frequencias(
-                turma_id, data,
-                turma_curso_id=oferta_atual.id if oferta_atual else None,
+            # A1: conceitos + Valor do Esportista de cada aluno/aula na MESMA
+            # leitura de `frequencia` (sem consulta adicional na pauta).
+            freqs, valores_por_aluno, tema_sel, obs, atividades_salvas = (
+                carregar_frequencias_e_valores(
+                    turma_id, data,
+                    turma_curso_id=oferta_atual.id if oferta_atual else None,
+                )
             )
 
-        for aluno in ctx.get('alunos', []):
-            registros = Frequencia.query.filter_by(
-                aluno_id=aluno.id, turma_id=turma_id
-            ).all()
-            if not registros:
-                registros = Frequencia.query.filter_by(aluno_id=aluno.id, turma_id=None).all()
-
-            estatisticas = calcular_estatisticas_frequencia(
-                registro.conceito for registro in registros
+        # ETAPA D3b.2: estatísticas em lote — o loop anterior fazia 2 queries
+        # por aluno (N+1) e tinha um fallback morto (`turma_id=None`, coluna
+        # NOT NULL). Mesma semântica: estatísticas POR TURMA (todas as linhas
+        # do aluno na turma, como na tela antiga), primeira inscrição define
+        # se o aluno pode receber frequência.
+        alunos_ctx = ctx.get('alunos', [])
+        aluno_ids = [a.id for a in alunos_ctx]
+        # ETAPA D3b-2.4: estatísticas por oferta em turma com 2+ ofertas.
+        # 0 ou 1 oferta: inalterado (todas as linhas, inclui legado NULL).
+        somente_oferta = (
+            len(ofertas) >= 2 and oferta_atual is not None
+        )
+        conceitos_por_aluno: dict = {}
+        if aluno_ids:
+            from app.services.frequencia_oferta import (
+                conceitos_frequencia_por_aluno,
             )
-            aluno.estats_freq = type('E', (), {
-                'presenca': estatisticas['presenca_percentual'],
-                'falta': estatisticas['falta_percentual'],
-                'justificada': estatisticas['justificada_percentual'],
-                'justificadas': estatisticas['justificadas'],
-                'total_aulas': estatisticas['total'],
-            })()
 
-            insc = Inscricao.query.filter_by(
-                aluno_id=aluno.id, turma_id=int(turma_id)
-            ).first()
-            aluno.pode_receber_frequencia = bool(insc and insc.ativo)
+            conceitos_por_aluno = conceitos_frequencia_por_aluno(
+                aluno_ids,
+                turma_id,
+                oferta_id=oferta_atual.id if oferta_atual is not None else None,
+                somente_oferta=somente_oferta,
+            )
+            inscricoes_por_aluno: dict = {}
+            for insc in (
+                Inscricao.query
+                .filter(Inscricao.aluno_id.in_(aluno_ids),
+                        Inscricao.turma_id == turma_id)
+                .order_by(Inscricao.id)
+                .all()
+            ):
+                # primeira inscrição (menor id) manda, como o .first() antigo
+                inscricoes_por_aluno.setdefault(insc.aluno_id, insc)
+            for aluno in alunos_ctx:
+                estatisticas = calcular_estatisticas_frequencia(
+                    conceitos_por_aluno.get(aluno.id, [])
+                )
+                aluno.estats_freq = type('E', (), {
+                    'presenca': estatisticas['presenca_percentual'],
+                    'falta': estatisticas['falta_percentual'],
+                    'justificada': estatisticas['justificada_percentual'],
+                    'justificadas': estatisticas['justificadas'],
+                    'total_aulas': estatisticas['total'],
+                })()
+                insc = inscricoes_por_aluno.get(aluno.id)
+                aluno.pode_receber_frequencia = bool(insc and insc.ativo)
+
+    # A1: opções do seletor de Valor do Esportista — SEMPRE ativas, no escopo
+    # da unidade da turma (a sessão pode estar em Visão Global). Um valor
+    # inativo já gravado entra como opção extra no loop do template.
+    escopo_valores = (
+        ctx.get('turma').unidade_id if ctx.get('turma') else unidade_id
+    )
+    q_valores = ValorEsportista.query.filter(ValorEsportista.ativo.is_(True))
+    if escopo_valores:
+        q_valores = q_valores.filter(ValorEsportista.unidade_id == escopo_valores)
+    valores_esportista_ativos = q_valores.order_by(
+        func.lower(ValorEsportista.nome)
+    ).all()
+
+    # I1: ícone "Informações para o professor". Só para PROFESSOR e só para
+    # aluno com inscrição qualificada E pelo menos um bloco preenchido — uma
+    # consulta para a pauta inteira (sem N+1).
+    alunos_com_info: set[int] = set()
+    if current_user.role == UserRole.PROFESSOR:
+        alunos_do_ctx = [aluno.id for aluno in ctx.get('alunos', [])]
+        if alunos_do_ctx:
+            from app.services.aluno_info_professor import (
+                alunos_com_info_professor,
+            )
+
+            alunos_com_info = alunos_com_info_professor(
+                alunos_do_ctx, current_user,
+            )
 
     return render_template('frequencia/lancar.html',
+                           alunos_com_info=alunos_com_info,
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,
                            frequencias=freqs,
-                           tema_selecionado=tema_sel,
+                           valores_esportista_ativos=valores_esportista_ativos,
+                           valores_por_aluno=valores_por_aluno,
+                           # V2: aviso "Cadastre os valores no Planejamento" só
+                           # para quem gerencia o planejamento (mesmos perfis da
+                           # rota /planejamento, onde o catálogo é cadastrado).
+                           pode_gerenciar_planejamento=current_user.role in (
+                               UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
+                           ),
+                           tema_selecionado=tema_sel or [],
                            obs_salva=obs,
+                           atividades_salvas=atividades_salvas,
                            turma=ctx.get('turma'),
                            alunos=ctx.get('alunos', []),
                            datas=ctx.get('datas', []),
                            temas=ctx.get('temas', []),
                            meses=ctx.get('meses', []),
                            ofertas=ofertas,
+                           # H3e: horário do seletor de oferta pela grade.
+                           grade_oferta_map=grades_para_exibicao(ofertas),
                            oferta_atual=oferta_atual,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
@@ -416,7 +583,9 @@ def frequencia_relatorio():
     if current_user.role != UserRole.PEDAGOGICO:
         abort(403)
 
-    turma_id = request.args.get('turma')
+    # D3b.2: `type=int` — antes, `?turma=abc` chegava cru e o `int(turma_id)`
+    # de baixo derrubava a página com 500; valor inválido agora é None.
+    turma_id = request.args.get('turma', type=int)
 
     # Onda 2A: Frequencia.data é `date`. Os parâmetros da URL chegam como
     # string e precisam ser normalizados antes de filtrar, senão o filtro
@@ -436,12 +605,15 @@ def frequencia_relatorio():
 
     if turma_id:
         turma_selecionada = next(
-            (turma for turma in turmas if turma.id == int(turma_id)), None
+            (turma for turma in turmas if turma.id == turma_id), None
         )
         if not turma_selecionada:
             abort(404)
+        # .distinct(): aluno com inscrição ativa em 2+ ofertas da mesma turma
+        # aparecia duplicado na lista do relatório (uma linha por inscrição).
         alunos = db.session.execute(
             select(Aluno)
+            .distinct()
             .join(Inscricao, Inscricao.aluno_id == Aluno.id)
             .where(
                 Inscricao.turma_id == turma_selecionada.id,
@@ -735,7 +907,48 @@ def planejamento():
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
-            return redirect(url_for('registros.planejamento'))
+            return _voltar_planejamento()
+
+        if tipo_post == 'valor':
+            # A1 — Valores do Esportista: catálogo usado no lançamento de
+            # frequência como dado ADICIONAL (não entra em conta alguma).
+            nome_valor = request.form.get('nome_valor', '').strip()
+            valor_unidade_id = get_unidade_id()
+            # Mesmo escopo do nível: escrever exige unidade efetiva; a Visão
+            # Global (unidade None) é somente leitura.
+            assert_unidade_context(valor_unidade_id, valor_unidade_id)
+            if not nome_valor:
+                flash("Informe o nome do valor.", 'warning')
+            elif len(nome_valor) > 100:
+                flash(
+                    "O nome do valor deve ter no máximo 100 caracteres.",
+                    'warning',
+                )
+            elif _valor_esportista_duplicado(nome_valor, valor_unidade_id):
+                flash(
+                    f"Já existe um valor com o nome '{nome_valor}' "
+                    "nesta unidade.",
+                    'warning',
+                )
+            else:
+                try:
+                    db.session.add(ValorEsportista(
+                        nome=nome_valor,
+                        ativo=True,
+                        unidade_id=valor_unidade_id,
+                    ))
+                    db.session.commit()
+                    flash(f"Valor '{nome_valor}' adicionado com sucesso!", 'success')
+                except IntegrityError:
+                    db.session.rollback()
+                    flash(
+                        "Já existe um valor com esse nome nesta unidade.",
+                        'warning',
+                    )
+                except Exception:
+                    db.session.rollback()
+                    flash("Erro ao salvar valor.", 'danger')
+            return _voltar_planejamento()
 
         curso_id  = request.form.get('curso_id')
         titulo_tema = request.form.get('titulo')
@@ -750,7 +963,7 @@ def planejamento():
                         "Não é possível adicionar temas a um curso inativo. Reative-o primeiro.",
                         "warning",
                     )
-                    return redirect(url_for('registros.planejamento'))
+                    return _voltar_planejamento()
 
                 ultima_ordem = db.session.query(func.max(TemaAula.ordem)).filter_by(
                     curso_id=int(curso_id)
@@ -779,7 +992,7 @@ def planejamento():
             flash("Selecione um curso.", "warning")
         elif not titulo_tema:
             flash("Informe o título do tema.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
 
     conf_i = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho').first()
     conf_f = ConfiguracaoSistema.query.filter_by(chave='fim_conselho').first()
@@ -829,6 +1042,16 @@ def planejamento():
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
 
+    # A1: catálogo de valores do esportista da unidade, ordenado por nome sem
+    # diferenciar maiúsculas (mesma variável usada no KPI, na aba e no loop).
+    q_valores = ValorEsportista.query
+    if unidade_id:
+        q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
+    valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
+
+    # Aba que o usuário estava usando; um valor inválido cai em Temas.
+    aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
+
     q_periodos = PeriodoLetivo.query.filter_by(ativo=True)
     if unidade_id:
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
@@ -850,10 +1073,12 @@ def planejamento():
                            prog_filtro=prog_filtro,
                            filtro_curso=filtro_curso,
                            niveis=niveis,
+                           valores_esportista=valores_esportista,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
                            unidade_id=unidade_id,
+                           aba_ativa=aba_ativa,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
@@ -878,7 +1103,7 @@ def editar_tema(id):
     assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de editar seus temas.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
 
     novo_titulo = request.form.get('titulo', '').strip()
     nova_ordem = request.form.get('ordem')
@@ -907,7 +1132,7 @@ def editar_tema(id):
             flash("Erro ao atualizar tema.", 'danger')
     else:
         flash("Título não pode ser vazio.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 @bp.route('/planejamento/tema/inativar/<int:id>', methods=['POST'])
@@ -926,7 +1151,7 @@ def inativar_tema(id):
     assert_unidade_context(tema.unidade_id or (curso.unidade_id if curso else None), unidade_id)
     if curso and not curso.ativo:
         flash("Reative o curso antes de alterar o status de seus temas.", "warning")
-        return redirect(url_for('registros.planejamento'))
+        return _voltar_planejamento()
     try:
         tema.ativo = not tema.ativo
         db.session.commit()
@@ -935,7 +1160,7 @@ def inativar_tema(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do tema.", 'danger')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 # ---------------------------------------------------------------------------
@@ -965,7 +1190,7 @@ def editar_nivel(id):
             flash("Erro ao atualizar nível.", 'danger')
     else:
         flash("O nome do nível não pode ser vazio.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
 
 
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
@@ -987,7 +1212,66 @@ def inativar_nivel(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
-    return redirect(url_for('registros.planejamento'))
+    return _voltar_planejamento()
+
+
+# ---------------------------------------------------------------------------
+# VALORES DO ESPORTISTA — edição e inativação (A1)
+# ---------------------------------------------------------------------------
+
+@bp.route('/planejamento/valor/editar/<int:id>', methods=['POST'])
+@login_required
+def editar_valor(id):
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    valor = db.get_or_404(ValorEsportista, id)
+    # Mesmo isolamento dos níveis: sem isenção de ADMIN e sessão sem unidade
+    # efetiva recusada pelo assert (a Visão Global é somente leitura).
+    unidade_id = get_unidade_id()
+    assert_unidade_context(valor.unidade_id, unidade_id)
+
+    novo_nome = request.form.get('nome_valor', '').strip()
+    if not novo_nome:
+        flash("O nome do valor não pode ser vazio.", 'warning')
+    elif len(novo_nome) > 100:
+        flash("O nome do valor deve ter no máximo 100 caracteres.", 'warning')
+    elif _valor_esportista_duplicado(novo_nome, valor.unidade_id, ignorar_id=valor.id):
+        flash(
+            f"Já existe um valor com o nome '{novo_nome}' nesta unidade.",
+            'warning',
+        )
+    else:
+        try:
+            valor.nome = novo_nome
+            db.session.commit()
+            flash("Valor atualizado com sucesso!", 'success')
+        except IntegrityError:
+            db.session.rollback()
+            flash("Já existe um valor com esse nome nesta unidade.", 'warning')
+        except Exception:
+            db.session.rollback()
+            flash("Erro ao atualizar valor.", 'danger')
+    return _voltar_planejamento()
+
+
+@bp.route('/planejamento/valor/inativar/<int:id>', methods=['POST'])
+@login_required
+def inativar_valor(id):
+    """Alterna ativo/inativo. Valor NUNCA é apagado com uso (histórico)."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    valor = db.get_or_404(ValorEsportista, id)
+    unidade_id = get_unidade_id()
+    assert_unidade_context(valor.unidade_id, unidade_id)
+    try:
+        valor.ativo = not valor.ativo
+        db.session.commit()
+        status = 'ativado' if valor.ativo else 'inativado'
+        flash(f"Valor '{valor.nome}' {status}!", 'success')
+    except Exception:
+        db.session.rollback()
+        flash("Erro ao alterar status do valor.", 'danger')
+    return _voltar_planejamento()
 
 
 # ---------------------------------------------------------------------------

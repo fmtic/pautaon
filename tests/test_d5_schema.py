@@ -90,7 +90,6 @@ def _seed(nome_user="Resp D5"):
     turma = Turma(
         nome="Turma D5", unidade_id=unidade.id, ativo=True,
         curso_id=curso.id, professor_id=user.id, turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)

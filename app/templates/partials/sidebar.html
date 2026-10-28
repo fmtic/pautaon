@@ -32,7 +32,7 @@
         {# ---------- GERAL ---------- #}
         <li class="sidebar-heading">Geral</li>
         <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'main.painel' %}active{% endif %}" href="{{ url_for('main.painel') }}">
+            <a class="nav-link {% if request.endpoint in ('main.painel', 'main.painel_pedagogico_professor') %}active{% endif %}" href="{{ url_for('main.painel') }}">
                 <i class="bi bi-speedometer2"></i> Painel Geral
             </a>
         </li>

@@ -7,6 +7,7 @@ Contém:
     - PeriodoLetivo : semestre/módulo/ciclo de uma unidade.
     - Turma         : agrupamento operacional de alunos.
     - TurmaCurso    : oferta concreta de um curso dentro de uma turma.
+    - TurmaCursoHorario : grade de horário por dia da oferta (H1).
     - TemaAula      : tópico macro do planejamento pedagógico.
 
 Turma é a entidade mais conectada do sistema: liga unidade, período letivo,
@@ -23,13 +24,23 @@ NOTAS DE ONDAS
     - Onda 4 (Fase 1, múltiplos cursos por turma): `TurmaCurso` é a unidade
       acadêmica concreta; os atributos de horário/professor/turno replicam-se
       na oferta e as colunas legadas de `Turma` permanecem até o contrato final.
+    - H1 (horário por dia na oferta): `TurmaCursoHorario` nasce como fonte dos
+      dias e horários da oferta; `dias_semana`/`hora_inicio`/`hora_fim` da
+      oferta viram PROJEÇÃO transitória e as colunas `dias_semana` de
+      `Turma`/`TurmaCurso` ampliam-se para `String(80)`.
+    - H5a: a grade (`turma_curso_horario`) é a ÚNICA fonte de agenda — nenhum
+      código de `app/` ou `scripts/` lê ou escreve as seis colunas escalares
+      (`Turma` e `TurmaCurso`).
+    - H5b: as seis colunas escalares de agenda foram REMOVIDAS do schema e do
+      modelo; `ck_tch_dia` passou a 0–5. A grade permanece como fonte única.
 ================================================================================
 """
 
 from datetime import time
 
+from sqlalchemy import SmallInteger
+
 from app.models.base import db, datetime, date, select, get_local_now, List
-from app.models.enums import CONCEITOS_PRESENCA, CONCEITOS_CONTABEIS
 from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.base import SoftDeleteMixin, TenantMixin
 
@@ -67,20 +78,20 @@ class PeriodoLetivo(SoftDeleteMixin, TenantMixin, db.Model):
 
     def alunos_enturmados(self) -> int:
         """
-        Retorna o total de alunos ÚNICOS matriculados em qualquer turma
-        pertencente a este período letivo.
+        Retorna o total de alunos ÚNICOS enturmados neste período letivo.
+
+        ETAPA D3b.3: delega ao serviço único `app.services.enturmado` —
+        definição canônica (`Aluno.ativo` + inscrição ativa em turma ativa +
+        oferta efetiva/regra M4). Antes qualquer linha de inscrição contava
+        (sem `Aluno.ativo`, `Inscricao.ativo`, `Turma.ativo` nem oferta).
 
         Importante: um aluno em duas turmas do mesmo período conta UMA vez.
         """
-        from app.models.pessoas import Aluno
+        # Import local: modelos não importam serviços no topo (ciclo de
+        # inicialização da app — mesmo padrão de `freq_geral`).
+        from app.services.enturmado import contar_alunos_enturmados
 
-        return (
-            Aluno.query
-            .join(Aluno.turmas)
-            .filter(Turma.periodo_letivo_id == self.id)
-            .distinct()
-            .count()
-        )
+        return contar_alunos_enturmados(periodo_letivo_id=self.id)
 
 
 class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
@@ -95,7 +106,6 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         - Alunos (N:N via Inscricao)       -> alunos (backref)
 
     Regras:
-        - `dias_semana` é uma string CSV (ex.: "Segunda,Quarta,Sexta").
         - O encerramento do conselho NÃO vive na turma: desde a D5.5 ele é da
           OFERTA (`turma_curso.conselho_concluido`) e a turma é DERIVADA em
           leitura.
@@ -107,13 +117,10 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
 
-    # Datas/horas nativas (Onda 2A - antes eram VARCHAR).
+    # Datas nativas (Onda 2A - antes eram VARCHAR).
     data_inicio: date = db.Column(db.Date)
     data_fim: date = db.Column(db.Date)
-    hora_inicio: time = db.Column(db.Time)
-    hora_fim: time = db.Column(db.Time)
 
-    dias_semana: str = db.Column(db.String(20))
     programa: str = db.Column(db.String(50))
     turno: str = db.Column(db.String(20))
     centro_custo: str = db.Column(db.String(150))
@@ -143,57 +150,42 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     @property
     def freq_geral(self) -> float:
         """
-        Frequência geral da turma (0.0 a 100.0).
+        Frequência geral da turma (0.0 a 100.0) — ETAPA D3b.2.
 
-        Regras de contagem (via `app.models.enums`):
-            - `CONCEITOS_PRESENCA` (A/B/C/D) = presença.
-            - `CONCEITOS_CONTABEIS` = presença + F (denominador).
-            - J (justificada) não entra em nenhum dos dois.
-            - Se não houver registros contáveis, retorna 0.0.
+        Delegado ao serviço único `app.services.frequencia_oferta`:
+        soma de TODAS as linhas da turma (ofertas + legado) — regra POR
+        TURMA, mesmo número de antes (refactor puro).
+        Regras de contagem no serviço: `CONCEITOS_PRESENCA` no numerador,
+        presença + F no denominador, J fora de ambos, 1 casa decimal.
         """
         try:
-            from app.models.aulas import Frequencia
+            # Import local do serviço para não criar ciclo models → services.
+            from app.services.frequencia_oferta import agregar_por_turma
 
-            registros = Frequencia.query.filter_by(turma_id=self.id).all()
-
-            # Comparação funciona com enum ou string porque os enums herdam de str.
-            contaveis = [r for r in registros if r.conceito in CONCEITOS_CONTABEIS]
-            total = len(contaveis)
-            presentes = sum(
-                1 for r in contaveis if r.conceito in CONCEITOS_PRESENCA
-            )
-            return round((presentes / total) * 100, 1) if total > 0 else 0.0
+            info = agregar_por_turma([self.id]).get(self.id)
+            return info.pct_turma if info else 0.0
         except Exception:
             return 0.0
 
     def freq_geral_oferta(self, turma_curso_id: int) -> float:
         """
-        Frequência geral de UMA oferta da turma (0.0 a 100.0) — Onda 4 D3a.
+        Frequência geral de UMA oferta da turma (0.0 a 100.0) — D3b.2.
 
-        Mesmo cálculo da property `freq_geral` (que não aceita parâmetro e
-        segue misturando cursos quando a turma tem 2+ ofertas ativas), mas
-        filtrado por `turma_curso_id`. Regras de contagem idênticas:
-        CONCEITOS_PRESENCA no numerador, CONCEITOS_CONTABEIS no denominador,
-        J fora de ambos.
-
-        PENDÊNCIA DE OTIMIZAÇÃO (Onda 4, Etapa K): faz 1 consulta por oferta;
-        numa lista com N turmas × M ofertas isso vira N+1. Trocar por
-        agregação em lote (SELECT turma_curso_id, conceito, COUNT(*) ... WHERE
-        turma_id IN (...) GROUP BY turma_curso_id, conceito).
+        Delegado ao serviço único: só as linhas da oferta, com as linhas
+        legadas (`turma_curso_id IS NULL`) entrando apenas quando a oferta
+        é a única ativa da turma (regra D2 da pauta — caso DECIDIDO na
+        etapa: numa turma de oferta única o legado agora conta).
+        Fora da turma (ou sem linha contável) → 0.0, como antes.
         """
         try:
-            from app.models.aulas import Frequencia
+            from app.services.frequencia_oferta import agregar_por_oferta
 
-            registros = Frequencia.query.filter_by(
-                turma_id=self.id, turma_curso_id=turma_curso_id
-            ).all()
-
-            contaveis = [r for r in registros if r.conceito in CONCEITOS_CONTABEIS]
-            total = len(contaveis)
-            presentes = sum(
-                1 for r in contaveis if r.conceito in CONCEITOS_PRESENCA
-            )
-            return round((presentes / total) * 100, 1) if total > 0 else 0.0
+            info = agregar_por_oferta(
+                [turma_curso_id], por_turma=self.id
+            ).get(turma_curso_id)
+            if info is None or info.turma_id != self.id:
+                return 0.0
+            return info.pct
         except Exception:
             return 0.0
 
@@ -229,32 +221,23 @@ class Turma(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     @property
     def carga_horaria_aula(self) -> int | None:
         """
-        Duração de uma aula em MINUTOS (hora_fim - hora_inicio).
+        Duração uniforme da oferta principal em minutos.
 
-        Retorna None se hora_inicio ou hora_fim não estiverem definidas ou se
-        hora_fim <= hora_inicio.
+        Grades não uniformes não têm uma duração única e retornam ``None``.
+        Sem ofertas ativas não há agenda (H5a): devolve ``None``.
         """
-        if not self.hora_inicio or not self.hora_fim:
-            return None
-        delta = (
-            self.hora_fim.hour * 60 + self.hora_fim.minute
-            - self.hora_inicio.hour * 60 - self.hora_inicio.minute
-        )
-        return delta if delta > 0 else None
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+        return cargas_horarias_turmas_em_lote([self])[self.id].carga_horaria_aula
 
     @property
     def carga_horaria_total(self) -> int | None:
         """
-        C.H. Total em MINUTOS = carga_horaria_aula × dias_aula_efetivos().
-
-        Retorna None se carga_horaria_aula for None ou se não houver dias de
-        aula calculáveis (sem data_inicio/data_fim/dias_semana).
+        Tempo físico em minutos da turma. Em cada data, intervalos ativos são
+        unidos, contando sobreposições uma vez e somando intervalos disjuntos.
+        Sem oferta ativa não há agenda (H5a): devolve ``None``.
         """
-        ch_aula = self.carga_horaria_aula
-        if ch_aula is None:
-            return None
-        dias = self.dias_aula_efetivos()
-        return ch_aula * dias if dias else None
+        from app.services.turma_curso_horario import carga_horaria_total_turma
+        return carga_horaria_total_turma(self)
 
     @classmethod
     def get_ativas(cls) -> List['Turma']:
@@ -285,9 +268,9 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
           2+ ofertas ativas é validada pela camada de serviço/UI (Fase 2).
         - `centro_custo` NULL ⇒ herda o valor compartilhado da turma
           (modalidades compartilhado/individual — Fase 3).
-        - Atributos próprios da oferta (professor, turno, dias, horários,
-          datas) foram replicados de `Turma`; durante a transição a camada
-          de compatibilidade mantém as colunas legadas da turma para turmas
+        - Atributos próprios da oferta (professor, turno, datas) foram
+          replicados de `Turma`; durante a transição a camada de
+          compatibilidade mantém as colunas legadas da turma para turmas
           com oferta única (não-remove sem migrar leitores).
     """
     __tablename__ = 'turma_curso'
@@ -321,9 +304,6 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
         comment='Professor responsável pela oferta do curso na turma',
     )
     turno: str = db.Column(db.String(20))
-    dias_semana: str = db.Column(db.String(20))
-    hora_inicio: time = db.Column(db.Time)
-    hora_fim: time = db.Column(db.Time)
     data_inicio: date = db.Column(db.Date)
     data_fim: date = db.Column(db.Date)
     centro_custo: str = db.Column(
@@ -356,49 +336,92 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     professor = db.relationship(
         'User', foreign_keys=[professor_id], backref='ofertas_como_responsavel'
     )
+    # H1: grade de horário por dia — fonte dos dias/horários da oferta
+    # (decisão 5). lazy="selectin": uma consulta por lote, sem N+1 em
+    # listagens. Cascade físico acompanha o de `ofertas_curso`.
+    horarios = db.relationship(
+        'TurmaCursoHorario',
+        order_by='TurmaCursoHorario.dia_semana',
+        lazy='selectin',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+        back_populates='oferta',
+    )
 
     @property
     def carga_horaria_aula(self) -> int | None:
         """
-        Duração de uma aula da OFERTA em MINUTOS (Onda 4, Etapa K).
-
-        Mesma regra de `Turma.carga_horaria_aula`: `hora_fim - hora_inicio`,
-        herdando os horários da turma quando a oferta não define os próprios
-        (NULL = compartilhado). None se ausente ou `hora_fim <= hora_inicio`.
+        Duração única da oferta em minutos; grade não uniforme retorna ``None``.
+        Oferta sem grade usa a compatibilidade escalar legada, com aviso.
         """
-        inicio = self.hora_inicio
-        fim = self.hora_fim
-        if (not inicio or not fim) and self.turma is not None:
-            inicio = inicio or self.turma.hora_inicio
-            fim = fim or self.turma.hora_fim
-        if not inicio or not fim:
-            return None
-        delta = (
-            fim.hour * 60 + fim.minute
-            - inicio.hour * 60 - inicio.minute
-        )
-        return delta if delta > 0 else None
+        from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+        return cargas_horarias_ofertas_em_lote([self])[self.id].carga_horaria_aula
 
     @property
     def carga_horaria_total(self) -> int | None:
         """
-        C.H. Total da OFERTA em MINUTOS = carga_horaria_aula × nº de dias de
-        aula da oferta (Onda 4, Etapa K).
-
-        Reaproveita `datas_aula_oferta` (agenda própria da oferta, até a
-        data_fim efetiva) e o MESMO helper de bloqueios usado pela turma
-        (`_blocked_dates_str` sobre a turma da oferta). None se a aula não
-        tiver duração ou se não houver dias calculáveis.
+        Soma em minutos a duração da grade de cada ocorrência válida da oferta.
         """
-        ch_aula = self.carga_horaria_aula
-        if ch_aula is None:
-            return None
-        from app.services.turma_curso import datas_aula_oferta
-        from app.utils.logica import _blocked_dates_str
+        from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+        return cargas_horarias_ofertas_em_lote([self])[self.id].carga_horaria_total
 
-        blocked = _blocked_dates_str(self.turma) if self.turma is not None else set()
-        datas = datas_aula_oferta(self, blocked=blocked)
-        return ch_aula * len(datas) if datas else None
+
+class TurmaCursoHorario(db.Model):
+    """
+    Grade de horário por dia de aula de uma OFERTA (H1).
+
+    Fonte dos dias E dos horários da oferta (decisão 5): cada linha é um
+    dia da semana (0 = segunda … 5 = sábado; domingo não é gravável) com um
+    par de horários opcional. As colunas escalares de agenda de `Turma` e
+    `TurmaCurso` foram removidas no H5b.
+
+    Regras (decisão 2, garantidas por CHECK no schema):
+        - `dia_semana` ∈ 0–5, único por oferta (`uix_turma_curso_horario_dia`).
+        - Linha com `hora_inicio` e `hora_fim` ambos NULL é permitida (dia
+          sem horário); só um extremo preenchido é inválido.
+        - Quando ambos preenchidos: `hora_fim` > `hora_inicio` (mesmo dia,
+          sem virar meia-noite).
+
+    Sem `unidade_id`, sem `AuditoriaMixin`, sem `ativo`: o escopo vem da
+    oferta (como `inscricoes`); a grade vale retroativamente para todo o
+    período da oferta (decisão 4, sem versionar).
+    """
+    __tablename__ = 'turma_curso_horario'
+
+    id: int = db.Column(db.Integer, primary_key=True)
+    turma_curso_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey('turma_curso.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    # 0 = segunda … 5 = sábado (date.weekday(); domingo recusado).
+    dia_semana: int = db.Column(SmallInteger, nullable=False)
+    hora_inicio: time | None = db.Column(db.Time)
+    hora_fim: time | None = db.Column(db.Time)
+
+    created_at: datetime = db.Column(db.DateTime, default=get_local_now)
+
+    oferta = db.relationship('TurmaCurso', back_populates='horarios')
+
+    __table_args__ = (
+        # Um dia por oferta (unicidade plena; também cobre o índice FK).
+        db.UniqueConstraint(
+            'turma_curso_id', 'dia_semana',
+            name='uix_turma_curso_horario_dia',
+        ),
+        db.CheckConstraint(
+            'dia_semana >= 0 AND dia_semana <= 5', name='ck_tch_dia',
+        ),
+        db.CheckConstraint(
+            '(hora_inicio IS NULL AND hora_fim IS NULL) '
+            'OR (hora_inicio IS NOT NULL AND hora_fim IS NOT NULL)',
+            name='ck_tch_par',
+        ),
+        db.CheckConstraint(
+            'hora_inicio IS NULL OR hora_fim IS NULL OR hora_fim > hora_inicio',
+            name='ck_tch_fim_maior',
+        ),
+    )
 
 
 class TemaAula(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):

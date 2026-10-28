@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
+   continua sendo apenas o texto da opção, sem a letra. #}
+{% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container-fluid mt-4">
 
     <div class="card shadow-sm mb-4 border-0 bg-light">
@@ -122,7 +125,7 @@
                             {% for pergunta in perguntas_aluno %}
                             <div class="col-md-6 mb-3">
                                 <label class="fw-bold mb-2 small text-muted text-uppercase"
-                                    for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ pergunta.texto }}</label>
+                                    for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
 
                                 {% if pergunta.opcoes %}
                                 <div class="mb-2">
@@ -130,7 +133,7 @@
                                     <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
                                         style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
                                         onclick='document.getElementById("resp_{{ aluno.id }}_{{ pergunta.id }}").value = {{ opcao | tojson }};'>
-                                        {{ opcao }}
+                                        {{ letras[loop.index0] }}) {{ opcao }}
                                     </button>
                                     {% endfor %}
                                 </div>

@@ -3,11 +3,14 @@
 Regras do desenho (docs/D5_0_desenho.md §2.5/§2.6, D5.4):
     - A unidade de resultado é (oferta, aluno, etapa): toda consulta casa
       `ConselhoClasse.turma_curso_id` com a oferta (`TurmaCurso`).
-    - Linhas legadas com `turma_curso_id IS NULL` **não** são exibidas por
-      nenhum leitor; a lista fica em `scripts/verificar_onda4_d5.py` para
-      resolução manual antes da D5.5.
-    - Nenhum acoplamento com `Turma.conselho_concluido` nem `Turma.avaliacao_*`
-      (a coluna da turma é ponte de escrita até a D5.5).
+    - Desde a D5.5 `turma_curso_id` é NOT NULL: linha legada sem oferta não
+      existe mais (a resolução manual pré-endurecimento ficou registrada em
+      `scripts/verificar_onda4_d5.py`).
+    - Nenhum acoplamento com `Turma`: o encerramento do conselho é da OFERTA
+      (`TurmaCurso.conselho_concluido`) — a coluna `Turma.conselho_concluido`
+      foi REMOVIDA na D5.5, a turma não tem coluna de conclusão e não existe
+      ponte de escrita. `Turma.avaliacao_*` são LEGADO (§12.19) e não são
+      lidas por este módulo.
 
 As funções são de leitura pura (nada de commit) e servem aos leitores de
 histórico, ficha, relatórios e certificado.

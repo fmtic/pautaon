@@ -8,8 +8,9 @@ from sqlalchemy import select
 
 from app import create_app
 from app.database import db
-from app.models import PeriodoLetivo, Turma, Unidade, User
+from app.models import Curso, PeriodoLetivo, Turma, TurmaCurso, Unidade, User
 from app.registros.turmas import aplicar_filtros_turmas, pos_filtrar_turmas
+from app.services.turma_curso_horario import definir_grade
 from app.utils.timezone import get_local_now
 from config import Config
 
@@ -100,9 +101,6 @@ def _criar_turmas():
             professor_id=prof_ana.id,
             turno="Manhã",
             programa="Profissionalizante",
-            dias_semana="Segunda, Quarta",
-            hora_inicio=time(8, 0),
-            hora_fim=time(9, 30),
         ),
         Turma(
             nome="Natação Tarde",
@@ -112,9 +110,6 @@ def _criar_turmas():
             professor_id=prof_bruno.id,
             turno="Tarde",
             programa="Esporte",
-            dias_semana="Terça, Quinta",
-            hora_inicio=time(14, 0),
-            hora_fim=time(15, 0),
         ),
         Turma(
             nome="Horta Noite",
@@ -124,12 +119,36 @@ def _criar_turmas():
             professor_id=None,
             turno="Noite",
             programa="Meio Ambiente",
-            dias_semana="Sábado",
-            hora_inicio=time(19, 0),
-            hora_fim=time(21, 0),
         ),
     ]
     db.session.add_all(turmas)
+    db.session.flush()
+
+    # H5a: os dias/horários vêm da GRADE da oferta ativa (não há colunas
+    # escalares de agenda na turma). "Horta Noite" fica sem oferta — sem agenda.
+    agendas = {
+        "Informática Manhã": [
+            (0, time(8, 0), time(9, 30)), (2, time(8, 0), time(9, 30)),
+        ],
+        "Natação Tarde": [
+            (1, time(14, 0), time(15, 0)), (3, time(14, 0), time(15, 0)),
+        ],
+    }
+    for turma in turmas:
+        itens = agendas.get(turma.nome)
+        if not itens:
+            continue
+        curso = Curso(nome=f"Curso {turma.nome}", unidade_id=unidade.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
+            ativo=True, principal=True, programa=turma.programa,
+            professor_id=turma.professor_id, turno=turma.turno,
+        )
+        db.session.add(oferta)
+        db.session.flush()
+        definir_grade(oferta, itens)
     db.session.commit()
     return unidade
 
@@ -298,9 +317,6 @@ def _seed_unidade_periodo_passado(app):
             ativo=True,
             unidade_id=unidade.id,
             turno="Manhã",
-            dias_semana="Segunda",
-            hora_inicio=time(8, 0),
-            hora_fim=time(9, 0),
         ))
         db.session.commit()
         return unidade.id, admin.id

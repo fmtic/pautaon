@@ -105,7 +105,6 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
     turma = Turma(
         nome="Turma M1", unidade_id=i["unidade"], ativo=True,
         curso_id=curso_id, professor_id=i["p1"], turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
@@ -117,8 +116,7 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
         o = TurmaCurso(
             turma_id=turma.id, curso_id=cursos[k % 3], unidade_id=i["unidade"],
             ativo=True, principal=(k == 0), professor_id=i["p1"],
-            turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add(o)

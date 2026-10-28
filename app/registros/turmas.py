@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -30,13 +30,28 @@ from app.services.turma_curso import (
     desativar_oferta,
     datas_aula_oferta,
     editar_oferta,
+    gravar_marcador_exclusao,
     ofertas_ativas,
     sincronizar_programa_turma,
     turma_tem_historico,
+    _AGENDA_INCOMPLETA,
     _alunos_da_oferta,
     _conflitos_horario_concomitante,
 )
+from app.services.turma_curso_horario import (
+    definir_grade,
+    filtro_por_dia_horario,
+    grade_da_oferta,
+    grade_uniforme,
+    grades_para_exibicao,
+    grades_por_oferta,
+)
 from app.utils.datetime_parse import parse_date, parse_time
+from app.utils.dias_semana import (
+    token_para_weekday,
+    weekday_para_abrev,
+    weekday_para_nome,
+)
 from app.utils.formatters import formatar_ch
 from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
 from app.utils.timezone import get_local_now
@@ -49,6 +64,259 @@ from .shared import assert_unidade_context, obter_proximo_ordenacao
 # por exclusão lógica (Onda 4, Etapa I). Mesma família de tokens de `TRANSFERENCIA`
 # (CAIXA-ALTA, sem acento) usada em app/registros/alunos.py.
 MOTIVO_INSCRICAO_TURMA_DESATIVADA = "TURMA_DESATIVADA"
+
+
+# ---------------------------------------------------------------------------
+# H4 — parsing único da agenda do formulário
+# ---------------------------------------------------------------------------
+
+# Dias aceitos na agenda: segunda (0) a sábado (5). Domingo (6) é recusado.
+_DIAS_AGENDA = (0, 1, 2, 3, 4, 5)
+
+
+def _token_weekday(token) -> int | None:
+    """Resolve um token de dia do formulário em índice ``date.weekday()``.
+
+    Aceita o índice numérico usado pelos checkboxes do H4 (``"3"``) e o nome
+    legado (``"Quarta"``, ``"qua."``, ``"quarta-feira"``) — assim o contrato
+    novo convive com payloads antigos. Token desconhecido → ``None``.
+    """
+    texto = str(token or "").strip()
+    if not texto:
+        return None
+    if len(texto) <= 2 and texto.isdigit():
+        dia = int(texto)
+        return dia if 0 <= dia <= 6 else None
+    return token_para_weekday(texto)
+
+
+def _resultado_grade(
+    *,
+    por_dia: bool = False,
+    dias: list[int] | None = None,
+    hora_inicio=None,
+    hora_fim=None,
+    itens: list | None = None,
+    erro: str | None = None,
+) -> dict:
+    """Monta o dicionário de retorno de ``grade_do_formulario``."""
+    return {
+        "por_dia": por_dia,
+        "dias": list(dias or []),
+        "hora_inicio": hora_inicio,
+        "hora_fim": hora_fim,
+        "itens": itens,
+        "erro": erro,
+    }
+
+
+def grade_do_formulario(form) -> dict:
+    """Lê a agenda do formulário e devolve a grade pronta para o serviço (H4).
+
+    Contrato único dos três formulários de agenda (turma nova, turma editada e
+    curso da turma): ``dias_semana`` (checkboxes repetidos, valor = weekday
+    0–5 ou nome legado), ``hora_inicio``/``hora_fim`` (o **par padrão**) e, no
+    modo personalizado, o interruptor ``horario_por_dia`` somado aos pares por
+    dia ``hora_inicio_<w>``/``hora_fim_<w>``.
+
+    - **modo padrão**: o par único é replicado em todos os dias marcados —
+      exatamente o comportamento anterior ao H4;
+    - **modo personalizado**: cada dia marcado traz o próprio par; campos de
+      dias **não** marcados são ignorados;
+    - domingo é recusado, dia marcado sem par completo ou com ``fim <= início``
+      vira mensagem que identifica o dia.
+
+    Devolve ``{"por_dia", "dias", "hora_inicio", "hora_fim", "itens", "erro"}``,
+    onde ``itens`` é a lista ``[(weekday, início, fim)]`` pronta para o
+    ``agenda=`` dos serviços (``None`` quando ``erro`` vem preenchido). Esta
+    função só traduz o formulário: a validação **autoritativa** continua no
+    servidor, em ``definir_grade``.
+    """
+    dias: list[int] = []
+    for bruto in form.getlist("dias_semana"):
+        if not str(bruto).strip():
+            continue
+        dia = _token_weekday(bruto)
+        if dia is None:
+            return _resultado_grade(
+                erro=f"Dia de aula inválido: “{bruto}”. Use segunda a sábado."
+            )
+        if dia == 6:
+            return _resultado_grade(
+                erro="Domingo não é dia de aula — use segunda a sábado."
+            )
+        if dia not in dias:
+            dias.append(dia)
+    dias.sort()
+
+    por_dia = str(form.get("horario_por_dia") or "").strip().lower() in (
+        "1", "on", "true", "sim", "yes",
+    )
+    hora_inicio = parse_time(form.get("hora_inicio"))
+    hora_fim = parse_time(form.get("hora_fim"))
+
+    if not dias:
+        return _resultado_grade(
+            por_dia=por_dia,
+            hora_inicio=hora_inicio,
+            hora_fim=hora_fim,
+            erro=_AGENDA_INCOMPLETA,
+        )
+
+    if not por_dia:
+        # Modo padrão: um par único replicado nos dias marcados.
+        if hora_inicio is None or hora_fim is None:
+            return _resultado_grade(
+                por_dia=False,
+                dias=dias,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                erro=_AGENDA_INCOMPLETA,
+            )
+        if hora_fim <= hora_inicio:
+            return _resultado_grade(
+                por_dia=False,
+                dias=dias,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                erro="O fim do horário deve ser maior que o início.",
+            )
+        return _resultado_grade(
+            por_dia=False,
+            dias=dias,
+            hora_inicio=hora_inicio,
+            hora_fim=hora_fim,
+            itens=[(d, hora_inicio, hora_fim) for d in dias],
+        )
+
+    # Modo personalizado: um par por dia marcado; dias fora ficam de fora.
+    itens: list = []
+    for dia in dias:
+        nome = weekday_para_nome(dia)
+        ini = parse_time(form.get(f"hora_inicio_{dia}"))
+        fim = parse_time(form.get(f"hora_fim_{dia}"))
+        if ini is None or fim is None:
+            return _resultado_grade(
+                por_dia=True,
+                dias=dias,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                erro=f"Informe o horário de início e de fim da {nome}.",
+            )
+        if fim <= ini:
+            return _resultado_grade(
+                por_dia=True,
+                dias=dias,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                erro=f"O horário da {nome} deve terminar depois de começar.",
+            )
+        itens.append((dia, ini, fim))
+
+    return _resultado_grade(
+        por_dia=True,
+        dias=dias,
+        hora_inicio=hora_inicio,
+        hora_fim=hora_fim,
+        itens=itens,
+    )
+
+
+def _erro_agenda_formulario(grade: dict) -> bool:
+    """True quando o erro de agenda merece devolver o formulário preenchido.
+
+    ``_AGENDA_INCOMPLETA`` **sem** dia marcado e **sem** interruptor ligado é o
+    estado "tela sem agenda" de antes do H4 — a herança/fallback do serviço
+    decide o que fazer (turma legada, 1ª oferta por herança). Qualquer outro
+    erro foi digitado pelo usuário e volta para correção.
+    """
+    if not grade["erro"]:
+        return False
+    if grade["por_dia"] or grade["dias"]:
+        return True
+    return grade["erro"] != _AGENDA_INCOMPLETA
+
+
+def _fmt_hora_agenda(value):
+    """`time`/`"HH:MM"` → texto para `<input type="time">`; `None` → `""`."""
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M")
+    return str(value)
+
+
+def _estado_agenda(
+    *, dias=(), por_dia=False, hora_inicio="", hora_fim="", por_dia_map=None, erro=None
+):
+    """Estado do componente de agenda que o template consumes (H4, Passo 3).
+
+    ``dias`` = weekdays marcados; ``hora_inicio``/``hora_fim`` = par padrão;
+    ``por_dia_map`` = ``{weekday: (início, fim)}`` do modo personalizado; é essa
+    a fonte que abre o formulário já em modo personalizado quando a grade da
+    oferta não é uniforme.
+    """
+    return {
+        "dias": set(dias),
+        "por_dia": por_dia,
+        "hora_inicio": _fmt_hora_agenda(hora_inicio),
+        "hora_fim": _fmt_hora_agenda(hora_fim),
+        "por_dia_map": {
+            w: (_fmt_hora_agenda(ini), _fmt_hora_agenda(fim))
+            for w, (ini, fim) in (por_dia_map or {}).items()
+        },
+        "erro": erro,
+    }
+
+
+def _estado_agenda_da_grade(linhas):
+    """Estado a partir das linhas da grade (H5a: só a grade é fonte).
+
+    Sem linhas devolve estado vazio — o formulário não pré-preenche nada a
+    partir das colunas escalares (elas deixaram de ser lidas).
+    """
+    if not linhas:
+        return _estado_agenda()
+    pares = {(l.hora_inicio, l.hora_fim) for l in linhas}
+    por_dia = len(pares) > 1
+    if len(pares) == 1:
+        ini, fim = next(iter(pares))
+    else:
+        ini = fim = None
+    return _estado_agenda(
+        dias={l.dia_semana for l in linhas},
+        por_dia=por_dia,
+        hora_inicio=ini,
+        hora_fim=fim,
+        por_dia_map={l.dia_semana: (l.hora_inicio, l.hora_fim) for l in linhas},
+    )
+
+
+def _estado_agenda_do_form(form):
+    """Estado a partir do POST rejeitado — o formulário volta como o usuário digitou."""
+    grade = grade_do_formulario(form)
+    mapa = {
+        w: (form.get(f"hora_inicio_{w}") or "", form.get(f"hora_fim_{w}") or "")
+        for w in grade["dias"]
+    }
+    return _estado_agenda(
+        dias=grade["dias"],
+        por_dia=grade["por_dia"],
+        hora_inicio=grade["hora_inicio"],
+        hora_fim=grade["hora_fim"],
+        por_dia_map=mapa,
+        erro=grade["erro"],
+    )
+
+
+def _serializar_estado_agenda(estado):
+    """Estado → ``"dia:HH:MM-HH:MM|..."`` (mesmo formato do JS, mudança de agenda)."""
+    mapa = estado["por_dia_map"] or {}
+    partes = []
+    for w in sorted(estado["dias"]):
+        ini, fim = mapa.get(w, (estado["hora_inicio"], estado["hora_fim"]))
+        partes.append(f"{w}:{ini or ''}-{fim or ''}")
+    return "|".join(partes)
 
 
 def _parse_int_arg(value):
@@ -87,15 +355,8 @@ def _parse_float_arg(value):
         return None
 
 
-# Ordem canônica dos dias para união/exibição (Onda 4, Etapa K).
-_ORDEM_DIAS = (
-    "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo",
-)
-_ABREVIACAO_DIAS = {
-    "Segunda": "Seg.", "Terça": "Ter.", "Quarta": "Qua.",
-    "Quinta": "Qui.", "Sexta": "Sex.", "Sábado": "Sáb.",
-    "Domingo": "Dom.",
-}
+# Ordem canônica dos dias para união/exibição: `date.weekday()` (0 = segunda).
+# A abreviação da listagem mantém o ponto final usado desde a Etapa K.
 
 
 def _ofertas_ativas_da_turma(turma):
@@ -179,9 +440,19 @@ def _filtro_por_oferta(cond_oferta, cond_turma):
     )
 
 
-def _resumo_ofertas(turma):
+def _resumo_ofertas(turma, grades=None):
     """Professores/turnos distintos e união ordenada dos dias das ofertas
-    ativas (COALESCE oferta→turma), para a linha-agregado da lista."""
+    ativas, para a linha-agregado da lista.
+
+    Desde o H3d os **dias** saem da GRADE das ofertas ativas (a decisão é que
+    a Turma DERIVE os dias da união das ofertas). H5a: sem fallback escalar —
+    oferta ativa sem grade não contribui com dias (estado inválido) e turma
+    sem oferta ativa não tem agenda.
+
+    `grades` é o mapa `oferta_id -> linhas` já carregado pela rota (sem N+1).
+    Quando omitido, a grade de cada oferta ativa é lida sob demanda — caminho
+    usado por chamadas isoladas (testes, telas pontuais), sempre pela grade.
+    """
     ativas = _ofertas_ativas_da_turma(turma)
     professores, turnos, dias_set = [], [], set()
     for o in ativas:
@@ -194,14 +465,20 @@ def _resumo_ofertas(turma):
         turno = o.turno or turma.turno
         if turno and turno not in turnos:
             turnos.append(turno)
-        dias_str = o.dias_semana or turma.dias_semana or ""
-        for d in (x.strip() for x in dias_str.split(",")):
-            if d:
-                dias_set.add(d)
-    if not ativas and turma.dias_semana:
-        dias_set.update(d.strip() for d in turma.dias_semana.split(",") if d.strip())
-    dias = [d for d in _ORDEM_DIAS if d in dias_set]
-    dias_abreviados = [_ABREVIACAO_DIAS[d] for d in dias]
+        if grades is None:
+            linhas = grade_da_oferta(o)
+        else:
+            linhas = grades.get(o.id) or []
+        if not linhas:
+            current_app.logger.error(
+                "Oferta %s sem grade: dias da listagem ignoram a oferta "
+                "(estado inválido desde o H5a).",
+                o.id,
+            )
+            continue
+        dias_set.update(linha.dia_semana for linha in linhas)
+    dias = [weekday_para_nome(d) for d in sorted(dias_set)]
+    dias_abreviados = [f"{weekday_para_abrev(d)}." for d in sorted(dias_set)]
     return {
         "professores": professores,
         "turnos": turnos,
@@ -312,25 +589,25 @@ def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
     if programa:
         stmt = stmt.where(Turma.programa == programa)
 
+    # Dia e horário leem SOMENTE a GRADE (H3d/H5a): a turma casa quando uma
+    # oferta ATIVA tem linha de grade com o weekday e/ou a hora de início — os
+    # dois critérios na MESMA linha, então “dia A + hora do dia B” não casa.
+    # Não existe comparador escalar de reserva: turma sem oferta ativa com
+    # grade não casa (a agenda nasce com a oferta).
     dia = (args.get("dia") or "").strip()
-    if dia:
-        stmt = stmt.where(
-            _filtro_por_oferta(
-                func.coalesce(TurmaCurso.dias_semana, Turma.dias_semana).ilike(
-                    f"%{dia}%"
-                ),
-                Turma.dias_semana.ilike(f"%{dia}%"),
-            )
-        )
-
     horario = parse_time(args.get("horario_inicio"))
-    if horario:
-        stmt = stmt.where(
-            _filtro_por_oferta(
-                func.coalesce(TurmaCurso.hora_inicio, Turma.hora_inicio) == horario,
-                Turma.hora_inicio == horario,
+    if dia or horario:
+        dia_semana = token_para_weekday(dia) if dia else None
+        if dia and dia_semana is None:
+            # Token fora do domínio 0–6: não casa nenhuma turma (sem CSV
+            # escalar de reserva desde o H5a).
+            current_app.logger.warning(
+                "Filtro de dia com token desconhecido: %r — nenhuma turma casa.",
+                dia,
             )
-        )
+            stmt = stmt.where(false())
+        else:
+            stmt = stmt.where(filtro_por_dia_horario(dia_semana, horario))
 
     return stmt
 
@@ -338,45 +615,79 @@ def aplicar_filtros_turmas(stmt, args, incluir_turmas_sem_periodo=False):
 def pos_filtrar_turmas(turmas, args):
     """Filtra em memória critérios calculados (alunos, frequência, C.H.).
 
-    Com 2+ ofertas ativas, freq/C.H. são avaliados sobre a oferta principal;
-    com 0 ou 1, sobre a própria turma (como antes). min_alunos inalterado.
+    Com 2+ ofertas ativas, `min_freq` é avaliado sobre a oferta principal.
+    A C.H. usa SEMPRE o valor calculado da turma — o mesmo exibido na lista:
+    `min_ch_aula` compara a MENOR duração semanal entre todas as ofertas ativas
+    (H3d) e `min_ch_total` compara o tempo físico da turma (união dos
+    intervalos das ofertas ativas), nunca o total de uma oferta isolada. Com 0
+    ou 1 oferta o resultado é o mesmo de antes. `min_alunos` inalterado.
     """
     min_alunos = _parse_int_arg(args.get("min_alunos"))
     min_freq = _parse_float_arg(args.get("min_freq"))
     min_ch_aula = _parse_float_arg(args.get("min_ch_aula"))
     min_ch_total = _parse_float_arg(args.get("min_ch_total"))
 
+    cargas = {}
+    if min_ch_aula is not None or min_ch_total is not None:
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+
+        persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
+        cargas = cargas_horarias_turmas_em_lote(persistidas)
+
+    # Frequência em LOTE (D3b-2.5): mapa pré-calculado (turma = soma) para
+    # `min_freq` — compara o MESMO valor exibido na coluna (D7). UMA consulta.
+    _agg_turma_freq = {}
+    if min_freq is not None:
+        from app.services.frequencia_oferta import agregar_por_turma
+
+        persistidas = [t for t in turmas if getattr(t, "id", None) is not None]
+        _agg_turma_freq = agregar_por_turma([t.id for t in persistidas])
+
     resultado = []
     for turma_item in turmas:
         if min_alunos is not None and turma_item.alunos_ativos_count < min_alunos:
             continue
 
-        multi = len(_ofertas_ativas_da_turma(turma_item)) >= 2
+        carga_turma = cargas.get(getattr(turma_item, "id", None))
+        multi = (
+            carga_turma.ofertas_ativas >= 2
+            if carga_turma is not None
+            else len(_ofertas_ativas_da_turma(turma_item)) >= 2
+        )
         principal = _oferta_principal(turma_item) if multi else None
 
         if min_freq is not None:
-            freq = (
-                turma_item.freq_geral_oferta(principal.id)
-                if multi
-                else turma_item.freq_geral
-            )
+            tid = getattr(turma_item, "id", None)
+            if tid is None:
+                # Objeto sem id (compatibilidade/testes): fallback à
+                # property `freq_geral` (turma = soma), como antes da D3b-2.5
+                # para 0/1 oferta; para 2+ ofertas o antigo comparava a oferta
+                # principal, mas o fallback não tem oferta — mantém soma.
+                freq = turma_item.freq_geral
+            else:
+                info = _agg_turma_freq.get(tid)
+                freq = info.pct_turma if info is not None else 0.0
             if freq < min_freq:
                 continue
 
         if min_ch_aula is not None:
             ch_aula = (
-                principal.carga_horaria_aula
-                if multi
-                else turma_item.carga_horaria_aula
+                carga_turma.min_ch_aula
+                if carga_turma is not None
+                else (
+                    principal.carga_horaria_aula
+                    if multi
+                    else turma_item.carga_horaria_aula
+                )
             )
             if ch_aula is None or ch_aula < min_ch_aula * 60:
                 continue
 
         if min_ch_total is not None:
             ch_total = (
-                principal.carga_horaria_total
-                if multi
-                else turma_item.carga_horaria_total
+                carga_turma.carga_horaria_total
+                if carga_turma is not None
+                else (principal.carga_horaria_total if multi else turma_item.carga_horaria_total)
             )
             if ch_total is None or ch_total < min_ch_total * 60:
                 continue
@@ -398,13 +709,14 @@ def turma():
     if unidade_id:
         stmt_base = stmt_base.where(Turma.unidade_id == unidade_id)
 
-    # Eager loading (sem N+1): professor da turma + ofertas com curso e
-    # professor. O filtro `ativo` das ofertas é feito no helper (Python), sobre
-    # a relação já carregada — sem query por linha.
+    # Eager loading (sem N+1): professor da turma + ofertas com curso,
+    # professor e GRADE (H3d). O filtro `ativo` das ofertas é feito no helper
+    # (Python), sobre a relação já carregada — sem query por linha.
     stmt_base = stmt_base.options(
         joinedload(Turma.professor),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
         selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+        selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios),
     )
 
     filtros = request.args.to_dict(flat=True)
@@ -426,6 +738,32 @@ def turma():
         .all()
     )
     turmas = pos_filtrar_turmas(turmas, request.args)
+    from app.services.turma_curso_horario import (
+        cargas_horarias_ofertas_em_lote,
+        cargas_horarias_turmas_em_lote,
+    )
+
+    carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
+    ofertas_carga = [o for t in turmas for o in _ofertas_ativas_da_turma(t)]
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_carga)
+    grades_ofertas = grades_por_oferta(ofertas_carga)
+    grade_oferta_map = grades_para_exibicao(
+        ofertas_carga, carga_oferta_map, grades_ofertas
+    )
+
+    # Frequência em LOTE (D3b-2.2): mapas pré-calculados, UMA consulta por
+    # mapa — evita N+1 de `Turma.freq_geral`/`freq_geral_oferta` na listagem.
+    from app.services.frequencia_oferta import (
+        freq_geral_ofertas_em_lote,
+        freq_geral_turmas_em_lote,
+    )
+
+    freq_turma_map = freq_geral_turmas_em_lote(
+        [t.id for t in turmas], unidade_id=unidade_id
+    )
+    freq_oferta_map = freq_geral_ofertas_em_lote(
+        [o.id for o in ofertas_carga], unidade_id=unidade_id
+    )
 
     # Centros disponíveis para o filtro do formulário.
     stmt_centros_catalogo = select(CentroCusto).where(CentroCusto.ativo.is_(True))
@@ -504,17 +842,11 @@ def turma():
     # Vistas por turma para o template (evita recomputar e chama de método na Jinja).
     ofertas_map = {t.id: _ofertas_ativas_da_turma(t) for t in turmas}
     principal_map = {t.id: _oferta_principal(t) for t in turmas}
-    resumo_map = {t.id: _resumo_ofertas(t) for t in turmas}
-    carga_horaria_total_map = {}
-    for t in turmas:
-        ofertas_turma = ofertas_map[t.id]
-        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
-        if cargas:
-            carga_horaria_total_map[t.id] = (
-                sum(cargas) if all(carga is not None for carga in cargas) else None
-            )
-        else:
-            carga_horaria_total_map[t.id] = t.carga_horaria_total
+    resumo_map = {t.id: _resumo_ofertas(t, grades_ofertas) for t in turmas}
+    carga_horaria_total_map = {
+        turma.id: carga_turma_map[turma.id].carga_horaria_total
+        for turma in turmas
+    }
 
     # Nome da turma e professor vêm de todas as turmas ativas da unidade, sem
     # depender do ano/período ou dos demais filtros atualmente selecionados.
@@ -554,6 +886,11 @@ def turma():
         principal_map=principal_map,
         resumo_map=resumo_map,
         carga_horaria_total_map=carga_horaria_total_map,
+        carga_turma_map=carga_turma_map,
+        carga_oferta_map=carga_oferta_map,
+        grade_oferta_map=grade_oferta_map,
+        freq_turma_map=freq_turma_map,
+        freq_oferta_map=freq_oferta_map,
         formatar_ch=formatar_ch,
         nomes_turmas=nomes_turmas,
         professores=professores_filtro,
@@ -625,6 +962,7 @@ def imprimir_centros_custo_turmas():
                 joinedload(Turma.professor),
                 selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.curso),
                 selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.professor),
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios),
             ).order_by(Turma.ordenacao, Turma.nome)
         )
         .unique()
@@ -633,18 +971,24 @@ def imprimir_centros_custo_turmas():
     )
     turmas = pos_filtrar_turmas(turmas, filtros)
 
+    from app.services.turma_curso_horario import (
+        cargas_horarias_ofertas_em_lote,
+        cargas_horarias_turmas_em_lote,
+    )
+
+    carga_turma_map = cargas_horarias_turmas_em_lote(turmas)
+    ofertas_todas = [o for item in turmas for o in _ofertas_ativas_da_turma(item)]
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_todas)
+    # Grade de exibição (H3d): dias/horários vêm da grade, não da projeção.
+    grade_oferta_map = grades_para_exibicao(ofertas_todas, carga_oferta_map)
+
     centros_por_chave = {
         (centro.unidade_id, centro.nome): centro for centro in centros
     }
     turmas_por_centro = {centro.id: [] for centro in centros}
     for turma_item in turmas:
         ofertas_turma = _ofertas_ativas_da_turma(turma_item)
-        cargas = [oferta.carga_horaria_total for oferta in ofertas_turma]
-        ch_total_turma = (
-            sum(cargas)
-            if cargas and all(carga is not None for carga in cargas)
-            else (turma_item.carga_horaria_total if not ofertas_turma else None)
-        )
+        ch_total_turma = carga_turma_map[turma_item.id].carga_horaria_total
         principal = next(
             (oferta for oferta in ofertas_turma if oferta.principal),
             ofertas_turma[0] if len(ofertas_turma) == 1 else None,
@@ -687,6 +1031,8 @@ def imprimir_centros_custo_turmas():
         unidade_nome=unidade.nome if unidade else None,
         periodo_relatorio=periodo_relatorio,
         url_retorno=url_for("registros.turma", **filtros),
+        carga_oferta_map=carga_oferta_map,
+        grade_oferta_map=grade_oferta_map,
         filtros_aplicados=any(filtros.values()),
         agora=get_local_now(),
         formatar_ch=formatar_ch,
@@ -702,10 +1048,111 @@ def turma_listar():
 @bp.route("/turmas/lixeira")
 @login_required
 def turma_lixeira():
-    if current_user.role not in ["admin", "pedagogico", "gerencia", "secretaria"]:
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
         abort(403)
-    turmas = Turma.query.filter_by(ativo=False).all()
-    return render_template("turma_lixeira.html", turmas=turmas)
+
+    unidade_id = get_unidade_id()
+    # Visão Global: somente leitura, sem botão.
+    visao_global = unidade_id is None
+
+    stmt = select(Turma).where(Turma.ativo.is_(False)).options(
+        joinedload(Turma.periodo_letivo)
+    )
+    if unidade_id:
+        stmt = stmt.where(Turma.unidade_id == unidade_id)
+    turmas = db.session.execute(stmt.order_by(Turma.nome)).scalars().unique().all()
+
+    # Pré-visualização com a MESMA regra de `reativar_turma`, em carga única
+    # (ofertas, inscrições, alunos, marcadores) — sem N+1 por turma (L4.1).
+    from app.services.turma_curso import previews_reativacao_em_lote
+
+    previews = previews_reativacao_em_lote(turmas)
+
+    return render_template(
+        "turmas/turma_lixeira.html",
+        turmas=turmas,
+        visao_global=visao_global,
+        previews=previews,
+    )
+
+
+@bp.route("/turmas/reativar/<int:id>", methods=["POST"])
+@login_required
+def reativar_turma_route(id):
+    if current_user.role not in ["admin", "pedagogico", "secretaria"]:
+        abort(403)
+
+    turma_obj = db.session.get(Turma, id)
+    if not turma_obj or turma_obj.ativo:
+        flash("Turma não encontrada na lixeira.", "warning")
+        return redirect(url_for("registros.turma_lixeira"))
+
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+
+    confirmar = request.form.get("confirmar_periodo") == "1"
+    # A lixeira sempre envia a seleção explícita (`selecao_explicita`), inclusive
+    # quando nenhuma oferta vem marcada — assim "desmarcar tudo" é recusa do
+    # serviço, e não pré-seleção silenciosa do marcador.
+    oferta_ids = None
+    if request.form.get("selecao_explicita") == "1":
+        try:
+            oferta_ids = [int(v) for v in request.form.getlist("oferta_ids") if v]
+        except ValueError:
+            db.session.rollback()
+            flash("Seleção de cursos inválida.", "danger")
+            return redirect(url_for("registros.turma_lixeira"))
+
+    from app.services.turma_curso import reativar_turma as _reativar
+
+    try:
+        resultado = _reativar(
+            turma_obj,
+            confirmar_periodo_encerrado=confirmar,
+            oferta_ids=oferta_ids,
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return redirect(url_for("registros.turma_lixeira"))
+    except Exception as exc:
+        db.session.rollback()
+        from app.utils.errors import flash_and_log
+        flash_and_log(exc, location="registros.reativar_turma_route")
+        return redirect(url_for("registros.turma_lixeira"))
+
+    # LogAcao
+    try:
+        register_security_log(
+            "Reativação de Turma",
+            f"Turma id={id} nome='{turma_obj.nome}' reativada: "
+            f"{resultado['ofertas_reativadas']} oferta(s), "
+            f"{resultado['inscricoes_reativadas']} inscrição(ões), "
+            f"{len(resultado['conflitos'])} conflito(s).",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    msg = (
+        f"Turma reativada: {resultado['ofertas_reativadas']} oferta(s) e "
+        f"{resultado['inscricoes_reativadas']} inscrição(ões) reativadas."
+    )
+    if resultado["cursos_reativados"]:
+        msg += f" Cursos que voltaram: {'; '.join(resultado['cursos_reativados'])}."
+    if resultado["ofertas_inativas_restantes"]:
+        nomes = "; ".join(o["curso"] for o in resultado["ofertas_inativas_restantes"])
+        msg += (
+            f" Permanecem inativos (desativados antes da exclusão da turma ou "
+            f"fora da seleção): {nomes}."
+        )
+    if resultado["conflitos"]:
+        msg += (
+            f" {len(resultado['conflitos'])} inscrição(ões) permaneceram "
+            "inativas (aluno inativo ou já matriculado na oferta)."
+        )
+    flash(msg, "success")
+    return redirect(url_for("registros.turma_lixeira"))
 
 
 @bp.route("/turma/nova", methods=["GET", "POST"])
@@ -725,8 +1172,14 @@ def nova_turma():
             flash("O nome da turma é obrigatório pela regra de negócios.", "warning")
             return redirect(url_for("registros.nova_turma"))
 
-        dias_selecionados = request.form.getlist("dias_semana")
-        dias_string = ", ".join([dia for dia in dias_selecionados if dia]) or None
+        # H4: a agenda vem do parsing único dos formulários. A tela de turma
+        # nova não expõe o interruptor "Horário diferente por dia" (decisão
+        # H4 — o por dia é editado em Cursos da Turma), mas o contrato é o
+        # mesmo, e a grade segue para a oferta inicial via ``agenda=``.
+        grade = grade_do_formulario(request.form)
+        if _erro_agenda_formulario(grade):
+            flash(grade["erro"], "warning")
+            return redirect(url_for("registros.nova_turma"))
 
         professor_id = request.form.get("professor_id")
         professor_id = (
@@ -840,9 +1293,9 @@ def nova_turma():
             # Onda 2A: colunas são DATE/TIME. Parse explícito.
             data_inicio=data_inicio,
             data_fim=data_fim,
-            hora_inicio=parse_time(request.form.get("hora_inicio")),
-            hora_fim=parse_time(request.form.get("hora_fim")),
-            dias_semana=dias_string,
+            # H4: dias_semana/hora_inicio/hora_fim da Turma NÃO são mais
+            # escritos pela rota — são projeção da oferta única, sincronizada
+            # logo abaixo depois de ``definir_grade``.
             periodo_letivo_id=periodo_letivo_id,
             unidade_id=unidade_id,
             ordenacao=obter_proximo_ordenacao(periodo_letivo_id),
@@ -853,13 +1306,18 @@ def nova_turma():
         try:
             db.session.add(nova)
             db.session.flush()  # garante turma.id para vincular a oferta inicial
-            criar_oferta_inicial_da_turma(nova)
+            criar_oferta_inicial_da_turma(nova, agenda=grade["itens"])
             db.session.commit()
             flash(
                 f"A turma '{nome_turma}' foi cadastrada. Agora inclua os cursos que serão ofertados.",
                 "success",
             )
             return redirect(url_for("registros.turma_ofertas", id=nova.id))
+        except ValueError as erro:
+            # H2: oferta inicial exige agenda completa na turma.
+            db.session.rollback()
+            flash(str(erro), "warning")
+            return redirect(url_for("registros.nova_turma"))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao salvar turma.")
@@ -927,12 +1385,16 @@ def ver_turma(id):
     ofertas_lista.sort(key=lambda oferta: (not oferta.principal, oferta.id))
     ofertas_todas = (
         TurmaCurso.query.options(
-            joinedload(TurmaCurso.curso), joinedload(TurmaCurso.professor)
+            joinedload(TurmaCurso.curso),
+            joinedload(TurmaCurso.professor),
+            selectinload(TurmaCurso.horarios),
         )
         .filter_by(turma_id=id)
         .order_by(TurmaCurso.principal.desc(), TurmaCurso.ativo.desc(), TurmaCurso.id)
         .all()
     )
+    # Grade de exibição em lote (H3d): um único selectinload acima, sem N+1.
+    grade_oferta_map = grades_para_exibicao(ofertas_todas)
     oferta_principal = next(
         (oferta for oferta in ofertas_lista if oferta.principal),
         ofertas_lista[0] if len(ofertas_lista) == 1 else None,
@@ -1024,6 +1486,7 @@ def ver_turma(id):
         oferta_principal=oferta_principal,
         oferta_sel=oferta_sel,
         alunos_por_oferta=alunos_por_oferta,
+        grade_oferta_map=grade_oferta_map,
         abrir_modal_enturmar=request.args.get("modal") == "enturmar",
         **ctx,
     )
@@ -1122,6 +1585,89 @@ def enturmar_alunos(turma_id):
     return redirect(url_for("registros.ver_turma", id=turma_id))
 
 
+def _editar_turma_contexto(turma_obj, rascunho=None):
+    """Contexto do formulário de edição de turma (GET e re-render do POST — H4).
+
+    Além do contexto histórico, expõe a agenda em termos do H4:
+    ``dias_agenda`` (Segunda–Sábado, weekday 0–5), ``grade_atual`` (linhas da
+    oferta única — pré-preenchem o modo personalizado) e
+    ``agenda_nao_uniforme``. O critério de bloqueio passa a ser apenas "2+
+    ofertas": turma com 1 oferta e grade não uniforme é EDITÁVEL pelo mesmo
+    componente (decisão H4).
+    """
+    unidade_id = get_unidade_id()
+    stmt_prof = select(User).where(User.role == "professor")
+    if unidade_id:
+        stmt_prof = stmt_prof.where(User.unidade_id == unidade_id)
+    elif turma_obj.unidade_id:
+        stmt_prof = stmt_prof.where(User.unidade_id == turma_obj.unidade_id)
+    professores = db.session.execute(stmt_prof.order_by(User.name)).scalars().all()
+    periodos = (
+        PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True)
+        .order_by(PeriodoLetivo.nome)
+        .all()
+        if unidade_id
+        else []
+    )
+    periodo_ativo = turma_obj.periodo_letivo
+    centros_custo = (
+        [c.strip() for c in periodo_ativo.centro_custo.split(",")]
+        if periodo_ativo and periodo_ativo.centro_custo
+        else []
+    )
+    cursos = (
+        Curso.query.filter_by(
+            ativo=True, unidade_id=unidade_id or turma_obj.unidade_id
+        )
+        .order_by(Curso.nome)
+        .all()
+    )
+    if turma_obj.curso and not turma_obj.curso.ativo:
+        cursos.append(turma_obj.curso)
+        cursos.sort(key=lambda curso: curso.nome.casefold())
+    periodos_centros_edit = {
+        str(p.id): (
+            [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []
+        )
+        for p in periodos
+    }
+    tem_lancamentos = bool(
+        Frequencia.query.filter_by(turma_id=turma_obj.id).first()
+        or RegistroAula.query.filter_by(turma_id=turma_obj.id).first()
+    )
+    # Onda 4 (Fase 4, G3): ofertas ativas para o bloco "Cursos desta turma".
+    ofertas = ofertas_ativas(turma_obj.id)
+    n_ofertas = len(ofertas)
+    # H4: o bloqueio de agenda é apenas "2+ ofertas".
+    agenda_bloqueada = n_ofertas >= 2
+    grade_atual = grade_da_oferta(ofertas[0]) if n_ofertas == 1 else []
+    if rascunho is not None and n_ofertas == 1:
+        estado_agenda = _estado_agenda_do_form(rascunho)
+    else:
+        # H5a: turma com 0 ofertas não tem agenda (ela nasce com a oferta) e
+        # com 1 oferta o estado vem só da grade dela.
+        estado_agenda = _estado_agenda_da_grade(grade_atual)
+    return dict(
+        turma=turma_obj,
+        professores=professores,
+        programas=list(_PROGRAMAS_OFERTA),
+        periodos=periodos,
+        periodo_ativo=periodo_ativo,
+        periodos_centros_edit=periodos_centros_edit,
+        centros_custo=centros_custo,
+        cursos=cursos,
+        tem_lancamentos=tem_lancamentos,
+        ofertas=ofertas,
+        n_ofertas=n_ofertas,
+        agenda_bloqueada=agenda_bloqueada,
+        dias_agenda=list(_DIAS_AGENDA),
+        grade_atual=grade_atual,
+        estado_agenda=estado_agenda,
+        grade_original=_serializar_estado_agenda(estado_agenda),
+        agenda_nao_uniforme=bool(grade_atual) and not grade_uniforme(ofertas[0]),
+    )
+
+
 @bp.route("/turma/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_turma(id):
@@ -1131,7 +1677,6 @@ def editar_turma(id):
     turma_obj = db.session.get(Turma, id)
     unidade_id = get_unidade_id()
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
-    programas = list(_PROGRAMAS_OFERTA)
 
     if request.method == "POST":
         avisos_horario = []
@@ -1139,20 +1684,48 @@ def editar_turma(id):
             limpar_lancamentos = request.form.get("limpar_lancamentos") == "1"
             novo_data_inicio_raw = request.form.get("data_inicio") or ""
             novo_data_fim_raw = request.form.get("data_fim") or ""
-            dias_selecionados = request.form.getlist("dias_semana")
-            novo_dias_semana = ", ".join([dia for dia in dias_selecionados if dia])
+
+            # H4: a agenda vem do parsing único dos formulários (mesmo
+            # contrato das rotas de oferta — a turma com 1 oferta usa o
+            # mesmo componente, inclusive o modo personalizado).
+            # H5a: com 0 ofertas o formulário não tem campos de agenda e o
+            # POST os ignora; nenhuma coluna escalar é lida ou escrita.
+            grade = grade_do_formulario(request.form)
 
             # Onda 2A: parse uma vez, use como `date` na comparação abaixo.
             novo_data_inicio_date = parse_date(novo_data_inicio_raw)
             novo_data_fim_date = parse_date(novo_data_fim_raw)
 
-            novo_hora_inicio = parse_time(request.form.get("hora_inicio"))
-            novo_hora_fim = parse_time(request.form.get("hora_fim"))
-
             # --- Onda 4 (Fase 4, G2): classificação das ofertas da turma ---
             ativas = ofertas_ativas(id)
             n_ativas = len(ativas)
             oferta_única = ativas[0] if n_ativas == 1 else None
+
+            # H4: com oferta ÚNICA a agenda é sempre editável por este
+            # formulário — grade não uniforme é aceita (modo personalizado).
+            # O bloqueio de agenda é apenas "2+ ofertas" (REGRA 4 abaixo);
+            # a decisão é tomada ANTES de qualquer escrita.
+            if oferta_única is not None and _erro_agenda_formulario(grade):
+                flash(grade["erro"], "warning")
+                return render_template(
+                    "turmas/editar.html",
+                    **_editar_turma_contexto(turma_obj, rascunho=request.form),
+                    rascunho=request.form,
+                )
+            itens_grade_única: list | None = grade["itens"]
+            if oferta_única is not None:
+                atuais = sorted(
+                    (l.dia_semana, l.hora_inicio, l.hora_fim)
+                    for l in grade_da_oferta(oferta_única)
+                )
+                mudou_agenda = (
+                    itens_grade_única is not None
+                    and sorted(itens_grade_única) != atuais
+                )
+            else:
+                # H5a: sem oferta não há agenda na turma — a agenda nasce com
+                # a oferta e o POST não escreve nada de dias/horários.
+                mudou_agenda = False
 
             # Campos "de oferta" vindos do POST (professor/turno/centro/curso).
             novo_professor_raw = request.form.get("professor_id") or None
@@ -1192,11 +1765,8 @@ def editar_turma(id):
                     novo_curso_id != turma_obj.curso_id
                     or _diff_professor()
                     or novo_turno != turma_obj.turno
-                    or novo_dias_semana != (turma_obj.dias_semana or "")
                     or novo_data_inicio_date != turma_obj.data_inicio
                     or novo_data_fim_date != turma_obj.data_fim
-                    or novo_hora_inicio != turma_obj.hora_inicio
-                    or novo_hora_fim != turma_obj.hora_fim
                     or novo_centro_custo != turma_obj.centro_custo
                 )
                 if divergiu_oferta:
@@ -1247,11 +1817,9 @@ def editar_turma(id):
 
             # --- REGRAS 2 (sem oferta) e 3 (1 oferta): fluxo atual ---
             dados_de_lancamento_alterados = (
-                novo_dias_semana != (turma_obj.dias_semana or "")
+                mudou_agenda
                 or novo_data_inicio_date != turma_obj.data_inicio
                 or novo_data_fim_date != turma_obj.data_fim
-                or novo_hora_inicio != turma_obj.hora_inicio
-                or novo_hora_fim != turma_obj.hora_fim
             )
 
             if dados_de_lancamento_alterados:
@@ -1270,11 +1838,10 @@ def editar_turma(id):
             turma_obj.turno = novo_turno
             turma_obj.data_inicio = novo_data_inicio_date
             turma_obj.data_fim = novo_data_fim_date
-            turma_obj.hora_inicio = novo_hora_inicio
-            turma_obj.hora_fim = novo_hora_fim
+            # H5a: a agenda da turma NUNCA é escrita direto — nem com oferta
+            # única (a grade da oferta é a única fonte) nem sem oferta (a
+            # agenda nasce com a oferta, em Cursos da Turma).
             turma_obj.professor_id = novo_professor_raw
-
-            turma_obj.dias_semana = novo_dias_semana or turma_obj.dias_semana
 
             original_periodo_id = turma_obj.periodo_letivo_id
             novo_periodo_id = request.form.get("periodo_letivo_id")
@@ -1360,22 +1927,25 @@ def editar_turma(id):
 
             # REGRA 3 (1 oferta ativa): espelha na oferta exatamente o que foi
             # gravado na turma. Conflitos de horário geram apenas aviso; não
-            # impedem a gravação transacional de turma e oferta.
+            # impedem a gravação transacional de turma e oferta. Desde o H2 os
+            # dias/horários vão para a oferta via definir_grade (única fonte);
+            # no H4 a grade pode ser NÃO uniforme (modo personalizado) e no H5a
+            # a rota não toca em coluna escalar de agenda.
             if oferta_única is not None:
-                avisos_horario = _conflitos_horario_concomitante(
-                    id,
-                    dias_semana=turma_obj.dias_semana,
-                    hora_inicio=turma_obj.hora_inicio,
-                    hora_fim=turma_obj.hora_fim,
-                    data_inicio=turma_obj.data_inicio,
-                    data_fim=turma_obj.data_fim,
-                    exclude_oferta_id=oferta_única.id,
-                )
+                if mudou_agenda and itens_grade_única is not None:
+                    # Concomitância só faz sentido com a grade candidata em
+                    # mãos; com oferta única não há concorrente ativo.
+                    avisos_horario = _conflitos_horario_concomitante(
+                        id,
+                        agenda=itens_grade_única,
+                        data_inicio=turma_obj.data_inicio,
+                        data_fim=turma_obj.data_fim,
+                        exclude_oferta_id=oferta_única.id,
+                    )
                 oferta_única.professor_id = turma_obj.professor_id
                 oferta_única.turno = turma_obj.turno
-                oferta_única.dias_semana = turma_obj.dias_semana
-                oferta_única.hora_inicio = turma_obj.hora_inicio
-                oferta_única.hora_fim = turma_obj.hora_fim
+                if mudou_agenda and itens_grade_única is not None:
+                    definir_grade(oferta_única, itens_grade_única)
                 oferta_única.data_inicio = turma_obj.data_inicio
                 oferta_única.data_fim = turma_obj.data_fim
                 oferta_única.centro_custo = turma_obj.centro_custo
@@ -1388,18 +1958,20 @@ def editar_turma(id):
             for aviso in avisos_horario:
                 flash(aviso, "warning")
 
-            # Verificar inconsistências após salvar
+            # Verificar inconsistências após salvar (H5a: o critério é haver
+            # oferta com agenda — não mais a coluna `dias_semana` da turma).
+            tem_ofertas = bool(ofertas_ativas(id))
             ch_total = turma_obj.carga_horaria_total
             dias_efetivos = turma_obj.dias_aula_efetivos()
 
-            if turma_obj.dias_semana and ch_total is None:
+            if tem_ofertas and ch_total is None:
                 flash(
                     "Aviso: C.H. não pôde ser calculada — verifique os horários de início e fim.",
                     "warning"
                 )
                 return redirect(url_for("registros.editar_turma", id=id))
 
-            if turma_obj.dias_semana and turma_obj.data_inicio and turma_obj.data_fim and dias_efetivos == 0:
+            if tem_ofertas and turma_obj.data_inicio and turma_obj.data_fim and dias_efetivos == 0:
                 flash(
                     "Aviso: 0 dias de aula encontrados — verifique os dias da semana e o período letivo (todos os dias podem estar bloqueados).",
                     "warning"
@@ -1412,59 +1984,8 @@ def editar_turma(id):
             db.session.rollback()
             flash("Erro durante commit do formulário no banco.", "danger")
 
-    stmt_prof = select(User).where(User.role == "professor")
-    if unidade_id:
-        stmt_prof = stmt_prof.where(User.unidade_id == unidade_id)
-    elif turma_obj.unidade_id:
-        stmt_prof = stmt_prof.where(User.unidade_id == turma_obj.unidade_id)
-    professores = db.session.execute(stmt_prof.order_by(User.name)).scalars().all()
-    periodos = (
-        PeriodoLetivo.query.filter_by(unidade_id=unidade_id, ativo=True)
-        .order_by(PeriodoLetivo.nome)
-        .all()
-        if unidade_id
-        else []
-    )
-    periodo_ativo = turma_obj.periodo_letivo
-    centros_custo = (
-        [c.strip() for c in periodo_ativo.centro_custo.split(",")]
-        if periodo_ativo and periodo_ativo.centro_custo
-        else []
-    )
-    cursos = (
-        Curso.query.filter_by(ativo=True, unidade_id=unidade_id or turma_obj.unidade_id)
-        .order_by(Curso.nome)
-        .all()
-    )
-    if turma_obj.curso and not turma_obj.curso.ativo:
-        cursos.append(turma_obj.curso)
-        cursos.sort(key=lambda curso: curso.nome.casefold())
-    periodos_centros_edit = {
-        str(p.id): (
-            [c.strip() for c in p.centro_custo.split(",")] if p.centro_custo else []
-        )
-        for p in periodos
-    }
-    tem_lancamentos = bool(
-        Frequencia.query.filter_by(turma_id=id).first()
-        or RegistroAula.query.filter_by(turma_id=id).first()
-    )
-    # Onda 4 (Fase 4, G3): ofertas ativas para o bloco "Cursos desta turma".
-    ofertas = ofertas_ativas(id)
-    n_ofertas = len(ofertas)
     return render_template(
-        "turmas/editar.html",
-        turma=turma_obj,
-        professores=professores,
-        programas=programas,
-        periodos=periodos,
-        periodo_ativo=periodo_ativo,
-        periodos_centros_edit=periodos_centros_edit,
-        centros_custo=centros_custo,
-        cursos=cursos,
-        tem_lancamentos=tem_lancamentos,
-        ofertas=ofertas,
-        n_ofertas=n_ofertas,
+        "turmas/editar.html", **_editar_turma_contexto(turma_obj)
     )
 
 
@@ -1486,10 +2007,17 @@ def _turma_para_ofertas(id):
     return turma_obj
 
 
-def _dados_oferta_form(form, turma_obj):
+def _dados_oferta_form(form, turma_obj, grade: dict | None = None):
     """Extrai os campos de oferta do POST usando os mesmos parseadores do
-    cadastro de turma (dias em CSV, datas/horas nativas — Onda 2A)."""
-    dias = ", ".join([d for d in form.getlist("dias_semana") if d]) or None
+    cadastro de turma (datas nativas — Onda 2A).
+
+    H4: a agenda sai de ``grade_do_formulario``. Quando o formulário traz uma
+    grade completa (modo padrão) ou está em modo personalizado, vai
+    ``agenda=[(weekday, início, fim)]`` — única fonte do serviço. Sem agenda ou
+    com agenda parcial, mantém-se o envio do trio escalar (herança/aviso do
+    serviço), exatamente como antes do H4.
+    """
+    grade = grade_do_formulario(form) if grade is None else grade
     periodo_obj = turma_obj.periodo_letivo
     data_inicio = parse_date(form.get("data_inicio"))
     data_fim = parse_date(form.get("data_fim"))
@@ -1512,28 +2040,54 @@ def _dados_oferta_form(form, turma_obj):
         ]
         if centros_disponiveis and centro_custo not in centros_disponiveis:
             raise ValueError("Centro de custo inválido para o período selecionado.")
-    return {
+    dados = {
         "curso_id": _parse_int_arg(form.get("curso_id")),
         "principal": form.get("principal") == "on",
         "professor_id": _parse_int_arg(form.get("professor_id")),
         "turno": form.get("turno") or None,
-        "dias_semana": dias,
-        "hora_inicio": parse_time(form.get("hora_inicio")),
-        "hora_fim": parse_time(form.get("hora_fim")),
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "centro_custo": centro_custo,
         "programa": programa,
     }
+    if grade["por_dia"]:
+        # Modo personalizado: ou a grade por dia está completa, ou erro claro.
+        if grade["erro"]:
+            raise ValueError(grade["erro"])
+        dados["agenda"] = grade["itens"]
+    elif grade["itens"] is not None:
+        dados["agenda"] = grade["itens"]
+    # Sem agenda no formulário: o serviço decide (herança da grade de outra
+    # oferta ou erro de agenda incompleta). H5a: nenhum campo escalar de
+    # agenda é enviado.
+    return dados
 
 
-@bp.route("/turma/<int:id>/ofertas")
-@login_required
-def turma_ofertas(id):
-    """Tela de cursos da turma: lista de ofertas + formulário incremental."""
-    turma_obj = _turma_para_ofertas(id)
+def _ofertas_de_agenda_da_turma(turma_obj):
+    """Contexto de agenda da tela de cursos: ofertas, grade por dia e exibição.
+
+    ``linhas`` (``grades_por_oferta``) pré-preenche o formulário por dia; com
+    grade NÃO uniforme o modo personalizado já abre preenchido (decisão H4).
+    ``grade_map`` é a ``GradeExibicao`` da tabela (não a projeção).
+    """
+    ofertas = (
+        TurmaCurso.query.filter_by(turma_id=turma_obj.id)
+        .order_by(TurmaCurso.ativo.desc(), TurmaCurso.id)
+        .all()
+    )
+    linhas = grades_por_oferta(ofertas)
+    grade_map = grades_para_exibicao(ofertas, grades=linhas)
+    return ofertas, linhas, grade_map
+
+
+def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200):
+    """ReRenderiza a tela de cursos com o formulário voltado preenchido (H4).
+
+    Usado quando a validação da agenda recusa o POST: o usuário mantém o que
+    digitou (inclusive o modo personalizado aberto) e o flash já gravado
+    aparece normalmente.
+    """
     unidade_id = turma_obj.unidade_id
-
     professores = (
         User.query.filter_by(role=UserRole.PROFESSOR.value, unidade_id=unidade_id)
         .order_by(User.name)
@@ -1550,17 +2104,48 @@ def turma_ofertas(id):
         if turma_obj.periodo_letivo and turma_obj.periodo_letivo.centro_custo
         else []
     )
+    ofertas, linhas, grade_map = _ofertas_de_agenda_da_turma(turma_obj)
+    # Estado do componente de agenda por formulário (H4): o POST rejeitado
+    # volta como o usuário digitou; os demais formulários partem da grade.
+    estados_oferta = {}
+    for oferta_item in ofertas:
+        if not oferta_item.ativo:
+            continue
+        if rascunho is not None and oferta_aberta == oferta_item.id:
+            estados_oferta[oferta_item.id] = _estado_agenda_do_form(rascunho)
+        else:
+            estados_oferta[oferta_item.id] = _estado_agenda_da_grade(
+                linhas.get(oferta_item.id) or []
+            )
+    estado_nova = (
+        _estado_agenda_do_form(rascunho)
+        if rascunho is not None and oferta_aberta == "nova"
+        else _estado_agenda()
+    )
     return render_template(
         "turmas/ofertas.html",
         turma=turma_obj,
-        ofertas=TurmaCurso.query.filter_by(turma_id=id)
-        .order_by(TurmaCurso.ativo.desc(), TurmaCurso.id)
-        .all(),
+        ofertas=ofertas,
         professores=professores,
         cursosDisponiveis=cursosDisponiveis,
         centros=centros,
-        dias_semana=["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"],
-    )
+        dias_semana=[weekday_para_nome(d) for d in _DIAS_AGENDA],
+        dias_agenda=list(_DIAS_AGENDA),
+        grade_linhas=linhas,
+        grade_map=grade_map,
+        estados_oferta=estados_oferta,
+        estado_nova=estado_nova,
+        rascunho=rascunho,
+        oferta_aberta=oferta_aberta,
+    ), status
+
+
+@bp.route("/turma/<int:id>/ofertas")
+@login_required
+def turma_ofertas(id):
+    """Tela de cursos da turma: lista de ofertas + formulário incremental."""
+    turma_obj = _turma_para_ofertas(id)
+    return _render_ofertas(turma_obj)
 
 
 @bp.route("/turma/<int:id>/ofertas/nova", methods=["POST"])
@@ -1568,15 +2153,26 @@ def turma_ofertas(id):
 def turma_oferta_nova(id):
     """Adiciona uma oferta de curso à turma (cadastro incremental, sem limite)."""
     turma_obj = _turma_para_ofertas(id)
+    grade = grade_do_formulario(request.form)
+    if _erro_agenda_formulario(grade):
+        # H4: erro de agenda digitado pelo usuário — flash e o formulário
+        # volta preenchido (inclusive modo personalizado aberto).
+        flash(grade["erro"], "warning")
+        return _render_ofertas(
+            turma_obj, rascunho=request.form, oferta_aberta="nova"
+        )
     try:
-        dados = _dados_oferta_form(request.form, turma_obj)
+        dados = _dados_oferta_form(request.form, turma_obj, grade=grade)
         if dados["curso_id"] is None:
             raise ValueError("Selecione um curso para adicionar à turma.")
         nome_curso = db.session.get(Curso, dados["curso_id"]).nome
         oferta = adicionar_oferta(turma_obj, **dados)
     except ValueError as erro:
+        db.session.rollback()
         flash(str(erro), "warning")
-        return redirect(url_for("registros.turma_ofertas", id=id))
+        return _render_ofertas(
+            turma_obj, rascunho=request.form, oferta_aberta="nova"
+        )
     except IntegrityError:
         db.session.rollback()
         flash(
@@ -1603,8 +2199,14 @@ def turma_oferta_editar(oferta_id):
     if oferta is None:
         abort(404)
     turma_obj = _turma_para_ofertas(oferta.turma_id)
+    grade = grade_do_formulario(request.form)
+    if _erro_agenda_formulario(grade):
+        flash(grade["erro"], "warning")
+        return _render_ofertas(
+            turma_obj, rascunho=request.form, oferta_aberta=oferta_id
+        )
     try:
-        dados = _dados_oferta_form(request.form, turma_obj)
+        dados = _dados_oferta_form(request.form, turma_obj, grade=grade)
         dados.pop("principal", None)
         if dados["curso_id"] is None:
             raise ValueError("A oferta precisa estar vinculada a um curso.")
@@ -1612,8 +2214,13 @@ def turma_oferta_editar(oferta_id):
         for aviso in getattr(oferta, "avisos_horario", []):
             flash(aviso, "warning")
     except ValueError as erro:
+        # H2/validação autoritativa do definir_grade: nada foi commitado —
+        # desfaz mutações parciais e devolve o formulário preenchido.
+        db.session.rollback()
         flash(str(erro), "warning")
-        return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
+        return _render_ofertas(
+            turma_obj, rascunho=request.form, oferta_aberta=oferta_id
+        )
     flash(f"Oferta '{oferta.curso.nome}' atualizada na turma.", "success")
     return redirect(url_for("registros.turma_ofertas", id=turma_obj.id))
 
@@ -1679,15 +2286,33 @@ def excluir_turma(id):
             # ConselhoClasse, Transferencia e as inscrições (mantém o vínculo
             # histórico); só desativa turma, ofertas e inscrições ativas.
             turma_obj.ativo = False
+            # L4.1: o marcador guarda SÓ as ofertas que estavam ativas — oferta
+            # já removida do curso antes da exclusão não pode voltar.
+            ofertas_reativaveis = []
             for oferta in TurmaCurso.query.filter_by(turma_id=id).all():
+                if oferta.ativo:
+                    ofertas_reativaveis.append(oferta.id)
                 oferta.ativo = False
             agora = get_local_now()
+            inscricoes_desativadas = []
             for inscricao in Inscricao.query.filter_by(turma_id=id, ativo=True).all():
                 inscricao.ativo = False
                 inscricao.data_desativacao = agora
                 # Mesmo mecanismo da desenturmação/transferência: motivo em
                 # CAIXA-ALTA, sem acento (ver alunos.py: "TRANSFERENCIA").
                 inscricao.motivo_desativacao = MOTIVO_INSCRICAO_TURMA_DESATIVADA
+                inscricoes_desativadas.append(inscricao.id)
+            # Marcador L4.1 na MESMA transação (sem commit próprio): é o único
+            # sinal de quem saiu da turma junto com ela — o `updated_at` não
+            # serve, porque o listener de auditoria o reescreve também nas
+            # ofertas que já estavam inativas.
+            gravar_marcador_exclusao(
+                id, ofertas_reativaveis, inscricoes_desativadas,
+                usuario_id=current_user.id,
+                usuario_nome=current_user.name,
+                ip=request.remote_addr,
+                unidade_id=turma_obj.unidade_id,
+            )
             db.session.commit()
             flash(
                 "Turma desativada: possui lançamentos, o histórico foi preservado.",
@@ -1880,14 +2505,11 @@ def carga_horaria_turmas():
             else 0.0
         )
 
-        # 4. C.H. Total: soma de carga_horaria_total de todas as turmas do curso
-        #    no filtro ativo. Carrega apenas turmas com hora configurada.
+        # 4. C.H. total: soma da carga calculada em lote para as turmas do curso.
         stmt_turmas_ch = select(Turma).where(
             Turma.curso_id == c.id,
             Turma.ativo == True,
             cond_status,
-            Turma.hora_inicio.isnot(None),
-            Turma.hora_fim.isnot(None),
         )
         if unidade_efetiva:
             stmt_turmas_ch = stmt_turmas_ch.where(Turma.unidade_id == unidade_efetiva)
@@ -1896,9 +2518,16 @@ def carga_horaria_turmas():
         if professor_id:
             stmt_turmas_ch = stmt_turmas_ch.where(Turma.professor_id == professor_id)
 
-        turmas_ch = db.session.execute(stmt_turmas_ch).scalars().all()
+        turmas_ch = db.session.execute(
+            stmt_turmas_ch.options(
+                selectinload(Turma.ofertas_curso).selectinload(TurmaCurso.horarios)
+            )
+        ).scalars().all()
+        from app.services.turma_curso_horario import cargas_horarias_turmas_em_lote
+
+        cargas_turmas = cargas_horarias_turmas_em_lote(turmas_ch)
         ch_total_minutos = sum(
-            (t.carga_horaria_total or 0) for t in turmas_ch
+            (cargas_turmas[t.id].carga_horaria_total or 0) for t in turmas_ch
         ) or None  # None → "—" no template via formatar_ch
 
         cursos_dados.append({
@@ -2003,6 +2632,17 @@ def ver_observacoes(turma_id):
     if current_user.role not in ["admin", "pedagogico", "secretaria", "professor"]:
         abort(403)
 
+    # Mesma guarda de `ver_turma`/`imprimir_pauta`: isolamento por unidade e,
+    # para professor, apenas as próprias turmas (antes qualquer professor
+    # abria o diário de qualquer turma pelo id).
+    turma_obj = Turma.query.get_or_404(turma_id)
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+    if (
+        current_user.role == UserRole.PROFESSOR
+        and turma_obj.professor_id != current_user.id
+    ):
+        abort(403)
+
     # Onda 4 (Fase 4, D3a): filtro opcional por oferta (querystring
     # `turma_curso`). Com 2+ ofertas ativas cada observação ganha o rótulo
     # do curso; registros com turma_curso_id NULL aparecem sem rótulo.
@@ -2011,10 +2651,14 @@ def ver_observacoes(turma_id):
     mostrar_curso = len(ofertas) >= 2
     turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
 
+    # A1: a aula entra no diário quando tem atividades OU observações;
+    # registros com os dois vazios continuam fora (comportamento anterior).
     filtros = [
         RegistroAula.turma_id == turma_id,
-        RegistroAula.observacoes != None,
-        RegistroAula.observacoes != "",
+        or_(
+            and_(RegistroAula.observacoes != None, RegistroAula.observacoes != ""),
+            and_(RegistroAula.atividades != None, RegistroAula.atividades != ""),
+        ),
     ]
     if turma_curso_id is not None:
         if any(o.id == turma_curso_id for o in ofertas):
@@ -2027,7 +2671,6 @@ def ver_observacoes(turma_id):
         .order_by(RegistroAula.data.desc())
         .all()
     )
-    turma_obj = Turma.query.get_or_404(turma_id)
     return render_template(
         "turmas/observacoes.html",
         obs=observacoes,
@@ -2046,8 +2689,11 @@ def imprimir_pauta(id):
 
     turma = Turma.query.get_or_404(id)
     assert_unidade_context(turma.unidade_id, get_unidade_id())
-    if current_user.role == "professor" and turma.professor_id != current_user.id:
-        abort(403)
+
+    from app.services.aluno_info_professor import (
+        alunos_com_info_professor,
+        professor_da_oferta,
+    )
 
     # Onda 4 (Fase 4, D3a): `turma_curso` opcional na querystring.
     #   - 0 ofertas ativas: igual a hoje (pauta e frequências por turma).
@@ -2058,10 +2704,27 @@ def imprimir_pauta(id):
     #     (flash pedindo o curso e retorno à tela de frequência, que tem o
     #     seletor); com turma_curso, alunos e frequências só da oferta, com
     #     o nome do curso no cabeçalho da impressão.
+    #
+    # G1 (28/10/2026) — professor da OFERTA, sem herança da turma:
+    #   - a oferta vem de `turma_curso`; sem parâmetro, 1 oferta ativa → ela,
+    #     2+ → a de menor id (ordem de `ofertas_ativas`); a oferta `principal`
+    #     NÃO decide acesso (R2 do G1);
+    #   - oferta de outro professor, oferta sem professor ou turma sem oferta
+    #     ativa dele => 403 (nenhum perfil professor herda `turma.professor_id`);
+    #   - a lista de alunos é SEMPRE a da oferta dele (`_alunos_da_oferta`) e a
+    #     indicação de "outras ofertas" não é exibida (ele não as leciona).
+    #   Demais perfis (admin/pedagógico/secretaria) mantêm o comportamento.
     ofertas = ofertas_ativas(id)
     oferta = None
     turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
-    if len(ofertas) >= 2:
+    if current_user.role == UserRole.PROFESSOR:
+        if turma_curso_id is not None:
+            oferta = next((o for o in ofertas if o.id == turma_curso_id), None)
+        else:
+            oferta = ofertas[0] if ofertas else None
+        if not professor_da_oferta(oferta, current_user):
+            abort(403)
+    elif len(ofertas) >= 2:
         if turma_curso_id is None:
             flash(
                 "Esta turma tem mais de um curso ativo. Selecione o curso "
@@ -2084,9 +2747,13 @@ def imprimir_pauta(id):
         )
         return redirect(url_for("registros.ver_turma", id=id))
 
-    if oferta is not None and len(ofertas) >= 2:
-        # Pauta da oferta (multi-oferta): inscrição sempre apontada para a
-        # oferta — Inscricao.turma_curso_id é NOT NULL desde a Onda 4.
+    if oferta is not None and (
+        len(ofertas) >= 2 or current_user.role == UserRole.PROFESSOR
+    ):
+        # Pauta da oferta: inscrição sempre apontada para a oferta —
+        # Inscricao.turma_curso_id é NOT NULL desde a Onda 4. Para o professor
+        # vale também com 1 oferta ativa: só entram alunos inscritos na
+        # oferta dele (PARTE B, item 3).
         ctx["alunos"] = _alunos_da_oferta(
             id, oferta.id,
         )
@@ -2103,7 +2770,8 @@ def imprimir_pauta(id):
 
     alunos_ids = [aluno.id for aluno in ctx["alunos"]]
     outras_ofertas_por_aluno = {aluno_id: [] for aluno_id in alunos_ids}
-    if alunos_ids:
+    # PARTE B: o professor não vê a indicação de ofertas que não leciona.
+    if alunos_ids and current_user.role != UserRole.PROFESSOR:
         stmt_ofertas_alunos = (
             select(Inscricao.aluno_id, TurmaCurso.id, Curso.nome)
             .join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
@@ -2155,6 +2823,15 @@ def imprimir_pauta(id):
             ),
             "outras_ofertas": outras_ofertas_por_aluno.get(aluno.id, []),
         }
+
+    # I1: para o professor, as linhas de acompanhante e de instruções só saem
+    # dos alunos que ele leciona hoje — MESMA regra de /aluno/<id>/info-professor
+    # (professor efetivo da oferta, inscrição/turma/oferta ativas, unidade e
+    # período não encerrado). Outros perfis: `None` = sem restrição (inalterado).
+    # Medicação não passa por aqui.
+    alunos_com_info = None
+    if current_user.role == UserRole.PROFESSOR:
+        alunos_com_info = alunos_com_info_professor(alunos_ids, current_user)
 
     nomes_meses = {
         "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
@@ -2227,5 +2904,6 @@ def imprimir_pauta(id):
         datas_por_mes=datas_por_mes,
         oferta_atual=oferta,
         dados_alunos_impressao=dados_alunos_impressao,
+        alunos_com_info=alunos_com_info,
         now=datetime.now(),
     )

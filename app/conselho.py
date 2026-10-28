@@ -50,6 +50,7 @@ from app.services.turma_curso import (
     ofertas_ativas,
     ofertas_do_painel_conselho,
 )
+from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
 from datetime import datetime, date
 from collections import OrderedDict
@@ -251,8 +252,14 @@ def index_conselho():
         if turma.id not in turma_ids_com_oferta
     )
 
+    # H3e: grade de exibição das ofertas do painel (uma leitura em lote).
+    grade_oferta_map = grades_para_exibicao(
+        [item['oferta'] for item in ofertas]
+    )
+
     return render_template('conselho/painel.html',
                            ofertas=ofertas,
+                           grade_oferta_map=grade_oferta_map,
                            turmas_sem_oferta=turmas_sem_oferta,
                            lista_programas=lista_programas,
                            programa_ativo=programa_ativo,
@@ -262,6 +269,44 @@ def index_conselho():
 # ---------------------------------------------------------------------------
 # GERENCIAMENTO DE PERGUNTAS
 # ---------------------------------------------------------------------------
+# Abas da tela: etapa (INICIAL/PERCURSO/FINAL) e foco (TURMA/ALUNO). O estado
+# ativo vive na querystring (`?etapa=...&foco=...`) para sobreviver ao POST.
+_ETAPAS_ABA_PERGUNTAS = ('inicial', 'percurso', 'final')
+_FOCOS_ABA_PERGUNTAS = ('turma', 'aluno')
+
+
+def _aba_pergunta_etapa(valor) -> str | None:
+    """Normaliza a etapa da aba; `None` quando não é uma etapa válida."""
+    etapa = (valor or '').strip().lower()
+    return etapa if etapa in _ETAPAS_ABA_PERGUNTAS else None
+
+
+def _aba_pergunta_foco(valor) -> str | None:
+    """Normaliza o foco da aba (`turma`/`aluno`); `None` se inválido."""
+    foco = (valor or '').strip().lower()
+    return foco if foco in _FOCOS_ABA_PERGUNTAS else None
+
+
+def _voltar_perguntas(etapa=None, foco=None):
+    """Redirect pós-escrita mantendo a etapa e o foco de onde se estava.
+
+    `etapa`/`foco` explícitos vencem; sem eles, usa os hidden `aba_etapa` e
+    `aba_foco` do formulário. Valores inválidos caem na aba padrão
+    (INICIAL/TURMA) com redirect limpo.
+    """
+    etapa = _aba_pergunta_etapa(etapa) or _aba_pergunta_etapa(
+        request.form.get('aba_etapa')
+    )
+    foco = _aba_pergunta_foco(foco) or _aba_pergunta_foco(
+        request.form.get('aba_foco')
+    )
+    params = {}
+    if etapa:
+        params['etapa'] = etapa
+    if foco:
+        params['foco'] = foco
+    return redirect(url_for('conselho.gerenciar_perguntas', **params))
+
 
 @bp.route('/conselho/perguntas')
 @login_required
@@ -276,8 +321,11 @@ def gerenciar_perguntas():
         value=PerguntaConselho.etapa
     )
 
-    unidade_id = get_unidade_id()
-    query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas)
+    # Chamada preservada pelo efeito colateral: normaliza o contexto de
+    # unidade na sessão (perfis operacionais). O resultado não é usado aqui —
+    # PerguntaConselho é global.
+    get_unidade_id()
+    query = PerguntaConselho.query.filter_by(ativo=True).order_by(ordem_etapas, PerguntaConselho.id)
     # PerguntaConselho é global — perguntas são compartilhadas entre unidades
     perguntas_raw = query.all()
 
@@ -290,7 +338,62 @@ def gerenciar_perguntas():
         if lista:
             perguntas_agrupadas[etapa_str] = lista
 
-    return render_template('conselho/perguntas.html', perguntas_agrupadas=perguntas_agrupadas)
+    # Aba ativa: `?etapa=` e `?foco=` (inválido/ausente cai no padrão).
+    etapa_ativa = _aba_pergunta_etapa(request.args.get('etapa')) or 'inicial'
+    foco_ativo = _aba_pergunta_foco(request.args.get('foco')) or 'turma'
+
+    return render_template(
+        'conselho/perguntas.html',
+        perguntas_agrupadas=perguntas_agrupadas,
+        etapa_ativa=etapa_ativa,
+        foco_ativo=foco_ativo,
+    )
+
+
+@bp.route('/conselho/imprimir', methods=['GET'])
+@login_required
+def imprimir_conselho():
+    if current_user.role not in (UserRole.PEDAGOGICO, UserRole.ADMIN, UserRole.GERENCIA):
+        abort(403)
+
+    etapa_raw = request.args.get('etapa')
+    quantidade_raw = request.args.get('quantidade')
+    if etapa_raw is None and quantidade_raw is None:
+        return redirect(url_for('conselho.index_conselho'))
+
+    try:
+        etapa = EtapaConselho(etapa_raw)
+    except (TypeError, ValueError):
+        flash("Selecione uma etapa válida para imprimir.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    try:
+        quantidade = int(quantidade_raw)
+    except (TypeError, ValueError):
+        flash("Informe uma quantidade válida de alunos.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    if not 1 <= quantidade <= 100:
+        flash("A quantidade deve estar entre 1 e 100 alunos.", "warning")
+        return redirect(url_for('conselho.imprimir_conselho'))
+
+    perguntas = (
+        PerguntaConselho.query
+        .filter_by(etapa=etapa, ativo=True)
+        .order_by(PerguntaConselho.id)
+        .all()
+    )
+    perguntas_turma = [p for p in perguntas if p.tipo == 'TURMA']
+    perguntas_aluno = [p for p in perguntas if p.tipo == 'ALUNO']
+
+    return render_template(
+        'conselho/imprimir_formulario.html',
+        etapa=etapa,
+        quantidade=quantidade,
+        perguntas_turma=perguntas_turma,
+        perguntas_aluno=perguntas_aluno,
+        now=datetime.now(),
+    )
 
 
 @bp.route('/conselho/pergunta/salvar', methods=['POST'])
@@ -321,7 +424,8 @@ def salvar_pergunta():
 
     db.session.commit()
     flash("Pergunta salva com sucesso!", "success")
-    return redirect(url_for('conselho.gerenciar_perguntas'))
+    # Volta para a aba onde a pergunta aparece (etapa + foco escolhidos).
+    return _voltar_perguntas(etapa=etapa, foco=tipo)
 
 
 @bp.route('/conselho/pergunta/excluir/<int:id>', methods=['POST'])
@@ -334,7 +438,7 @@ def excluir_pergunta(id):
     pergunta.ativo = False
     db.session.commit()
     flash("Pergunta removida com sucesso!", "info")
-    return redirect(url_for('conselho.gerenciar_perguntas'))
+    return _voltar_perguntas()
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +580,7 @@ def lancamento_conselho():
         turma_curso_id=oferta.id, etapa=etapa
     ).first()
 
-    perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).all()
+    perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).order_by(PerguntaConselho.id).all()
 
     respostas_db = ConselhoResposta.query.join(ConselhoClasse).filter(
         ConselhoClasse.turma_curso_id == oferta.id,
@@ -644,6 +748,7 @@ def fechamento_turma(turma_id):
         return render_template('conselho/fechamento.html',
                                turma=turma,
                                oferta=None,
+                               grade_oferta=None,
                                ofertas=ofertas_turma,
                                exigir_escolha=True,
                                dados=[],
@@ -695,6 +800,7 @@ def fechamento_turma(turma_id):
     return render_template('conselho/fechamento.html',
                            turma=turma,
                            oferta=oferta,
+                           grade_oferta=grades_para_exibicao([oferta]).get(oferta.id),
                            ofertas=ofertas_turma,
                            exigir_escolha=False,
                            dados=dados_alunos,
@@ -782,7 +888,7 @@ def salvar_fechamento_data(turma_id):
     except ValueError as e:
         db.session.rollback()
         return jsonify({"success": False, "message": str(e)})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         logger.exception("Erro no salvamento do fechamento da turma %s", turma_id)
         return jsonify({"success": False, "message": "Falha ao salvar o fechamento da turma. Veja o log para detalhes."})
@@ -832,7 +938,7 @@ def avaliar_turma(turma_id):
 
     perguntas = PerguntaConselho.query.filter_by(
         tipo='TURMA', etapa=etapa_selecionada, ativo=True
-    ).all()
+    ).order_by(PerguntaConselho.id).all()
     respostas = _get_turma_avaliacao_respostas(oferta, etapa_selecionada)
 
     if request.method == 'POST':

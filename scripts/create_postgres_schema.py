@@ -46,6 +46,16 @@ def generate_schema_sql(path: Path) -> None:
 
 
 def create_tables_in_database() -> None:
+    # Guard (H3a-P0): o script lê o DATABASE_URL do .env, que normalmente
+    # aponta para o banco principal — criação direta só com opt-in explícito;
+    # a evolução de schema do principal é por `flask db upgrade`.
+    if os.getenv("PAUTAON_ALLOW_CREATE_ALL") != "1":
+        raise RuntimeError(
+            "Criação direta de tabelas está bloqueada para proteger bancos "
+            "existentes (use `flask db upgrade`). Para criar um banco novo a "
+            "partir dos modelos, defina PAUTAON_ALLOW_CREATE_ALL=1 e rode o "
+            "script novamente."
+        )
     engine = create_engine(DATABASE_URL, future=True)
     ensure_models_imported()
     db.metadata.create_all(bind=engine)

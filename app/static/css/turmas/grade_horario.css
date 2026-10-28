@@ -1,0 +1,51 @@
+/* =============================================================================
+   static/css/turmas/grade_horario.css
+   Estilos para o componente de agenda por dia (H4c).
+============================================================================= */
+
+/* Botões de dia como btn-check - estado selecionado mais visível */
+.btn-check:checked + .btn-outline-primary {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  color: #fff;
+}
+
+/* Linha por dia - layout responsivo */
+[data-grade-dia] {
+  min-height: 40px;
+}
+
+/* Responsivo: no celular, dia em cima, horários embaixo */
+@media (max-width: 576px) {
+  [data-grade-dia] {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  [data-grade-dia] .col-auto {
+    width: 100%;
+  }
+
+  [data-grade-dia] input[type="time"] {
+    width: 100%;
+  }
+}
+
+/* Foco visível nos inputs de horário */
+input[type="time"]:focus {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+/* Labels visualmente ocultos mas acessíveis */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

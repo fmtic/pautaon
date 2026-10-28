@@ -84,5 +84,6 @@
 <script>
     window.periodosDatas = {{ periodos_datas | default ({}) | tojson }};
 </script>
+<script src="{{ url_for('static', filename='js/turmas/grade_horario.js') }}"></script>
 <script src="{{ url_for('static', filename='js/turmas/nova.js') }}"></script>
 {% endblock %}

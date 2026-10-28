@@ -10,25 +10,30 @@ function confirmarExclusao(event) {
     return true;
 }
 
-// Atualizamos a função de editar para pedir confirmação e carregar os campos dinamicamente
-function editarPergunta(id, etapa, tipo, texto, opcoes) {
+// Carrega o modal de edição a partir do botão clicado.
+// Os dados vêm de atributos data-* (autoescapados pelo Jinja no template), o que
+// evita a quebra do onclick quando texto/opções contêm aspas e garante os valores
+// reais dos enums (etapa/tipo) que alimentam os <select> do formulário.
+function editarPergunta(btn) {
     // Pede confirmação antes de abrir a edição
     if (!confirm("Deseja editar as informações desta pergunta?")) {
         return; // Cancela a ação se o usuário clicar em "Não/Cancelar"
     }
 
+    const d = btn.dataset;
+
     document.getElementById('modalTitulo').innerText = "Editar Pergunta";
-    document.getElementById('pergunta_id').value = id;
-    document.getElementById('pergunta_etapa').value = etapa;
-    document.getElementById('pergunta_tipo').value = tipo;
-    document.getElementById('pergunta_texto').value = texto;
+    document.getElementById('pergunta_id').value = d.id;
+    document.getElementById('pergunta_etapa').value = d.etapa;
+    document.getElementById('pergunta_tipo').value = d.tipo;
+    document.getElementById('pergunta_texto').value = d.texto;
 
     // Limpa o container e reconstrói os campos
     const container = document.getElementById('container-opcoes');
     container.innerHTML = "";
 
-    if (opcoes && opcoes.trim() !== "") {
-        const lista = opcoes.split(' | '); // Usaremos | como separador interno
+    if (d.opcoes && d.opcoes.trim() !== "") {
+        const lista = d.opcoes.split(' | '); // Usaremos | como separador interno
         lista.forEach(opt => adicionarCampoResposta(opt));
     }
 
@@ -41,17 +46,28 @@ function editarPergunta(id, etapa, tipo, texto, opcoes) {
 function adicionarCampoResposta(valor = "") {
     const container = document.getElementById('container-opcoes');
 
-    // Cria o wrapper do grupo de input
+    // Wrapper do grupo de input
     const div = document.createElement('div');
-    div.className = 'input-group mb-2 animate__animated animate__fadeIn'; // Adicionei uma animação simples
+    div.className = 'input-group mb-2 animate__animated animate__fadeIn';
 
-    div.innerHTML = `
-        <input type="text" class="form-control campo-opcao" value="${valor}" placeholder="Ex: Sim, Não, Às vezes...">
-        <button class="btn btn-outline-danger" type="button" onclick="this.parentElement.remove()" title="Remover Opção">
-            <i class="bi bi-trash3"></i>
-        </button>
-    `;
+    // Input criado via propriedade .value (e não interpolado no HTML), para que
+    // aspas dentro da opção não quebrem o markup nem gerem campos indevidos.
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control campo-opcao';
+    input.placeholder = 'Ex: Sim, Não, Às vezes...';
+    input.value = valor;
 
+    // Botão de remover a própria opção
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-outline-danger';
+    btn.type = 'button';
+    btn.title = 'Remover Opção';
+    btn.innerHTML = '<i class="bi bi-trash3"></i>';
+    btn.addEventListener('click', () => div.remove());
+
+    div.appendChild(input);
+    div.appendChild(btn);
     container.appendChild(div);
 }
 

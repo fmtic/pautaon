@@ -24,12 +24,39 @@ NOTAS ONDA 4 — FASE 4
     é substituído por dois índices únicos parciais:
       - WHERE turma_curso_id IS NULL     → preserva legado.
       - WHERE turma_curso_id IS NOT NULL → permite lançamentos por oferta.
+
+NOTAS A1 — VALORES DO ESPORTISTA
+    `Frequencia.valor_esportista_id` (FK → valor_esportista, ON DELETE SET
+    NULL) é um dado ADICIONAL do lançamento: não entra em nenhuma conta de
+    presença/falta/total nem em pauta, diário, relatório ou exportação.
 ================================================================================
 """
 
 from app.models.base import db, datetime, date, hybrid_property, get_local_now, TenantMixin
 from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.enums import ConceitoFrequencia
+
+
+registro_aula_tema = db.Table(
+    'registro_aula_tema',
+    db.Column(
+        'registro_aula_id', db.Integer,
+        db.ForeignKey(
+            'registro_aula.id', name='fk_registro_aula_tema_registro',
+            ondelete='CASCADE',
+        ),
+        primary_key=True,
+    ),
+    db.Column(
+        'tema_aula_id', db.Integer,
+        db.ForeignKey(
+            'tema_aula.id', name='fk_registro_aula_tema_tema',
+            ondelete='RESTRICT',
+        ),
+        primary_key=True,
+    ),
+    db.Index('ix_registro_aula_tema_tema', 'tema_aula_id'),
+)
 
 
 class Frequencia(TenantMixin, db.Model):
@@ -95,9 +122,23 @@ class Frequencia(TenantMixin, db.Model):
         ),
         nullable=True,
     )
+    # A1: dado ADICIONAL (não participa de nenhuma conta de frequência).
+    # ON DELETE SET NULL: o histórico sobrevive à remoção do catálogo; na
+    # prática o valor só é inativado (nunca apagado com uso).
+    valor_esportista_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            'valor_esportista.id', name='fk_frequencia_valor_esportista',
+            ondelete='SET NULL',
+        ),
+        nullable=True,
+        index=True,
+        comment='FK → valor_esportista (dado adicional do lançamento)',
+    )
 
     unidade = db.relationship('Unidade', backref='frequencias')
     turma_curso = db.relationship('TurmaCurso', backref='frequencias')
+    valor_esportista = db.relationship('ValorEsportista', backref='frequencias')
 
     @hybrid_property
     def presente(self) -> bool:
@@ -124,11 +165,15 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     """
     Diário de aula: o que o professor registrou em uma turma/oferta em um dia.
 
-    Guarda o tema trabalhado (`tema_id`), observações livres, e o instrutor
-    responsável. É a base para o acompanhamento pedagógico.
+    Guarda os temas trabalhados, observações livres, as atividades
+desenvolvidas na aula e o instrutor responsável. É a base para o
+acompanhamento pedagógico.
 
     Notas:
         - `data` é DATE nativo (Onda 2A).
+        - `atividades` (A1) é o registro do que foi realizado na aula —
+          campo de texto independente de `observacoes`, sem efeito em
+          frequência, pauta impressa ou relatórios.
         - `turma_rel` é o nome do relacionamento com Turma; o backref `diarios`
           está no lado da Turma.
         - `turma_curso_id` (Onda 4 Fase 4, nullable na transição).
@@ -147,6 +192,9 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     data: date = db.Column(db.Date, nullable=False)
     tema_id: int = db.Column(db.Integer, db.ForeignKey('tema_aula.id'), nullable=True)
     observacoes: str = db.Column(db.Text)
+    # A1: atividades desenvolvidas na aula (campo de texto independente das
+    # observações; não entra em nenhuma conta ou saída existente).
+    atividades: str = db.Column(db.Text)
     instrutor_id: int = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at: datetime = db.Column(db.DateTime, default=get_local_now)
 
@@ -154,4 +202,8 @@ class RegistroAula(TenantMixin, AuditoriaMixin, db.Model):
     turma_rel = db.relationship('Turma', backref='diarios')
     turma_curso = db.relationship('TurmaCurso', backref='diarios_oferta')
     tema = db.relationship('TemaAula', foreign_keys=[tema_id])
+    temas = db.relationship(
+        'TemaAula', secondary=registro_aula_tema,
+        order_by='TemaAula.ordem, TemaAula.id', lazy='selectin',
+    )
     instrutor = db.relationship('User', foreign_keys=[instrutor_id])

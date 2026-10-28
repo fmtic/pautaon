@@ -43,6 +43,8 @@ from app.models.enums import (
 from app.services import aluno_perfil
 from app.services.aluno_status import status_alunos
 from app.services.conselho_leitura import conselho_do_aluno
+from app.services.frequencia_oferta import agregar_por_oferta, agregar_por_turma
+from app.services.turma_curso_horario import grades_para_exibicao
 
 from .formatacao import (
     faixa_meta,
@@ -50,7 +52,7 @@ from .formatacao import (
     fmt_pct,
 )
 from .helpers import faixa, pct, semanas_do_periodo
-from .regras import LIMIAR_CRITICO
+from .regras import LIMIAR_ATENCAO, LIMIAR_CRITICO
 
 
 # =============================================================================
@@ -94,6 +96,7 @@ def _identidade(
     turma: Turma | None,
     inscricao: Inscricao | None,
     status: StatusAluno | None = None,
+    oferta=None,
 ) -> dict:
     # D5.4: `Inscricao` não guarda status — ele é derivado por
     # `services.aluno_status.status_alunos` (antes `inscricao.status_aluno`
@@ -114,7 +117,7 @@ def _identidade(
         "status_classe": _classe_status(status),
         "turma": turma,
         "professor": turma.professor if turma and turma.professor else None,
-        "dias_horario": _dias_horario(turma) if turma else "—",
+        "dias_horario": _dias_horario(turma, oferta) if turma else "—",
     }
 
 
@@ -142,13 +145,20 @@ def _classe_status(s: StatusAluno) -> str:
     }.get(s, "secondary")
 
 
-def _dias_horario(turma: Turma) -> str:
-    if not turma.dias_semana:
-        return "—"
-    h = ""
-    if turma.hora_inicio and turma.hora_fim:
-        h = f" · {turma.hora_inicio.strftime('%H:%M')}–{turma.hora_fim.strftime('%H:%M')}"
-    return f"{turma.dias_semana}{h}"
+def _dias_horario(turma: Turma, oferta=None) -> str:
+    """Dias · horários da OFERTA pela grade (H3e/H5a).
+
+    Grade uniforme mantém o texto anterior ("Segunda, Quarta · 08:00–09:30");
+    grade não uniforme lista um segmento por dia. Sem oferta não há agenda
+    (turma sem curso ofertado): devolve "—" — as colunas escalares da turma
+    deixaram de ser lidas.
+    """
+    if oferta is not None:
+        grade = grades_para_exibicao([oferta]).get(oferta.id)
+        if grade is not None and grade.dias_texto:
+            horario = grade.texto_horario_curto
+            return f"{grade.dias_texto} · {horario}" if horario else grade.dias_texto
+    return "—"
 
 
 # =============================================================================
@@ -260,7 +270,16 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list, oferta=None) -> dict
     maior_seq = _maior_sequencia_faltas(rows)
 
     pct_aluno = acum.pct
-    pct_turma = serie_turma[-1] if serie_turma else 0.0
+    # ETAPA D3b.2 (caso decidido, passo 2.4 do desenho): "frequência da
+    # turma" é o ACUMULADO da oferta (serviço único, com a regra D2 do
+    # legado), não o último ponto da série semanal — que zera quando a
+    # última semana do período não tem aula lançada.
+    if oferta is not None:
+        _agg = agregar_por_oferta([oferta.id], por_turma=turma.id).get(oferta.id)
+        pct_turma = _agg.pct if _agg else 0.0
+    else:
+        _agg = agregar_por_turma([turma.id]).get(turma.id)
+        pct_turma = _agg.pct_turma if _agg else 0.0
 
     # Substitua o "return" final por:
     return {
@@ -433,7 +452,8 @@ def _sinais(freq: dict, conselho: dict, atendimentos_count: int) -> list[dict]:
                 "detalhe": f'{freq["pct_str"]} contra {freq["pct_turma_str"]} · regra: 5 pp ou mais.',
             }
         )
-    if LIMIAR_CRITICO <= freq["pct"] < 90:
+    # D3b.2: faixa de atenção sem literal 90 — LIMIAR_ATENCAO de regras.py.
+    if LIMIAR_CRITICO <= freq["pct"] < LIMIAR_ATENCAO:
         sinais.append(
             {
                 "nivel": "info",
@@ -677,7 +697,7 @@ def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
         "inscricao": inscricao,
         "oferta": oferta,
         "periodo": periodo,
-        "identidade": _identidade(aluno, turma, inscricao, status=status),
+        "identidade": _identidade(aluno, turma, inscricao, status=status, oferta=oferta),
         "frequencia": freq,
         "conselho": cons,
         "atendimentos": atendimentos,
