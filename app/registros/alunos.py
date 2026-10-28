@@ -993,9 +993,18 @@ def historico_aluno(aluno_id):
                 "faltas": estatisticas["faltas"],
                 "justificadas": estatisticas["justificadas"],
                 "pct_presenca": estatisticas["presenca_percentual"],
-                "status_inicial": (c_inicial.situacao_final if c_inicial else "—"),
-                "status_percurso": (c_percurso.situacao_final if c_percurso else "—"),
-                "situacao_final": (c_final.situacao_final if c_final else "—"),
+                # A1: conselho existente mas sem `situacao_final` (lançamento
+                # aberto) é valor AUSENTE — o contrato das telas é "—"
+                # (`or` cobre None e string vazia, que imprimiam "None").
+                "status_inicial": (
+                    (c_inicial.situacao_final if c_inicial else None) or "—"
+                ),
+                "status_percurso": (
+                    (c_percurso.situacao_final if c_percurso else None) or "—"
+                ),
+                "situacao_final": (
+                    (c_final.situacao_final if c_final else None) or "—"
+                ),
                 "ativo": insc.ativo,
             }
         )
