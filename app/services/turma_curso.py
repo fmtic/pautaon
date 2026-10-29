@@ -47,6 +47,7 @@ from app.models import (
     User,
 )
 from app.models.base import get_local_now
+from app.services.aluno_info_professor import condicao_professor_da_oferta
 from app.services.turma_curso_horario import (
     Linha,
     definir_grade,
@@ -149,12 +150,11 @@ def ofertas_do_painel_conselho(
     if turno and turno != "Todos":
         query = query.filter(Turma.turno == turno)
     if professor_id:
-        query = query.filter(
-            or_(
-                TurmaCurso.professor_id == professor_id,
-                Turma.professor_id == professor_id,
-            )
-        )
+        # Consenso de 29/10/2026 (conselho do professor): "professor da
+        # oferta" SEM herança do professor da turma — a MESMA expressão da
+        # pauta/I1 (PARTE B/G1). O professor da turma que não está na oferta
+        # não enxerga esse conselho; o da oferta enxerga.
+        query = query.filter(condicao_professor_da_oferta(professor_id))
 
     ofertas = query.order_by(Turma.ordenacao, Turma.nome, TurmaCurso.id).all()
     contagens = alunos_ativos_por_oferta([oferta.id for oferta in ofertas])
