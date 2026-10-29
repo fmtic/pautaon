@@ -236,8 +236,8 @@ def test_check_iii_par_incompleto_pos_coalesce(app):
     turma = db.session.get(Turma, i["turma"])
     # nada para herdar do lado do fim
     _escalares("turma", turma.id, ini=time(9, 0))
-    oferta = _oferta_com_curso(i, dias_semana="Segunda",
-                               hora_inicio=time(14, 0), hora_fim=None)
+    _oferta_com_curso(i, dias_semana="Segunda",
+                      hora_inicio=time(14, 0), hora_fim=None)
     db.session.commit()
     with pytest.raises(RuntimeError) as exc:
         mig._checar_antes_de_alterar(db.session.connection())
@@ -351,8 +351,8 @@ def test_downgrade_recusa_grade_nao_uniforme(app):
 
 def test_downgrade_permite_grade_uniforme(app):
     i = _ambiente()
-    oferta = _oferta_com_curso(i, dias_semana="Segunda, Terça",
-                               hora_inicio=time(9, 0), hora_fim=time(10, 0))
+    _oferta_com_curso(i, dias_semana="Segunda, Terça",
+                      hora_inicio=time(9, 0), hora_fim=time(10, 0))
     db.session.commit()
     mig._executar_backfill(db.session.connection())
     db.session.commit()

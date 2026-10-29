@@ -207,7 +207,7 @@ def test_destino_duas_ofertas_exige_escolha(app):
         i = _base()
         _, ativas, _ = _destino(i, n_ativas=2)
         db.session.commit()
-        aluno_id, of1, of2 = i["aluno"], ativas[0], ativas[1]
+        aluno_id, of2 = i["aluno"], ativas[1]
 
     client = _loga(app, i["resp"])
     # sem a oferta de destino: recusa com flash, nada muda

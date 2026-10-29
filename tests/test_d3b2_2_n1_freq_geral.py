@@ -36,7 +36,6 @@ def test_equivalencia_mapa_batch_vs_property(app):
         for t in turmas:
             assert mapa_t[t.id] == t.freq_geral, (t.id, mapa_t[t.id], t.freq_geral)
         for oid in oferta_ids:
-            turma = next(t for t in turmas if oid in (s["o1"], s["o2"], s["g"], s["z"]))
             # oferta pertence à turma correspondente; usa a property da turma
             from app.models import TurmaCurso
             tc = db.session.get(TurmaCurso, oid)
@@ -79,7 +78,7 @@ def test_batch_uma_consulta_por_mapa(app):
 
 
 def test_listagem_rota_nao_faz_n_plus_1(app, client):
-    s = _ids(app)
+    _ids(app)
     from app.models import User
 
     def _login(cid, uid):

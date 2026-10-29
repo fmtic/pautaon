@@ -52,7 +52,7 @@ def test_lixeira_get_200_permitted(app, client):
 
 
 def test_lixeira_get_403_non_permitted(app, client):
-    s = _base(app)
+    _base(app)
     with app.app_context():
         from app.models import Unidade
         un = Unidade.query.first()
@@ -66,7 +66,7 @@ def test_lixeira_get_403_non_permitted(app, client):
 
 
 def test_lixeira_visao_global_sem_botao(app, client):
-    s = _base(app)
+    _base(app)
     with app.app_context():
         u = User.query.filter_by(email="admin.freq@example.com").first()
         _login(client, u.id, None)

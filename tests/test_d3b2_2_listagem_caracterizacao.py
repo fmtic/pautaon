@@ -19,7 +19,7 @@ def _login(client, uid):
 
 
 def test_listagem_exibe_freq_geral_e_por_oferta(app, client):
-    s = _base(app)
+    _base(app)
     with app.app_context():
         u = User.query.filter_by(email="admin.freq@example.com").first()
         _login(client, u.id)

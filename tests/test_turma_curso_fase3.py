@@ -289,7 +289,7 @@ def test_editar_oferta_cria_conflito_com_aviso(base):
 
 def test_editar_oferta_remove_conflito_permite(base):
     turma = _turma(base)
-    o1 = adicionar_oferta(
+    adicionar_oferta(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
     )
