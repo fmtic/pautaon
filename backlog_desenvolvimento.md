@@ -1,3 +1,14 @@
+### Alterações do dia — 29/10/2026 (Conselho — lançamento pelo professor: painel e escopo por oferta)
+
+- **Pedido:** o professor lançar o conselho de classe (individual por aluno e da oferta), acessando `Conselho > Painel de Turmas` com apenas as ofertas ativas dele; sem acesso a fechamento nem à gestão.
+- **Decisões fechadas:** escopo = **professor da OFERTA** (`turma_curso.professor_id`, sem herdar o professor da turma — regra PARTE B/G1); oferta **encerrada bloqueia** o lançamento do professor; “Parcial” era engano — a etapa é **PERCURSO** e a UI mostra “Percurso”; “Situação Final do Aluno” e “Encerrar conselho” = **ocultos + 403**.
+- **Já existia (reaproveitado):** painel por oferta (`ofertas_do_painel_conselho`), lançamento/criação de `ConselhoClasse` por (oferta, aluno, etapa), avaliação coletiva da oferta (`avaliar_turma` → `TurmaCurso.avaliacao_*`) e `alternar_conselho` já 403 para professor. **Sem migration.**
+- **Mudanças:** sidebar (`base.html`; `partials/sidebar.html` é legado e ficou alinhado), `painel.html` (sem fechamento/encerrar; “Lançar Percurso”), `conselho.py` (`_resolver_oferta_conselho(..., professor_id)`, `_escopo_professor`, `_guarda_oferta_explicita_do_professor`, `_bloqueio_oferta_encerrada`; lista de turmas por oferta; 403 em fechamento/`salvar_fechamento_data`; escopo na avaliação) e `services/turma_curso.py` (filtro do painel via `condicao_professor_da_oferta`).
+- **Brechas fechadas:** `salvar_conselho` não tinha guarda de dono; `fechamento_turma`/`salvar_fechamento_data` não tinham role guard (URL direta alcançava a tela).
+- **Testes:** `tests/test_conselho_professor.py` (**15**) — menu, escopo nos dois sentidos (sem herança), 403 em oferta alheia/turma sem oferta, gravação na própria oferta, oferta encerrada (GET sem criar + POST sem gravar), fechamento 403 (GET/JSON), avaliação da oferta e admin sem regressão. **Nenhum teste existente alterado.**
+- **Suíte:** 981 → **996** (+15); resultado **994 passed + 2 failed** — as duas falhas são do `dashboard/professor.html` (edição não commitada de terceiros, `aulas_pendentes[:5] → [:2]`), não desta entrega.
+- **Ensaio (`pautaon_ensaio`, desfeito):** professora Rosana Antunes (id 88), oferta 15 / turma 11 — painel lista a oferta dela e esconde gestão/fechamento; lançamento abre com o 1º aluno; POST grava 1 resposta; fechamento, salvar-fechamento e perguntas 403; limpeza conferida (0 respostas `[ENSAIO]`, conselhos de volta ao estado anterior). Principal intocado.
+
 ### Alterações do dia — 29/10/2026 (Certificado — modelo (imagem) por centro de custo do período: fase 1, upload)
 
 - **Pedido:** permitir subir o modelo do certificado para **cada centro de custo de um período letivo** (turmas de centros diferentes têm layouts próprios); decidir o melhor local do upload; o texto do certificado entra depois (nome, curso, C.H. total e frase de aprovado/reprovado).

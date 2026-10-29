@@ -1259,6 +1259,17 @@ A página **Certificados do período** (`/periodo-letivo/relatorio/<id>`, `perio
 - **Não muda nada na emissão:** o certificado impresso continua com o layout atual (HTML/CSS + `window.print`). Usar o modelo como fundo e injetar o texto (nome, curso, C.H. total e a frase de aprovado/reprovado) é a **fase 2**, ainda sem texto definido pela instituição.
 - **Sem impacto** em permissões, escopo de unidade, frequência, pauta ou relatórios.
 
+### 8.16 Conselho de classe lançado pelo professor (29/10/2026)
+
+O **professor** passa a ter `Conselho > Painel de Turmas` no menu e lança, por oferta, as respostas **individuais** (perguntas `ALUNO`) e a **avaliação coletiva da oferta** (perguntas `TURMA`). Nada disso é novo no domínio: o painel já era por oferta (`ofertas_do_painel_conselho`) e lançamento/avaliação já existiam; o que mudou é **quem entra** e **como o escopo é calculado**.
+
+- **Escopo = professor da OFERTA (`turma_curso.professor_id`), sem herança da turma** — mesma expressão única da pauta/I1 (`condicao_professor_da_oferta` / `professor_da_oferta`, §8.12). Consequências deliberadas: o professor da turma que não está na oferta **deixa** de ver/abrir o conselho dela; o professor da oferta **passa** a ver/abrir mesmo sem ser professor da turma. Admin/pedagógico/gerência/secretaria continuam sem filtro.
+- **Menu:** o bloco `Conselho` aparece para o professor apenas com **Painel de Turmas**; `Data-Informações` e `Gerenciar Perguntas` seguem restritos aos perfis de gestão. No painel, o professor não vê **Situação Final do Aluno** nem **Encerrar/Reabrir conselho**.
+- **Rotas:** `GET /conselho/lancamento` lista só as turmas onde ele tem oferta ativa e resolve a oferta dentro desse escopo; `POST /conselho/salvar` e `GET|POST /turma/<id>/avaliacao` recusam **403** quando a oferta ativa pedida é de outro professor; turma sem oferta dele também responde **403**. O `?oferta_sel=` é validado contra o escopo — nunca se lança em oferta alheia.
+- **Oferta encerrada (`TurmaCurso.conselho_concluido`):** para o professor é **somente leitura** — o GET não cria `ConselhoClasse` e o POST não grava (flash + retorno). Reabrir/encerrar continua manual e restrito (`planejamento.alternar_conselho` já era 403 para professor).
+- **Fora do professor:** `fechamento_turma` e `salvar_fechamento_data` respondem **403** (antes só a unidade era checada, então a URL direta alcançava a tela). A situação final segue na secretaria/pedagogia.
+- **Sem migration**, sem tabela nova e sem alteração de dados. `app/templates/partials/sidebar.html` é um **partial legado** (não incluído por nenhum template); o menu real está em `base.html` e os dois ficaram alinhados.
+
 ---
 
 ## 9. Convenções de código
