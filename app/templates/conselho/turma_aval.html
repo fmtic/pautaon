@@ -11,7 +11,10 @@
             {# D5.2 (Q1): a avaliação coletiva é da OFERTA, não mais da turma #}
             <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta %} | {{ oferta.curso.nome }}{% endif %}</p>
         </div>
-        <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-outline-secondary">
+        {# Rota canônica do painel: `main.painel` monta `entradas`, `aulas_pendentes`
+           e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
+           mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
+        <a href="{{ url_for('main.painel') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar ao Painel
         </a>
     </div>

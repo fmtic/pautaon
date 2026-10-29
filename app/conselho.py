@@ -1016,7 +1016,9 @@ def avaliar_turma(turma_id):
                         f'A turma {turma.nome} não possui curso (oferta) ativa — a avaliação coletiva é por oferta.',
             'warning',
         )
-        return redirect(url_for('registros.painel_professor'))
+        # Rota canônica do painel (`main.painel`): a legada
+        # `registros.painel_professor` renderiza o template sem `entradas`.
+        return redirect(url_for('main.painel'))
     if exigir_escolha:
         return render_template('conselho/turma_aval.html',
                                turma=turma,
@@ -1047,7 +1049,7 @@ def avaliar_turma(turma_id):
             db.session.add(oferta)
             db.session.commit()
             flash(f"Avaliação da oferta {oferta.curso.nome} (turma {turma.nome}) salva!", "success")
-            return redirect(url_for('registros.painel_professor'))
+            return redirect(url_for('main.painel'))
         except Exception:
             db.session.rollback()
             logger.exception("Falha ao salvar avaliação coletiva da oferta da turma %s", turma_id)

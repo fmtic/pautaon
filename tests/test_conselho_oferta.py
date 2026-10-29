@@ -424,6 +424,8 @@ def test_avaliar_turma_sem_oferta_recusa(client, app):
 
     r = client.get(f"/turma/{ids['turma']}/avaliacao?etapa=INICIAL")
     assert r.status_code == 302
+    # Turma sem oferta volta para o painel canônico (main.painel).
+    assert r.headers["Location"].endswith("/painel")
 
 
 # ---------------------------------------------------------------------------

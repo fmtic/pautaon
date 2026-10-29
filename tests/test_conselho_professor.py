@@ -371,6 +371,9 @@ def test_avaliacao_da_oferta_abre_e_grava_para_o_professor(client, app):
     assert r.status_code == 200
     assert "Como a turma evoluiu?" in _corpo(r)
     assert "Como participa das aulas?" not in _corpo(r)
+    # O "Voltar ao Painel" usa a rota canônica (main.painel), que monta o
+    # contexto completo do painel; a legada /professor/painel sai vazia.
+    assert 'href="/painel"' in _corpo(r)
 
     r = client.post(
         f"/turma/{ids['turma_x']}/avaliacao?etapa=INICIAL",
@@ -380,6 +383,7 @@ def test_avaliacao_da_oferta_abre_e_grava_para_o_professor(client, app):
         },
     )
     assert r.status_code == 302
+    assert r.headers["Location"].endswith("/painel")
     with app.app_context():
         oferta = db.session.get(TurmaCurso, ids["ox"])
         assert "Turma evoluiu bem" in (oferta.avaliacao_inicial or "")
