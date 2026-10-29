@@ -1,5 +1,5 @@
 # ruff: noqa: F811
-"""Acesso e navegação para o Diário de Observações da turma.
+"""Acesso e navegação para o Diário de Bordo da turma.
 
 Antes a rota `/turma/<id>/observacoes` não era alcançável por nenhum link e
 aceitava qualquer professor para qualquer turma (só checava o perfil). Agora:

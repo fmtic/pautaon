@@ -4,7 +4,7 @@
 O campo é um texto ADICIONAL ao lado de Observações da Aula:
 grava em `registro_aula.atividades`, é independente das observações e não
 participa de frequência, estatísticas, pauta impressa, BI ou relatórios.
-O Diário de Observações da turma passou a exibir as duas seções e a listar
+O Diário de Bordo da turma passou a exibir as duas seções e a listar
 aulas que tenham qualquer um dos dois textos.
 """
 
@@ -250,7 +250,7 @@ def test_atividades_nao_saem_na_pauta_impressa(app, client):
 
 
 # ---------------------------------------------------------------------------
-# Diário de Observações da turma
+# Diário de Bordo da turma
 # ---------------------------------------------------------------------------
 
 def test_diario_lista_aula_so_com_atividades(app, client):

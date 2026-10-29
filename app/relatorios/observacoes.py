@@ -1,4 +1,4 @@
-"""Diário de Observações em modo global (a partir do Painel Pedagógico).
+"""Diário de Bordo em modo global (a partir do Painel Pedagógico).
 
 Lista os registros de `registro_aula` de todas as turmas do período, com
 filtros por período letivo, turma, curso (oferta) e professor. É restrito aos

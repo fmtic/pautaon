@@ -2,14 +2,14 @@
 
 **Data:** 28/10/2026
 **Escopo:** novo campo de texto "Atividades da aula" na tela de lançamento de frequência, ao lado de Observações da Aula.
-**Natureza:** coluna nova no diário (`registro_aula`) + ajuste de UI e do Diário de Observações. **Nenhuma regra de frequência, permissão ou saída existente foi alterada.**
+**Natureza:** coluna nova no diário (`registro_aula`) + ajuste de UI e do Diário de Bordo. **Nenhuma regra de frequência, permissão ou saída existente foi alterada.**
 
 ## 1. Decisões (confirmadas antes da execução)
 
 | Ponto | Decisão |
 |---|---|
 | Layout | **A** — segundo textarea dentro do **mesmo card** da coluna direita, separado por `<hr class="my-2">` e com footer único. O grid continua `col-md-6` + `col-md-6`. |
-| Diário de Observações | **Exibir também** — a tela `/turma/<id>/observacoes` mostra as duas seções e lista aulas com **qualquer um** dos dois textos. |
+| Diário de Bordo | **Exibir também** — a tela `/turma/<id>/observacoes` mostra as duas seções e lista aulas com **qualquer um** dos dois textos. |
 | Impressões | **Não incluir** — pauta impressa, BI, relatórios e exportações seguem idênticos. |
 
 ## 2. Viabilidade de layout
@@ -49,7 +49,7 @@ Antes, a coluna direita do bloco do diário tinha apenas o card de Observações
 
 Mesmas classes/estilo do campo existente (`form-control border-0 shadow-none`, fundo transparente); ícone `bi-list-check`. O footer ("Este conteúdo será arquivado no diário de classe da turma") cobre os dois. `frequencia/lancar copy.html` (arquivo duplicado) não foi tocado.
 
-## 6. Diário de Observações da turma
+## 6. Diário de Bordo da turma
 
 - `app/registros/turmas.py::ver_observacoes`: o filtro passou de "`observacoes` não vazia" para `OR` entre `observacoes` e `atividades` preenchidas. Registros com os dois vazios continuam fora.
 - `app/templates/turmas/observacoes.html`: seções "Atividades da aula" e "Observações da aula" renderizadas condicionalmente, na ordem atividades → observações; texto do estado vazio atualizado.
@@ -97,7 +97,7 @@ Mesmas classes/estilo do campo existente (`form-control border-0 shadow-none`, f
 
 ## 10. Observações e limites
 
-- `observacoes` continua sendo o campo que o Diário de Observações usa como critério histórico; a partir de agora o critério é "qualquer um dos dois".
+- `observacoes` continua sendo o campo que o Diário de Bordo usa como critério histórico; a partir de agora o critério é "qualquer um dos dois".
 - O campo não tem limite de tamanho na aplicação (é `Text` no banco, como as observações) nem máscara.
 - `ruff` mantém avisos pré-existentes (`I001` em `app/conselho.py`, `F401` em `app/registros/core.py`) fora do escopo.
 
@@ -106,5 +106,5 @@ Mesmas classes/estilo do campo existente (`form-control border-0 shadow-none`, f
 1. Frequência → turma/oferta/data → preencher **Atividades da aula** e salvar; recarregar e conferir o texto.
 2. Preencher também Observações, salvar e conferir que um campo não apaga o outro.
 3. Apagar apenas Atividades e salvar: Observações permanecem; o banco grava `NULL`.
-4. Abrir **Diário de Observações** da turma: a aula aparece com as duas seções (ou só uma, se for o caso).
+4. Abrir **Diário de Bordo** da turma: a aula aparece com as duas seções (ou só uma, se for o caso).
 5. Imprimir a pauta: o conteúdo de Atividades não deve aparecer.

@@ -1,5 +1,5 @@
 # ruff: noqa: F811
-"""Diário de Observações em modo global (Painel Pedagógico).
+"""Diário de Bordo em modo global (Painel Pedagógico).
 
 A rota `/relatorios/observacoes` lista o diário de todas as turmas do período
 com filtros encadeados por período letivo, turma, curso (oferta) e professor.
@@ -197,7 +197,7 @@ def test_painel_pedagogico_tem_o_botao(app, client):
         f"/relatorios/painel?periodo_letivo_id={ids['p1']}"
     ).get_data(as_text=True)
     assert "/relatorios/observacoes" in corpo
-    assert "Diário de observações" in corpo
+    assert "Diário de Bordo" in corpo
 
 
 def test_fluxo_por_turma_continua_sem_filtros(app, client):

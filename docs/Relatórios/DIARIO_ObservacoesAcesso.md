@@ -1,7 +1,7 @@
-# Diário de Observações — acesso e navegação
+# Diário de Bordo — acesso e navegação
 
 **Data:** 28/10/2026
-**Escopo:** tornar o Diário de Observações da turma alcançável pela interface e restringir o acesso a quem de fato pode ver a turma.
+**Escopo:** tornar o Diário de Bordo da turma alcançável pela interface e restringir o acesso a quem de fato pode ver a turma.
 **Natureza:** rota + templates. **Sem migration, sem mudança de modelo ou de regra de frequência.**
 
 ## 1. Problema
@@ -26,7 +26,7 @@ A página existia (`GET /turma/<id>/observacoes` → `ver_observacoes`, template
 | Onde | O que | Link |
 |---|---|---|
 | `dashboard/professor.html` (painel `/painel`) | Botão de ícone `bi-chat-left-text` ao lado do lápis de frequência, em cada turma | `/turma/<id>/observacoes` |
-| `turmas/detalhe.html` (`/turma/<id>`) | Botão "Diário de Observações" no bloco de ações (após "Imprimir Pauta") | `/turma/<id>/observacoes` |
+| `turmas/detalhe.html` (`/turma/<id>`) | Botão "Diário de Bordo" no bloco de ações (após "Imprimir Pauta") | `/turma/<id>/observacoes` |
 | `turmas/observacoes.html` | "Voltar" passou a apontar para `main.painel` (painel correto de cada perfil) | `/painel` |
 
 O botão do painel fica **dentro da célula de ações existente**, sem criar coluna nova nem alterar o `<thead>`/`colspan` do estado vazio.
@@ -70,6 +70,6 @@ O botão do painel fica **dentro da célula de ações existente**, sem criar co
 ## 7. Validação manual
 
 1. Entrar como professor dono da turma → `/painel` → ícone de diário na linha da turma → 200.
-2. Abrir `/turma/<id>` como admin → "Diário de Observações" → 200.
+2. Abrir `/turma/<id>` como admin → "Diário de Bordo" → 200.
 3. Como professor de outra turma/unidade (ou admin de outra unidade), abrir a mesma URL → 403.
 4. No diário, "Voltar" leva ao painel do perfil.

@@ -21,7 +21,7 @@ O template consome o contexto da rota canônica:
 
 Com a rota legada, essas variáveis são `Undefined` na Jinja: `|length` = 0 e o loop cai no `{% else %}`. Resultado observado: **“Minhas Turmas: 0”**, tabela “Nenhuma turma vinculada” e nenhum card lateral. O `total_alunos` da rota legada também é calculado por `Turma.professor_id` (regra pré-oferta), então “Meus Alunos” pode divergir do valor canônico.
 
-O mesmo defeito já havia sido registrado em `docs/Relatórios/DIARIO_ObservacoesAcesso.md` §6, onde o “Voltar” do diário de observações foi corrigido — `turma_aval.html` e `conselho.py` ficaram para trás.
+O mesmo defeito já havia sido registrado em `docs/Relatórios/DIARIO_ObservacoesAcesso.md` §6, onde o “Voltar” do Diário de Bordo foi corrigido — `turma_aval.html` e `conselho.py` ficaram para trás.
 
 ## Correção aplicada (Solução A — menor risco)
 

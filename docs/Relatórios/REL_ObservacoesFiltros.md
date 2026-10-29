@@ -1,4 +1,4 @@
-# Diário de Observações com filtros (Painel Pedagógico)
+# Diário de Bordo com filtros (Painel Pedagógico)
 
 **Data:** 28/10/2026
 **Escopo:** acesso ao diário a partir do Painel Pedagógico, com filtros por período letivo, turma, curso (oferta) e professor.
@@ -32,7 +32,7 @@ Todos os selects disparam o GET (`onchange="this.form.submit()"`), com botão "F
 
 ## 4. Botão no painel
 
-Em `relatorios/painel_pedagogico.html`, ao lado de "Buscar aluno (ficha 360°)": "Diário de observações", levando `periodo_letivo_id` (e `turma_id` quando o painel está filtrado por turma).
+Em `relatorios/painel_pedagogico.html`, ao lado de "Buscar aluno (ficha 360°)": "Diário de Bordo", levando `periodo_letivo_id` (e `turma_id` quando o painel está filtrado por turma).
 
 ## 5. Não regressão
 
@@ -77,7 +77,7 @@ Em `relatorios/painel_pedagogico.html`, ao lado de "Buscar aluno (ficha 360°)":
 
 ## 9. Validação manual
 
-1. Painel pedagógico → "Diário de observações" → tela global com o período vigente.
+1. Painel pedagógico → "Diário de Bordo" → tela global com o período vigente.
 2. Trocar o período, depois a turma, depois o curso e o professor; cada troca recarrega com o filtro aplicado.
 3. Sem turma, o select de curso fica desabilitado.
 4. Abrir o mesmo diário por `/turma/<id>/observacoes`: sem filtros, com "Voltar" para o painel.
