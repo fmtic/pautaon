@@ -113,4 +113,4 @@ Nenhuma gravação foi feita no banco de ensaio. Banco principal intocado.
 ## 8. Suíte completa
 
 - **1001 → 1006 passed, 0 failed** (5 novos em `tests/test_seletor_data_oferta.py`; nenhum teste existente ajustado).
-- **Falha intermitente observada numa primeira rodada** e **não reproduzida** depois: `test_relatorios_observacoes.py::test_painel_pedagogico_tem_o_botao` (o bloco `{% if periodos %}` do painel não renderizou o botão). Verde rodado sozinho, verde na rodada completa seguinte e verde no subconjunto `test_[p-r]*`. Nada nesta T2 toca `/relatorios/painel` nem `PeriodoLetivo` — registrada como **pendência de isolamento** na entrega.
+- **Falha observada numa primeira rodada** e explicada depois: `test_relatorios_observacoes.py::test_painel_pedagogico_tem_o_botao` marcou o rótulo do botão como ausente (a página ainda dizia "Diário de Observações", o teste já esperava "Diário de Bordo"). **Não é flake nem desta entrega:** era uma **edição de terceiros em andamento** no working tree (o renome do diário), que se completou minutos depois — verde na rodada completa seguinte (1006 passed). Nada nesta T2 toca `/relatorios/painel` nem `PeriodoLetivo`.
