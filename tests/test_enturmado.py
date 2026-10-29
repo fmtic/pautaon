@@ -21,7 +21,8 @@ Cenário comum (semeado em `_base`), unidade A (e uma turma/aluno na unidade B):
 
 Parte 1 — CARACTERIZAÇÃO (escrita contra o código ATUAL, antes do refactor):
 fixa os números dos consumidores do Passo 1(a) — card "Enturmados" de `/alunos`,
-`PeriodoLetivo.alunos_enturmados()`, `total_alunos` do `/professor/painel`, o
+`PeriodoLetivo.alunos_enturmados()`, `total_alunos` do `/professor/painel` (hoje
+unificado em `main.painel` pela solução B — ver o teste correspondente), o
 filtro de período de `relatorios/shared.py`, o BI (ALU-008 com período) e o
 status canônico (`status_alunos`, que NÃO deve mudar).
 
@@ -210,17 +211,31 @@ def test_caracterizacao_total_alunos_painel_professor(app, client):
 
     Antes: 5 (Ana, Fanny-oferta inativa em andamento!, Gaby, Henry, Iris).
     Depois: 4 — sai Fanny (oferta od não é efetiva); entra ninguém.
+
+    Solução B (29/10/2026): a rota legada deixou de montar contexto próprio e
+    virou redirect para `main.painel`, então o card "Meus Alunos" não é mais
+    servido por ela — para o admin o destino é o painel gerencial. O contrato
+    passa a ser o redirect, e o número que ela exibia fica fixado na definição
+    única que a alimentava (`app.services.enturmado`).
     """
     ids = _base(app)
     from test_conselho_oferta import _loga
 
     _loga(client, ids, unidade_id=ids["un"])
     resposta = client.get("/professor/painel")
-    assert resposta.status_code == 200
-    corpo = resposta.data.decode("utf-8")
-    assert _numeiro(
-        corpo, r'Meus Alunos</div>\s*<div class="fs-3 fw-bold lh-sm">(\d+)</div>'
-    ) == 4
+    assert resposta.status_code == 302
+    assert resposta.headers["Location"].endswith("/painel")
+
+    corpo = client.get("/professor/painel", follow_redirects=True).data.decode("utf-8")
+    # Chegou no painel do perfil (gerencial), não na montagem legada do
+    # template do professor: sem o card "Meus Alunos", com os cards próprios.
+    assert "Meus Alunos" not in corpo
+    assert "Períodos Ativos" in corpo
+
+    with app.app_context():
+        from app.services.enturmado import ids_alunos_enturmados
+
+        assert len(ids_alunos_enturmados(unidade_id=ids["un"])) == 4
 
 
 def test_caracterizacao_filtro_periodo_shared(app):
@@ -367,11 +382,12 @@ def test_consumidores_migrados_equivalem_ao_servico(app, client):
     _loga(client, ids, unidade_id=ids["un"])
     corpo = client.get("/alunos").data.decode("utf-8")
     assert _numeiro(corpo, r'text-success">(\d+)</strong>') == len(esperado_un_a)
-    # /professor/painel: mesmo conjunto (turmas ativas da unidade cobrem o P1/P2).
-    corpo = client.get("/professor/painel").data.decode("utf-8")
-    assert _numeiro(
-        corpo, r'Meus Alunos</div>\s*<div class="fs-3 fw-bold lh-sm">(\d+)</div>'
-    ) == len(esperado_un_a)
+    # /professor/painel: o consumidor legado foi unificado em `main.painel`
+    # (solução B) — resta o contrato do redirect, porque o número "Meus
+    # Alunos" daquela montagem não existe mais.
+    resposta = client.get("/professor/painel")
+    assert resposta.status_code == 302
+    assert resposta.headers["Location"].endswith("/painel")
 
     with app.app_context():
         # Property do período == contagem do serviço para o mesmo período.

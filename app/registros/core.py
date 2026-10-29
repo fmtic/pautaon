@@ -16,7 +16,6 @@ from flask import current_app, flash, render_template, url_for, request, redirec
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
 
@@ -48,7 +47,6 @@ from app.utils.logica import (
     mensagem_valor_obrigatorio,
     salvar_frequencia,
 )
-from app.services.enturmado import cond_inscricao_enturmada
 from app.services.turma_curso import (
     ofertas_ativas,
     resolver_oferta_lancamento,
@@ -192,65 +190,21 @@ def excluir(id):
 @bp.route('/professor/painel')
 @login_required
 def painel_professor():
-    if current_user.role not in (
-        UserRole.ADMIN, UserRole.PROFESSOR,
-        UserRole.PEDAGOGICO, UserRole.SECRETARIA,
-    ):
-        flash("Permissões insuficientes. Autenticação RBAC Negou Rota.", "warning")
-        return redirect(url_for('main.painel'))
+    """Rota legada do painel do professor: apenas redireciona para a canônica.
 
-    programa_selecionado = request.args.get('programa', 'Todos')
-    unidade_id = get_unidade_id()
+    Esta view montava um contexto próprio para `dashboard/professor.html`
+    (`turmas`, `total_alunos`, `lista_programas`, `programa_ativo`,
+    `is_readonly`), mas o template consome `entradas`, `aulas_pendentes` e
+    `dias_bloqueados` — montados só por `main.painel`
+    (`render_dashboard_professor`). Pela rota legada o painel abria com
+    "Minhas Turmas" vazia e sem os cards laterais. A montagem duplicada foi
+    removida (solução B da unificação das duas rotas); o filtro de programa e
+    o `is_readonly` que ela oferecia nunca foram lidos pelo template.
 
-    stmt_prog = select(Turma.programa).distinct().where(Turma.ativo == True)
-    if unidade_id:
-        stmt_prog = stmt_prog.where(Turma.unidade_id == unidade_id)
-    lista_programas = db.session.execute(stmt_prog).scalars().all()
-
-    if current_user.role in (
-        UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA,
-    ):
-        stmt = select(Turma).options(joinedload(Turma.professor)).where(Turma.ativo == True)
-        if unidade_id:
-            stmt = stmt.where(Turma.unidade_id == unidade_id)
-        if programa_selecionado != 'Todos':
-            stmt = stmt.where(Turma.programa == programa_selecionado)
-    else:
-        stmt = select(Turma).where(
-            Turma.professor_id == current_user.id,
-            Turma.ativo == True
-        )
-        if unidade_id:
-            stmt = stmt.where(Turma.unidade_id == unidade_id)
-
-    todas_turmas = db.session.execute(stmt.order_by(Turma.ordenacao, Turma.nome)).scalars().all()
-
-    ids_turmas = [t.id for t in todas_turmas]
-    total_alunos = 0
-    if ids_turmas:
-        # ETAPA D3b.3: contagem pela definição única de "enturmado"
-        # (app.services.enturmado): inscrição ativa + turma ativa + oferta
-        # efetiva (M4). Antes não havia filtro de oferta efetiva, e o
-        # `.distinct(Aluno.id)` (DISTINCT ON, só PostgreSQL) é emitido com
-        # `with_entities(...).distinct()`, equivalente em todos os bancos.
-        total_alunos = (
-            Aluno.query.join(Inscricao, Inscricao.aluno_id == Aluno.id)
-            .filter(
-                Inscricao.turma_id.in_(ids_turmas),
-                cond_inscricao_enturmada(),
-                Aluno.ativo.is_(True),
-            )
-            .with_entities(Aluno.id)
-            .distinct()
-            .count()
-        )
-
-    return render_template('dashboard/professor.html',
-                           turmas=todas_turmas,
-                           total_alunos=total_alunos,
-                           lista_programas=lista_programas,
-                           programa_ativo=programa_selecionado,
-                           is_readonly=current_user.role == UserRole.SECRETARIA)
+    O destino roteia por perfil: professor vê o painel completo, admin /
+    gerência / pedagógico o painel gerencial e secretaria o painel dela.
+    """
+    return redirect(url_for('main.painel'))
 
 
 @bp.route('/frequencia', methods=['GET', 'POST'])
