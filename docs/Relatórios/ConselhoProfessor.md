@@ -78,7 +78,7 @@ Consequências deliberadas: o professor da turma que não está na oferta **perd
 **Nenhum teste existente precisou de ajuste.**
 
 Regressão dirigida (conselho, segurança, D5, harness de perfis): 77 passed.
-Suíte completa: **981 → 996** testes coletados (**994 passed + 2 failed** — as duas falhas são do `dashboard/professor.html`, alterado no working tree por terceiros, `aulas_pendentes[:5] → [:2]`; com o arquivo do HEAD as 9 do dashboard passam).
+Suíte completa: **981 → 996** testes coletados (**994 passed + 2 failed** — as duas falhas eram do `dashboard/professor.html`, alterado no working tree por terceiros, `aulas_pendentes[:5] → [:2]`; com o arquivo do HEAD as 9 do dashboard passam). Resolvido depois no commit `e5428c2`, que commitou a alteração, corrigiu o aviso do rodapé e ajustou os 2 testes: **996 passed, 0 failed**.
 
 ## Ensaio (`pautaon_ensaio`, desfeito)
 
@@ -92,7 +92,7 @@ Professor **Rosana Antunes** (id 88), oferta 15, turma 11 — dados que já exis
 
 ## Pendências e observações
 
-- `flask db upgrade` no principal continua pendente por causa do certificado (`e1f2a3b4c5d6`) — **independente** desta entrega.
+- `flask db upgrade` no principal **aplicado em 29/10/2026** (`e1f2a3b4c5d6`, modelo de certificado) — era independente desta entrega: backup em `instance/backups/pautaon_pre_modelo_certificado.sql`, 36 tabelas/2947 linhas idênticas antes e depois, estrutura conferida e `downgrade` + `upgrade` validados.
 - O `partials/sidebar.html` é legado; vale decidir depois se é removido ou passa a ser o único menu.
 - G1/P2 (professor obrigatório na oferta) segue parado na TRAVA.
-- A edição de terceiros em `app/templates/dashboard/professor.html` **não** foi tocada, commitada nem revertida.
+- A edição de terceiros em `app/templates/dashboard/professor.html` não fazia parte desta entrega; ficou no working tree e depois foi commitada em `e5428c2` (limite de 2 linhas, aviso do rodapé coerente e 2 testes ajustados).
