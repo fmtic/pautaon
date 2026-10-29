@@ -385,6 +385,28 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 
 **Relação com demais tabelas:** `periodo_letivo.centro_custo`, `turma.centro_custo` e `turma_curso.centro_custo` armazenam o **nome** do centro como token CSV (não FK); a tabela `centro_custo` é o catálogo da unidade, usado para validação/seleção no formulário de períodos. A edição de um centro propaga o novo nome para essas colunas (§8.11).
 
+### 7.4b `modelo_certificado` (modelo do certificado por centro de custo do período)
+
+**Mixins:** nenhum. Criada em 29/10/2026 — fase 1 do certificado com layout próprio por centro de custo.
+
+| Coluna            | Tipo         | Nulo | Default | Descrição                                   |
+|-------------------|--------------|------|---------|---------------------------------------------|
+| id                | int          | não  | auto    | PK                                          |
+| periodo_letivo_id | int          | não  | —       | FK → periodo_letivo                         |
+| centro_custo_id   | int          | não  | —       | FK → centro_custo (catálogo da unidade)     |
+| arquivo           | varchar(255) | não  | —       | Nome do arquivo no disco                    |
+| nome_original     | varchar(255) | sim  | —       | Nome enviado pelo usuário (usado no download) |
+| tipo              | varchar(60)  | sim  | —       | Mimetype (`image/png` / `image/jpeg`)       |
+| tamanho           | int          | sim  | —       | Bytes do upload                             |
+| created_at        | timestamp    | sim  | now     | Auditoria                                   |
+| updated_at        | timestamp    | sim  | now/onupdate | Última substituição                     |
+
+**Unicidade:** `uq_modelo_certificado_periodo_centro` (`periodo_letivo_id`, `centro_custo_id`) — **um** modelo vigente por par; enviar de novo **substitui** e apaga o arquivo anterior.
+
+**Arquivo:** fica **fora** do `static`, em `UPLOAD_FOLDER/certificados/<periodo_letivo_id>/` (padrão `instance/uploads`), com nome `p<periodo>_c<centro>_<epoch>_<uuid6>.<ext>`; só é servido pela rota autenticada `registros.arquivo_modelo_certificado` (pré-visualização inline e `?download=1` como anexo).
+
+**Migration:** `e1f2a3b4c5d6` (head atual). **Aplicada no ensaio; o principal ainda precisa de `flask db upgrade`.**
+
 ### 7.5 `nivel`
 
 | Coluna     | Tipo         | Nulo | Default | Descrição         |
@@ -1221,6 +1243,21 @@ Bloco do **Painel Pedagógico do professor** (`/professor/painel-pedagogico`, te
 - **Botão Imprimir (Parte B):** `pode_imprimir_pauta` no GET — oculto para **todos** os perfis com 2+ ofertas e nenhuma escolhida e, para **PROFESSOR**, também quando não é o professor cadastrado da oferta escolhida ou a turma não tem oferta ativa (mesma regra da guarda de `imprimir_pauta`: `professor_da_oferta`, sem herança do professor da turma). Os links do dropdown já levam `turma_curso` sempre que há oferta.
 - **Detalhe da turma (`turmas/detalhe.html`) não foi alterado:** para professor que não é o da oferta, os links continuam como antes — com 2+ ofertas cada link leva a oferta correspondente e o professor recebe **403** nas que não são dele; com 0/1 oferta o link vai sem `turma_curso`, cai na oferta de menor id e também responde 403 quando não é dele.
 - Permissões, escopo por unidade e o comportamento de salvar a pauta não mudaram.
+
+### 8.15 Modelos de certificado por centro de custo (29/10/2026 — fase 1)
+
+A página **Certificados do período** (`/periodo-letivo/relatorio/<id>`, `periodos/certificado.html`) ganhou a seção **"Modelos de certificado"** (fora da impressão, `no-print`), com uma linha por centro de custo do período e, para cada uma: miniatura do modelo, nome original/tamanho, data da última troca, **Enviar/Substituir**, **Baixar** e **Remover**.
+
+- **Onde o upload vive:** na própria página de Certificados — o modelo é do par **(período letivo, centro de custo)** e essa página já é do período. O modal de CRUD de centros de custo (`#modalCentrosCusto`) é o **catálogo da unidade** (transversal aos períodos) e **não** recebeu upload.
+- **Quem envia:** os mesmos papéis da página de Certificados (`_ROLES_PERIODO` = `admin`, `pedagogico`, `secretaria`), com `assert_unidade_context` para não-admin. **Gerência e professor ficam fora** (403).
+- **Arquivo:** PNG, JPG ou JPEG, até **5 MB**; SVG é recusado de propósito (XSS). Nome do arquivo no disco é gerado pelo servidor; o nome original é preservado para o download.
+- **Quais centros aparecem:** os nomes do CSV `periodo_letivo.centro_custo`, resolvidos contra o catálogo da **unidade do período** (§7.4b). Três situações são sinalizadas na tela:
+  - `fora do catálogo` — nome no CSV sem linha no catálogo (não é possível enviar; cadastre o centro);
+  - `fora do período` — há modelo, mas o centro saiu do CSV do período: continua listado e removível, sem desaparecer em silêncio;
+  - `inativo` — centro do catálogo com `ativo=False` (o modelo continua valendo para o histórico).
+- **Substituição:** uma linha por par (UNIQUE); enviar de novo troca o arquivo e apaga o anterior. Falha de remoção no disco (ex.: arquivo em uso no Windows) é registrada em log e a sobra é apagada na próxima gravação/remoção do mesmo par (auto-reparo).
+- **Não muda nada na emissão:** o certificado impresso continua com o layout atual (HTML/CSS + `window.print`). Usar o modelo como fundo e injetar o texto (nome, curso, C.H. total e a frase de aprovado/reprovado) é a **fase 2**, ainda sem texto definido pela instituição.
+- **Sem impacto** em permissões, escopo de unidade, frequência, pauta ou relatórios.
 
 ---
 
