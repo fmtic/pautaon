@@ -1207,6 +1207,21 @@ Bloco do **Painel Pedagógico do professor** (`/professor/painel-pedagogico`, te
 - **Filtro:** o `select` navega por **GET** (`turma_id` + `turma_curso`, `navegarTurma`), então o bloco é renderizado no servidor junto com o restante do painel — sem endpoint JSON nem JS novo.
 - Nada muda em frequência, pauta, relatórios, permissões ou no gráfico existente.
 
+### 8.14 Datas lançadas na pauta e botão Imprimir (V3a, 29/10/2026)
+
+**Seletor "Data da Aula"** (`frequencia/lancar.html`, GET `/frequencia`): cada opção recebe marca em **texto** (não em cor), por **oferta** selecionada:
+
+- `✔ dd/mm/aaaa (Dia)` — aula lançada; `○ dd/mm/aaaa (Dia) — pendente` — data já vencida sem lançamento; sem marca quando não se aplica.
+- **Definição de "lançada" (a mesma das pendências do dashboard):** `frequencias_lancadas`/`_pendencias_por_ofertas` de `utils/frequencia.py` — a data está lançada quando **todos** os alunos da pauta da oferta (`_alunos_da_oferta`) têm conceito registrado. Nenhuma definição nova foi criada.
+- **Serviço:** `utils/frequencia.py::situacao_datas_oferta(turma, oferta)` → `{status: {ISO: "lancada"|"pendente"}, lancadas, total_ate_hoje, pendentes, proxima_pendente}`; **uma** consulta agregada por oferta (`GROUP BY data`), sem N+1.
+- **Legado D2:** linhas com `turma_curso_id` NULL contam como da oferta **somente** quando ela é a única ativa da turma (`ofertas_unicas_ativas`).
+- **Resumo:** "X de Y aulas até hoje lançadas · Z pendente(s)" (Y = datas da oferta ≤ hoje; Z = Y − X) ou "Todas as aulas até hoje estão lançadas ✔"; o botão **"Ir para a próxima pendente"** abre a pendente mais antiga com a mesma navegação do seletor (`turma_id` + `turma_curso` + `data`) e desaparece quando Z = 0.
+- **Lista de datas é da TURMA, não da oferta:** o seletor continua vindo de `gerar_datas(turma, incluir_futuro=False)` — união dos dias das ofertas ativas, cortada **em hoje** (não há datas futuras na tela). Por isso só recebem marca as datas que pertencem ao calendário da oferta; as demais (dias da outra oferta) seguem sem marca, e Y/Z contam apenas as aulas da oferta.
+- **Ofertas sem escolha:** em turma com 2+ ofertas ativas e nenhuma escolhida (`exigir_escolha`) não há marcas nem resumo; turma sem oferta ativa (legado) também não marca nada.
+- **Botão Imprimir (Parte B):** `pode_imprimir_pauta` no GET — oculto para **todos** os perfis com 2+ ofertas e nenhuma escolhida e, para **PROFESSOR**, também quando não é o professor cadastrado da oferta escolhida ou a turma não tem oferta ativa (mesma regra da guarda de `imprimir_pauta`: `professor_da_oferta`, sem herança do professor da turma). Os links do dropdown já levam `turma_curso` sempre que há oferta.
+- **Detalhe da turma (`turmas/detalhe.html`) não foi alterado:** para professor que não é o da oferta, os links continuam como antes — com 2+ ofertas cada link leva a oferta correspondente e o professor recebe **403** nas que não são dele; com 0/1 oferta o link vai sem `turma_curso`, cai na oferta de menor id e também responde 403 quando não é dele.
+- Permissões, escopo por unidade e o comportamento de salvar a pauta não mudaram.
+
 ---
 
 ## 9. Convenções de código
