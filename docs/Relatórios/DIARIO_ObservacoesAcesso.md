@@ -61,11 +61,11 @@ O botão do painel fica **dentro da célula de ações existente**, sem criar co
 - `tests/test_diario_observacoes_acesso.py` (novo).
 - `app/models/MER.md` (§7.20) e `backlog_desenvolvimento.md`.
 
-## 6. Bug adjacente (reportado, não corrigido)
+## 6. Bug adjacente (reportado; corrigido em 29/10/2026)
 
 `registros.painel_professor` (`/professor/painel`, `app/registros/core.py:194`) renderiza `dashboard/professor.html` passando `turmas`, mas o template itera `entradas` — a tabela "Minhas Turmas" aparece vazia por essa rota. A rota usada pelo menu/painel é `main.painel` (`/painel` → `render_dashboard_professor`), que monta `entradas`. Corrigir a rota legada exige decidir entre redirecioná-la para `main.painel` ou reimplementar a montagem de `entradas` em `registros` — fora deste escopo. O "Voltar" do diário já foi apontado para a rota correta.
 
-**Atualização (29/10/2026):** os outros dois pontos que ainda apontavam para a rota legada foram corrigidos com a mesma solução — `conselho/turma_aval.html` e os redirects de `conselho.avaliar_turma` agora usam `main.painel` (ver `docs/Relatórios/PainelProfessorRotaVoltar.md`, MER §8.17). A **rota legada em si** continua sem redirect (solução B em aberto).
+**Atualização (29/10/2026):** os outros dois pontos que ainda apontavam para a rota legada foram corrigidos com a mesma solução — `conselho/turma_aval.html` e os redirects de `conselho.avaliar_turma` agora usam `main.painel` (ver `docs/Relatórios/PainelProfessorRotaVoltar.md`, MER §8.17). No mesmo dia a **rota legada em si** foi unificada (solução B): `registros.painel_professor` é só `redirect(url_for('main.painel'))` e a montagem duplicada saiu de `app/registros/core.py` — ver `docs/Relatórios/PainelProfessorRotaUnificada.md`, MER §8.18.
 
 ## 7. Validação manual
 

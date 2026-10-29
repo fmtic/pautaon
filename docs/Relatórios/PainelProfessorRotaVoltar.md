@@ -28,14 +28,14 @@ O mesmo defeito já havia sido registrado em `docs/Relatórios/DIARIO_Observacoe
 - `app/templates/conselho/turma_aval.html`: o botão **Voltar ao Painel** passa a usar `url_for('main.painel')`.
 - `app/conselho.py`, em `avaliar_turma`: os dois redirects (o do POST de “Salvar Avaliação” e o do caso “turma sem oferta ativa”) passam a usar `url_for('main.painel')`.
 
-Nenhuma migration, tabela, coluna ou dado alterado. A rota legada **não** foi removida nem redirecionada.
+Nenhuma migration, tabela, coluna ou dado alterado. Nesta entrega a rota legada **não** foi removida nem redirecionada — foi no mesmo dia, na Solução B abaixo.
 
-## Solução B (não aplicada — registrada como pendência)
+## Solução B (aplicada no mesmo dia — ver `PainelProfessorRotaUnificada.md`)
 
-Unificar de vez: transformar `registros.painel_professor` em `redirect(url_for('main.painel'))` e remover a montagem duplicada (~65 linhas). O que impede fazer junto:
+Unificação de vez: `registros.painel_professor` virou `redirect(url_for('main.painel'))` e a montagem duplicada (~65 linhas) foi removida. O que havia impedido fazer junto, e como ficou:
 
-- `tests/test_enturmado.py:218` e `:371` exercitam a rota legada esperando **200** e o número em “Meus Alunos”; passariam a precisar de `follow_redirects=True` e do valor do dashboard novo.
-- A rota legada atende admin/pedagógico/secretaria; `main.painel` redireciona admin para o painel gerencial. É o comportamento desejável (coerente com o menu), mas é mudança de comportamento, não só de URL.
+- `tests/test_enturmado.py:218` e `:371` exercitavam a rota legada esperando **200** e o número em “Meus Alunos” → passaram a testar o contrato do redirect, com o número caracterizado na definição única (`app.services.enturmado`) que alimentava aquela montagem.
+- A rota legada atendia admin/pedagógico/secretaria com o template do professor; `main.painel` roteia por perfil e manda os gestores para o painel gerencial. Adotou-se o comportamento do menu, que é o coerente — a tela que aqueles perfis abriam pela rota legada estava vazia de qualquer forma.
 
 ## Card “Frequências Pendentes” (tarefa que estava no working tree)
 
@@ -69,5 +69,5 @@ Suíte completa: **996 passed, 0 failed** (o collect permanece em 996; as novas 
 
 ## Pendências
 
-- Solução B (unificar `/professor/painel` com `main.painel`) — depende de ajustar 2 asserções do `test_enturmado` e decidir o destino de admin/pedagógico/secretaria.
+- ~~Solução B (unificar `/professor/painel` com `main.painel`)~~ — **aplicada no mesmo dia**; ver `docs/Relatórios/PainelProfessorRotaUnificada.md` e o MER §8.18.
 - `app/templates/partials/sidebar.html` continua sendo partial legado (não incluído por nenhum template).

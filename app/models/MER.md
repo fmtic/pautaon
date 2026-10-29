@@ -1276,7 +1276,18 @@ O painel do professor (`dashboard/professor.html`) é servido por **duas rotas**
 
 - **Card "Frequências Pendentes":** exibe as **2 primeiras** aulas em atraso (`limite_pendentes`), não a lista inteira. O mesmo valor alimenta o loop e o aviso do rodapé ("Mais N − 2 dia(s)…"), para o aviso não informar uma contagem divergente do que a tabela mostra. A lista completa continua em `_aulas_pendentes` (usada pelo cálculo de `pendentes_count` por oferta e pelos testes).
 - **Rota canônica do painel:** telas que "voltam ao painel" usam `main.painel`. A avaliação coletiva do conselho (`conselho/turma_aval.html` e os redirects de `avaliar_turma`) apontava para a rota legada e abria o painel **vazio** — card "Minhas Turmas" = 0, tabela "Nenhuma turma vinculada" e sem os cards laterais. Agora aponta para `main.painel`.
-- **A rota legada permanece** (sem redirect): `tests/test_enturmado.py` ainda exercita o `total_alunos` calculado por ela. Unificá-la exige decidir entre redirecionar para `main.painel` (que manda admin/pedagógico para o painel gerencial) ou reimplementar `entradas` em `registros` — registrado como pendência.
+- **A rota legada permaneceu** (sem redirect) naquela entrega: `tests/test_enturmado.py` ainda exercitava o `total_alunos` calculado por ela. Foi unificada no mesmo dia — ver §8.18.
+- **Sem migration** e sem alteração de dados.
+
+### 8.18 Painel do professor: `/professor/painel` unificada em `main.painel` (29/10/2026)
+
+Solução B da duplicação de rotas do §8.17, aplicada no mesmo dia.
+
+- **Contrato novo:** `registros.painel_professor` (`app/registros/core.py`) é apenas `redirect(url_for('main.painel'))`. A montagem duplicada (~60 linhas de `select(Turma)`, filtro de programa e contagem de alunos) foi removida, junto dos imports que só ela usava (`joinedload` e `cond_inscricao_enturmada`).
+- **Nada funcional se perdeu:** `dashboard/professor.html` não lê `turmas`, `lista_programas`, `programa_ativo` nem `is_readonly` — o único valor consumido era `total_alunos`, e pela rota legada a página vinha mesmo assim com "Minhas Turmas" 0 e sem os cards laterais. O filtro de programa e o modo somente-leitura da secretaria nunca existiram na tela.
+- **Destino por perfil** (quem decide é `main.painel`): professor → painel completo; admin / gerência / pedagógico → painel gerencial; secretaria → painel da secretaria; serviço social → painel dele; `pendente` → aguardando aprovação; papel desconhecido → **403** (antes a rota legada dava flash de "Permissões insuficientes" e redirecionava para o mesmo `main.painel`).
+- **Último ponteiro interno:** o card "Abrir pauta" do Painel Geral (`dashboard/index.html`) apontava para `/professor/painel` — para o gestor, um beco sem saída no template vazio do professor. Agora aponta para `registros.frequencia`, que é a própria pauta.
+- **Testes:** `tests/test_painel_professor_legado.py` (novo) cobre redirect do professor com painel completo, redirect para o painel do perfil do gestor, exigência de login e o link do Painel Geral. As duas caracterizações de `tests/test_enturmado.py` que liam o "Meus Alunos" da rota legada passaram a testar o contrato do redirect, mantendo o número fixado na definição única (`app.services.enturmado`) que alimentava aquela montagem.
 - **Sem migration** e sem alteração de dados.
 
 ---
