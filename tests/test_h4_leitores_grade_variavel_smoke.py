@@ -248,13 +248,15 @@ class TestLeitoresSemErroComGradeVariavel:
     def test_dashboard_por_data_usa_o_intervalo_do_weekday(self):
         app, ids = _seed()
         _torna_nao_uniforme_pela_ui(app, ids)
-        # 02/03 e 04/03 já têm frequência lançada no seed — as primeiras
-        # pendências são a segunda e a quarta seguintes.
+        # O card exibe só as 2 primeiras pendências (limite do template). O seed
+        # lança 02/03 e 06/03; 04/03 fica pendente e é a 1ª linha, seguida de
+        # 09/03 — uma quarta e uma segunda, cada uma com o intervalo do próprio
+        # weekday na grade não uniforme.
         texto = _norm(
             _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
         )
+        assert "04/03/2026 14:00–17:00 T-VAR" in texto  # quarta
         assert "09/03/2026 08:00–11:00 T-VAR" in texto  # segunda
-        assert "11/03/2026 14:00–17:00 T-VAR" in texto  # quarta
 
     def test_aluno_ficha_atendimento_conselho_frequencia_seletor(self):
         app, ids = _seed()
