@@ -1270,6 +1270,15 @@ O **professor** passa a ter `Conselho > Painel de Turmas` no menu e lança, por 
 - **Fora do professor:** `fechamento_turma` e `salvar_fechamento_data` respondem **403** (antes só a unidade era checada, então a URL direta alcançava a tela). A situação final segue na secretaria/pedagogia.
 - **Sem migration**, sem tabela nova e sem alteração de dados. `app/templates/partials/sidebar.html` é um **partial legado** (não incluído por nenhum template); o menu real está em `base.html` e os dois ficaram alinhados.
 
+### 8.17 Painel do professor: pendências em 2 linhas e rota canônica do "Voltar" (29/10/2026)
+
+O painel do professor (`dashboard/professor.html`) é servido por **duas rotas**: a canônica `main.painel` (`/painel` → `render_dashboard_professor`) e a legada `registros.painel_professor` (`/professor/painel`). Só a canônica monta o contexto que o template consome (`entradas`, `aulas_pendentes`, `dias_bloqueados`); a legada passa `turmas`, `total_alunos`, `lista_programas`, `programa_ativo` e `is_readonly`.
+
+- **Card "Frequências Pendentes":** exibe as **2 primeiras** aulas em atraso (`limite_pendentes`), não a lista inteira. O mesmo valor alimenta o loop e o aviso do rodapé ("Mais N − 2 dia(s)…"), para o aviso não informar uma contagem divergente do que a tabela mostra. A lista completa continua em `_aulas_pendentes` (usada pelo cálculo de `pendentes_count` por oferta e pelos testes).
+- **Rota canônica do painel:** telas que "voltam ao painel" usam `main.painel`. A avaliação coletiva do conselho (`conselho/turma_aval.html` e os redirects de `avaliar_turma`) apontava para a rota legada e abria o painel **vazio** — card "Minhas Turmas" = 0, tabela "Nenhuma turma vinculada" e sem os cards laterais. Agora aponta para `main.painel`.
+- **A rota legada permanece** (sem redirect): `tests/test_enturmado.py` ainda exercita o `total_alunos` calculado por ela. Unificá-la exige decidir entre redirecionar para `main.painel` (que manda admin/pedagógico para o painel gerencial) ou reimplementar `entradas` em `registros` — registrado como pendência.
+- **Sem migration** e sem alteração de dados.
+
 ---
 
 ## 9. Convenções de código

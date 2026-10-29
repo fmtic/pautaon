@@ -1,3 +1,13 @@
+### Alterações do dia — 29/10/2026 (Painel do professor — pendências em 2 linhas e botão "Voltar" do conselho)
+
+- **Pedido:** no `conselho/turma_aval.html`, o botão **Voltar ao Painel** abria o painel do professor **sem os dados**, enquanto o **Painel Geral** da lateral mostrava tudo; analisar a rota antes de corrigir.
+- **P1 (diagnóstico):** não era rota quebrada — são **duas rotas para o mesmo template**. `main.painel` (`/painel` → `render_dashboard_professor`) passa `entradas`, `aulas_pendentes` e `dias_bloqueados`; `registros.painel_professor` (`/professor/painel`, `registros/core.py:194`) passa `turmas`, `total_alunos`, `lista_programas`, `programa_ativo` e `is_readonly`. O template itera `entradas` e usa os outros dois blocos: com a rota legada, “Minhas Turmas” sai **0**, a tabela mostra “Nenhuma turma vinculada” e os cards laterais não renderizam. O `total_alunos` também difere (regra por `Turma.professor_id`, pré-oferta).
+- **Solução A aplicada (menor risco):** `conselho/turma_aval.html` e os dois redirects de `avaliar_turma` (`conselho.py` — turma sem oferta ativa e pós-POST de “Salvar Avaliação”) passam a usar `main.painel`.
+- **Solução B (não aplicada, registrada):** transformar `registros.painel_professor` em redirect para `main.painel` e remover a montagem duplicada. Exige ajustar `tests/test_enturmado.py` (2 asserções esperam 200 e o número em “Meus Alunos” na rota legada) e decide o destino de admin/pedagógico/secretaria (a rota legada os atende hoje; `main.painel` manda admin para o painel gerencial).
+- **Testes:** 3 asserções novas em testes existentes (`test_conselho_professor::test_avaliacao_da_oferta_abre_e_grava_para_o_professor` — link `/painel` no GET e `Location` no POST; `test_conselho_oferta::test_avaliar_turma_sem_oferta_recusa` — `Location` `/painel`). Regressão dirigida do conselho: **53 passed**. Nenhum arquivo de teste novo.
+- **Card “Frequências Pendentes” (tarefa que estava no working tree, commit `e5428c2`):** limite de **2 linhas** (`limite_pendentes`) reaproveitado no aviso do rodapé — antes o rodapé calculava sobre 5 e informava errado quantos dias ficaram ocultos; 2 testes de dashboard ajustados ao novo contrato. Suíte: **996 passed, 0 failed**.
+- Docs: MER §8.17; relatório `docs/Relatórios/PainelProfessorRotaVoltar.md`.
+
 ### Alterações do dia — 29/10/2026 (Conselho — lançamento pelo professor: painel e escopo por oferta)
 
 - **Pedido:** o professor lançar o conselho de classe (individual por aluno e da oferta), acessando `Conselho > Painel de Turmas` com apenas as ofertas ativas dele; sem acesso a fechamento nem à gestão.
