@@ -1,13 +1,16 @@
 """Remoção de ofertas criadas em teste que ficaram sem professor (E1).
 
-Secador por oferta, na ordem das FKs, **só para oferta sem lançamento**.
-Regra de segurança (a mesma do `saneamento_professor_oferta.py`):
+Secador por oferta, na ordem das FKs. Regra de segurança (a mesma do
+`saneamento_professor_oferta.py`):
 
   * dry-run por padrão; `--aplicar` escreve;
   * `--aplicar` só é aceito em banco cujo nome contém "ensaio", salvo
     `--autorizar-principal` (autorização expressa do usuário);
-  * oferta com lançamento (`frequencia`, `registro_aula`, `conselho_classe`)
-    **não é removida**: o script reporta o bloqueio e segue para as outras;
+  * oferta com lançamento (`frequencia`, `registro_aula`, `conselho_classe` +
+    `conselho_resposta` ligada) **não é removida**: o script reporta o bloqueio
+    e segue para as outras — salvo com `--remover-lancamentos`, decisão
+    explícita de remover também os lançamentos vinculados à oferta (nunca as
+    linhas legadas com `turma_curso_id IS NULL`);
   * oferta com inscrição ativa só é removida com `--remover-inscricoes`
     (perda de matrícula precisa ser decisão explícita);
   * backup antes: `pg_dump` em `instance/backups/` (ver cabeçalho do relato).
@@ -18,6 +21,8 @@ Uso:
         --aplicar --remover-inscricoes
     python scripts/remover_ofertas_sem_lancamento.py --banco principal --ids 19 \\
         --aplicar --autorizar-principal
+    python scripts/remover_ofertas_sem_lancamento.py --banco principal --ids 16,17,18 \\
+        --aplicar --autorizar-principal --remover-lancamentos --remover-inscricoes
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ BANCOS = ("principal", "ensaio")
 LANCAMENTOS = ("frequencia", "registro_aula", "conselho_classe")
 # Ordem de remoção das dependências de `turma_curso` (RESTRICT/NO ACTION primeiro).
 DEPENDENCIAS = LANCAMENTOS + ("inscricoes", "turma_curso_horario")
-TABELAS_CONTADAS = DEPENDENCIAS + ("turma_curso", "turma")
+TABELAS_CONTADAS = DEPENDENCIAS + ("conselho_resposta", "turma_curso", "turma")
 
 
 def _dsn(banco: str, nome_ensaio: str) -> str:
@@ -97,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         "--remover-inscricoes", action="store_true",
         help="permite desfazer inscrições ativas ligadas à oferta",
     )
+    parser.add_argument(
+        "--remover-lancamentos", action="store_true",
+        help="remove também os lançamentos vinculados à oferta (frequencia, "
+             "registro_aula, conselho_classe + conselho_resposta); só toca "
+             "linhas com turma_curso_id na lista — nunca as legadas NULL",
+    )
     args = parser.parse_args(argv)
 
     ids = [int(x) for x in args.ids.split(",") if x.strip()]
@@ -155,9 +166,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"curso {oferta.curso_id}, ativa={bool(oferta.ativo)}, "
                 f"professor={oferta.professor_id}): {vinc}, ativas={ativos}"
             )
-            if lanc:
-                print(f"BLOQUEADA {sumario} -> tem lançamento, NÃO é removida")
+            if lanc and not args.remover_lancamentos:
+                print(f"BLOQUEADA {sumario} -> tem lançamento, NÃO é removida "
+                      "(use --remover-lancamentos para remover junto)")
                 bloqueadas.append(oferta.id)
+            elif lanc:
+                print(f"REMOVÍVEL COM LANÇAMENTOS {sumario}")
+                removiveis.append(oferta)
             elif ativos and not args.remover_inscricoes:
                 print(
                     f"BLOQUEADA {sumario} -> tem inscrição ativa; "
@@ -180,6 +195,25 @@ def main(argv: list[str] | None = None) -> int:
 
         print("-- removendo --")
         for oferta in removiveis:
+            # Lançamentos vinculados SOMENTE a esta oferta, na ordem das FKs:
+            # conselho_resposta (filha) -> conselho_classe -> registro_aula
+            # (registro_aula_tema cai em CASCADE) -> frequencia.
+            if args.remover_lancamentos:
+                n_res = db.session.execute(
+                    text(
+                        "DELETE FROM conselho_resposta WHERE conselho_id IN ("
+                        "SELECT id FROM conselho_classe WHERE turma_curso_id = :o)"
+                    ),
+                    {"o": oferta.id},
+                ).rowcount
+                for t in LANCAMENTOS:
+                    n = db.session.execute(
+                        text(f"DELETE FROM {t} WHERE turma_curso_id = :o"),
+                        {"o": oferta.id},
+                    ).rowcount
+                    print(f"   {t}: {n} linha(s) removida(s) da oferta {oferta.id}")
+                if n_res:
+                    print(f"   conselho_resposta: {n_res} linha(s) removida(s) (via conselho_classe)")
             # Incrições ativas/inativas da oferta (FK NO ACTION): saem primeiro.
             for inscricao in Inscricao.query.filter_by(
                 turma_curso_id=oferta.id
