@@ -573,6 +573,20 @@ def frequencia():
         except ValueError:
             continue
 
+    # V3a (R10): o botão Imprimir só aparece quando a impressão é permitida —
+    # 2+ ofertas sem escolha ou professor que não é o professor da oferta
+    # (a guarda da impressão é por OFERTA, sem herdar o professor da turma).
+    pode_imprimir_pauta = True
+    if len(ofertas) >= 2 and oferta_atual is None:
+        pode_imprimir_pauta = False
+    elif current_user.role == UserRole.PROFESSOR:
+        from app.services.aluno_info_professor import professor_da_oferta
+
+        if oferta_atual is None or not professor_da_oferta(
+            oferta_atual, current_user
+        ):
+            pode_imprimir_pauta = False
+
     return render_template('frequencia/lancar.html',
                            alunos_com_info=alunos_com_info,
                            turmas=turmas,
@@ -601,6 +615,7 @@ def frequencia():
                            oferta_atual=oferta_atual,
                            situacao_datas=situacao_datas,
                            dias_abrev=dias_abrev,
+                           pode_imprimir_pauta=pode_imprimir_pauta,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 
