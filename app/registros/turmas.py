@@ -1380,12 +1380,20 @@ def nova_turma():
 @bp.route("/turma/<int:id>")
 @login_required
 def ver_turma(id):
+    from app.services.aluno_info_professor import (
+        professor_da_oferta,
+        professor_de_alguma_oferta_ativa,
+    )
+
     unidade_id = get_unidade_id()
     turma_obj = Turma.query.get_or_404(id)
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
+    # E3 (I1): acesso do professor por OFERTA, sem herdar `turma.professor_id` —
+    # vale para quem leciona alguma oferta ativa da turma; quem só é o professor
+    # cadastrado da turma (sem oferta própria) perde a entrada.
     if (
         current_user.role == UserRole.PROFESSOR
-        and turma_obj.professor_id != current_user.id
+        and not professor_de_alguma_oferta_ativa(id, current_user)
     ):
         abort(403)
 
@@ -1499,6 +1507,13 @@ def ver_turma(id):
         oferta_sel=oferta_sel,
         alunos_por_oferta=alunos_por_oferta,
         grade_oferta_map=grade_oferta_map,
+        # E3: ofertas ativas do professor logado (vazio p/ os demais perfis) —
+        # o detalhe usa para mostrar só os links de pauta/Diário que ele abre.
+        ofertas_do_professor=(
+            [o for o in ofertas_lista if professor_da_oferta(o, current_user)]
+            if current_user.role == UserRole.PROFESSOR
+            else []
+        ),
         abrir_modal_enturmar=request.args.get("modal") == "enturmar",
         **ctx,
     )
@@ -2704,13 +2719,15 @@ def ver_observacoes(turma_id):
         abort(403)
 
     # Mesma guarda de `ver_turma`/`imprimir_pauta`: isolamento por unidade e,
-    # para professor, apenas as próprias turmas (antes qualquer professor
-    # abria o diário de qualquer turma pelo id).
+    # para professor, apenas as turmas em que ele leciona alguma oferta ativa
+    # (E3/I1: regra por OFERTA, sem herdar `turma.professor_id`).
+    from app.services.aluno_info_professor import professor_de_alguma_oferta_ativa
+
     turma_obj = Turma.query.get_or_404(turma_id)
     assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
     if (
         current_user.role == UserRole.PROFESSOR
-        and turma_obj.professor_id != current_user.id
+        and not professor_de_alguma_oferta_ativa(turma_id, current_user)
     ):
         abort(403)
 

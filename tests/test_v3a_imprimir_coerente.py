@@ -4,6 +4,8 @@ A guarda da impressão é por OFERTA (`professor_da_oferta`), sem herdar o
 professor da turma. Reaproveita a semente/helpers de `test_v3a_datas_lancadas`.
 """
 
+import re
+
 from test_v3a_datas_lancadas import SQLiteTestConfig, _get, _seed, login_as
 
 import pytest
@@ -74,8 +76,14 @@ def test_imprimir_visivel_para_admin_secretaria_pedagogico(app, client):
         assert f"turma_curso={ids['o2']}" in html
 
 
-def test_imprimir_oculto_para_professor_em_turma_sem_oferta(app, client):
-    """Turma legada (0 ofertas ativas): o professor levaria 403 — botão oculto."""
+def test_professor_em_turma_sem_oferta_perde_acesso(app, client):
+    """Turma legada (0 ofertas ativas) — E3 (I1): a regra de acesso é por OFERTA.
+
+    Antigo: o professor entrava pela turma via `turma.professor_id` (200) e o
+    botão Imprimir aparecia oculto. Novo: sem oferta ativa própria, a turma sai
+    da lista dele e o `turma_id` é recusado (flash + retorno a /frequencia sem
+    acesso à pauta). Motivo: acesso por oferta sem herança (MER §8.12/§8.22).
+    """
     ids = _seed(app)
     with app.app_context():
         for oferta in TurmaCurso.query.filter_by(turma_id=ids["turma"]).all():
@@ -83,7 +91,11 @@ def test_imprimir_oculto_para_professor_em_turma_sem_oferta(app, client):
         db.session.commit()
 
     login_as(client, ids["prof"], ids["un"])
-    status, html = _get(client, ids)
+    resposta = client.get(
+        f"/frequencia?turma_id={ids['turma']}", follow_redirects=True
+    )
 
-    assert status == 200
+    assert resposta.status_code == 200
+    html = re.sub(r"\s+", " ", resposta.get_data(as_text=True))
+    assert "não tem permissão para acessar esta turma" in html
     assert "Imprimir Pauta" not in html

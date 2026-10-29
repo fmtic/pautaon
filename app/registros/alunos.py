@@ -879,17 +879,23 @@ def historico_aluno(aluno_id):
 
     if current_user.role not in allowed_roles:
         if current_user.role == UserRole.PROFESSOR:
-            tem_turma_do_professor = (
-                Inscricao.query.join(Turma, Inscricao.turma_id == Turma.id)
+            # E3 (I1): o professor vê o histórico do aluno quando leciona uma
+            # OFERTA ativa em que ele tem inscrição — regra por oferta, sem
+            # herdar `turma.professor_id`.
+            from app.services.aluno_info_professor import condicao_professor_da_oferta
+
+            tem_oferta_do_professor = (
+                Inscricao.query.join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
                 .filter(
                     Inscricao.aluno_id == aluno_id,
                     Inscricao.ativo.is_(True),
-                    Turma.professor_id == current_user.id,
+                    TurmaCurso.ativo.is_(True),
+                    condicao_professor_da_oferta(current_user.id),
                 )
                 .first()
             )
 
-            if not tem_turma_do_professor:
+            if not tem_oferta_do_professor:
                 abort(403)
         else:
             abort(403)
@@ -1314,12 +1320,17 @@ def foto_aluno(aluno_id: int):
     aluno = db.get_or_404(Aluno, aluno_id)
     assert_unidade_context(aluno.unidade_id, get_unidade_id())
     if current_user.role == UserRole.PROFESSOR:
+        # E3 (I1): a foto é liberada ao professor de uma OFERTA ativa em que o
+        # aluno tem inscrição (regra por oferta, sem herdar `turma.professor_id`).
+        from app.services.aluno_info_professor import condicao_professor_da_oferta
+
         professor_tem_aluno = (
-            Inscricao.query.join(Turma, Inscricao.turma_id == Turma.id)
+            Inscricao.query.join(TurmaCurso, Inscricao.turma_curso_id == TurmaCurso.id)
             .filter(
                 Inscricao.aluno_id == aluno.id,
                 Inscricao.ativo.is_(True),
-                Turma.professor_id == current_user.id,
+                TurmaCurso.ativo.is_(True),
+                condicao_professor_da_oferta(current_user.id),
             )
             .first()
         )

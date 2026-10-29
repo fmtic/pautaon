@@ -79,6 +79,29 @@ def professor_da_oferta(oferta, usuario) -> bool:
     return oferta.professor_id is not None and oferta.professor_id == usuario_id
 
 
+def professor_de_alguma_oferta_ativa(turma_id, usuario) -> bool:
+    """E3 (I1): o usuário é professor de alguma OFERTA ATIVA desta turma?
+
+    É a regra de acesso por OFERTA (sem herança de `turma.professor_id`) para as
+    telas ainda montadas por turma (`ver_turma`, `ver_observacoes`, a pauta de
+    frequência no GET e no POST). Turma sem oferta ativa do usuário não libera
+    nada para o perfil professor. O isolamento por unidade e o
+    `assert_unidade_context` continuam na rota; aqui só decide o vínculo.
+    """
+    if usuario is None or turma_id is None:
+        return False
+    usuario_id = getattr(usuario, "id", usuario)
+    return db.session.execute(
+        select(TurmaCurso.id)
+        .where(
+            TurmaCurso.turma_id == turma_id,
+            TurmaCurso.ativo.is_(True),
+            condicao_professor_da_oferta(usuario_id),
+        )
+        .limit(1)
+    ).first() is not None
+
+
 def _condicoes_acesso(user) -> list:
     """Condições da inscrição qualificada (item 3 das decisões do I1)."""
     return [

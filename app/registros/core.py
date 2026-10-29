@@ -23,6 +23,7 @@ from app.database import db
 from app.models import (
     Registro,
     Turma,
+    TurmaCurso,
     Aluno,
     Frequencia,
     TemaAula,
@@ -252,8 +253,16 @@ def frequencia():
 
         turma_post_id = request.form.get('turma', '')
         if current_user.role == UserRole.PROFESSOR and turma_post_id:
+            # E3 (I1): só lança na pauta quem é professor de alguma OFERTA ativa
+            # desta turma (regra por oferta, sem herdar `turma.professor_id`).
+            from app.services.aluno_info_professor import (
+                professor_de_alguma_oferta_ativa,
+            )
+
             turma_post = db.session.get(Turma, int(turma_post_id)) if turma_post_id.isdigit() else None
-            if not turma_post or turma_post.professor_id != current_user.id:
+            if not turma_post or not professor_de_alguma_oferta_ativa(
+                turma_post.id, current_user
+            ):
                 abort(403)
 
         data_post = (request.form.get('data') or request.form.get('data_hidden') or '').strip()
@@ -378,9 +387,19 @@ def frequencia():
     unidade_id = get_unidade_id()
 
     if current_user.role == UserRole.PROFESSOR:
-        stmt = select(Turma).where(
-            Turma.ativo == True,
-            Turma.professor_id == current_user.id
+        # E3 (I1): a lista de turmas do professor é quem tem OFERTA ativa dele
+        # (sem herdar `turma.professor_id`); admin e gestão seguem no else.
+        from app.services.aluno_info_professor import condicao_professor_da_oferta
+
+        stmt = (
+            select(Turma)
+            .join(TurmaCurso, TurmaCurso.turma_id == Turma.id)
+            .where(
+                Turma.ativo == True,
+                TurmaCurso.ativo.is_(True),
+                condicao_professor_da_oferta(current_user.id),
+            )
+            .distinct()
         )
         if unidade_id:
             stmt = stmt.where(Turma.unidade_id == unidade_id)
