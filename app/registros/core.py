@@ -37,6 +37,7 @@ from app.models import (
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
+from app.utils.timezone import get_local_now
 from app.utils.logica import (
     PendenciaValorEsportista,
     calcular_dias_aula_turma,
@@ -46,8 +47,10 @@ from app.utils.logica import (
     get_unidade_id,
     mensagem_valor_obrigatorio,
     salvar_frequencia,
+    _blocked_dates_str,
 )
 from app.services.turma_curso import (
+    datas_aula_oferta,
     ofertas_ativas,
     resolver_oferta_lancamento,
     _alunos_da_oferta,
@@ -205,6 +208,31 @@ def painel_professor():
     gerência / pedagógico o painel gerencial e secretaria o painel dela.
     """
     return redirect(url_for('main.painel'))
+
+
+_NOMES_MESES = {
+    '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
+    '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
+    '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro',
+}
+
+
+def _meses_disponiveis(datas_iso: list) -> list:
+    """Meses (numero, nome) presentes numa lista de datas 'YYYY-MM-DD', em ordem.
+
+    Espelha os `meses_disponiveis` de `carregar_contexto_turma`, mas para o
+    calendário filtrado de uma oferta (seletor "Data da Aula").
+    """
+    meses, vistos = [], set()
+    for dia in sorted(datas_iso):
+        mes_num = dia[5:7]
+        if mes_num not in vistos:
+            meses.append({
+                'numero': mes_num,
+                'nome': _NOMES_MESES.get(mes_num, 'Mês Desconhecido'),
+            })
+            vistos.add(mes_num)
+    return meses
 
 
 @bp.route('/frequencia', methods=['GET', 'POST'])
@@ -415,6 +443,27 @@ def frequencia():
             ctx['temas'] = TemaAula.query.filter_by(
                 curso_id=oferta_atual.curso_id, ativo=True
             ).all()
+
+        # T2 (29/10/2026): com oferta escolhida (2+ ofertas) ou única automática,
+        # o seletor "Data da Aula" lista SOMENTE as datas do calendário da oferta
+        # até hoje (vigência + grade, feriados/dias bloqueados descontados —
+        # `datas_aula_oferta`, mesma fonte das marcas/resumo da V3a). Sem oferta
+        # escolhida em 2+ (exigir_escolha) e turma sem oferta ativa (legado) seguem
+        # com a união da turma, como antes. A validação do POST não é tocada.
+        if oferta_atual is not None and not exigir_escolha:
+            datas_calendario = [
+                dia.strftime('%Y-%m-%d')
+                for dia in datas_aula_oferta(
+                    oferta_atual, limite=get_local_now().date(),
+                    blocked=_blocked_dates_str(ctx['turma']),
+                )
+            ]
+            ctx['datas'] = datas_calendario
+            ctx['meses'] = _meses_disponiveis(datas_calendario)
+            if data and data not in datas_calendario:
+                # Data fora do calendário da oferta (ex.: troca de oferta):
+                # cai na data mais recente da oferta, sem erro.
+                data = datas_calendario[-1] if datas_calendario else None
 
         if data and not exigir_escolha:
             # A1: conceitos + Valor do Esportista de cada aluno/aula na MESMA
