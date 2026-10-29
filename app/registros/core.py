@@ -422,6 +422,7 @@ def frequencia():
     obs = ""
     ofertas = []
     oferta_atual = None
+    exigir_escolha = False
     valores_por_aluno = {}
     atividades_salvas = ""
 
@@ -430,7 +431,6 @@ def frequencia():
         # exatamente 1 = uso automático sem seletor; 2+ = exige escolha do
         # curso antes de carregar a pauta (sem escolha, não lista alunos).
         ofertas = ofertas_ativas(turma_id)
-        exigir_escolha = False
         if len(ofertas) == 1:
             oferta_atual = ofertas[0]
         elif len(ofertas) >= 2:
@@ -548,6 +548,45 @@ def frequencia():
                 alunos_do_ctx, current_user,
             )
 
+    # V3a: datas já lançadas / pendentes da oferta selecionada (mesma definição
+    # das pendências do dashboard) e coerência do botão Imprimir.
+    from app.utils.dias_semana import weekday_para_abrev
+    from app.utils.frequencia import situacao_datas_oferta
+
+    situacao_datas = {
+        "status": {},
+        "lancadas": 0,
+        "total_ate_hoje": 0,
+        "pendentes": 0,
+        "proxima_pendente": None,
+    }
+    if oferta_atual is not None and not exigir_escolha and ctx.get('turma'):
+        situacao_datas = situacao_datas_oferta(ctx['turma'], oferta_atual)
+
+    # Abreviação do dia da semana de cada data do seletor ("Seg", "Qua"...).
+    dias_abrev = {}
+    for dia_iso in ctx.get('datas', []):
+        try:
+            dias_abrev[dia_iso] = weekday_para_abrev(
+                date.fromisoformat(dia_iso).weekday()
+            )
+        except ValueError:
+            continue
+
+    # V3a (R10): o botão Imprimir só aparece quando a impressão é permitida —
+    # 2+ ofertas sem escolha ou professor que não é o professor da oferta
+    # (a guarda da impressão é por OFERTA, sem herdar o professor da turma).
+    pode_imprimir_pauta = True
+    if len(ofertas) >= 2 and oferta_atual is None:
+        pode_imprimir_pauta = False
+    elif current_user.role == UserRole.PROFESSOR:
+        from app.services.aluno_info_professor import professor_da_oferta
+
+        if oferta_atual is None or not professor_da_oferta(
+            oferta_atual, current_user
+        ):
+            pode_imprimir_pauta = False
+
     return render_template('frequencia/lancar.html',
                            alunos_com_info=alunos_com_info,
                            turmas=turmas,
@@ -574,6 +613,9 @@ def frequencia():
                            # H3e: horário do seletor de oferta pela grade.
                            grade_oferta_map=grades_para_exibicao(ofertas),
                            oferta_atual=oferta_atual,
+                           situacao_datas=situacao_datas,
+                           dias_abrev=dias_abrev,
+                           pode_imprimir_pauta=pode_imprimir_pauta,
                            is_readonly=current_user.role == UserRole.SECRETARIA)
 
 

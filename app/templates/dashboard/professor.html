@@ -134,6 +134,9 @@
         <!-- Coluna direita: Frequências Pendentes + Próximos Dias sem Aula -->
         <div class="col-12 col-lg-6 d-flex flex-column gap-4">
 
+            {# Limite de linhas do card "Frequências Pendentes": um único valor
+               para o loop e para o aviso do rodapé, evitando contagem divergente. #}
+            {% set limite_pendentes = 2 %}
             {% if aulas_pendentes %}
             <div class="card shadow-sm border-0 border-start border-danger border-4">
                 <div class="card-header bg-danger-subtle border-0 d-flex align-items-center gap-2">
@@ -153,7 +156,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for p in aulas_pendentes[:5] %}
+                                {% for p in aulas_pendentes[:limite_pendentes] %}
                                 <tr>
                                     <td class="ps-3 fw-semibold text-danger">
                                         {{ p.data.strftime('%d/%m/%Y') }}
@@ -176,10 +179,10 @@
                             </tbody>
                         </table>
                     </div>
-                    {% if aulas_pendentes|length > 5 %}
+                    {% if aulas_pendentes|length > limite_pendentes %}
                     <div class="px-3 py-2 small text-muted border-top">
                         <i class="bi bi-three-dots me-1"></i>
-                        Mais {{ aulas_pendentes|length - 5 }} dia(s) pendente(s) não exibido(s). Use a coluna Pauta para regularizar.
+                        Mais {{ aulas_pendentes|length - limite_pendentes }} dia(s) pendente(s) não exibido(s). Use a coluna Pauta para regularizar.
                     </div>
                     {% endif %}
                 </div>

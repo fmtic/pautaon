@@ -50,6 +50,7 @@ instance/*.db-shm
 instance/*.db-wal
 .tmp/
 .tmp_*
+*.bat
 
 # Pasta do Nextcloud (arquivos temporários de sincronização)
 .sync_*.db

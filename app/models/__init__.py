@@ -19,6 +19,7 @@ MAPA DE MÓDULOS
     usuarios         -> User
     pedagogico       -> Curso, CentroCusto, Nivel, ValorEsportista
     academico        -> PeriodoLetivo, Turma, TurmaCurso, TurmaCursoHorario, TemaAula
+    certificado      -> ModeloCertificado (modelo do certificado por centro de custo)
     pessoas          -> Aluno, SituacaoEscolar
     perfis           -> EnderecoAluno, ResponsavelAluno,
                         PerfilSocioeconomico, PerfilDiversidade  (Onda 3A)
@@ -41,6 +42,7 @@ from app.models.pedagogico import CentroCusto, Curso, Nivel, ValorEsportista
 from app.models.academico import (
     PeriodoLetivo, Turma, TurmaCurso, TurmaCursoHorario, TemaAula,
 )
+from app.models.certificado import ModeloCertificado
 from app.models.pessoas import Aluno, SituacaoEscolar
 from app.models.perfis import (
     EnderecoAluno,
@@ -73,6 +75,8 @@ __all__ = [
     'Curso', 'CentroCusto', 'Nivel', 'ValorEsportista',
     # Acadêmico
     'PeriodoLetivo', 'Turma', 'TurmaCurso', 'TurmaCursoHorario', 'TemaAula',
+    # Certificado
+    'ModeloCertificado',
     # Pessoas
     'Aluno', 'SituacaoEscolar',
     # Perfis (Onda 3A)

@@ -110,7 +110,10 @@ def test_render_nao_perde_textos(app):
         "Lançamento de Frequência",
         "Atividades da aula",
         "Observações da Aula",
-        "Este conteúdo será arquivado no diário de classe",
+        # V3a: texto reescrito no cbbe75a (reorganização do layout de
+        # lançamento) — o teste ficou com o texto antigo e a suíte estava
+        # vermelha antes de qualquer mudança da V3a.
+        "O conteúdo de atividades e observações será arquivado",
         "Frequência",
     ):
         assert texto in corpo, f"texto ausente após a correção: {texto!r}"

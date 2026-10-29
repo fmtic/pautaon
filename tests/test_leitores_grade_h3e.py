@@ -453,7 +453,12 @@ class TestDashboardPorData:
         texto = _norm(
             _client(app, ids["prof"]).get("/dashboard").get_data(as_text=True)
         )
-        assert "03/03/2026 08:00–10:00 T-VAR" in texto
+        # O card exibe as 2 primeiras pendências; ambas são de 02/03 (segunda),
+        # cada uma com o intervalo da grade da própria oferta. A variação da
+        # hora pelo weekday da data está em
+        # test_pendencia_usa_o_intervalo_do_weekday_da_data.
+        assert "02/03/2026 08:00–11:00 T-MULTI — Curso A" in texto
+        assert "02/03/2026 08:00–09:30 T-UNI" in texto
 
 
 # --- Turma multi-oferta e fallback sem grade ---------------------------------

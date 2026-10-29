@@ -33,7 +33,7 @@ import logging
 
 from flask import Blueprint, render_template, request, redirect, flash, abort, url_for, jsonify
 from flask_login import login_required, current_user
-from app.models import (PerguntaConselho, Turma, Aluno, Frequencia,
+from app.models import (PerguntaConselho, Turma, TurmaCurso, Aluno, Frequencia,
                     OpcaoProximaTurma, ConselhoClasse, ConselhoResposta, Inscricao,
                     PeriodoConselho, PeriodoLetivo)
 from app.models.enums import (
@@ -45,6 +45,7 @@ from app.models.enums import (
 from app.database import db
 from app.extensions import csrf
 from app.registros.shared import assert_unidade_context
+from app.services.aluno_info_professor import professor_da_oferta
 from app.services.turma_curso import (
     contar_ofertas_conselho,
     ofertas_ativas,
@@ -60,7 +61,7 @@ logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
 
 
-def _resolver_oferta_conselho(turma, oferta_id=None):
+def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
     """Resolve a oferta na qual a rota de conselho vai trabalhar (D5.2, M1).
 
     Regras: 1 oferta ativa = usa direto (dispensa escolha); 2+ exige
@@ -68,17 +69,60 @@ def _resolver_oferta_conselho(turma, oferta_id=None):
     inativa ou de outra turma cai fora de `ofertas_ativas` e é recusada);
     0 ofertas = turma não abre conselho.
 
+    `professor_id` (opcional) restringe a resolução às ofertas DESSE
+    professor — regra PARTE B/G1, sem herdar o professor da turma. Para os
+    demais perfis a lista continua sendo todas as ofertas ativas.
+
     Retorna ``(oferta, ativas, exigir_escolha)`` — `oferta` é None quando
     não há oferta válida; `exigir_escolha` é True somente com 2+ ativas e
     escolha ausente/inválida (a tela precisa mostrar o seletor).
     """
     ativas = ofertas_ativas(turma.id)
+    if professor_id is not None:
+        ativas = [o for o in ativas if professor_da_oferta(o, professor_id)]
     if not ativas:
         return None, ativas, False
     if len(ativas) == 1:
         return ativas[0], ativas, False
     oferta = next((o for o in ativas if o.id == oferta_id), None)
     return oferta, ativas, oferta is None
+
+
+def _escopo_professor():
+    """Id do professor quando a sessão é de professor; `None` nos demais.
+
+    PARTE B/G1 (consenso de 29/10/2026): "ofertas do professor" são as de
+    `turma_curso.professor_id`, sem herança do professor da turma.
+    """
+    return current_user.id if current_user.role == UserRole.PROFESSOR else None
+
+
+def _guarda_oferta_explicita_do_professor(turma, oferta_id):
+    """403 quando o professor pede explicitamente oferta ativa que não é dele.
+
+    Escolha ausente ou oferta inexistente/inativa seguem o fluxo normal (M1
+    recusa sem revelar dados); apenas a oferta ativa de outro professor vira
+    403 — a mesma resposta da pauta impressa.
+    """
+    if current_user.role != UserRole.PROFESSOR or oferta_id is None:
+        return
+    alvo = next((o for o in ofertas_ativas(turma.id) if o.id == oferta_id), None)
+    if alvo is not None and not professor_da_oferta(alvo, current_user):
+        abort(403)
+
+
+def _bloqueio_oferta_encerrada(oferta):
+    """Mensagem de bloqueio quando o professor tenta lançar oferta encerrada.
+
+    O encerramento (`TurmaCurso.conselho_concluido`) continua manual e nas
+    mãos de admin/pedagógico/secretaria; para o professor a oferta encerrada
+    é somente leitura.
+    """
+    if (current_user.role == UserRole.PROFESSOR and oferta is not None
+            and oferta.conselho_concluido):
+        return ("O conselho desta oferta já foi encerrado. "
+                "Peça à secretaria ou à pedagogia para reabrir antes de lançar.")
+    return None
 
 
 def _escolha_fora_das_ativas(oferta_id, oferta):
@@ -471,8 +515,18 @@ def lancamento_conselho():
         if turno_filtro != 'Todos':
             stmt = stmt.where(Turma.turno == turno_filtro)
     else:
-        stmt = select(Turma).where(
-            Turma.professor_id == current_user.id, Turma.ativo == True
+        # Consenso de 29/10/2026: o professor só vê turmas onde tem OFERTA
+        # ativa dele (sem herança do professor da turma).
+        stmt = (
+            select(Turma)
+            .join(TurmaCurso, TurmaCurso.turma_id == Turma.id)
+            .where(
+                Turma.ativo == True,
+                TurmaCurso.ativo == True,
+                TurmaCurso.professor_id == current_user.id,
+            )
+            .distinct()
+            .order_by(Turma.ordenacao, Turma.nome)
         )
     turmas_para_select = db.session.execute(stmt).scalars().all()
 
@@ -492,11 +546,20 @@ def lancamento_conselho():
     # sessão (Visão Global é somente leitura).
     assert_unidade_context(turma_obj.unidade_id, unidade_id)
 
+    # PARTE B/G1 (consenso de 29/10/2026): o professor só abre o conselho de
+    # turma onde tem oferta ativa dele; a lista acima já é esse escopo.
+    escopo_professor = _escopo_professor()
+    if escopo_professor is not None and turma_obj.id not in {
+        t.id for t in turmas_para_select
+    }:
+        abort(403)
+
     # D5.2 (M1): conselho é por OFERTA. 0 ofertas = turma não abre conselho;
     # 2+ sem escolha válida = tela só mostra o seletor, sem tocar em dados.
     sel_id = request.args.get('oferta_sel', type=int)
+    _guarda_oferta_explicita_do_professor(turma_obj, sel_id)
     oferta, ofertas_turma, exigir_escolha = _resolver_oferta_conselho(
-        turma_obj, sel_id
+        turma_obj, sel_id, escopo_professor
     )
     if _escolha_fora_das_ativas(sel_id, oferta):
         # Oferta inativa, de outra turma ou inexistente pedida explicitamente:
@@ -532,6 +595,12 @@ def lancamento_conselho():
                                oferta=None,
                                exigir_escolha=True,
                                **render_base)
+
+    # Oferta encerrada é somente leitura para o professor (sem criar linhas).
+    bloqueio = _bloqueio_oferta_encerrada(oferta)
+    if bloqueio:
+        flash(bloqueio, "warning")
+        return redirect(url_for('conselho.index_conselho'))
 
     # Alunos da OFERTA (inscrição ativa nela; distinct: 2 inscrições ativas
     # da mesma oferta não podem duplicar o aluno na lista).
@@ -620,8 +689,10 @@ def salvar_conselho():
     # é usada direto. 0 ou escolha ausente/inválida (oferta inativa, de outra
     # turma/unidade) = recusa sem gravar nada.
     oferta_id_form = request.form.get("turma_curso_id", type=int)
+    escopo_professor = _escopo_professor()
+    _guarda_oferta_explicita_do_professor(turma_obj, oferta_id_form)
     oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
-        turma_obj, oferta_id_form
+        turma_obj, oferta_id_form, escopo_professor
     )
     if _escolha_fora_das_ativas(oferta_id_form, oferta):
         flash("A oferta enviada não é uma oferta ativa desta turma.", "warning")
@@ -638,6 +709,13 @@ def salvar_conselho():
         flash("Selecione o curso (oferta) antes de salvar o conselho.", "warning")
         return redirect(url_for('conselho.lancamento_conselho',
                                 turma=turma_id, etapa=etapa))
+
+    bloqueio = _bloqueio_oferta_encerrada(oferta)
+    if bloqueio:
+        flash(bloqueio, "warning")
+        return redirect(url_for('conselho.lancamento_conselho',
+                                turma=turma_id, etapa=etapa,
+                                oferta_sel=oferta.id))
 
     data_inicio = normalized["data_inicio"]
     data_fim = normalized["data_fim"]
@@ -725,6 +803,10 @@ def salvar_conselho():
 @bp.route('/conselho/fechamento/<int:turma_id>')
 @login_required
 def fechamento_turma(turma_id):
+    if current_user.role == UserRole.PROFESSOR:
+        # Situação final é da secretaria/pedagogia (consenso de 29/10/2026):
+        # o professor só lança as respostas do conselho.
+        abort(403)
     turma = Turma.query.get_or_404(turma_id)
     # D5.2/B4: o fechamento grava ConselhosClasse FINAL — isolamento para
     # todos os perfis.
@@ -819,6 +901,12 @@ def salvar_fechamento_data(turma_id):
     data = request.get_json(silent=True) or {}
     registros = data.get('dados', [])
 
+    if current_user.role == UserRole.PROFESSOR:
+        return jsonify({
+            "success": False,
+            "message": "A situação final é registrada pela secretaria/pedagogia.",
+        }), 403
+
     turma = Turma.query.get_or_404(turma_id)
     unidade_id = get_unidade_id()
     assert_unidade_context(turma.unidade_id, unidade_id)
@@ -903,8 +991,6 @@ def salvar_fechamento_data(turma_id):
 def avaliar_turma(turma_id):
     turma = db.get_or_404(Turma, turma_id)
 
-    if current_user.role == UserRole.PROFESSOR and turma.professor_id != current_user.id:
-        abort(403)
     # D5.2/B4: isolamento por unidade também aqui (todos os perfis).
     assert_unidade_context(turma.unidade_id, get_unidade_id())
 
@@ -914,12 +1000,17 @@ def avaliar_turma(turma_id):
     # grava e lê em TurmaCurso.avaliacao_*, não mais em Turma.avaliacao_*.
     oferta_id_req = (request.values.get('oferta_sel', type=int)
                      or request.values.get('turma_curso_id', type=int))
+    escopo_professor = _escopo_professor()
+    _guarda_oferta_explicita_do_professor(turma, oferta_id_req)
     oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
-        turma, oferta_id_req,
+        turma, oferta_id_req, escopo_professor,
     )
     if _escolha_fora_das_ativas(oferta_id_req, oferta):
         flash("A oferta escolhida não é uma oferta ativa desta turma.", "warning")
         return redirect(url_for('conselho.avaliar_turma', turma_id=turma.id))
+    if escopo_professor is not None and not ativas:
+        # Turma sem oferta do professor: nada a avaliar (URL direta).
+        abort(403)
     if not ativas:
         flash(
                         f'A turma {turma.nome} não possui curso (oferta) ativa — a avaliação coletiva é por oferta.',
@@ -935,6 +1026,11 @@ def avaliar_turma(turma_id):
                                etapa_atual=etapa_selecionada,
                                perguntas=[],
                                respostas={})
+
+    bloqueio = _bloqueio_oferta_encerrada(oferta)
+    if bloqueio:
+        flash(bloqueio, "warning")
+        return redirect(url_for('conselho.index_conselho'))
 
     perguntas = PerguntaConselho.query.filter_by(
         tipo='TURMA', etapa=etapa_selecionada, ativo=True

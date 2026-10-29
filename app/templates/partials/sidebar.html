@@ -68,13 +68,17 @@
         {% endif %}
 
         {# ---------- CONSELHO ---------- #}
-        {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
+        {# O professor entra apenas no Painel de Turmas (lançamento das
+           respostas das ofertas dele); o restante segue restrito. #}
+        {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'professor'] %}
             <li class="sidebar-heading">Conselho</li>
+            {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
             <li class="nav-item">
                 <a class="nav-link {% if request.endpoint == 'conselho.informacoes' %}active{% endif %}" href="{{ url_for('conselho.informacoes') }}">
                     <i class="bi bi-info-circle"></i> Data-Informações
                 </a>
             </li>
+            {% endif %}
             <li class="nav-item">
                 <a class="nav-link {% if request.endpoint == 'conselho.index_conselho' %}active{% endif %}" href="{{ url_for('conselho.index_conselho') }}">
                     <i class="bi bi-grid-3x3-gap"></i> Painel de Turmas
