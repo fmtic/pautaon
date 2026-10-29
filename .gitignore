@@ -51,6 +51,8 @@ instance/*.db-wal
 .tmp/
 .tmp_*
 *.bat
+# Lixo de tempfile no raíz (execuções de teste/scripts)
+tmp*
 
 # Pasta do Nextcloud (arquivos temporários de sincronização)
 .sync_*.db
