@@ -75,6 +75,7 @@ def _seed(app):
             "gerencia": _usuario("Ger CM", "ger.cm@x.com", "gerencia", un_a.id),
             "professor": _usuario("Prof CM", "prof.cm@x.com", "professor", un_a.id),
             "pedagogico_b": _usuario("Ped B", "pedb.cm@x.com", "pedagogico", un_b.id),
+            "gerencia_b": _usuario("Ger B", "gerb.cm@x.com", "gerencia", un_b.id),
         }
         db.session.add_all(usuarios.values())
         db.session.flush()
@@ -258,7 +259,10 @@ def test_limite_de_tamanho(app, client):
 # Permissões e isolamento
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("perfil", ["professor", "gerencia"])
+# Professor segue fora; gerência entrou em 29/10/2026 (decisão do usuário —
+# `_ROLES_PERIODO` agora inclui gerencia), então saiu deste parametrize e foi
+# para `test_perfis_de_periodos_enviam`.
+@pytest.mark.parametrize("perfil", ["professor"])
 def test_perfis_sem_acesso_nao_enviam(app, client, perfil):
     ids = _seed(app)
     login_as(client, ids["usuarios"][perfil], ids["un_a"])
@@ -270,7 +274,9 @@ def test_perfis_sem_acesso_nao_enviam(app, client, perfil):
         assert ModeloCertificado.query.count() == 0
 
 
-@pytest.mark.parametrize("perfil", ["admin", "pedagogico", "secretaria"])
+@pytest.mark.parametrize(
+    "perfil", ["admin", "pedagogico", "secretaria", "gerencia"]
+)
 def test_perfis_de_periodos_enviam(app, client, perfil):
     ids = _seed(app)
     login_as(client, ids["usuarios"][perfil], ids["un_a"])
@@ -280,9 +286,12 @@ def test_perfis_de_periodos_enviam(app, client, perfil):
         assert ModeloCertificado.query.count() == 1
 
 
-def test_outra_unidade_recebe_403(app, client):
+@pytest.mark.parametrize("perfil", ["pedagogico_b", "gerencia_b"])
+def test_outra_unidade_recebe_403(app, client, perfil):
+    """Não-admin de outra unidade continua 403 (`assert_unidade_context`),
+    inclusive a gerência recém-incluída em `_ROLES_PERIODO`."""
     ids = _seed(app)
-    login_as(client, ids["usuarios"]["pedagogico_b"], ids["un_b"])
+    login_as(client, ids["usuarios"][perfil], ids["un_b"])
 
     resposta = _enviar(client, ids, ids["cc_b"])
 

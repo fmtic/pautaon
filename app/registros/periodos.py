@@ -33,7 +33,11 @@ from app.utils.logica import get_unidade_id
 from . import bp
 
 _ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
-_ROLES_PERIODO = ["admin", "pedagogico", "secretaria"]
+# Gerência incluída em 29/10/2026 (decisão do usuário): passa a acessar as
+# páginas de período (novo/editar/ativar/inativar/calendário/certificados) e
+# as rotas de modelo de certificado. Não-admin segue limitado pela unidade
+# (`assert_unidade_context`).
+_ROLES_PERIODO = ["admin", "pedagogico", "secretaria", "gerencia"]
 
 
 def _check_calendario_access(unidade_id):

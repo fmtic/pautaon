@@ -16,7 +16,7 @@ Decisões fechadas com o usuário:
 | Formato | **Imagem PNG/JPG** (PDF exigiria geração no servidor) |
 | Cardinalidade | **Um modelo por (período, centro)**; substituir apaga o anterior |
 | Centro sem modelo | Nada especial — na vida real toda oferta tem centro; sem fallback/“modelo padrão” |
-| Quem envia | Mesmos papéis de Períodos; **professor fora** |
+| Quem envia | Mesmos papéis de Períodos (`_ROLES_PERIODO`); **professor fora**. Atualização 29/10/2026: **gerência incluída** por decisão do usuário (ver §8.1) |
 | Limite | **5 MB**, **sem SVG** |
 | Texto | O app injeta o texto sobre o modelo (posições fixas no CSS) — **fase 2**, texto ainda não definido |
 
@@ -68,8 +68,10 @@ Arquivos **fora** do `static`: `UPLOAD_FOLDER/certificados/<periodo_letivo_id>/p
 | `/periodo-letivo/<id>/certificado-modelo/<centro_id>/remover` | POST | remover |
 | `/periodo-letivo/<id>/certificado-modelo/<centro_id>/arquivo` | GET | pré-visualizar (`?download=1` = anexo) |
 
-Guardas: `_ROLES_PERIODO` (`admin`, `pedagogico`, `secretaria`) + `assert_unidade_context` para não-admin; centro de
-outra unidade → **404**; CSRF nos três POSTs.
+Guardas: `_ROLES_PERIODO` (`admin`, `pedagogico`, `secretaria` e — desde 29/10/2026, §8.1 — `gerencia`) +
+`assert_unidade_context` para não-admin (gerência de outra unidade continua **403**); centro de outra unidade → **404**; CSRF
+nos três POSTs. Como a constante é compartilhada com as demais páginas de Períodos, gerência passou a acessar também
+novo/editar/ativar/inativar, calendário do período e a página de Certificados (reportado na entrega; nada foi restringido).
 
 ## 5. Tela
 
@@ -83,12 +85,13 @@ Seção `#modelos-certificado` (`no-print`), acima da tabela de conferência:
 - nome fora do catálogo: linha visível, sem upload, com instrução de cadastrar o centro;
 - modelo de centro que saiu do CSV: continua listado como `fora do período` e pode ser removido.
 
-## 6. Testes (`tests/test_certificado_modelo.py`, 23, nenhum existente alterado)
+## 6. Testes (`tests/test_certificado_modelo.py`, 24)
 
 Upload/linha/arquivo no disco · substituição apaga o anterior (1 linha, 1 arquivo) · remoção apaga linha e arquivo ·
-PDF recusado (flash + nada gravado) · arquivo ausente · limite de 5 MB (mensagem) · **403** para professor **e
-gerência** · **200** para admin/pedagógico/secretaria · isolamento de unidade (403) · centro de outra unidade (404) ·
-modelos isolados por período · preview devolve os bytes e `image/png` · `?download=1` como anexo com o nome original ·
+PDF recusado (flash + nada gravado) · arquivo ausente · limite de 5 MB (mensagem) · **403** para professor · **200/302**
+para admin/pedagógico/secretaria/**gerência** (da unidade) · isolamento de unidade (403 para pedagógico **e gerência** de
+outra unidade) · centro de outra unidade (404) · modelos isolados por período · preview devolve os bytes e `image/png` ·
+`?download=1` como anexo com o nome original ·
 404 sem modelo · página lista os centros do período (e não os de outra unidade) · página mostra o modelo enviado ·
 período sem centros (aviso) · centro fora do catálogo · centro inativo marcado · modelo `fora do período` continua
 listado.
@@ -110,15 +113,20 @@ Suíte: **958 → 981 passed**.
 
 ## 8. Desvios, achados e pendências
 
-1. **Papéis:** o pedido citou "admin/gerência/pedagógico/secretaria", mas `_ROLES_PERIODO` (usado pela própria página
-   de Certificados) **não inclui `gerencia`** — o upload segue a página: gerência e professor recebem **403**. Se
-   gerência precisar enviar, é uma linha em `_ROLES_PERIODO` (afeta também o acesso à página).
+1. **Papéis — RESOLVIDO em 29/10/2026:** o pedido original citou "admin/gerência/pedagógico/secretaria", mas
+   `_ROLES_PERIODO` (usado pela própria página de Certificados) **não incluía `gerencia`** — upload e página ficavam em
+   **403** para gerência. **Decisão do usuário:** `gerencia` foi incluída em `_ROLES_PERIODO` (`app/registros/periodos.py`).
+   Efeito: gerência passa a acessar a página de Certificados do período, as 3 rotas de modelo de certificado (enviar,
+   remover, arquivo) **e** — porque a constante é compartilhada — novo/editar/ativar/inativar período e o calendário do
+   período (nada foi restringido além do pedido; apenas reportado). `assert_unidade_context` mantido: gerência de outra
+   unidade continua **403**; professor continua **403**.
 2. **Pré-requisito da fase 2:** a lista de certificados (`periodos.py`, laço de inscrições) **não carrega a oferta nem
    o centro de custo** em cada linha (`item` = turma/curso/nível/situação/concluído/carga). Para aplicar o modelo por
    centro na impressão, essa listagem precisa passar `item["oferta"]`/`item["centro_custo"]` e o CSS de impressão
    precisa de `@page A4` + fundo por page-break. Nada disso foi feito agora (fora do escopo da fase 1).
-3. **Migration no principal:** a tabela existe só no ensaio. O principal precisa de `flask db upgrade` (após backup)
-   antes do deploy desta funcionalidade.
+3. **Migration no principal — RESOLVIDO em 29/10/2026:** a migration `e1f2a3b4c5d6` já foi aplicada no banco principal
+   (`flask db upgrade`), após backup em `instance/backups/pautaon_pre_modelo_certificado.sql` — 36 tabelas/2947 linhas
+   idênticas antes e depois, estrutura conferida no `\d` e `downgrade` + `upgrade` reaplicados. Resta apenas o deploy.
 4. **Windows / arquivo em uso:** se o arquivo antigo estiver aberto no momento da substituição (ex.: download em
    andamento), a remoção falha e fica registrada em log; a sobra é apagada na próxima gravação ou remoção do mesmo par.
 5. **Ativos não versionados:** `instance/uploads/certificados/` é criado sob demanda e está fora do git (mesmo padrão

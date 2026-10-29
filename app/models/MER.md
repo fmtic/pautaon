@@ -1249,7 +1249,7 @@ Bloco do **Painel Pedagógico do professor** (`/professor/painel-pedagogico`, te
 A página **Certificados do período** (`/periodo-letivo/relatorio/<id>`, `periodos/certificado.html`) ganhou a seção **"Modelos de certificado"** (fora da impressão, `no-print`), com uma linha por centro de custo do período e, para cada uma: miniatura do modelo, nome original/tamanho, data da última troca, **Enviar/Substituir**, **Baixar** e **Remover**.
 
 - **Onde o upload vive:** na própria página de Certificados — o modelo é do par **(período letivo, centro de custo)** e essa página já é do período. O modal de CRUD de centros de custo (`#modalCentrosCusto`) é o **catálogo da unidade** (transversal aos períodos) e **não** recebeu upload.
-- **Quem envia:** os mesmos papéis da página de Certificados (`_ROLES_PERIODO` = `admin`, `pedagogico`, `secretaria`), com `assert_unidade_context` para não-admin. **Gerência e professor ficam fora** (403).
+- **Quem envia:** os mesmos papéis da página de Certificados (`_ROLES_PERIODO` = `admin`, `pedagogico`, `secretaria` e — desde 29/10/2026, por decisão do usuário — `gerencia`), com `assert_unidade_context` para não-admin. **Professor fica fora** (403); gerência de outra unidade também (403).
 - **Arquivo:** PNG, JPG ou JPEG, até **5 MB**; SVG é recusado de propósito (XSS). Nome do arquivo no disco é gerado pelo servidor; o nome original é preservado para o download.
 - **Quais centros aparecem:** os nomes do CSV `periodo_letivo.centro_custo`, resolvidos contra o catálogo da **unidade do período** (§7.4b). Três situações são sinalizadas na tela:
   - `fora do catálogo` — nome no CSV sem linha no catálogo (não é possível enviar; cadastre o centro);
