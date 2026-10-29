@@ -70,4 +70,4 @@ Suíte completa: **996 passed, 0 failed** (o collect permanece em 996; as novas 
 ## Pendências
 
 - ~~Solução B (unificar `/professor/painel` com `main.painel`)~~ — **aplicada no mesmo dia**; ver `docs/Relatórios/PainelProfessorRotaUnificada.md` e o MER §8.18.
-- `app/templates/partials/sidebar.html` continua sendo partial legado (não incluído por nenhum template).
+- ~~`app/templates/partials/sidebar.html` continua sendo partial legado (não incluído por nenhum template).~~ — **resolvido em 29/10/2026 (T3):** o partial foi **removido**; o menu de `base.html` é o único (MER §8.19, `docs/Relatórios/MenuUnicoSidebarLegado.md`).

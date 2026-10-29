@@ -56,5 +56,5 @@ Suíte completa: **1000 passed, 0 failed** (996 + os 4 testes novos; collect foi
 
 ## Pendências
 
-- `app/templates/partials/sidebar.html` continua sendo partial legado (não incluído por nenhum template).
+- ~~`app/templates/partials/sidebar.html` continua sendo partial legado (não incluído por nenhum template).~~ — **resolvido em 29/10/2026 (T3):** o partial foi **removido**; o menu de `base.html` é o único (MER §8.19, `docs/Relatórios/MenuUnicoSidebarLegado.md`).
 - A regra pré-oferta de `Turma.professor_id` segue viva em outros pontos (pauta `/frequencia`, guardas por turma); a migração para a regra por oferta é decisão separada (I1 do backlog).

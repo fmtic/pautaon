@@ -40,7 +40,8 @@ versionada. Nenhum arquivo fora de `scripts/`, `docs/` e do backlog foi tocado.
 - `first_login=True` (usuário local) força `/trocar-senha`; a semente cria os 5 usuários com
   `first_login=False` e senha local conhecida (`Roteiro!2026`).
 - Perfis (`UserRole`): `admin`, `gerencia`, `pedagogico`, `secretaria`, `professor`.
-- **Escolha de unidade:** dropdown **Unidade** na sidebar (`app/templates/partials/sidebar.html`),
+- **Escolha de unidade:** dropdown **Unidade** na sidebar (`app/templates/base.html` — menu único; o
+  partial legado `partials/sidebar.html` foi removido em 29/10/2026),
   visível para `admin` e `gerencia`, apontando para `GET /trocar-unidade/<id>`; `id=0` = **Visão
   Global** (somente leitura). O admin da semente tem `unidade_id = NULL`, então **entra em Visão
   Global** e precisa escolher a unidade para escrever.
@@ -152,7 +153,7 @@ automatizados** que cobrem o mesmo comportamento e o que é **cobertura nova**.
 Todas as rotas, botões e textos citados foram conferidos nos templates
 (`turmas/listar.html`, `turmas/turma_lixeira.html`, `turmas/ofertas.html`,
 `turmas/_agenda_macros.html`, `frequencia/lancar.html`, `conselho/*.html`,
-`periodos/certificado.html`, `relatorios/*.html`, `partials/sidebar.html`).
+`periodos/certificado.html`, `relatorios/*.html`, `base.html`).
 
 ---
 

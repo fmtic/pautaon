@@ -26,7 +26,7 @@ O professor precisa lançar o conselho de classe: responder as perguntas **indiv
 
 ### Menu
 
-`base.html` (fonte real do sidebar) passou a incluir `professor` no bloco **Conselho**, exibindo **apenas Painel de Turmas**; `Data-Informações` e `Gerenciar Perguntas` continuam restritos a admin/pedagógico/gerência/secretaria. O `partials/sidebar.html` **não é incluído por nenhum template** (partial legado) e foi mantido alinhado para não divergir.
+`base.html` (fonte real do sidebar) passou a incluir `professor` no bloco **Conselho**, exibindo **apenas Painel de Turmas**; `Data-Informações` e `Gerenciar Perguntas` continuam restritos a admin/pedagógico/gerência/secretaria. ~~O `partials/sidebar.html` **não é incluído por nenhum template** (partial legado) e foi mantido alinhado para não divergir.~~ — **resolvido em 29/10/2026 (T3):** o partial foi removido (menu único em `base.html`; MER §8.19, `docs/Relatórios/MenuUnicoSidebarLegado.md`).
 
 ### Escopo por oferta
 
@@ -93,6 +93,6 @@ Professor **Rosana Antunes** (id 88), oferta 15, turma 11 — dados que já exis
 ## Pendências e observações
 
 - `flask db upgrade` no principal **aplicado em 29/10/2026** (`e1f2a3b4c5d6`, modelo de certificado) — era independente desta entrega: backup em `instance/backups/pautaon_pre_modelo_certificado.sql`, 36 tabelas/2947 linhas idênticas antes e depois, estrutura conferida e `downgrade` + `upgrade` validados.
-- O `partials/sidebar.html` é legado; vale decidir depois se é removido ou passa a ser o único menu.
+- ~~O `partials/sidebar.html` é legado; vale decidir depois se é removido ou passa a ser o único menu.~~ — **RESOLVIDO em 29/10/2026 (T3):** o partial foi **removido** e o menu de `base.html` é o único (MER §8.19).
 - G1/P2 (professor obrigatório na oferta) segue parado na TRAVA.
 - A edição de terceiros em `app/templates/dashboard/professor.html` não fazia parte desta entrega; ficou no working tree e depois foi commitada em `e5428c2` (limite de 2 linhas, aviso do rodapé coerente e 2 testes ajustados).

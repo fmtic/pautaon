@@ -1268,7 +1268,7 @@ O **professor** passa a ter `Conselho > Painel de Turmas` no menu e lança, por 
 - **Rotas:** `GET /conselho/lancamento` lista só as turmas onde ele tem oferta ativa e resolve a oferta dentro desse escopo; `POST /conselho/salvar` e `GET|POST /turma/<id>/avaliacao` recusam **403** quando a oferta ativa pedida é de outro professor; turma sem oferta dele também responde **403**. O `?oferta_sel=` é validado contra o escopo — nunca se lança em oferta alheia.
 - **Oferta encerrada (`TurmaCurso.conselho_concluido`):** para o professor é **somente leitura** — o GET não cria `ConselhoClasse` e o POST não grava (flash + retorno). Reabrir/encerrar continua manual e restrito (`planejamento.alternar_conselho` já era 403 para professor).
 - **Fora do professor:** `fechamento_turma` e `salvar_fechamento_data` respondem **403** (antes só a unidade era checada, então a URL direta alcançava a tela). A situação final segue na secretaria/pedagogia.
-- **Sem migration**, sem tabela nova e sem alteração de dados. `app/templates/partials/sidebar.html` é um **partial legado** (não incluído por nenhum template); o menu real está em `base.html` e os dois ficaram alinhados.
+- **Sem migration**, sem tabela nova e sem alteração de dados. ~~`app/templates/partials/sidebar.html` é um **partial legado** (não incluído por nenhum template); o menu real está em `base.html` e os dois ficaram alinhados.~~ — **resolvido em 29/10/2026 (T3, §8.19):** o partial foi **removido**; o menu único é o de `base.html`.
 
 ### 8.17 Painel do professor: pendências em 2 linhas e rota canônica do "Voltar" (29/10/2026)
 
@@ -1289,6 +1289,14 @@ Solução B da duplicação de rotas do §8.17, aplicada no mesmo dia.
 - **Último ponteiro interno:** o card "Abrir pauta" do Painel Geral (`dashboard/index.html`) apontava para `/professor/painel` — para o gestor, um beco sem saída no template vazio do professor. Agora aponta para `registros.frequencia`, que é a própria pauta.
 - **Testes:** `tests/test_painel_professor_legado.py` (novo) cobre redirect do professor com painel completo, redirect para o painel do perfil do gestor, exigência de login e o link do Painel Geral. As duas caracterizações de `tests/test_enturmado.py` que liam o "Meus Alunos" da rota legada passaram a testar o contrato do redirect, mantendo o número fixado na definição única (`app.services.enturmado`) que alimentava aquela montagem.
 - **Sem migration** e sem alteração de dados.
+
+### 8.19 Menu único — partial legado `partials/sidebar.html` removido (29/10/2026)
+
+Pendência antiga (registrada em `docs/Relatórios/ConselhoProfessor.md` e no §8.16) resolvida: **existe um só menu** na aplicação.
+
+- **Removido** `app/templates/partials/sidebar.html` (cópia paralela do menu, mantida "alinhada para não divergir"). Grep: **nenhum** template o incluía/estendia, **nenhum** teste o referenciava e **nenhuma** rota o renderizava — as únicas ocorrências do nome eram documentação.
+- **Menu real:** o bloco inline de `app/templates/base.html` (`<aside class="app-sidebar" id="appSidebar">`, `css/sidebar.css`, JS do `toggleSidebar`/backdrop). **Nenhum comportamento por perfil foi alterado** — o partial não participava de nenhuma página.
+- **Sem migration**, sem mudança de schema, sem alteração de rotas, guardas ou permissões. Docs marcados como resolvidos: §8.16, `backlog_desenvolvimento.md`, `ConselhoProfessor.md`, `PainelProfessorRotaUnificada.md`, `PainelProfessorRotaVoltar.md`; `M1_RoteiroTesteManual.md` passou a apontar o seletor de unidade para `base.html`. Relatório: `docs/Relatórios/MenuUnicoSidebarLegado.md`.
 
 ---
 
