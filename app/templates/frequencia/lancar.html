@@ -116,11 +116,37 @@
                         <select name="data" id="select-data" class="form-select form-select-sm border-primary" onchange="atualizarUrl()">
                             <option value="">Selecione a data</option>
                             {% for d in datas|sort %}
+                            {% set st = (situacao_datas.status.get(d) if situacao_datas else None) %}
                             <option value="{{ d }}" {% if data==d %}selected{% endif %}>
+                                {%- if st == 'lancada' -%}
+                                ✔ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %}
+                                {%- elif st == 'pendente' -%}
+                                ○ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %} — pendente
+                                {%- else -%}
                                 {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}
+                                {%- endif -%}
                             </option>
                             {% endfor %}
                         </select>
+                        {% if situacao_datas and situacao_datas.total_ate_hoje %}
+                        <div class="mt-2" style="font-size: 0.72rem;" id="resumo-datas-lancadas">
+                            {% if situacao_datas.pendentes == 0 %}
+                            <span class="text-success fw-semibold">
+                                <i class="bi bi-check2-circle me-1"></i>Todas as aulas até hoje estão lançadas ✔
+                            </span>
+                            {% else %}
+                            <span class="text-muted">
+                                {{ situacao_datas.lancadas }} de {{ situacao_datas.total_ate_hoje }} aulas até hoje lançadas · {{ situacao_datas.pendentes }} pendente(s)
+                            </span>
+                            {% if situacao_datas.proxima_pendente %}
+                            <a class="btn btn-sm btn-outline-warning py-0 px-2 ms-2"
+                                href="{{ url_for('registros.frequencia', turma_id=turma_id, data=situacao_datas.proxima_pendente, **({'turma_curso': oferta_atual.id} if oferta_atual else {})) }}">
+                                <i class="bi bi-arrow-right-circle me-1"></i>Ir para a próxima pendente
+                            </a>
+                            {% endif %}
+                            {% endif %}
+                        </div>
+                        {% endif %}
                         {% else %}
                         <div class="alert alert-info py-2 mb-0" style="font-size: 0.7rem;">
                             <i class="bi bi-calendar-x me-1"></i>

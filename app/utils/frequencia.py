@@ -178,3 +178,109 @@ def _pendencias_por_ofertas(turma, ativas, blocked) -> int:
             if lancados < len(aluno_ids):
                 pendencias += 1
     return pendencias
+
+
+def situacao_datas_oferta(turma, oferta) -> dict:
+    """Status das aulas da OFERTA para o seletor "Data da Aula" (V3a).
+
+    Usa a definição de "lançada" já existente nas pendências do dashboard
+    (``frequencias_lancadas`` / ``_pendencias_por_ofertas``): a aula está
+    lançada quando **todos** os alunos da pauta da oferta têm conceito
+    registrado naquela data. Nada novo é criado aqui — só em lote.
+
+    Devolve::
+
+        {
+          "status": {ISO: "lancada" | "pendente"},  # datas da oferta
+          "lancadas": X,        # datas <= hoje totalmente lançadas
+          "total_ate_hoje": Y,  # datas da oferta <= hoje
+          "pendentes": Z,       # Y - X
+          "proxima_pendente": ISO | None,  # a mais antiga
+        }
+
+    Datas futuras já lançadas entram em ``status`` como "lancada" (e não
+    contam em X/Y/Z). Datas do seletor que não pertencem ao calendário da
+    oferta simplesmente não aparecem em ``status`` (sem marca no template).
+
+    Legado D2: quando a oferta é a ÚNICA ativa da turma, as linhas com
+    ``turma_curso_id`` NULL contam como dela (mesma regra das demais leituras).
+    Uma única consulta agregada por data — sem N+1.
+    """
+    from sqlalchemy import and_, func, or_
+
+    from app.database import db
+    from app.services.frequencia_oferta import ofertas_unicas_ativas
+    from app.services.turma_curso import _alunos_da_oferta, datas_aula_oferta
+
+    vazio = {
+        "status": {},
+        "lancadas": 0,
+        "total_ate_hoje": 0,
+        "pendentes": 0,
+        "proxima_pendente": None,
+    }
+    if turma is None or oferta is None:
+        return vazio
+
+    hoje = get_local_now().date()
+    blocked = datas_bloqueadas_str(turma.periodo_letivo_id)
+    pauta = _alunos_da_oferta(turma.id, oferta.id)
+    aluno_ids = [aluno.id for aluno in pauta]
+    datas_oferta = datas_aula_oferta(oferta, blocked=blocked)
+    if not aluno_ids or not datas_oferta:
+        return vazio
+
+    escopo = [Frequencia.turma_curso_id == oferta.id]
+    if oferta.id in ofertas_unicas_ativas([oferta.id]):
+        escopo = [
+            or_(
+                Frequencia.turma_curso_id == oferta.id,
+                and_(
+                    Frequencia.turma_curso_id.is_(None),
+                    Frequencia.turma_id == turma.id,
+                ),
+            )
+        ]
+
+    linhas = (
+        db.session.query(
+            Frequencia.data,
+            func.count(func.distinct(Frequencia.aluno_id)),
+        )
+        .filter(
+            Frequencia.data.in_(datas_oferta),
+            Frequencia.aluno_id.in_(aluno_ids),
+            Frequencia.conceito.isnot(None),
+            *escopo,
+        )
+        .group_by(Frequencia.data)
+        .all()
+    )
+    lancados_por_data = {data: quantidade for data, quantidade in linhas}
+
+    status: dict[str, str] = {}
+    lancadas = 0
+    pendentes: list[date] = []
+    for data_oferta in datas_oferta:
+        completa = lancados_por_data.get(data_oferta, 0) >= len(aluno_ids)
+        chave = data_oferta.strftime("%Y-%m-%d")
+        if data_oferta <= hoje:
+            if completa:
+                lancadas += 1
+                status[chave] = "lancada"
+            else:
+                pendentes.append(data_oferta)
+                status[chave] = "pendente"
+        elif completa:
+            # Futura já lançada também recebe a marca.
+            status[chave] = "lancada"
+
+    return {
+        "status": status,
+        "lancadas": lancadas,
+        "total_ate_hoje": sum(1 for d in datas_oferta if d <= hoje),
+        "pendentes": len(pendentes),
+        "proxima_pendente": (
+            pendentes[0].strftime("%Y-%m-%d") if pendentes else None
+        ),
+    }
