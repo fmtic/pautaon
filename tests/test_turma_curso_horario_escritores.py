@@ -172,7 +172,12 @@ def test_adicionar_oferta_sem_agenda_rejeitada_sem_escrita(app):
     with app.app_context():
         turma = _get(Turma, ids["turma"])
         with pytest.raises(ValueError, match="ao menos um dia"):
-            adicionar_oferta(turma, curso_id=ids["c2"], programa="Teste")
+            # Professor explícito: sem vínculo legado é que vale a herança da
+            # turma (G1/P2), então aqui o id vem do formulário.
+            adicionar_oferta(
+                turma, curso_id=ids["c2"], programa="Teste",
+                professor_id=ids["p1"],
+            )
         db.session.rollback()
         assert TurmaCurso.query.count() == 0
 

@@ -1,8 +1,9 @@
 // static/js/turmas/editar.js
 // Mapa de dias, funções de C.H. e componente "Horário diferente por dia" vivem
 // no módulo compartilhado grade_horario.js (H4). Aqui ficam apenas os ajustes
-// específicos da tela: centros de custo por período e a confirmação de
-// limpeza de lançamentos quando a agenda (ou as datas) mudou.
+// específicos da tela: centros de custo por período, a confirmação de
+// limpeza de lançamentos quando a agenda (ou as datas) mudou e a confirmação
+// da troca de professor da oferta.
 (function () {
     const periodosCentros = window.periodosCentrosEdit || {};
     const periodoSelect = document.querySelector('select[name="periodo_letivo_id"]');
@@ -120,5 +121,35 @@
 
     if (form) {
         form.addEventListener('submit', handleSubmit);
+    }
+
+    // E2/G1: a oferta é a fonte do professor. Trocar o professor de uma oferta
+    // com lançamentos gravados exige confirmação (mesmo padrão da limpeza de
+    // lançamentos acima); o servidor repete a checagem com precisão.
+    const confirmarTrocaInput = document.getElementById('confirmar_troca_professor');
+    const professorSelect = document.querySelector('select[name="professor_id"]');
+
+    function handleTrocaProfessor(event) {
+        if (!form || !confirmarTrocaInput || !professorSelect) return;
+        if (ofertasBloqueadas || !temLancamentos) return;
+        if (professorSelect.value === (professorSelect.dataset.professorOriginal || '')) return;
+        if (!professorSelect.value) return;  // esvaziar: recusado pelo servidor
+        const confirmMsg =
+            'Você trocou o professor responsável desta oferta.\n' +
+            'Os lançamentos já feitos continuam atribuídos a quem os lançou.\n' +
+            'Deseja continuar?';
+        if (!confirm(confirmMsg)) {
+            event.preventDefault();
+            return;
+        }
+        confirmarTrocaInput.value = '1';
+    }
+
+    if (professorSelect && confirmarTrocaInput) {
+        // Volta a exigir confirmação a cada nova escolha não confirmada.
+        professorSelect.addEventListener('change', () => {
+            confirmarTrocaInput.value = '0';
+        });
+        form.addEventListener('submit', handleTrocaProfessor);
     }
 })();

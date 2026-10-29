@@ -109,8 +109,17 @@ def _turma(base):
 
 
 def _add(turma, **campos):
-    """`adicionar_oferta` com a agenda padrão (H5a: agenda é obrigatória)."""
+    """`adicionar_oferta` com a agenda padrão (H5a) e o professor da unidade.
+
+    G1/P2: oferta sem professor é recusada pelo serviço; a semente não põe
+    professor na turma (o espelho legado é objeto de teste aqui), então o
+    professor vem da unidade.
+    """
     campos.setdefault("agenda", AGENDA)
+    if "professor_id" not in campos:
+        campos["professor_id"] = User.query.filter_by(
+            role="professor", unidade_id=turma.unidade_id
+        ).first().id
     return adicionar_oferta(turma, **campos)
 
 
@@ -242,15 +251,24 @@ def test_editar_oferta_com_duas_ativas_nao_toca_legado(base):
     _add(
         turma, curso_id=base["curso2"], programa="Teste",
     )
+    outro = User(
+        name="Prof C", email="prof.c@example.com",
+        role="professor", first_login=False, unidade_id=base["unidade_a"],
+    )
+    db.session.add(outro)
+    db.session.commit()
 
-    editar_oferta(primeira, turno="Noite", professor_id=base["professor_id"])
+    editar_oferta(primeira, turno="Noite", professor_id=outro.id)
     db.session.expire_all()
 
     assert primeira.turno == "Noite"
-    assert primeira.professor_id == base["professor_id"]
+    assert primeira.professor_id == outro.id
     # Dual-write proibido com 2+ ofertas: colunas legadas intocadas.
     assert turma.turno is None
-    assert turma.professor_id is None
+    # G1/P2: o professor que está na turma é o espelho da oferta ÚNICA criada
+    # antes (comportamento da Fase 2) — a edição da oferta não sobe para a
+    # turma, mesmo trocando o professor dela.
+    assert turma.professor_id == base["professor_id"]
 
 
 def test_edicao_de_oferta_rejeita_professor_de_outra_unidade(base):
@@ -295,6 +313,7 @@ def test_rota_nova_oferta_cria_incremental(app, base):
         f"/turma/{base['turma_id']}/ofertas/nova",
         data={
             "curso_id": base["curso1"], "turno": "Manhã", "programa": "Teste",
+            "professor_id": base["professor_id"],
             **FORM_AGENDA,
         },
         follow_redirects=True,
@@ -311,6 +330,7 @@ def test_rota_nova_oferta_cria_incremental(app, base):
         f"/turma/{base['turma_id']}/ofertas/nova",
         data={
             "curso_id": base["curso2"], "principal": "on", "programa": "Teste",
+            "professor_id": base["professor_id"],
             **FORM_AGENDA,
         },
     )
@@ -321,11 +341,13 @@ def test_rota_curso_duplicado_rejeitada_com_flash(app, base):
     client = _client_admin(app, base)
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
+        data={"curso_id": base["curso1"], "programa": "Teste",
+              "professor_id": base["professor_id"], **FORM_AGENDA},
     )
     resposta = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
+        data={"curso_id": base["curso1"], "programa": "Teste",
+              "professor_id": base["professor_id"], **FORM_AGENDA},
         follow_redirects=True,
     )
     assert "já é ofertado" in resposta.get_data(as_text=True)
@@ -336,11 +358,13 @@ def test_rota_segunda_oferta_sem_principal_rejeitada(app, base):
     client = _client_admin(app, base)
     client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso1"], "programa": "Teste", **FORM_AGENDA},
+        data={"curso_id": base["curso1"], "programa": "Teste",
+              "professor_id": base["professor_id"], **FORM_AGENDA},
     )
     resposta = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
-        data={"curso_id": base["curso2"], "programa": "Teste", **FORM_AGENDA},
+        data={"curso_id": base["curso2"], "programa": "Teste",
+              "professor_id": base["professor_id"], **FORM_AGENDA},
         follow_redirects=True,
     )
     assert "curso principal" in resposta.get_data(as_text=True)

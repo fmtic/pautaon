@@ -106,10 +106,15 @@
                             id="form-ed-{{ oferta.id }}" class="row g-3">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="curso_id" value="{{ oferta.curso_id }}">
+                            {# E2: troca de professor com lançamento exige confirmação (JS da tela). #}
+                            <input type="hidden" name="confirmar_troca_professor"
+                                id="ed{{ oferta.id }}_confirmar_troca_professor" value="0">
                             <div class="col-md-3">
-                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_professor">Professor</label>
-                                <select name="professor_id" id="ed{{ oferta.id }}_professor" class="form-select form-select-sm">
-                                    <option value="">-- Sem professor --</option>
+                                <label class="form-label fw-bold small" for="ed{{ oferta.id }}_professor">Professor *</label>
+                                <select name="professor_id" id="ed{{ oferta.id }}_professor" class="form-select form-select-sm" required
+                                    data-professor-original="{{ oferta.professor_id or '' }}"
+                                    data-com-lancamento="{{ '1' if oferta.id in ofertas_lancadas else '0' }}">
+                                    <option value="">-- Selecione o professor --</option>
                                     {% for p in professores %}
                                     {% set sel_prof = rasc.get('professor_id') if rasc else (oferta.professor_id or '') %}
                                     <option value="{{ p.id }}" {{ 'selected' if p.id|string == sel_prof|string }}>
@@ -117,6 +122,7 @@
                                     </option>
                                     {% endfor %}
                                 </select>
+                                <div class="form-text">Toda oferta precisa de um professor.</div>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label fw-bold small" for="ed{{ oferta.id }}_turno">Turno</label>
@@ -233,15 +239,16 @@
             <div class="form-text">Cursos já ofertados nesta turma não aparecem na lista.</div>
         </div>
         <div class="col-md-3">
-            <label for="professor_id" class="form-label fw-bold small">Professor responsável</label>
-            <select id="professor_id" name="professor_id" class="form-select">
-                <option value="">-- Sem professor --</option>
+            <label for="professor_id" class="form-label fw-bold small">Professor responsável *</label>
+            <select id="professor_id" name="professor_id" class="form-select" required>
+                <option value="">-- Selecione o professor --</option>
                 {% for p in professores %}
                 <option value="{{ p.id }}" {{ 'selected' if rascn and rascn.get('professor_id')|string == p.id|string }}>
                     {{ p.name }}
                 </option>
                 {% endfor %}
             </select>
+            <div class="form-text">Sem professor a oferta não pode ser criada.</div>
         </div>
         <div class="col-md-2">
             <label for="turno" class="form-label fw-bold small">Turno</label>
@@ -427,6 +434,35 @@
                     const fim = f.querySelector('input[name="data_fim"]');
                     return [ini ? ini.value || null : null, fim ? fim.value || null : null];
                 },
+            });
+        });
+
+        // E2: trocar o professor de uma oferta COM lançamento gravado pede
+        // confirmação na tela (mesmo padrão da limpeza de lançamentos). Sem
+        // lançamento a troca é direta; o servidor sempre repete a checagem.
+        document.querySelectorAll('select[name="professor_id"][data-professor-original]')
+            .forEach((sel) => {
+                sel.addEventListener('change', () => {
+                    const escondido = $(sel.id + '_confirmar_troca_professor');
+                    if (escondido) escondido.value = '0';
+                });
+            });
+        document.querySelectorAll('form[id^="form-ed-"]').forEach((f) => {
+            f.addEventListener('submit', (event) => {
+                const sel = f.querySelector('select[name="professor_id"][data-professor-original]');
+                const marcador = f.querySelector('input[name="confirmar_troca_professor"]');
+                if (!sel || !marcador) return;
+                if (sel.dataset.comLancamento !== '1') return;
+                if (sel.value === sel.dataset.professorOriginal) return;
+                if (sel.value === '') return;
+                if (!window.confirm(
+                    'Trocar o professor desta oferta? Os lançamentos já feitos '
+                    + 'continuam atribuídos a quem os lançou.'
+                )) {
+                    event.preventDefault();
+                    return;
+                }
+                marcador.value = '1';
             });
         });
 

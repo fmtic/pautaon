@@ -31,6 +31,9 @@ from app.services.turma_curso import (
     datas_aula_oferta,
     editar_oferta,
     gravar_marcador_exclusao,
+    gravar_troca_professor_da_oferta,
+    oferta_tem_lancamentos,
+    ofertas_com_lancamentos,
     ofertas_ativas,
     sincronizar_programa_turma,
     turma_tem_historico,
@@ -64,6 +67,15 @@ from .shared import assert_unidade_context, obter_proximo_ordenacao
 # por exclusão lógica (Onda 4, Etapa I). Mesma família de tokens de `TRANSFERENCIA`
 # (CAIXA-ALTA, sem acento) usada em app/registros/alunos.py.
 MOTIVO_INSCRICAO_TURMA_DESATIVADA = "TURMA_DESATIVADA"
+
+
+# E2/G1: porta de confirmação da troca de professor numa oferta que já tem
+# lançamento gravado (mesmo padrão do bloco de limpeza de lançamentos).
+MSG_TROCA_PROFESSOR_COM_LANCAMENTO = (
+    "Trocar o professor de uma oferta com lançamentos exige confirmação: os "
+    "registros já feitos continuam atribuídos a quem os lançou. Salve "
+    "novamente confirmando a troca."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1834,6 +1846,21 @@ def editar_turma(id):
                     )
                     return redirect(url_for("registros.editar_turma", id=id))
 
+            # E2/G1: com oferta única o professor da turma é espelhado na oferta,
+            # então a troca obedece a mesma regra da tela de cursos: com
+            # lançamento gravado exige confirmação explícita (conferida antes de
+            # qualquer escrita).
+            if oferta_única is not None:
+                _prof_candidato = _parse_int_arg(novo_professor_raw)
+                if (
+                    _prof_candidato
+                    and _prof_candidato != oferta_única.professor_id
+                    and oferta_tem_lancamentos(oferta_única.id)
+                    and request.form.get("confirmar_troca_professor") != "1"
+                ):
+                    flash(MSG_TROCA_PROFESSOR_COM_LANCAMENTO, "warning")
+                    return redirect(url_for("registros.editar_turma", id=id))
+
             turma_obj.nome = request.form.get("turma")
             turma_obj.turno = novo_turno
             turma_obj.data_inicio = novo_data_inicio_date
@@ -1841,7 +1868,8 @@ def editar_turma(id):
             # H5a: a agenda da turma NUNCA é escrita direto — nem com oferta
             # única (a grade da oferta é a única fonte) nem sem oferta (a
             # agenda nasce com a oferta, em Cursos da Turma).
-            turma_obj.professor_id = novo_professor_raw
+            # E2: inteiro normalizado — o espelho para a oferta compara ids.
+            turma_obj.professor_id = _parse_int_arg(novo_professor_raw)
 
             original_periodo_id = turma_obj.periodo_letivo_id
             novo_periodo_id = request.form.get("periodo_letivo_id")
@@ -1942,7 +1970,24 @@ def editar_turma(id):
                         data_fim=turma_obj.data_fim,
                         exclude_oferta_id=oferta_única.id,
                     )
-                oferta_única.professor_id = turma_obj.professor_id
+                # E2/G1: a OFERTA é a fonte do professor (regra "sem herança"):
+                # esvaziar o campo da turma não zera a oferta — o que volta para
+                # a turma é o professor da oferta. A troca fica auditável no
+                # log (anterior e novo, com id e nome).
+                professor_anterior = oferta_única.professor_id
+                if turma_obj.professor_id:
+                    if turma_obj.professor_id != professor_anterior:
+                        gravar_troca_professor_da_oferta(
+                            oferta_única.id, professor_anterior,
+                            turma_obj.professor_id,
+                            usuario_id=current_user.id,
+                            usuario_nome=current_user.name,
+                            ip=request.remote_addr,
+                            unidade_id=turma_obj.unidade_id,
+                        )
+                    oferta_única.professor_id = turma_obj.professor_id
+                elif professor_anterior:
+                    turma_obj.professor_id = professor_anterior
                 oferta_única.turno = turma_obj.turno
                 if mudou_agenda and itens_grade_única is not None:
                     definir_grade(oferta_única, itens_grade_única)
@@ -2105,6 +2150,9 @@ def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200)
         else []
     )
     ofertas, linhas, grade_map = _ofertas_de_agenda_da_turma(turma_obj)
+    # E2: quais ofertas têm lançamento gravado — são as que pedem confirmação
+    # para trocar o professor (o servidor repete a checagem).
+    ofertas_lancadas = ofertas_com_lancamentos([o.id for o in ofertas])
     # Estado do componente de agenda por formulário (H4): o POST rejeitado
     # volta como o usuário digitou; os demais formulários partem da grade.
     estados_oferta = {}
@@ -2135,6 +2183,7 @@ def _render_ofertas(turma_obj, *, rascunho=None, oferta_aberta=None, status=200)
         grade_map=grade_map,
         estados_oferta=estados_oferta,
         estado_nova=estado_nova,
+        ofertas_lancadas=ofertas_lancadas,
         rascunho=rascunho,
         oferta_aberta=oferta_aberta,
     ), status
@@ -2210,6 +2259,28 @@ def turma_oferta_editar(oferta_id):
         dados.pop("principal", None)
         if dados["curso_id"] is None:
             raise ValueError("A oferta precisa estar vinculada a um curso.")
+        professor_anterior = oferta.professor_id
+        novo_professor = dados.get("professor_id")
+        # E2: trocar o professor é permitido, mas numa oferta com lançamento
+        # gravado exige confirmação explícita (mesmo padrão da limpeza de
+        # lançamentos da turma) e fica registrado em log_acao.
+        if novo_professor and novo_professor != professor_anterior:
+            if (
+                oferta_tem_lancamentos(oferta.id)
+                and request.form.get("confirmar_troca_professor") != "1"
+            ):
+                db.session.rollback()
+                flash(MSG_TROCA_PROFESSOR_COM_LANCAMENTO, "warning")
+                return _render_ofertas(
+                    turma_obj, rascunho=request.form, oferta_aberta=oferta_id
+                )
+            gravar_troca_professor_da_oferta(
+                oferta.id, professor_anterior, novo_professor,
+                usuario_id=current_user.id,
+                usuario_nome=current_user.name,
+                ip=request.remote_addr,
+                unidade_id=turma_obj.unidade_id,
+            )
         editar_oferta(oferta, **dados)
         for aviso in getattr(oferta, "avisos_horario", []):
             flash(aviso, "warning")

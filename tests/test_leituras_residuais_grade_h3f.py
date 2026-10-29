@@ -59,11 +59,12 @@ def app():
 
 
 def _base(app, *, turma_legada=False):
-    """Semente: unidade, admin, cursos A/B e 1 turma sem ofertas.
+    """Semente: unidade, admin, professor, cursos A/B e 1 turma sem ofertas.
 
     H5a: a turma NÃO nasce com agenda (ela nasce com a oferta). Com
     `turma_legada=True` o curso A fica vinculado à turma (caminho de
-    `criar_oferta_inicial_da_turma`). Retorna ids.
+    `criar_oferta_inicial_da_turma`). G1/P2: a turma tem professor — toda
+    oferta exige um. Retorna ids.
     """
     unidade = Unidade(nome="U h3f", ativo=True)
     db.session.add(unidade)
@@ -72,7 +73,12 @@ def _base(app, *, turma_legada=False):
         name="Admin H3f", email="admin.h3f@example.com",
         role="admin", first_login=False, unidade_id=unidade.id,
     )
-    db.session.add(admin)
+    prof = User(
+        name="Prof H3f", email="prof.h3f@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add_all([admin, prof])
+    db.session.flush()
     cA = Curso(nome="Curso A", unidade_id=unidade.id, ativo=True)
     cB = Curso(nome="Curso B", unidade_id=unidade.id, ativo=True)
     db.session.add_all([cA, cB])
@@ -80,13 +86,14 @@ def _base(app, *, turma_legada=False):
     turma = Turma(
         nome="T h3f", unidade_id=unidade.id, ativo=True,
         curso_id=(cA.id if turma_legada else None),
+        professor_id=prof.id,
         turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
     )
     db.session.add(turma)
     db.session.commit()
     return {
-        "unidade": unidade.id, "admin": admin.id,
+        "unidade": unidade.id, "admin": admin.id, "professor": prof.id,
         "cA": cA.id, "cB": cB.id, "turma": turma.id,
     }
 
@@ -97,6 +104,7 @@ def _turma_oferta(ids, *, curso="cA", dias="Segunda", ini=time(8), fim=time(12),
     turma = db.session.get(Turma, ids["turma"])
     return adicionar_oferta(
         turma, curso_id=ids[curso], principal=principal, programa="Teste",
+        professor_id=ids["professor"],
         turno=turno, agenda=itens_grade(dias, ini, fim),
         data_inicio=data_ini, data_fim=data_fim,
     )
@@ -216,7 +224,10 @@ class TestCaracterizacao:
         ids = _base(app)
         turma = db.session.get(Turma, ids["turma"])
         with pytest.raises(ValueError, match="ao menos um dia de aula"):
-            adicionar_oferta(turma, curso_id=ids["cA"], programa="Teste")
+            adicionar_oferta(
+                turma, curso_id=ids["cA"], programa="Teste",
+                professor_id=ids["professor"],
+            )
 
     def test_seed_oferta_inicial_sem_agenda_e_rejeitada(self, app):
         """H5a: o seed da oferta inicial exige `agenda=` (grade do formulário);
@@ -332,7 +343,10 @@ class TestHerancaDaGrade:
         ids = _base(app)
         _turma_oferta(ids, dias="Quarta", ini=time(13), fim=time(15))
         turma = self._desvincula(ids["turma"])
-        o2 = adicionar_oferta(turma, curso_id=ids["cB"], programa="Teste")
+        o2 = adicionar_oferta(
+            turma, curso_id=ids["cB"], programa="Teste",
+            professor_id=ids["professor"],
+        )
         db.session.commit()
         assert _grade(o2) == [(2, time(13, 0), time(15, 0))]
 
@@ -345,7 +359,10 @@ class TestHerancaDaGrade:
         )
         db.session.commit()
         turma = self._desvincula(ids["turma"])
-        o2 = adicionar_oferta(turma, curso_id=ids["cB"], programa="Teste")
+        o2 = adicionar_oferta(
+            turma, curso_id=ids["cB"], programa="Teste",
+            professor_id=ids["professor"],
+        )
         db.session.commit()
         assert _grade(o2) == [
             (0, time(8, 0), time(10, 0)), (3, time(14, 0), time(16, 0)),
@@ -358,7 +375,10 @@ class TestHerancaDaGrade:
         turma = db.session.get(Turma, ids["turma"])
         with caplog.at_level(logging.WARNING):
             with pytest.raises(ValueError):
-                adicionar_oferta(turma, curso_id=ids["cA"], programa="Teste")
+                adicionar_oferta(
+                    turma, curso_id=ids["cA"], programa="Teste",
+                    professor_id=ids["professor"],
+                )
         assert not any(
             "escalares" in r.getMessage() for r in caplog.records
         )

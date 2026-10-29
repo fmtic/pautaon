@@ -68,7 +68,12 @@ def base(app):
         name="Admin F3", email="admin.f3@example.com",
         role="admin", first_login=False, unidade_id=unidade.id,
     )
-    db.session.add(admin)
+    prof = User(
+        name="Prof F3", email="prof.f3@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add_all([admin, prof])
+    db.session.flush()
 
     c1 = Curso(nome="Carpintaria", unidade_id=unidade.id, ativo=True)
     c2 = Curso(nome="Mecânica", unidade_id=unidade.id, ativo=True)
@@ -84,6 +89,7 @@ def base(app):
 
     return {
         "admin_id": admin.id,
+        "professor_id": prof.id,
         "turma_id": turma.id,
         "c1": c1.id,
         "c2": c2.id,
@@ -94,6 +100,19 @@ def base(app):
 
 def _turma(base):
     return db.session.get(Turma, base["turma_id"])
+
+
+def _add(turma, **campos):
+    """`adicionar_oferta` com o professor da unidade (G1/P2).
+
+    Toda oferta exige professor; estes testes não cobram a herança da turma, então
+    o id vem explícito.
+    """
+    if "professor_id" not in campos:
+        campos["professor_id"] = User.query.filter_by(
+            role="professor", unidade_id=turma.unidade_id
+        ).first().id
+    return adicionar_oferta(turma, **campos)
 
 
 # ---------------------------------------------------------------------------
@@ -160,14 +179,14 @@ class TestSobreposicaoVigencia:
 def test_adicionar_oferta_sobreposicao_total_com_aviso(base):
     turma = _turma(base)
     # Primeira: Segunda/Quarta 08:00–12:00
-    o1 = adicionar_oferta(
+    o1 = _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     assert o1.avisos_horario == []
     # Segunda: mesmos dias/horário → concomitância permitida, com aviso
-    o2 = adicionar_oferta(
+    o2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -181,13 +200,13 @@ def test_adicionar_oferta_sobreposicao_total_com_aviso(base):
 
 def test_adicionar_oferta_sobreposicao_parcial_com_aviso(base):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # 10:00–14:00 na Segunda → sobreposição parcial → grava com aviso
-    o2 = adicionar_oferta(
+    o2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Segunda, Sexta", time(10), time(14)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -200,13 +219,13 @@ def test_adicionar_oferta_sobreposicao_parcial_com_aviso(base):
 
 def test_adicionar_oferta_adjacencia_permitida(base):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Adjacente: 12:00–14:00 → permitido
-    oferta2 = adicionar_oferta(
+    oferta2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(12), time(14)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -216,13 +235,13 @@ def test_adicionar_oferta_adjacencia_permitida(base):
 
 def test_adicionar_oferta_dias_diferentes_permitida(base):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Terça/Sexta: sem dias em comum → permitido mesmo com horário sobreposto
-    oferta2 = adicionar_oferta(
+    oferta2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Terça, Sexta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -232,13 +251,13 @@ def test_adicionar_oferta_dias_diferentes_permitida(base):
 
 def test_adicionar_oferta_vigencia_disjunta_permitida(base):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     # Vigência [jul–dez]: não intercepta [jan–jun] → permitido
-    oferta2 = adicionar_oferta(
+    oferta2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
         data_inicio=date(2026, 7, 1), data_fim=date(2026, 12, 31),
@@ -249,13 +268,13 @@ def test_adicionar_oferta_vigencia_disjunta_permitida(base):
 def test_adicionar_oferta_sem_agenda_completa_e_rejeitada(base):
     """H2: sem dias/horas completos a nova oferta é recusada (nada é gravado)."""
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
     )
     # c2 sem agenda → rejeitada: toda oferta nasce com grade completa.
     with pytest.raises(ValueError, match="ao menos um dia"):
-        adicionar_oferta(turma, curso_id=base["c2"], programa="Teste")
+        _add(turma, curso_id=base["c2"], programa="Teste")
     assert TurmaCurso.query.filter_by(
         turma_id=base["turma_id"], ativo=True
     ).count() == 1
@@ -267,11 +286,11 @@ def test_adicionar_oferta_sem_agenda_completa_e_rejeitada(base):
 
 def test_editar_oferta_cria_conflito_com_aviso(base):
     turma = _turma(base)
-    o1 = adicionar_oferta(
+    o1 = _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
     )
-    o2 = adicionar_oferta(
+    o2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Terça", time(8), time(12)),
     )
@@ -289,11 +308,11 @@ def test_editar_oferta_cria_conflito_com_aviso(base):
 
 def test_editar_oferta_remove_conflito_permite(base):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda", time(8), time(12)),
     )
-    o2 = adicionar_oferta(
+    o2 = _add(
         turma, curso_id=base["c2"], programa="Teste",
         agenda=itens_grade("Segunda", time(12), time(14)),
     )
@@ -310,7 +329,7 @@ def test_editar_oferta_remove_conflito_permite(base):
 
 def test_rota_oferta_nova_conflito_com_aviso(base, app):
     turma = _turma(base)
-    adicionar_oferta(
+    _add(
         turma, curso_id=base["c1"], principal=True, programa="Teste",
         agenda=itens_grade("Segunda, Quarta", time(8), time(12)),
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
@@ -325,6 +344,7 @@ def test_rota_oferta_nova_conflito_com_aviso(base, app):
         data={
             "curso_id": base["c2"],
             "programa": "Teste",
+            "professor_id": base["professor_id"],
             "dias_semana": ["Segunda", "Quarta"],
             "hora_inicio": "08:00",
             "hora_fim": "12:00",

@@ -15,6 +15,8 @@
         <input type="hidden" name="original_data_inicio" id="original_data_inicio" value="{{ turma.data_inicio or '' }}">
         <input type="hidden" name="original_data_fim" id="original_data_fim" value="{{ turma.data_fim or '' }}">
         <input type="hidden" name="limpar_lancamentos" id="limpar_lancamentos" value="0">
+        {# E2: marcador da confirmação de troca de professor (JS da tela). #}
+        <input type="hidden" name="confirmar_troca_professor" id="confirmar_troca_professor" value="0">
 
         <div class="row mb-4">
             <div class="col-md-12">
@@ -165,17 +167,24 @@
 
         <div class="row">
             <div class="mb-3 col-md-12">
-                <label class="form-label fw-bold">Professor Responsável</label>
+                <label class="form-label fw-bold">Professor Responsável{% if n_ofertas == 1 %} *{% endif %}</label>
                 {% if n_ofertas >= 2 %}
                 <input class="form-control" value="{{ turma.professor.name if turma.professor else '—' }}" readonly tabindex="-1">
                 <input type="hidden" name="professor_id" value="{{ turma.professor_id or '' }}">
                 {% else %}
-                <select name="professor_id" class="form-select">
-                    <option value="">-- Sem professor atribuído --</option>
+                {# E2/G1: com oferta única o professor da turma é espelhado na
+                   oferta, então o campo é obrigatório (sem opção "sem
+                   professor"). Turma ainda sem curso não tem oferta: ali o
+                   professor pode ficar vazio até o cadastro em Cursos da Turma. #}
+                <select name="professor_id" class="form-select" data-professor-original="{{ turma.professor_id or '' }}" {% if n_ofertas == 1 %}required{% endif %}>
+                    <option value="">-- Selecione o professor --</option>
                     {% for prof in professores %}
                     <option value="{{ prof.id }}" {% if turma.professor_id==prof.id %}selected{% endif %}>{{ prof.name }}</option>
                     {% endfor %}
                 </select>
+                {% if n_ofertas == 1 %}
+                <small class="text-muted">O professor definido aqui é o professor da oferta única; esvaziar não é permitido.</small>
+                {% endif %}
                 {% endif %}
             </div>
         </div>

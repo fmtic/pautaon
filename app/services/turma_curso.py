@@ -12,6 +12,10 @@ especificação §4/§5/§14:
       mais ofertas ativas deve existir exatamente um curso principal. O
       máximo já é garantido pelo índice único parcial `uix_turma_curso_principal`;
       a obrigatoriedade é validada aqui.
+    - Professor (G1/P2): toda oferta tem professor — vazio é recusado no
+      cadastro (`adicionar_oferta`, `criar_oferta_inicial_da_turma`) e na
+      edição (`editar_oferta`); trocar é permitido e, havendo lançamento na
+      oferta, exige confirmação e fica registrado em `log_acao`.
     - Concomitância: horários sobrepostos entre ofertas ativas da mesma turma
       são permitidos; o usuário recebe um aviso informativo.
     - Compatibilidade legada (§14): o espelhamento para as colunas de `Turma`
@@ -59,6 +63,13 @@ from app.utils.dias_semana import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Mensagem única usada quando a oferta fica sem professor (G1/P2: toda oferta
+# precisa de um professor responsável — trocar é permitido, esvaziar, não).
+_PROFESSOR_OBRIGATORIO = (
+    "Selecione o professor responsável: toda oferta precisa de um professor."
+)
+
 
 # Mensagem única usada quando a agenda enviada está incompleta (H2: toda
 # oferta precisa de ao menos um dia e horário completo início+fim).
@@ -400,8 +411,15 @@ def _validar_curso(turma: Turma, curso_id: int) -> Curso:
 
 
 def _validar_professor(professor_id, unidade_id):
+    """Professor da oferta: obrigatório (G1/P2) e da unidade da turma.
+
+    Esvaziar não é aceito — a oferta sem professor não libera acesso a nada
+    (regra "sem herança" do I1, `professor_da_oferta`) e deixa a turma órfã na
+    tela do professor. Trocar (outro id) é permitido: quem decide a propagação
+    do acesso é a rota (`oferta_tem_lancamentos`).
+    """
     if not professor_id:
-        return None
+        raise ValueError(_PROFESSOR_OBRIGATORIO)
     professor = db.session.get(User, int(professor_id))
     if (
         professor is None
@@ -412,6 +430,133 @@ def _validar_professor(professor_id, unidade_id):
             "Professor inválido para a unidade da turma."
         )
     return professor.id
+
+
+# -----------------------------------------------------------------------------
+# Troca de professor da oferta (E2): confirmação quando há lançamento e registro
+# do anterior e do novo em `log_acao`.
+# -----------------------------------------------------------------------------
+
+#: `acao` da entrada de `log_acao` gravada na troca de professor da oferta.
+ACAO_TROCA_PROFESSOR_OFERTA = "Trocar Professor da Oferta"
+
+_PADRAO_TROCA_PROFESSOR = re.compile(
+    r"\Aoferta_id=(?P<oferta>\d+)"
+    r" anterior_id=(?P<anterior>\d+|none)"
+    r' anterior_nome="(?P<anterior_nome>[^"]*)"'
+    r" novo_id=(?P<novo>\d+|none)"
+    r' novo_nome="(?P<novo_nome>[^"]*)"\Z'
+)
+
+
+def _ref_professor(professor_id) -> tuple[str, str]:
+    """`(token_id, nome)` do professor para o texto do log (`none`/vazio)."""
+    if not professor_id:
+        return "none", ""
+    professor = db.session.get(User, int(professor_id))
+    return str(int(professor_id)), (professor.name if professor else "")
+
+
+def formatar_detalhe_troca_professor(oferta_id, anterior_id=None, novo_id=None) -> str:
+    """Texto (parseável) do `detalhes` da troca: id e nome de cada professor."""
+    a_token, a_nome = _ref_professor(anterior_id)
+    n_token, n_nome = _ref_professor(novo_id)
+    return (
+        f"oferta_id={int(oferta_id)} "
+        f'anterior_id={a_token} anterior_nome="{a_nome}" '
+        f'novo_id={n_token} novo_nome="{n_nome}"'
+    )
+
+
+def parsear_detalhe_troca_professor(detalhes) -> dict | None:
+    """`{oferta_id, anterior_id, anterior_nome, novo_id, novo_nome}` ou `None`."""
+    if not detalhes:
+        return None
+    achado = _PADRAO_TROCA_PROFESSOR.match(str(detalhes).strip())
+    if not achado:
+        return None
+
+    def _id(valor):
+        return None if valor == "none" else int(valor)
+
+    return {
+        "oferta_id": int(achado.group("oferta")),
+        "anterior_id": _id(achado.group("anterior")),
+        "anterior_nome": achado.group("anterior_nome"),
+        "novo_id": _id(achado.group("novo")),
+        "novo_nome": achado.group("novo_nome"),
+    }
+
+
+def oferta_tem_lancamentos(oferta_id: int) -> bool:
+    """Há lançamento (frequência, registro de aula ou conselho) na oferta?
+
+    Usado como guarda da troca de professor: com lançamento gravado, a troca
+    precisa de confirmação explícita (mesmo padrão da limpeza de lançamentos
+    na edição da turma).
+    """
+    from app.models import ConselhoClasse, Frequencia, RegistroAula
+
+    return bool(
+        db.session.query(Frequencia.id)
+        .filter(Frequencia.turma_curso_id == oferta_id)
+        .first()
+        or db.session.query(RegistroAula.id)
+        .filter(RegistroAula.turma_curso_id == oferta_id)
+        .first()
+        or db.session.query(ConselhoClasse.id)
+        .filter(ConselhoClasse.turma_curso_id == oferta_id)
+        .first()
+    )
+
+
+def ofertas_com_lancamentos(oferta_ids) -> set[int]:
+    """Versão em lote de `oferta_tem_lancamentos` (telas que listam ofertas).
+
+    Três consultas `DISTINCT` no total — uma por tipo de lançamento — em vez de
+    uma por linha da listagem.
+    """
+    from app.models import ConselhoClasse, Frequencia, RegistroAula
+
+    ids = [int(id_oferta) for id_oferta in oferta_ids if id_oferta]
+    if not ids:
+        return set()
+    com_lancamento: set[int] = set()
+    for modelo in (Frequencia, RegistroAula, ConselhoClasse):
+        com_lancamento.update(
+            id_oferta
+            for (id_oferta,) in (
+                db.session.query(modelo.turma_curso_id)
+                .filter(modelo.turma_curso_id.in_(ids))
+                .distinct()
+                .all()
+            )
+        )
+    return com_lancamento
+
+
+def gravar_troca_professor_da_oferta(
+    oferta_id, anterior_id, novo_id, *,
+    usuario_id=None, usuario_nome=None, ip=None, unidade_id=None,
+) -> None:
+    """Acrescenta o LogAcao da troca de professor (sem commit).
+
+    Grava só os ids e nomes do professor anterior e do novo — o formato das
+    demais entradas do log (repr do objeto, gravado pelo listener de
+    auditoria) permanece intocado.
+    """
+    from app.models import LogAcao
+
+    db.session.add(LogAcao(
+        usuario_id=usuario_id,
+        usuario_nome=usuario_nome,
+        acao=ACAO_TROCA_PROFESSOR_OFERTA,
+        detalhes=formatar_detalhe_troca_professor(
+            oferta_id, anterior_id=anterior_id, novo_id=novo_id
+        ),
+        ip=ip,
+        unidade_id=unidade_id,
+    ))
 
 
 def _validar_principal_obrigatorio(turma: Turma, principal_oferta: bool):
@@ -485,6 +630,8 @@ def criar_oferta_inicial_da_turma(
     escalares não são fonte nem destino. H5a: sem `agenda`, ou com agenda
     vazia, a criação é recusada com ValueError — não existe mais herança a
     partir das colunas da turma (nunca se cria oferta com grade parcial).
+    G1/P2: turma sem professor também não gera oferta (ValueError) — o
+    professor espelhado é o da própria turma.
 
     H4: `agenda` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a grade por
     dia enviada pelo formulário — é ela que é gravada (pode ser NÃO uniforme).
@@ -511,6 +658,11 @@ def criar_oferta_inicial_da_turma(
         raise ValueError(
             f"A turma não tem agenda completa — {_AGENDA_INCOMPLETA.lower()}"
         )
+
+    # G1/P2: a oferta espelha o professor da turma; sem professor não há como
+    # criar a oferta (a definição fica em Cursos da Turma, junto do curso).
+    if not turma.professor_id:
+        raise ValueError(_PROFESSOR_OBRIGATORIO)
 
     periodo = turma.periodo_letivo
 
@@ -562,6 +714,10 @@ def adicionar_oferta(
     programa = (programa or "").strip()
     if not programa:
         raise ValueError("Toda oferta precisa ter um programa.")
+    # G1/P2: o professor pode vir da herança da turma (primeira oferta de uma
+    # turma sem vínculo legado), mas a ausência é recusada pela validação.
+    if turma.curso_id is None and not professor_id:
+        professor_id = turma.professor_id
     professor_id = _validar_professor(professor_id, turma.unidade_id)
     _validar_principal_obrigatorio(turma, principal)
 
@@ -591,7 +747,7 @@ def adicionar_oferta(
     # (H3f/H5a) — nunca das colunas escalares.
     agenda_herdada: list[tuple[int, time, time]] | None = None
     if turma.curso_id is None:
-        professor_id = professor_id or turma.professor_id
+        # Professor: resolvido e validado no topo da função (G1/P2).
         turno = turno or turma.turno
         if agenda is None:
             com_grade = [
@@ -660,6 +816,9 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
     H5a: as colunas escalares de agenda deixaram de ser aceitas como fonte ou
     default — enviá-las levanta ``ValueError`` (use ``agenda=``); os defaults
     da checagem de conflito saem da **grade atual** (``_agenda_da_oferta``).
+
+    G1/P2: ``professor_id`` presente e vazio é recusado (trocar é permitido;
+    esvaziar, não). Quem segura a troca com lançamento gravado é a rota.
     """
     if "professor_id" in dados:
         dados["professor_id"] = _validar_professor(

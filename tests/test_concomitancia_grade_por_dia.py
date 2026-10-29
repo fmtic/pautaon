@@ -64,6 +64,18 @@ def base(app):
     )
     db.session.add(admin)
 
+    # G1/P2: toda oferta precisa de professor — a turma daqui fornece o
+    # professor herdado pela oferta (curso_id é None nas ofertas criadas).
+    prof = User(
+        name="Professor H3b",
+        email="prof.h3b@example.com",
+        role="professor",
+        first_login=False,
+        unidade_id=unidade.id,
+    )
+    db.session.add(prof)
+    db.session.flush()  # prof.id precisa existir antes de virar FK da turma
+
     c1 = Curso(nome="Carpintaria", unidade_id=unidade.id, ativo=True)
     c2 = Curso(nome="Mecânica", unidade_id=unidade.id, ativo=True)
     c3 = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
@@ -74,12 +86,14 @@ def base(app):
         unidade_id=unidade.id,
         ativo=True,
         curso_id=None,
+        professor_id=prof.id,
     )
     db.session.add(turma)
     db.session.commit()
 
     return {
         "turma_id": turma.id,
+        "professor_id": prof.id,
         "c1": c1.id,
         "c2": c2.id,
         "c3": c3.id,
@@ -96,6 +110,7 @@ def _oferta(base, curso, dias, ini, fim, data_ini=None, data_fim=None, principal
         curso_id=curso,
         principal=principal,
         programa="Teste",
+        professor_id=base["professor_id"],
         agenda=itens_grade(dias, ini, fim),
         data_inicio=data_ini,
         data_fim=data_fim,

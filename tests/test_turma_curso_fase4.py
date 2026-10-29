@@ -306,11 +306,15 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
 
     curso_a = Curso(nome="Natação Enc", unidade_id=unidade.id, ativo=True)
     curso_b = Curso(nome="Judô Enc", unidade_id=unidade.id, ativo=True)
+    prof = User(
+        name="Prof Enc", email="prof.enc@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
     turma = Turma(
         nome="Turma Encerrada F4", unidade_id=unidade.id, ativo=True,
         curso_id=None, data_inicio=inicio_passado, data_fim=fim_passado,
     )
-    db.session.add_all([curso_a, curso_b, turma])
+    db.session.add_all([curso_a, curso_b, prof, turma])
     db.session.flush()
 
     # Oferta A já existente (principal), sem dias/hora para não conflitar.
@@ -324,6 +328,7 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
     # Agenda explícita (H5a): sem `agenda`/grade herdada a oferta é recusada.
     oferta = adicionar_oferta(
         turma, curso_id=curso_b.id, principal=False, programa="Teste",
+        professor_id=prof.id,
         agenda=itens_grade("Segunda", time(8), time(12)),
     )
 
@@ -732,8 +737,8 @@ from datetime import time
 
 
 def _mk_app_criacao():
-    """App + unidade + usuário pedagógico + curso ativo da mesma unidade.
-    Retorna (app, ids) com 'resp', 'unidade' e 'curso'."""
+    """App + unidade + usuário pedagógico + professor + curso ativo da mesma unidade.
+    Retorna (app, ids) com 'resp', 'professor', 'unidade' e 'curso'."""
     app = _novo_app()
     with app.app_context():
         db.create_all()
@@ -745,6 +750,11 @@ def _mk_app_criacao():
             role="pedagogico", first_login=False, unidade_id=unidade.id,
         )
         db.session.add(resp)
+        prof = User(
+            name="Prof F", email="prof.f@example.com",
+            role="professor", first_login=False, unidade_id=unidade.id,
+        )
+        db.session.add(prof)
         curso = Curso(nome="Natação F", unidade_id=unidade.id, ativo=True)
         db.session.add(curso)
         periodo = PeriodoLetivo(
@@ -755,7 +765,8 @@ def _mk_app_criacao():
         db.session.add(periodo)
         db.session.commit()
         ids = {
-            "resp": resp.id, "unidade": unidade.id, "curso": curso.id,
+            "resp": resp.id, "professor": prof.id,
+            "unidade": unidade.id, "curso": curso.id,
             "periodo": periodo.id,
         }
     return app, ids
@@ -769,6 +780,8 @@ def _post_nova_turma(app, ids, *, nome, curso_id=None, dias="Segunda", data=DATA
         "turma": nome,
         "periodo_letivo_id": ids["periodo"],
         "programa": "Teste",
+        # G1/P2: a oferta inicial espelha o professor informado na turma.
+        "professor_id": ids["professor"],
         "dias_semana": dias,
         # H2: a oferta inicial exige agenda completa na turma.
         "hora_inicio": "09:00",
@@ -791,9 +804,15 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     db.session.flush()
     curso = Curso(nome="Natação F func", unidade_id=unidade.id, ativo=True)
     db.session.add(curso)
+    prof = User(
+        name="Prof F func", email="prof.f.func@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(prof)
     db.session.flush()
     turma = Turma(
         nome="T F func", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        professor_id=prof.id,
         turno="Manhã",
         data_inicio=date(2026, 3, 2), data_fim=date(2026, 12, 15),
         centro_custo="CC-42", programa="Teste",
@@ -811,6 +830,8 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     assert oferta.curso_id == curso.id
     assert oferta.turma_id == turma.id
     assert oferta.unidade_id == unidade.id
+    # G1/P2: o professor espelhado é o da turma.
+    assert oferta.professor_id == prof.id
     assert oferta.turno == "Manhã"
     # H5a: a agenda da oferta nasce na GRADE (colunas escalares sem uso).
     assert sorted(
@@ -849,9 +870,15 @@ def test_criar_oferta_inicial_idempotente_nao_duplica(app):
     db.session.flush()
     curso = Curso(nome="Natação F idem", unidade_id=unidade.id, ativo=True)
     db.session.add(curso)
+    prof = User(
+        name="Prof F idem", email="prof.f.idem@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(prof)
     db.session.flush()
     turma = Turma(
         nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        professor_id=prof.id,
         programa="Teste",
     )
     db.session.add(turma)
