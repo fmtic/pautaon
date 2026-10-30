@@ -169,6 +169,26 @@ class Config:
     # confiável (IIS/Apache) reescrevendo os cabeçalhos X-Forwarded-*.
     TRUSTED_PROXY = get_bool("TRUSTED_PROXY", False)
 
+    # S1-14: CSP em Report-Only, montada a partir do inventário de hosts
+    # externos (E0). Só ``cdn.jsdelivr.net`` (Chart.js e bootstrap-icons) e
+    # ``calendar.google.com`` (iframe do Serviço Social) são carregados; os
+    # links para sos.grael.org.br e developers.google.com são navegação e não
+    # entram em nenhuma diretiva. ``unsafe-inline`` é obrigatório hoje: há
+    # ``onclick``/``style`` inline em 172 pontos dos templates.
+    CSP_REPORT_ONLY = get_bool("CSP_REPORT_ONLY", True)
+    CSP_REPORT_ONLY_POLICY = os.getenv("CSP_REPORT_ONLY_POLICY") or (
+        "default-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self'; "
+        "frame-src 'self' https://calendar.google.com; "
+        "img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "font-src 'self' data: https://cdn.jsdelivr.net"
+    )
+
     SQLALCHEMY_DATABASE_URI = _get_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

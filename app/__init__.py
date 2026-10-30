@@ -176,6 +176,23 @@ def _register_security_hooks(app: Flask) -> None:
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
+    @app.after_request
+    def set_csp_report_only(response):
+        """S1-14: CSP em Report-Only (não bloqueia nada ainda).
+
+        Sem endpoint de coleta: as violações aparecem no console do navegador.
+        ``/static`` fica fora (o header só faz sentido em documento). Quando o
+        endurecimento terminar (sem inline e com nonce), a política vira
+        ``Content-Security-Policy`` de verdade.
+        """
+        politica = app.config.get("CSP_REPORT_ONLY_POLICY")
+        if not app.config.get("CSP_REPORT_ONLY") or not politica:
+            return response
+        if request.endpoint == "static" or request.path.startswith("/static/"):
+            return response
+        response.headers.setdefault("Content-Security-Policy-Report-Only", politica)
+        return response
+
 
 def _register_user_loader() -> None:
     from app.models import User
