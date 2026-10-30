@@ -1,3 +1,4 @@
+from _helpers import login_as
 import pytest
 
 from app import create_app
@@ -46,11 +47,7 @@ def _create_user(app, role):
 
 
 def _authenticate(client, user_id):
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-
-
+    login_as(client, str(user_id))
 def test_admin_can_enable_maintenance(client, app):
     admin_id = _create_user(app, "admin")
     _authenticate(client, admin_id)

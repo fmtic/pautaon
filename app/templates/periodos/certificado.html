@@ -21,6 +21,105 @@
     </div>
   </div>
 
+  {# ── Modelos de certificado por centro de custo (fase 1: upload) ── #}
+  <div class="card border-0 shadow-sm mb-3 no-print" id="modelos-certificado">
+    <div class="card-header bg-white py-2">
+      <span class="fw-bold"><i class="bi bi-image text-primary me-1"></i>Modelos de certificado</span>
+      <div class="text-muted small">
+        Uma imagem PNG ou JPG por centro de custo (até 5 MB), válida só para este período.
+        Enviar de novo substitui o modelo anterior.
+      </div>
+    </div>
+    <div class="card-body py-2">
+      {% if centros_modelo %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Centro de custo</th>
+              <th>Modelo</th>
+              <th class="d-none d-md-table-cell">Atualizado em</th>
+              <th class="text-end">Enviar modelo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in centros_modelo %}
+            <tr>
+              <td>
+                <span class="fw-semibold">{{ item.nome }}</span>
+                {% if item.centro is none %}
+                <span class="badge bg-warning-subtle text-warning-emphasis ms-1">fora do catálogo</span>
+                {% elif not item.no_periodo %}
+                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">fora do período</span>
+                {% elif item.ativo is false %}
+                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">inativo</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if item.modelo and item.centro %}
+                <a href="{{ url_for('registros.arquivo_modelo_certificado', id=periodo.id, centro_id=item.centro.id) }}"
+                  target="_blank" rel="noopener" title="Abrir o modelo">
+                  <img src="{{ url_for('registros.arquivo_modelo_certificado', id=periodo.id, centro_id=item.centro.id) }}"
+                    alt="Modelo do certificado — {{ item.nome }}" class="border rounded"
+                    style="max-height: 56px; max-width: 120px; object-fit: contain;">
+                </a>
+                <div class="text-muted small">{{ item.modelo.nome_original or item.modelo.arquivo }}
+                  {% if item.modelo.tamanho %}· {{ (item.modelo.tamanho // 1024) }} KB{% endif %}
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small d-none d-md-table-cell">
+                {{ item.modelo.updated_at.strftime('%d/%m/%Y %H:%M') if item.modelo and item.modelo.updated_at else '—' }}
+              </td>
+              <td class="text-end">
+                {% if item.centro %}
+                <form method="POST"
+                  action="{{ url_for('registros.enviar_modelo_certificado', id=periodo.id, centro_id=item.centro.id) }}"
+                  enctype="multipart/form-data" class="d-flex gap-2 justify-content-end flex-wrap">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="file" name="arquivo" required
+                    accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                    class="form-control form-control-sm" style="max-width: 240px;">
+                  <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-upload me-1"></i>{{ 'Substituir' if item.modelo else 'Enviar' }}
+                  </button>
+                </form>
+                {% if item.modelo %}
+                <div class="d-flex gap-2 justify-content-end mt-1">
+                  <a class="btn btn-sm btn-outline-secondary"
+                    href="{{ url_for('registros.arquivo_modelo_certificado', id=periodo.id, centro_id=item.centro.id, download=1) }}">
+                    <i class="bi bi-download me-1"></i>Baixar
+                  </a>
+                  <form method="POST"
+                    action="{{ url_for('registros.remover_modelo_certificado', id=periodo.id, centro_id=item.centro.id) }}"
+                    onsubmit="return confirm('Remover o modelo deste centro de custo?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="bi bi-trash me-1"></i>Remover
+                    </button>
+                  </form>
+                </div>
+                {% endif %}
+                {% else %}
+                <span class="text-muted small">Cadastre este centro no catálogo para enviar o modelo.</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">
+        Nenhum centro de custo definido neste período. Selecione os centros em
+        <strong>Períodos → Centros de Custo</strong> para poder enviar os modelos.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
   {% if not dados %}
   <div class="alert alert-info">Nenhum aluno enturmado encontrado para este período.</div>
   {% else %}

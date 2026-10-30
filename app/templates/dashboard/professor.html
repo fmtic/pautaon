@@ -4,9 +4,19 @@
 <div class="container mt-2">
 
     <!-- Cabeçalho -->
-    <div class="mb-4">
-        <h2 class="fw-bold mb-1">Painel do Professor</h2>
-        <p class="text-muted small mb-0">Resumo de suas turmas, alunos e rotina acadêmica.</p>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Painel do Professor</h2>
+            <p class="text-muted small mb-0">Resumo de suas turmas, alunos e rotina acadêmica.</p>
+        </div>
+        <div class="nav nav-pills bg-light p-1 rounded-pill border align-self-start align-self-md-auto">
+            <a class="nav-link active rounded-pill px-3 py-1 small fw-semibold shadow-sm" href="{{ url_for('main.painel') }}">
+                <i class="bi bi-speedometer2 me-1"></i> Visão Geral
+            </a>
+            <a class="nav-link text-secondary rounded-pill px-3 py-1 small fw-semibold" href="{{ url_for('main.painel_pedagogico_professor') }}">
+                <i class="bi bi-diagram-3 me-1"></i> Painel Pedagógico
+            </a>
+        </div>
     </div>
 
     <div class="row g-4">
@@ -66,17 +76,17 @@
                                 <tr>
                                     <td class="ps-3"><strong>{{ e.label }}</strong></td>
                                     <td>
-                                        {% if e.dias %}
-                                            {% for dia in e.dias.split(',') %}
-                                                <span class="badge bg-warning text-dark me-1">{{ dia.strip() }}</span>
+                                        {% if e.dias_badges %}
+                                            {% for dia in e.dias_badges %}
+                                                <span class="badge bg-warning text-dark me-1">{{ dia }}</span>
                                             {% endfor %}
                                         {% else %}
                                             <span class="text-muted">Não informado</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if e.hora_inicio and e.hora_fim %}
-                                            {{ e.hora_inicio }} às {{ e.hora_fim }}
+                                        {% if e.horario %}
+                                            {{ e.horario }}
                                         {% else %}
                                             <span class="text-muted small">Horário pendente</span>
                                         {% endif %}
@@ -101,6 +111,11 @@
                                                 <i class="bi bi-pencil-square"></i>
                                             </a>
                                         {% endif %}
+                                        <a href="{{ url_for('registros.ver_observacoes', turma_id=e.turma.id) }}"
+                                           class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1"
+                                           title="Diário de Bordo" aria-label="Diário de Bordo">
+                                            <i class="bi bi-chat-left-text"></i>
+                                        </a>
                                     </td>
                                 </tr>
                                 {% else %}
@@ -119,6 +134,9 @@
         <!-- Coluna direita: Frequências Pendentes + Próximos Dias sem Aula -->
         <div class="col-12 col-lg-6 d-flex flex-column gap-4">
 
+            {# Limite de linhas do card "Frequências Pendentes": um único valor
+               para o loop e para o aviso do rodapé, evitando contagem divergente. #}
+            {% set limite_pendentes = 2 %}
             {% if aulas_pendentes %}
             <div class="card shadow-sm border-0 border-start border-danger border-4">
                 <div class="card-header bg-danger-subtle border-0 d-flex align-items-center gap-2">
@@ -132,15 +150,23 @@
                             <thead class="table-light text-muted small text-uppercase">
                                 <tr>
                                     <th class="ps-3">Data</th>
+                                    <th>Horário</th>
                                     <th>Turma</th>
                                     <th class="text-center">Pendentes</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for p in aulas_pendentes[:5] %}
+                                {% for p in aulas_pendentes[:limite_pendentes] %}
                                 <tr>
                                     <td class="ps-3 fw-semibold text-danger">
                                         {{ p.data.strftime('%d/%m/%Y') }}
+                                    </td>
+                                    <td class="small text-muted">
+                                        {% if p.intervalo %}
+                                        {{ p.intervalo[0].strftime('%H:%M') }}–{{ p.intervalo[1].strftime('%H:%M') }}
+                                        {% else %}
+                                        --:--
+                                        {% endif %}
                                     </td>
                                     <td class="small">{{ p.oferta_label or p.turma.nome }}</td>
                                     <td class="text-center">
@@ -153,10 +179,10 @@
                             </tbody>
                         </table>
                     </div>
-                    {% if aulas_pendentes|length > 5 %}
+                    {% if aulas_pendentes|length > limite_pendentes %}
                     <div class="px-3 py-2 small text-muted border-top">
                         <i class="bi bi-three-dots me-1"></i>
-                        Mais {{ aulas_pendentes|length - 5 }} dia(s) pendente(s) não exibido(s). Use a coluna Pauta para regularizar.
+                        Mais {{ aulas_pendentes|length - limite_pendentes }} dia(s) pendente(s) não exibido(s). Use a coluna Pauta para regularizar.
                     </div>
                     {% endif %}
                 </div>

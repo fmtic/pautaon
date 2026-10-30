@@ -36,6 +36,8 @@ from app.registros.core import _alunos_da_oferta
 from app.utils.frequencia import frequencias_lancadas
 from config import Config
 
+from _helpers import login_as, aplicar_grade, itens_grade, professor_semente
+
 
 class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -83,6 +85,8 @@ def base(app):
         ativo=True,
         principal=True,
         programa="Teste",
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — semente compartilhada.
+        professor_id=professor_semente(unidade.id).id,
     )
     db.session.add(oferta)
 
@@ -143,7 +147,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
 
         turma = Turma(
             nome="Turma D3a", unidade_id=unidade.id, ativo=True, curso_id=None,
-            data_inicio=DATA_AULA, data_fim=DATA_AULA, dias_semana="Segunda",
+            data_inicio=DATA_AULA, data_fim=DATA_AULA,
         )
         db.session.add(turma)
         db.session.flush()
@@ -156,8 +160,12 @@ def _sem_cenario(pares, cria_outra_turma=False):
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id,
                 unidade_id=unidade.id, ativo=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oferta)
+            db.session.flush()
+            # H5a: agenda só na grade (Segunda, dia da DATA_AULA).
+            aplicar_grade(oferta, "Segunda", time(8), time(10))
             aluno = Aluno(nome=nome_aluno, unidade_id=unidade.id, ativo=True)
             db.session.add(aluno)
             db.session.flush()
@@ -194,6 +202,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
             oo = TurmaCurso(
                 turma_id=outra.id, curso_id=oc.id,
                 unidade_id=unidade.id, ativo=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oo)
             info["outra_oferta_id"] = oo.id
@@ -204,9 +213,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
 
 def _loga(app, resp_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(resp_id)
-        session["_fresh"] = True
+    login_as(client, str(resp_id))
     return client
 
 
@@ -301,23 +308,30 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
 
     curso_a = Curso(nome="Natação Enc", unidade_id=unidade.id, ativo=True)
     curso_b = Curso(nome="Judô Enc", unidade_id=unidade.id, ativo=True)
+    prof = User(
+        name="Prof Enc", email="prof.enc@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
     turma = Turma(
         nome="Turma Encerrada F4", unidade_id=unidade.id, ativo=True,
         curso_id=None, data_inicio=inicio_passado, data_fim=fim_passado,
     )
-    db.session.add_all([curso_a, curso_b, turma])
+    db.session.add_all([curso_a, curso_b, prof, turma])
     db.session.flush()
 
     # Oferta A já existente (principal), sem dias/hora para não conflitar.
     db.session.add(TurmaCurso(
         turma_id=turma.id, curso_id=curso_a.id, unidade_id=unidade.id,
-        ativo=True, principal=True, programa="Teste",
+        ativo=True, principal=True, programa="Teste", professor_id=prof.id,
     ))
     db.session.commit()
 
     # Adiciona a 2ª oferta (B) sem data_inicio: turma encerrada → não usa hoje.
+    # Agenda explícita (H5a): sem `agenda`/grade herdada a oferta é recusada.
     oferta = adicionar_oferta(
         turma, curso_id=curso_b.id, principal=False, programa="Teste",
+        professor_id=prof.id,
+        agenda=itens_grade("Segunda", time(8), time(12)),
     )
 
     assert getattr(oferta, "inicio_ajustado_para_hoje", False) is False
@@ -363,12 +377,14 @@ def _seed_servico(*, ofertas):
         db.session.flush()
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-            ativo=True, principal=(i == 0), dias_semana=cfg.get("dias"),
+            ativo=True, principal=(i == 0),
             data_inicio=cfg.get("ini"), data_fim=cfg.get("fim"),
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
+        # H5a: os dias/horas do cenário vão para a GRADE da oferta.
+        aplicar_grade(oferta, cfg.get("dias"), time(8), time(10))
         ofertas_out.append(oferta)
         cursos[cfg["curso"]] = curso.id
         for nome in cfg.get("alunos", []):
@@ -406,7 +422,7 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
         db.session.add(resp)
         turma = Turma(
             nome="T rota", unidade_id=unidade.id, ativo=True, curso_id=None,
-            dias_semana=dia, data_inicio=data, data_fim=data,
+            data_inicio=data, data_fim=data,
         )
         db.session.add(turma)
         db.session.flush()
@@ -421,11 +437,14 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
             db.session.flush()
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-                ativo=True, principal=(i == 0), dias_semana=dia,
+                ativo=True, principal=(i == 0),
                 data_inicio=data, data_fim=data, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oferta)
             db.session.flush()
+            # H5a: o dia do cenário vira a grade da oferta.
+            aplicar_grade(oferta, dia, time(8), time(10))
             ids["ofertas"].append(oferta.id)
             if cfg.get("tema"):
                 tema = TemaAula(
@@ -501,31 +520,78 @@ def test_segunda_oferta_mesmo_dia_nao_sobrescreve_a_primeira():
         assert regs[ob].tema_id == tb and regs[ob].observacoes == "obs B"
 
 
-# --- c1) legado (0 ofertas): lançar 2x no mesmo dia atualiza, não duplica --
-def test_legado_lancar_duas_vezes_atualiza_nao_duplica():
+def test_uma_aula_persiste_varios_temas_no_mesmo_registro():
+    from app.models import RegistroAula, TemaAula
+
+    app, ids = _mk_rota([
+        {"curso": "Natação", "alunos": ["Aluno A"], "tema": "Tema A"},
+        {"curso": "Judô", "alunos": ["Aluno B"], "tema": "Tema B"},
+    ])
+    with app.app_context():
+        oferta = db.session.get(TurmaCurso, ids["ofertas"][0])
+        tema_extra = TemaAula(
+            curso_id=oferta.curso_id,
+            unidade_id=ids["unidade"],
+            titulo="Tema A2", ordem=2, ativo=True,
+        )
+        db.session.add(tema_extra)
+        db.session.commit()
+        tema_extra_id = tema_extra.id
+
+    client = _loga(app, ids["resp"])
+    client.post("/frequencia", data={
+        "turma": ids["turma"],
+        "data": DATA_ROTA.isoformat(),
+        "turma_curso": ids["ofertas"][0],
+        f"aluno_{ids['alunos']['Aluno A']}": ConceitoFrequencia.A.value,
+        "tema_ids": [ids["temas"]["Natação"], str(tema_extra_id)],
+        "observacoes": "Dois temas na mesma aula",
+    })
+
+    with app.app_context():
+        registro = RegistroAula.query.filter_by(
+            turma_curso_id=ids["ofertas"][0], data=DATA_ROTA,
+        ).one()
+        assert registro.tema_id == ids["temas"]["Natação"]
+        assert {tema.id for tema in registro.temas} == {
+            ids["temas"]["Natação"], tema_extra_id,
+        }
+        assert registro.observacoes == "Dois temas na mesma aula"
+        assert RegistroAula.query.filter_by(data=DATA_ROTA).count() == 1
+
+
+# --- c1) 0 ofertas ativas: sem agenda não há calendário para lançar ---------
+def test_sem_oferta_ativa_nao_ha_agenda_para_lancar():
+    """H5a: a agenda nasce com a oferta.
+
+    Com a única oferta desativada a turma fica SEM agenda (não existe mais o
+    CSV escalar de `Turma.dias_semana`), então `gerar_datas` devolve lista
+    vazia e o POST legado (sem `turma_curso`) é recusado pelo calendário.
+    Antes do H5a este caminho gravava uma linha com `turma_curso_id = NULL`;
+    o contrato mudou de propósito (turma sem oferta não tem agenda).
+    """
     app, ids = _mk_rota([{"curso": "Natação", "alunos": ["Aluno A"]}])
-    # Desativa a única oferta → 0 ativas → caminho legado.
+    # Desativa a única oferta → 0 ativas → turma sem agenda.
     with app.app_context():
         db.session.get(TurmaCurso, ids["ofertas"][0]).ativo = False
         db.session.commit()
     client = _loga(app, ids["resp"])
     ds = DATA_ROTA.isoformat()
     a = ids["alunos"]["Aluno A"]
-    client.post("/frequencia", data={
+    resp = client.post("/frequencia", data={
         "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.A.value,
-    })
-    client.post("/frequencia", data={
-        "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.F.value,
-    })
+    }, follow_redirects=True)
+    assert "não pertence ao calendário válido" in resp.get_data(as_text=True)
     with app.app_context():
-        rows = Frequencia.query.filter_by(aluno_id=a, turma_id=ids["turma"]).all()
-        assert len(rows) == 1
-        assert rows[0].conceito == ConceitoFrequencia.F
-        assert rows[0].turma_curso_id is None
+        assert Frequencia.query.filter_by(
+            aluno_id=a, turma_id=ids["turma"],
+        ).count() == 0
 
 
-# --- c2) busca legada deve filtrar turma_curso_id IS NULL ------------------
+# --- c2) lançamento por oferta não é confundido com o caminho legado -------
 def test_frequencia_legada_nao_confundida_com_oferta():
+    """H5a: sem oferta ativa o caminho legado não tem agenda (bloqueado);
+    a linha já gravada pela oferta permanece intacta e única."""
     app, ids = _mk_rota([{"curso": "Natação", "alunos": ["Aluno A"]}])
     oa = ids["ofertas"][0]
     a = ids["alunos"]["Aluno A"]
@@ -536,36 +602,49 @@ def test_frequencia_legada_nao_confundida_com_oferta():
         "turma": ids["turma"], "data": ds, "turma_curso": oa,
         f"aluno_{a}": ConceitoFrequencia.A.value,
     })
-    # 2) desativa a oferta → turma passa a ter 0 ofertas ativas (legado).
+    # 2) desativa a oferta → turma passa a ter 0 ofertas ativas (sem agenda).
     with app.app_context():
         db.session.get(TurmaCurso, oa).ativo = False
         db.session.commit()
     # 3) lança no caminho LEGADO (sem turma_curso) no MESMO aluno/dia.
-    client.post("/frequencia", data={
+    resp = client.post("/frequencia", data={
         "turma": ids["turma"], "data": ds, f"aluno_{a}": ConceitoFrequencia.F.value,
-    })
+    }, follow_redirects=True)
+    assert "não pertence ao calendário válido" in resp.get_data(as_text=True)
     with app.app_context():
         legada = Frequencia.query.filter_by(
             aluno_id=a, turma_id=ids["turma"], turma_curso_id=None,
         ).all()
-        # Esperado: nasce uma linha legada própria (IS NULL); a busca legada
-        # NÃO deve reaproveitar/reescrever a linha da oferta.
-        assert len(legada) == 1, "busca legada deveria filtrar turma_curso_id IS NULL"
-        assert legada[0].conceito == ConceitoFrequencia.F
+        # Nenhuma linha legada nova; a linha da oferta não é reescrita.
+        assert legada == []
+        da_oferta = Frequencia.query.filter_by(
+            aluno_id=a, turma_id=ids["turma"], turma_curso_id=oa,
+        ).one()
+        assert da_oferta.conceito == ConceitoFrequencia.A
 
 
 # --- d) dias_semana com acento/espaço e variante -feira --------------------
-def test_data_bate_dias_semana_acento_espace_variante():
+def test_data_bate_dias_semana_acento_espace_variante(base):
+    """H3a: `_data_bate_dias_semana` passou a LER A GRADE da oferta (weekday
+    0–5), não mais o CSV de texto. A tolerância a acentos/espaços/variante
+    '-feira' migrou para o conversor único `csv_para_weekdays` (coberta em
+    test_dias_semana.py); aqui ancora-se o contrato novo por grade."""
+    from datetime import time as _time
+
     from app.services.turma_curso import _data_bate_dias_semana
+    from app.services.turma_curso_horario import definir_grade
+
+    definir_grade(
+        base["oferta"],
+        [(1, _time(9), _time(10)), (3, _time(9), _time(10))],
+    )
 
     ter = _data_weekday(1)
     qui = _data_weekday(3)
     seg = _data_weekday(0)
-    assert _data_bate_dias_semana("Terça, Quinta", ter) is True
-    assert _data_bate_dias_semana("Terça, Quinta", qui) is True
-    assert _data_bate_dias_semana("Terça, Quinta", seg) is False
-    assert _data_bate_dias_semana("Terça-feira", ter) is True
-    assert _data_bate_dias_semana("Terça-feira", seg) is False
+    assert _data_bate_dias_semana(base["oferta"], ter) is True
+    assert _data_bate_dias_semana(base["oferta"], qui) is True
+    assert _data_bate_dias_semana(base["oferta"], seg) is False
 
 
 # --- e1) oferta informada: data fora da vigência é recusada ----------------
@@ -619,6 +698,12 @@ def test_resolver_tema_de_outro_curso_recusado_e_null_aceito(app):
     # Tema de outro curso → recusado.
     with pytest.raises(ValueError):
         resolver_oferta_lancamento(d["turma"].id, DATA_ROTA, turma_curso_id=oa.id, tema_id=tema_b.id)
+    # Um conjunto misto também é rejeitado se apenas um tema for de outro curso.
+    with pytest.raises(ValueError):
+        resolver_oferta_lancamento(
+            d["turma"].id, DATA_ROTA, turma_curso_id=oa.id,
+            tema_ids=[tema_null.id, tema_b.id],
+        )
     # Tema sem curso (curso_id NULL) → aceito.
     out = resolver_oferta_lancamento(d["turma"].id, DATA_ROTA, turma_curso_id=oa.id, tema_id=tema_null.id)
     assert out is not None and out.id == oa.id
@@ -655,8 +740,8 @@ from datetime import time
 
 
 def _mk_app_criacao():
-    """App + unidade + usuário pedagógico + curso ativo da mesma unidade.
-    Retorna (app, ids) com 'resp', 'unidade' e 'curso'."""
+    """App + unidade + usuário pedagógico + professor + curso ativo da mesma unidade.
+    Retorna (app, ids) com 'resp', 'professor', 'unidade' e 'curso'."""
     app = _novo_app()
     with app.app_context():
         db.create_all()
@@ -668,6 +753,11 @@ def _mk_app_criacao():
             role="pedagogico", first_login=False, unidade_id=unidade.id,
         )
         db.session.add(resp)
+        prof = User(
+            name="Prof F", email="prof.f@example.com",
+            role="professor", first_login=False, unidade_id=unidade.id,
+        )
+        db.session.add(prof)
         curso = Curso(nome="Natação F", unidade_id=unidade.id, ativo=True)
         db.session.add(curso)
         periodo = PeriodoLetivo(
@@ -678,7 +768,8 @@ def _mk_app_criacao():
         db.session.add(periodo)
         db.session.commit()
         ids = {
-            "resp": resp.id, "unidade": unidade.id, "curso": curso.id,
+            "resp": resp.id, "professor": prof.id,
+            "unidade": unidade.id, "curso": curso.id,
             "periodo": periodo.id,
         }
     return app, ids
@@ -692,7 +783,12 @@ def _post_nova_turma(app, ids, *, nome, curso_id=None, dias="Segunda", data=DATA
         "turma": nome,
         "periodo_letivo_id": ids["periodo"],
         "programa": "Teste",
+        # G1/P2: a oferta inicial espelha o professor informado na turma.
+        "professor_id": ids["professor"],
         "dias_semana": dias,
+        # H2: a oferta inicial exige agenda completa na turma.
+        "hora_inicio": "09:00",
+        "hora_fim": "10:00",
         "datas_personalizadas": "1",
         "data_inicio": data.isoformat(),
         "data_fim": data.isoformat(),
@@ -711,18 +807,24 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     db.session.flush()
     curso = Curso(nome="Natação F func", unidade_id=unidade.id, ativo=True)
     db.session.add(curso)
+    prof = User(
+        name="Prof F func", email="prof.f.func@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(prof)
     db.session.flush()
     turma = Turma(
         nome="T F func", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
-        turno="Manhã", dias_semana="Segunda, Quarta",
-        hora_inicio=time(9, 0), hora_fim=time(10, 30),
+        professor_id=prof.id,
+        turno="Manhã",
         data_inicio=date(2026, 3, 2), data_fim=date(2026, 12, 15),
         centro_custo="CC-42", programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()
 
-    oferta = criar_oferta_inicial_da_turma(turma)
+    agenda = itens_grade("Segunda, Quarta", time(9, 0), time(10, 30))
+    oferta = criar_oferta_inicial_da_turma(turma, agenda=agenda)
     db.session.commit()
 
     assert oferta is not None
@@ -731,10 +833,13 @@ def test_criar_oferta_inicial_copia_atributos_e_principal_false(app):
     assert oferta.curso_id == curso.id
     assert oferta.turma_id == turma.id
     assert oferta.unidade_id == unidade.id
+    # G1/P2: o professor espelhado é o da turma.
+    assert oferta.professor_id == prof.id
     assert oferta.turno == "Manhã"
-    assert oferta.dias_semana == "Segunda, Quarta"
-    assert oferta.hora_inicio == time(9, 0)
-    assert oferta.hora_fim == time(10, 30)
+    # H5a: a agenda da oferta nasce na GRADE (colunas escalares sem uso).
+    assert sorted(
+        (l.dia_semana, l.hora_inicio, l.hora_fim) for l in oferta.horarios
+    ) == [(0, time(9, 0), time(10, 30)), (2, time(9, 0), time(10, 30))]
     assert oferta.data_inicio == date(2026, 3, 2)
     assert oferta.data_fim == date(2026, 12, 15)
     assert oferta.centro_custo == "CC-42"
@@ -768,15 +873,22 @@ def test_criar_oferta_inicial_idempotente_nao_duplica(app):
     db.session.flush()
     curso = Curso(nome="Natação F idem", unidade_id=unidade.id, ativo=True)
     db.session.add(curso)
+    prof = User(
+        name="Prof F idem", email="prof.f.idem@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(prof)
     db.session.flush()
     turma = Turma(
         nome="T F idem", unidade_id=unidade.id, ativo=True, curso_id=curso.id,
+        professor_id=prof.id,
         programa="Teste",
     )
     db.session.add(turma)
     db.session.flush()
 
-    o1 = criar_oferta_inicial_da_turma(turma)
+    agenda = itens_grade("Segunda", time(9), time(10))
+    o1 = criar_oferta_inicial_da_turma(turma, agenda=agenda)
     o2 = criar_oferta_inicial_da_turma(turma)
     db.session.commit()
 

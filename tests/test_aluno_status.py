@@ -4,6 +4,7 @@ import pytest
 
 from app import create_app, db
 from app.models import Aluno, Curso, Inscricao, PeriodoLetivo, Turma, TurmaCurso, Unidade
+from _helpers import professor_semente
 from app.models.enums import StatusAluno
 from app.services.aluno_status import (
     status_aluno,
@@ -64,6 +65,7 @@ def _world():
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -191,6 +193,7 @@ def test_desenturmado_transferencia_no_periodo_e_inativo(app):
         db.session.add(TurmaCurso(
             turma_id=outra_turma.id, curso_id=curso_alt.id,
             unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         ))
         db.session.flush()
         _inscricao(transferido, p[1], date(2026, 1, 2), ativo=False)
@@ -230,10 +233,12 @@ def test_periodo_inicial_e_total_enturmado_batem_com_tres_status(app):
         db.session.add(TurmaCurso(
             turma_id=turma.id, curso_id=curso.id,
             unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         ))
         oferta2 = TurmaCurso(
             turma_id=turma.id, curso_id=curso2.id,
             unidade_id=unidade.id, ativo=True, principal=False, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta2)
         db.session.flush()

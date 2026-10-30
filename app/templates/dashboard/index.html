@@ -195,7 +195,10 @@
           <p class="text-muted small flex-grow-1">
             Acesse a pauta para registrar as frequências dos alunos.
           </p>
-          <a href="/professor/painel" class="btn btn-outline-success w-100">
+          {# A pauta vive em `registros.frequencia`. `/professor/painel` deixou
+             de ser uma view própria: hoje só redireciona para `main.painel`,
+             que para os perfis gestores devolve este mesmo painel. #}
+          <a href="{{ url_for('registros.frequencia') }}" class="btn btn-outline-success w-100">
             <i class="bi bi-pencil-square me-2"></i>
             Abrir pauta
           </a>

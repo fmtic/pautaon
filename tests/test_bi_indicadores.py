@@ -20,6 +20,7 @@ from app.relatorios.bi import executar_indicador
 from app.relatorios.bi_alunos import turmas_por_professor
 from app.services.aluno_status import status_alunos_para_bi
 from config import Config
+from _helpers import login_as, professor_semente
 
 
 class SQLiteTestConfig(Config):
@@ -167,6 +168,7 @@ def test_indicadores_de_status_e_filtros_globais(app):
                 ativo=True,
                 principal=True,
                 programa="Teste",
+                professor_id=professor_semente(turma_seed.unidade_id).id,
             ))
         db.session.flush()
 
@@ -337,6 +339,7 @@ def test_indicadores_de_status_isolam_unidade_do_usuario_na_rota(app):
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
                 turno="Manhã", ativo=True, principal=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oferta)
             db.session.flush()
@@ -366,10 +369,7 @@ def test_indicadores_de_status_isolam_unidade_do_usuario_na_rota(app):
         unidade_restrita_id = unidades[1].id
 
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(usuario_id)
-        sess["_fresh"] = True
-
+    login_as(client, str(usuario_id))
     resposta_propria = client.get("/relatorios/bi/indicador/ALU-011")
     assert resposta_propria.status_code == 200
     assert resposta_propria.get_json()["resultado"] == 1

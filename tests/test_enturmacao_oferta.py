@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.services.turma_curso import _alunos_da_oferta
 from config import Config
+from _helpers import login_as, professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -64,9 +65,7 @@ def app():
 
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 
@@ -105,7 +104,6 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
     turma = Turma(
         nome="Turma M1", unidade_id=i["unidade"], ativo=True,
         curso_id=curso_id, professor_id=i["p1"], turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
@@ -117,8 +115,7 @@ def _turma(i, *, curso_id=None, ativo_ofertas=0, inativa_ofertas=0):
         o = TurmaCurso(
             turma_id=turma.id, curso_id=cursos[k % 3], unidade_id=i["unidade"],
             ativo=True, principal=(k == 0), professor_id=i["p1"],
-            turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
         )
         db.session.add(o)
@@ -243,6 +240,7 @@ def test_oferta_de_outra_turma_recusada(app):
         oferta_outra = TurmaCurso(
             turma_id=outra.id, curso_id=i["cA"], unidade_id=i["unidade"],
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(i["unidade"]).id,
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(oferta_outra)

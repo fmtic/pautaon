@@ -9,7 +9,7 @@ from flask_login import current_user, login_required
 
 from . import bp
 from .dashboard_admin import render_dashboard_gerencial
-from .dashboard_professor import render_dashboard_professor
+from .dashboard_professor import render_dashboard_professor, render_painel_pedagogico_professor
 from .dashboard_servico_social import render_dashboard_servico_social
 
 
@@ -34,3 +34,13 @@ def painel():
         return render_dashboard_servico_social()
 
     abort(403)
+
+
+@bp.route("/professor/painel-pedagogico")
+@login_required
+def painel_pedagogico_professor():
+    """Painel Pedagógico do professor com dados estatísticos refinados."""
+    if current_user.role not in ("professor", "admin", "gerencia", "pedagogico"):
+        abort(403)
+    return render_painel_pedagogico_professor()
+

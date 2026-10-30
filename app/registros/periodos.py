@@ -9,9 +9,11 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from flask_login import current_user, login_required
+from sqlalchemy import select
 
 from app.database import db
 from app.models import (
@@ -31,7 +33,11 @@ from app.utils.logica import get_unidade_id
 from . import bp
 
 _ROLES_CALENDARIO = ["admin", "pedagogico", "secretaria", "gerencia"]
-_ROLES_PERIODO = ["admin", "pedagogico", "secretaria"]
+# Gerência incluída em 29/10/2026 (decisão do usuário): passa a acessar as
+# páginas de período (novo/editar/ativar/inativar/calendário/certificados) e
+# as rotas de modelo de certificado. Não-admin segue limitado pela unidade
+# (`assert_unidade_context`).
+_ROLES_PERIODO = ["admin", "pedagogico", "secretaria", "gerencia"]
 
 
 def _check_calendario_access(unidade_id):
@@ -526,9 +532,9 @@ def periodo_letivo_relatorio_certificado(id):
     Concluído/Pendente do flag da PRÓPRIA oferta. Linhas legadas (oferta
     NULL) não são exibidas — a lista está em `scripts/verificar_onda4_d5.py`.
     """
-    from sqlalchemy.orm import joinedload
+    from sqlalchemy.orm import joinedload, selectinload
 
-    from app.models import ConselhoClasse
+    from app.models import ConselhoClasse, TurmaCurso
 
     if current_user.role not in _ROLES_PERIODO:
         abort(403)
@@ -540,6 +546,14 @@ def periodo_letivo_relatorio_certificado(id):
         assert_unidade_context(periodo.unidade_id, get_unidade_id())
 
     turmas = Turma.query.filter_by(periodo_letivo_id=id, ativo=True).all()
+    ofertas_relatorio = db.session.execute(
+        select(TurmaCurso)
+        .options(selectinload(TurmaCurso.horarios))
+        .where(TurmaCurso.turma_id.in_([turma.id for turma in turmas]))
+    ).scalars().all() if turmas else []
+    from app.services.turma_curso_horario import cargas_horarias_ofertas_em_lote
+
+    carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_relatorio)
     alunos_map = defaultdict(lambda: {"aluno": None, "cursos": []})
     situacoes_aprovadas = {"Aprovado", "Participação", "Concluído"}
 
@@ -575,12 +589,11 @@ def periodo_letivo_relatorio_certificado(id):
             aprovado = situacao in situacoes_aprovadas if situacao else False
             nivel_turma = inscricao.nivel or aluno.nivel
 
-            # Carga horária TOTAL cursada pelo aluno NA OFERTA (cai na da
-            # turma apenas quando a oferta não tem carga própria definida).
+            # O certificado é por oferta: mantém sua carga, sem substituir pelo
+            # total físico agregado da turma.
             carga_total = formatar_ch(
-                oferta.carga_horaria_total
-                if oferta.carga_horaria_total
-                else turma.carga_horaria_total
+                carga_oferta_map.get(oferta.id).carga_horaria_total
+                if oferta.id in carga_oferta_map else None
             )
 
             alunos_map[aluno.id]["aluno"] = aluno
@@ -599,7 +612,120 @@ def periodo_letivo_relatorio_certificado(id):
             )
 
     dados = sorted(alunos_map.values(), key=lambda item: item["aluno"].nome)
-    return render_template("periodos/certificado.html", periodo=periodo, dados=dados)
+    from app.services.certificado_modelo import centros_do_periodo
+
+    return render_template(
+        "periodos/certificado.html",
+        periodo=periodo,
+        dados=dados,
+        centros_modelo=centros_do_periodo(periodo),
+    )
+
+
+# ---------------------------------------------------------------------------
+# MODELOS DE CERTIFICADO (imagem por centro de custo do periodo letivo)
+# ---------------------------------------------------------------------------
+
+def _periodo_para_modelo_certificado(id):
+    """Período do usuário para as rotas de modelo de certificado.
+
+    Mesma guarda da página de Certificados (`_ROLES_PERIODO` + escopo de
+    unidade para quem não é admin).
+    """
+    if current_user.role not in _ROLES_PERIODO:
+        abort(403)
+    periodo = db.get_or_404(PeriodoLetivo, id)
+    if current_user.role != "admin":
+        from .shared import assert_unidade_context
+
+        assert_unidade_context(periodo.unidade_id, get_unidade_id())
+    return periodo
+
+
+def _centro_do_periodo(periodo, centro_id):
+    """Centro de custo do catálogo da MESMA unidade do período (404 fora)."""
+    from app.models import CentroCusto
+
+    centro = db.get_or_404(CentroCusto, centro_id)
+    if centro.unidade_id != periodo.unidade_id:
+        abort(404)
+    return centro
+
+
+@bp.route(
+    "/periodo-letivo/<int:id>/certificado-modelo/<int:centro_id>",
+    methods=["POST"],
+)
+@login_required
+def enviar_modelo_certificado(id, centro_id):
+    """Envia/substitui o modelo (PNG/JPG) de um centro de custo do período."""
+    from app.services.certificado_modelo import salvar_modelo
+
+    periodo = _periodo_para_modelo_certificado(id)
+    centro = _centro_do_periodo(periodo, centro_id)
+    try:
+        salvar_modelo(periodo, centro, request.files.get("arquivo"))
+        db.session.commit()
+        flash(f"Modelo do certificado de {centro.nome} salvo.", "success")
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        from app.utils.errors import log_error_code
+
+        code = log_error_code(
+            exc, location="registros.enviar_modelo_certificado", hint="db"
+        )
+        flash(f"Não foi possível salvar o modelo (código {code}).", "danger")
+    return redirect(
+        url_for("registros.periodo_letivo_relatorio_certificado", id=periodo.id)
+    )
+
+
+@bp.route(
+    "/periodo-letivo/<int:id>/certificado-modelo/<int:centro_id>/remover",
+    methods=["POST"],
+)
+@login_required
+def remover_modelo_certificado(id, centro_id):
+    """Remove o modelo do centro de custo (linha + arquivo)."""
+    from app.services.certificado_modelo import remover_modelo
+
+    periodo = _periodo_para_modelo_certificado(id)
+    centro = _centro_do_periodo(periodo, centro_id)
+    if remover_modelo(periodo, centro):
+        db.session.commit()
+        flash(f"Modelo do certificado de {centro.nome} removido.", "success")
+    else:
+        flash("Não há modelo para este centro de custo.", "info")
+    return redirect(
+        url_for("registros.periodo_letivo_relatorio_certificado", id=periodo.id)
+    )
+
+
+@bp.route(
+    "/periodo-letivo/<int:id>/certificado-modelo/<int:centro_id>/arquivo",
+)
+@login_required
+def arquivo_modelo_certificado(id, centro_id):
+    """Serve o arquivo do modelo (pré-visualizar ou baixar com ?download=1)."""
+    from app.services.certificado_modelo import caminho_modelo, modelo_de
+
+    periodo = _periodo_para_modelo_certificado(id)
+    centro = _centro_do_periodo(periodo, centro_id)
+    modelo = modelo_de(periodo, centro)
+    caminho = caminho_modelo(modelo)
+    if caminho is None:
+        abort(404)
+    return send_file(
+        caminho,
+        mimetype=modelo.tipo or None,
+        as_attachment=request.args.get("download") == "1",
+        download_name=modelo.nome_original or modelo.arquivo,
+        conditional=True,
+        max_age=0,
+    )
 
 # ---------------------------------------------------------------------------
 # CENTROS DE CUSTO (catalogo por unidade)

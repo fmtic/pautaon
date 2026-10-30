@@ -4,9 +4,14 @@ LOGICA.PY - Helpers de negócio (frequência, turmas, relatórios)
 ================================================================================
 
 NOTA SOBRE TIPOS (Onda 2A):
-    `Turma.data_inicio`, `Turma.data_fim`, `Turma.hora_inicio`, `Turma.hora_fim`,
+    `Turma.data_inicio`, `Turma.data_fim`,
     `Frequencia.data`, `RegistroAula.data`, `TemaAula.data` e
     `DiaBloqueadoTurma.data` agora são `date`/`time` nativos.
+
+NOTA SOBRE AGENDA (H5a):
+    dias e horários de aula vivem SÓ em `turma_curso_horario` (grade da
+    oferta). As colunas escalares `dias_semana`/`hora_inicio`/`hora_fim` de
+    `Turma`/`TurmaCurso` não são lidas por este módulo.
 
 NOTA SOBRE ENUMS (Onda 2B):
     Comparações com conceitos de frequência e perfis usam `ConceitoFrequencia`
@@ -25,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app, session
 from flask_login import current_user
+from sqlalchemy.orm import joinedload
 
 from app.database import db
 from app.models import (
@@ -37,6 +43,7 @@ from app.models import (
     RegistroAula,
     TemaAula,
     Turma,
+    TurmaCurso,
     User,
 )
 from app.models.enums import (
@@ -54,6 +61,11 @@ NAME_LOWER_EXCEPTIONS = {
     'da', 'de', 'do', 'dos', 'das', 'e', 'van', 'von', 'del',
     'da', 'di', 'du', 'la', 'le', 'y', 'al',
 }
+
+# A1: conceitos que habilitam o lançamento de um Valor do Esportista.
+# Comparação por TEXTO porque o formulário de frequência envia strings
+# (`form.get`), não o Enum `ConceitoFrequencia`.
+_CONCEITOS_PRESENCA_TEXTO = frozenset({'A', 'B', 'C', 'D'})
 
 
 # =============================================================================
@@ -224,12 +236,14 @@ def gerar_datas(
     if not turma or not turma.data_inicio or not turma.data_fim:
         return datas
 
-    mapa_dias = {
-        'Segunda': 0, 'Terça': 1, 'Quarta': 2, 'Quinta': 3,
-        'Sexta': 4, 'Sábado': 5, 'Domingo': 6,
-        'Segunda-feira': 0, 'Terça-feira': 1, 'Quarta-feira': 2,
-        'Quinta-feira': 3, 'Sexta-feira': 4, 'Sábado-feira': 5,
-    }
+    # H3a/H5a: os dias da turma são DERIVADOS da grade das ofertas ativas
+    # (uma consulta). Sem grade não há agenda: a lista sai vazia — não existe
+    # mais leitura do CSV escalar de `dias_semana`.
+    from app.services.turma_curso_horario import dias_da_turma
+
+    dias_permitidos = dias_da_turma(turma.id)
+    if not dias_permitidos:
+        return datas
 
     inicio = datetime.combine(turma.data_inicio, time.min)
     fim = datetime.combine(turma.data_fim, time.min)
@@ -239,12 +253,6 @@ def gerar_datas(
     else:
         hoje = datetime.now()
         data_limite = min(fim, hoje)
-
-    dias_permitidos = [
-        mapa_dias[d.strip()]
-        for d in (turma.dias_semana or "").split(',')
-        if d.strip() in mapa_dias
-    ]
 
     atual = inicio
     while atual <= data_limite:
@@ -367,11 +375,58 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
 # FREQUÊNCIA - leitura e escrita
 # =============================================================================
 
+def _ler_registros_aula(
+    turma_id: int,
+    data_alvo: date,
+    turma_curso_id: Optional[int] = None,
+) -> Tuple[List[Frequencia], Optional[RegistroAula]]:
+    """Linhas de frequência (com o valor do esportista) + diário da aula.
+
+    O `joinedload` traz o catálogo do Valor do Esportista na MESMA consulta de
+    frequência — a tela de lançamento não precisa de uma segunda leitura.
+    """
+    if turma_curso_id is not None:
+        registros = (
+            Frequencia.query
+            .options(joinedload(Frequencia.valor_esportista))
+            .filter_by(turma_curso_id=turma_curso_id, data=data_alvo)
+            .all()
+        )
+        diario = RegistroAula.query.filter_by(
+            turma_curso_id=turma_curso_id, data=data_alvo
+        ).first()
+    else:
+        # Legado (sem oferta): filtra turma_curso_id IS NULL para não
+        # reaproveitar/reescrever registros de ofertas (mesma turma_id/data).
+        registros = (
+            Frequencia.query
+            .options(joinedload(Frequencia.valor_esportista))
+            .filter_by(turma_id=turma_id, data=data_alvo, turma_curso_id=None)
+            .all()
+        )
+        diario = RegistroAula.query.filter_by(
+            turma_id=turma_id, data=data_alvo, turma_curso_id=None
+        ).first()
+    return registros, diario
+
+
+def _resumo_diario(
+    diario: Optional[RegistroAula],
+) -> Tuple[List[int], str, str]:
+    """Temas marcados no dia (nunca `None`), observações e atividades."""
+    if diario is None:
+        return [], "", ""
+    temas = [tema.id for tema in diario.temas]
+    if not temas and diario.tema_id is not None:
+        temas = [diario.tema_id]
+    return temas, diario.observacoes or "", diario.atividades or ""
+
+
 def carregar_frequencias(
     turma_id: int,
     data: str | date,
     turma_curso_id: Optional[int] = None,
-) -> Tuple[Dict[int, str], Optional[int], str]:
+) -> Tuple[Dict[int, str], List[int], str]:
     """
     Carrega os conceitos lançados para uma turma (ou oferta) em uma data.
 
@@ -382,39 +437,203 @@ def carregar_frequencias(
     são lidos por oferta (`turma_curso_id`, `data`); com None, mantém o
     comportamento legado (filtro somente por `turma_id`, `data`).
 
-    :return: (dict{aluno_id: conceito}, tema_selecionado_id | None, observacoes)
-    """
-    frequencias: Dict[int, str] = {}
-    tema_selecionado: Optional[int] = None
-    obs_salva: str = ""
+    Temas múltiplos: o segundo elemento é sempre a **lista** de IDs de tema
+    marcados no dia — vazia quando não há diário ainda (dia não lançado) ou
+    quando `turma_id`/`data` são inválidos. Nunca `None`: o template testa
+    `tema.id in tema_selecionado` e `None` derrubava a pauta com TypeError.
 
+    :return: (dict{aluno_id: conceito}, tema_ids_selecionados | [], observacoes)
+    """
     data_alvo = parse_date(data)
     if not turma_id or not data_alvo:
-        return frequencias, tema_selecionado, obs_salva
+        return {}, [], ""
 
-    if turma_curso_id is not None:
-        registros = Frequencia.query.filter_by(
-            turma_curso_id=turma_curso_id, data=data_alvo
-        ).all()
-        diario = RegistroAula.query.filter_by(
-            turma_curso_id=turma_curso_id, data=data_alvo
-        ).first()
-    else:
-        # Legado (sem oferta): filtra turma_curso_id IS NULL para não
-        # reaproveitar/reescrever registros de ofertas (mesmo turma_id/data).
-        registros = Frequencia.query.filter_by(
-            turma_id=turma_id, data=data_alvo, turma_curso_id=None
-        ).all()
-        diario = RegistroAula.query.filter_by(
-            turma_id=turma_id, data=data_alvo, turma_curso_id=None
-        ).first()
+    registros, diario = _ler_registros_aula(turma_id, data_alvo, turma_curso_id)
     frequencias = {f.aluno_id: f.conceito for f in registros}
-
-    if diario:
-        tema_selecionado = diario.tema_id
-        obs_salva = diario.observacoes or ""
+    tema_selecionado, obs_salva, _atividades = _resumo_diario(diario)
 
     return frequencias, tema_selecionado, obs_salva
+
+
+def carregar_frequencias_e_valores(
+    turma_id: int,
+    data: str | date,
+    turma_curso_id: Optional[int] = None,
+) -> Tuple[Dict[int, str], Dict[int, Any], List[int], str, str]:
+    """Como `carregar_frequencias`, acrescido do Valor do Esportista (A1).
+
+    Devolve `(conceitos, {aluno_id: ValorEsportista}, temas, observacoes,
+    atividades)` a partir da MESMA leitura de `frequencia` feita por
+    `carregar_frequencias`, sem consulta adicional na tela de lançamento.
+    Só entram alunos com valor gravado; o valor **inativo** já salvo continua
+    sendo devolvido de propósito, para o template exibi-lo como opção extra do
+    aluno e não perder o histórico.
+    """
+    data_alvo = parse_date(data)
+    if not turma_id or not data_alvo:
+        return {}, {}, [], "", ""
+
+    registros, diario = _ler_registros_aula(turma_id, data_alvo, turma_curso_id)
+    frequencias = {f.aluno_id: f.conceito for f in registros}
+    valores = {
+        f.aluno_id: f.valor_esportista
+        for f in registros
+        if f.valor_esportista is not None
+    }
+    tema_selecionado, obs_salva, atividades_salvas = _resumo_diario(diario)
+
+    return frequencias, valores, tema_selecionado, obs_salva, atividades_salvas
+
+
+def _resolver_valor_esportista(
+    valor_raw,
+    conceito: str,
+    unidade_id: Optional[int],
+    valor_atual_id: Optional[int],
+) -> Optional[int]:
+    """Id do Valor do Esportista a gravar na linha de frequência (A1).
+
+    Devolve `None` (limpa o campo) quando:
+        - o conceito não é A/B/C/D (F e J nunca têm valor);
+        - o campo veio vazio, não numérico ou <= 0;
+        - o id não existe, é de outra unidade ou está inativo.
+
+    Exceção: se o id é o **mesmo já salvo** na linha, ele é preservado mesmo
+    inativo — reabrir a pauta e salvar não pode apagar o histórico de um valor
+    que acabou de ser inativado no cadastro.
+
+    O valor é um dado ADICIONAL: nada aqui toca `conceito` ou qualquer conta
+    de presença/falta.
+    """
+    if conceito not in _CONCEITOS_PRESENCA_TEXTO:
+        return None
+    texto = str(valor_raw or '').strip()
+    if not texto.isdigit():
+        return None
+    valor_id = int(texto)
+    if valor_id <= 0:
+        return None
+    if valor_atual_id is not None and valor_id == valor_atual_id:
+        return valor_id
+
+    from app.models import ValorEsportista
+
+    valor = db.session.get(ValorEsportista, valor_id)
+    if valor is None or not valor.ativo:
+        current_app.logger.warning(
+            'Frequência: valor %s ignorado (inexistente ou inativo).', valor_id,
+        )
+        return None
+    if unidade_id is not None and valor.unidade_id != unidade_id:
+        current_app.logger.warning(
+            'Frequência: valor %s ignorado (unidade %s != %s).',
+            valor_id, valor.unidade_id, unidade_id,
+        )
+        return None
+    return valor_id
+
+
+class PendenciaValorEsportista(ValueError):
+    """Lançamento recusado: aluno com presença (A–D) sem Valor do Esportista.
+
+    Carrega os `Aluno` pendentes para a rota montar a mensagem sem refazer a
+    validação. É levantada **antes** de qualquer escrita — nem conceito, nem
+    linha de frequência, nem diário (temas/observações/atividades).
+    """
+
+    def __init__(self, alunos: List[Aluno]):
+        self.alunos = list(alunos)
+        super().__init__(mensagem_valor_obrigatorio(self.alunos))
+
+
+def mensagem_valor_obrigatorio(alunos: List[Aluno]) -> str:
+    """Mensagem única da pendência: até 10 nomes + "e mais N"."""
+    nomes = [aluno.nome for aluno in alunos[:10]]
+    restantes = len(alunos) - len(nomes)
+    lista = ", ".join(nomes)
+    if restantes > 0:
+        lista += f" e mais {restantes}"
+    return (
+        "Valor/Postura do Esportista é obrigatório para presença (A–D). "
+        f"Alunos pendentes: {lista}. Nada foi salvo."
+    )
+
+
+def unidade_tem_valores_ativos(unidade_id: Optional[int]) -> bool:
+    """A obrigatoriedade só vale se a unidade tem catálogo ativo (V2).
+
+    Unidade sem nenhum valor ativo não pode travar a pauta: a tela não teria
+    opção para o professor escolher. `unidade_id=None` (turma sem unidade)
+    olha o catálogo global — o mesmo escopo do seletor da pauta.
+    """
+    from app.models import ValorEsportista
+
+    consulta = ValorEsportista.query.filter(ValorEsportista.ativo.is_(True))
+    if unidade_id is not None:
+        consulta = consulta.filter(ValorEsportista.unidade_id == unidade_id)
+    return bool(db.session.query(consulta.exists()).scalar())
+
+
+def _planejar_frequencia(
+    form: Dict[str, str],
+    alunos: List[Aluno],
+    *,
+    oferta_id: Optional[int],
+    turma_id: int,
+    data_alvo: date,
+    unidade_id: Optional[int],
+    exige_valor: bool,
+) -> Tuple[List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]], List[Aluno]]:
+    """Plano de gravação da pauta + alunos pendentes de Valor do Esportista.
+
+    Fase de LEITURA: resolve, por aluno com conceito enviado, a linha de
+    frequência existente e o valor a gravar. Devolve
+    `([(aluno, conceito, freq|None, valor_id|None)], [alunos_pendentes])`.
+
+    Pendência (V2) = conceito A–D com `valor_id` nulo quando a unidade tem
+    catálogo ativo. Valor inativo já salvo conta como preenchido
+    (`_resolver_valor_esportista` preserva); inativo novo, inexistente ou de
+    outra unidade conta como AUSENTE.
+
+    Aluno sem conceito não entra no plano: a linha existente fica intocada
+    (contrato da A1 — o select desabilitado não envia campo).
+    """
+    plano: List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]] = []
+    pendentes: List[Aluno] = []
+
+    for aluno in alunos:
+        conceito = form.get(f'aluno_{aluno.id}', '').strip()
+        if not conceito:
+            continue
+
+        if oferta_id is not None:
+            freq = Frequencia.query.filter_by(
+                aluno_id=aluno.id, turma_curso_id=oferta_id, data=data_alvo
+            ).first()
+        else:
+            freq = Frequencia.query.filter_by(
+                aluno_id=aluno.id, turma_id=turma_id, data=data_alvo,
+                turma_curso_id=None,
+            ).first()
+
+        valor_id = _resolver_valor_esportista(
+            form.get(f'postura_aluno_{aluno.id}', ''),
+            conceito,
+            unidade_id=unidade_id,
+            valor_atual_id=freq.valor_esportista_id if freq is not None else None,
+        )
+
+        if (
+            exige_valor
+            and conceito in _CONCEITOS_PRESENCA_TEXTO
+            and valor_id is None
+        ):
+            pendentes.append(aluno)
+            continue
+
+        plano.append((aluno, conceito, freq, valor_id))
+
+    return plano, pendentes
 
 
 def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
@@ -441,9 +660,22 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         data_raw = (form.get('data', '') or form.get('data_hidden', '')).strip()
         data_alvo = parse_date(data_raw)
 
-        tema_id_raw = form.get('tema_id', '').strip()
-        tema_id = int(tema_id_raw) if tema_id_raw and tema_id_raw.isdigit() else None
+        if hasattr(form, 'getlist'):
+            temas_raw = form.getlist('tema_ids')
+        else:
+            temas_raw = form.get('tema_ids', [])
+            if isinstance(temas_raw, str):
+                temas_raw = [temas_raw]
+        if not temas_raw:
+            legado_tema = form.get('tema_id', '').strip()
+            temas_raw = [legado_tema] if legado_tema else []
+        if any(not str(valor).strip().isdigit() or int(valor) <= 0 for valor in temas_raw):
+            raise ValueError("Seleção de temas inválida.")
+        tema_ids = list(dict.fromkeys(int(valor) for valor in temas_raw))
+        tema_id = tema_ids[0] if tema_ids else None
         texto_observacoes = form.get('observacoes', '').strip() or None
+        # A1: atividades da aula — campo independente das observações.
+        texto_atividades = form.get('atividades', '').strip() or None
 
         turma_curso_raw = form.get('turma_curso', '').strip()
         turma_curso_id = (
@@ -458,9 +690,42 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         # pelo except genérico abaixo → (0, None); na D2 a rota passará a
         # exibir a mensagem específica via flash.
         oferta = resolver_oferta_lancamento(
-            turma_id, data_alvo, turma_curso_id=turma_curso_id, tema_id=tema_id,
+            turma_id, data_alvo, turma_curso_id=turma_curso_id,
+            tema_ids=tema_ids,
         )
         oferta_id = oferta.id if oferta else None
+
+        # --- Alunos da pauta + plano de gravação (V2) ---
+        alunos_post = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id == turma_id,
+                Inscricao.ativo == True,
+                Aluno.ativo == True,
+            )
+            .all()
+        )
+
+        # A1: o valor/postura do esportista pertence à unidade da TURMA — o
+        # mesmo escopo do GET (a sessão pode estar em Visão Global).
+        turma_obj = db.session.get(Turma, turma_id)
+        valor_unidade_id = (
+            turma_obj.unidade_id if turma_obj is not None else get_unidade_id()
+        )
+
+        # V2: tudo é validado em memória ANTES de qualquer escrita. Havendo
+        # pendência, nada é gravado — nem conceitos, nem diário.
+        plano, pendentes = _planejar_frequencia(
+            form,
+            alunos_post,
+            oferta_id=oferta_id,
+            turma_id=turma_id,
+            data_alvo=data_alvo,
+            unidade_id=valor_unidade_id,
+            exige_valor=unidade_tem_valores_ativos(valor_unidade_id),
+        )
+        if pendentes:
+            raise PendenciaValorEsportista(pendentes)
 
         # --- Registro de aula (diário do educador) ---
         if oferta_id is not None:
@@ -473,58 +738,44 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             ).first()
         if registro:
             registro.observacoes = texto_observacoes
-            registro.tema_id = tema_id
+            registro.atividades = texto_atividades
+            registro.tema_id = tema_id  # compatibilidade com leitores legados
+            registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             registro.instrutor_id = current_user.id
         else:
-            db.session.add(RegistroAula(
+            registro = RegistroAula(
                 turma_id=turma_id,
                 turma_curso_id=oferta_id,
                 data=data_alvo,
-                tema_id=tema_id,
+                tema_id=tema_id,  # espelho temporário durante a transição
                 observacoes=texto_observacoes,
+                atividades=texto_atividades,
                 instrutor_id=current_user.id,
-            ))
-
-        # --- Frequência por aluno ---
-        alunos_post = (
-            Aluno.query.join(Inscricao)
-            .filter(
-                Inscricao.turma_id == turma_id,
-                Inscricao.ativo == True,
-                Aluno.ativo == True,
             )
-            .all()
-        )
+            registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
+            db.session.add(registro)
 
-        for aluno in alunos_post:
-            conceito = form.get(f'aluno_{aluno.id}', '').strip()
-            if not conceito:
-                continue
-
-            if oferta_id is not None:
-                freq = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_curso_id=oferta_id, data=data_alvo
-                ).first()
-            else:
-                freq = Frequencia.query.filter_by(
-                    aluno_id=aluno.id, turma_id=turma_id, data=data_alvo,
-                    turma_curso_id=None,
-                ).first()
-
-            if freq:
-                freq.conceito = conceito
-            else:
-                db.session.add(Frequencia(
+        # --- Frequência por aluno (plano já validado) ---
+        for aluno, conceito, freq, valor_id in plano:
+            if freq is None:
+                freq = Frequencia(
                     aluno_id=aluno.id,
                     turma_id=turma_id,
                     turma_curso_id=oferta_id,
                     data=data_alvo,
-                    conceito=conceito,
-                ))
+                )
+                db.session.add(freq)
+            freq.conceito = conceito
+            # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
+            # sem tocar em nenhuma outra coluna.
+            freq.valor_esportista_id = valor_id
 
         db.session.commit()
         return turma_id, data_alvo.strftime('%Y-%m-%d')
 
+    except PendenciaValorEsportista:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
@@ -590,13 +841,40 @@ def calcular_frequencias_relatorio(
     todas_as_turmas: List[Turma],
     unidade_id: Optional[int] = None,
 ) -> Tuple[float, Dict[str, float], Dict[str, float], Dict[str, float]]:
-    """Retorna (geral, por_programa, por_turma, por_professor), em %."""
+    """Retorna (geral, por_programa, por_turma, por_professor), em %.
+
+    ETAPA D3b.4a (decisões 1, 3 e 4): o percentual vem da regra única do
+    serviço `frequencia_oferta`; `por_turma` agregada em lote
+    (`agregar_por_turma` — todas as linhas da turma, ofertas + legado, como
+    a tela já exibe) e `por_professor` passa a ser o professor DA OFERTA
+    (`TurmaCurso.professor_id`, sem fallback para a turma; as linhas
+    legadas entram pela oferta única ativa da turma — regra D2 — dentro de
+    `agregar_por_oferta`). `por_programa` continua por `Turma.programa`
+    (turno/coorte é D3b.7).
+    """
+    # Import local: mesma lição de `contar_ofertas_conselho` (evita
+    # dependência de `app.services` no carregamento de `logica`).
+    from app.services.frequencia_oferta import (
+        agregar_por_oferta,
+        agregar_por_turma,
+        percentual,
+    )
 
     def calc_pc(query) -> float:
-        estatisticas = calcular_estatisticas_frequencia(
-            registro.conceito for registro in query.all()
+        # D3b.4a (decisão 4): percentual pela regra única do serviço —
+        # presentes/(presentes+faltas), J fora, 1 casa (mesmo resultado do
+        # antigo `calcular_estatisticas_frequencia`, agora fonte única).
+        contagens = (
+            query.filter(Frequencia.conceito.in_(["A", "B", "C", "D", "F"]))
+            .with_entities(Frequencia.conceito, db.func.count(Frequencia.id))
+            .group_by(Frequencia.conceito)
+            .all()
         )
-        return estatisticas['presenca_percentual']
+        presentes = sum(
+            n for conceito, n in contagens if conceito in ("A", "B", "C", "D")
+        )
+        faltas = sum(n for conceito, n in contagens if conceito == "F")
+        return percentual(presentes, faltas)
 
     q_geral = Frequencia.query.join(
         Turma, Frequencia.turma_id == Turma.id
@@ -606,35 +884,116 @@ def calcular_frequencias_relatorio(
     p_geral = calc_pc(q_geral)
 
     f_prog: Dict[str, float] = {}
-    prog_query = db.session.query(Turma.programa).distinct().filter(Turma.ativo == True)
+    # ETAPA D3b-2.6: agrupamento por programa da OFERTA (TurmaCurso.programa),
+    # reusando a regra D2 do legado (oferta única ativa recebe as linhas
+    # legadas NULL; em turma sem oferta única ativa, o legado cai em
+    # Turma.programa, projeção). Fórmula §8.1 inalterada.
+    from collections import defaultdict
+
+    from app.services.frequencia_oferta import ofertas_unicas_ativas
+
+    # Ofertas ativas das turmas ativas no escopo.
+    ofertas_q = (
+        db.session.query(TurmaCurso.id, TurmaCurso.turma_id, TurmaCurso.programa)
+        .join(Turma, Turma.id == TurmaCurso.turma_id)
+        .filter(Turma.ativo == True)
+    )
     if unidade_id:
-        prog_query = prog_query.filter(Turma.unidade_id == unidade_id)
-    for prog, in prog_query.all():
-        q = Frequencia.query.join(
-            Turma, Frequencia.turma_id == Turma.id
-        ).filter(Turma.programa == prog, Turma.ativo == True)
-        if unidade_id:
-            q = q.filter(Turma.unidade_id == unidade_id)
-        f_prog[prog] = calc_pc(q)
+        ofertas_q = ofertas_q.filter(Turma.unidade_id == unidade_id)
+    ofertas_rows = ofertas_q.all()
+    ofertas_map: Dict[int, tuple[int, str]] = {
+        oid: (tid, prog) for oid, tid, prog in ofertas_rows
+    }
+    unicas = ofertas_unicas_ativas(list(ofertas_map.keys()))
+    turma_unica_oferta: Dict[int, int] = {
+        ofertas_map[oid][0]: oid for oid in unicas
+    }
+
+    # Programas distintos (ofertas + projeção das turmas sem oferta única).
+    programas_distintos: set[str] = {prog for _, _, prog in ofertas_rows}
+    turmas_scope = Turma.query.filter_by(ativo=True)
+    if unidade_id:
+        turmas_scope = turmas_scope.filter_by(unidade_id=unidade_id)
+    for t in turmas_scope.all():
+        if t.id not in turma_unica_oferta:
+            if t.programa:
+                programas_distintos.add(t.programa)
+
+    # Acumular presentes/faltas por programa (UMA consulta em Frequencia).
+    totais_por_prog: Dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    fq = (
+        db.session.query(
+            Frequencia.turma_id,
+            Frequencia.turma_curso_id,
+            Frequencia.conceito,
+            Turma.programa,
+        )
+        .join(Turma, Frequencia.turma_id == Turma.id)
+        .filter(Turma.ativo == True)
+    )
+    if unidade_id:
+        fq = fq.filter(Turma.unidade_id == unidade_id)
+    for tid, tcid, conceito, prog_turma in fq.all():
+        if conceito not in ("A", "B", "C", "D", "F"):
+            continue
+        # Programa da linha:
+        if tcid is not None and tcid in ofertas_map:
+            prog = ofertas_map[tcid][1]
+        else:
+            oid = turma_unica_oferta.get(tid)
+            if oid is not None:
+                prog = ofertas_map[oid][1]
+            else:
+                prog = prog_turma
+        if prog is None:
+            continue
+        if conceito in ("A", "B", "C", "D"):
+            totais_por_prog[prog][0] += 1
+        elif conceito == "F":
+            totais_por_prog[prog][1] += 1
+
+    for prog in sorted(programas_distintos):
+        pres, fal = totais_por_prog.get(prog, [0, 0])
+        f_prog[prog] = percentual(pres, fal)
 
     f_turma: Dict[str, float] = {}
-    for t in todas_as_turmas:
-        q = Frequencia.query.filter(Frequencia.turma_id == t.id)
-        f_turma[t.nome] = calc_pc(q)
+    if todas_as_turmas:
+        # D3b.4a: UMA consulta agregada para todas as turmas (sem N+1);
+        # turmas sem frequência ficam com 0.0 (como antes).
+        agregado_turmas = agregar_por_turma(
+            [t.id for t in todas_as_turmas], unidade_id=unidade_id
+        )
+        for t in todas_as_turmas:
+            info = agregado_turmas.get(t.id)
+            f_turma[t.nome] = info.pct_turma if info is not None else 0.0
 
     f_prof: Dict[str, float] = {}
     # Onda 2B (limpeza): usa o enum em vez da string 'professor'.
     prof_query = User.query.filter_by(role=UserRole.PROFESSOR.value)
     if unidade_id:
         prof_query = prof_query.filter_by(unidade_id=unidade_id)
-    for prof in prof_query.all():
-        q = Frequencia.query.join(
-            Turma, Frequencia.turma_id == Turma.id
-        ).filter(Turma.professor_id == prof.id, Turma.ativo == True)
-        if unidade_id:
-            q = q.filter(Turma.unidade_id == unidade_id)
-        if q.count() > 0:
-            f_prof[prof.name] = calc_pc(q)
+    nomes_prof = {prof.id: prof.name for prof in prof_query.all()}
+
+    # D3b.4a (decisão 1): professor DA OFERTA (TurmaCurso.professor_id) em
+    # turmas ativas no escopo; o serviço aplica a regra D2 ao legado.
+    q_ofertas = db.session.query(TurmaCurso.id, TurmaCurso.professor_id).join(
+        Turma, Turma.id == TurmaCurso.turma_id
+    ).filter(Turma.ativo == True)
+    if unidade_id:
+        q_ofertas = q_ofertas.filter(Turma.unidade_id == unidade_id)
+
+    ofertas_por_prof: Dict[int, List[int]] = {}
+    for oferta_id, prof_rel in q_ofertas.all():
+        if prof_rel is None or prof_rel not in nomes_prof:
+            continue
+        ofertas_por_prof.setdefault(prof_rel, []).append(oferta_id)
+
+    for prof_rel, ids in ofertas_por_prof.items():
+        agregado = agregar_por_oferta(ids, unidade_id=unidade_id)
+        presentes = sum(info.presentes for info in agregado.values())
+        faltas = sum(info.faltas for info in agregado.values())
+        if presentes + faltas > 0:
+            f_prof[nomes_prof[prof_rel]] = percentual(presentes, faltas)
 
     return p_geral, f_prog, f_turma, f_prof
 

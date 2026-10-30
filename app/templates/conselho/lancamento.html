@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
+   continua sendo apenas o texto da opção, sem a letra. #}
+{% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container-fluid mt-4">
 
     <div class="card shadow-sm mb-4 border-0 bg-light">
@@ -64,7 +67,7 @@
                 <p class="mb-0 opacity-75">
                     <i class="bi bi-tag-fill me-1"></i> {{ turma.programa or 'Programa não definido' }} |
                     <i class="bi bi-clock-history me-1"></i> {{ turma.turno or '-' }} |
-                    <i class="bi bi-bar-chart-steps me-1"></i> Etapa: {{ etapa }}
+                    <i class="bi bi-bar-chart-steps me-1"></i> Etapa: {{ 'Percurso' if etapa == 'PERCURSO' else etapa|capitalize }}
                     {% if oferta %}
                     | <i class="bi bi-mortarboard me-1"></i> Curso: {{ oferta.curso.nome }}
                     {% endif %}
@@ -73,7 +76,7 @@
             {# D5.2: avaliação coletiva é da OFERTA — link direto com a oferta #}
             <a class="btn btn-warning btn-sm shadow-sm"
                 href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}{% if oferta %}?oferta_sel={{ oferta.id }}{% endif %}">
-                <i class="bi bi-chat-left-text-fill me-1"></i> Ver Avaliação da Oferta
+                <i class="bi bi-chat-left-text-fill me-1"></i> Avaliação da Turma
             </a>
         </div>
     </div>
@@ -122,7 +125,7 @@
                             {% for pergunta in perguntas_aluno %}
                             <div class="col-md-6 mb-3">
                                 <label class="fw-bold mb-2 small text-muted text-uppercase"
-                                    for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ pergunta.texto }}</label>
+                                    for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
 
                                 {% if pergunta.opcoes %}
                                 <div class="mb-2">
@@ -130,7 +133,7 @@
                                     <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
                                         style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
                                         onclick='document.getElementById("resp_{{ aluno.id }}_{{ pergunta.id }}").value = {{ opcao | tojson }};'>
-                                        {{ opcao }}
+                                        {{ letras[loop.index0] }}) {{ opcao }}
                                     </button>
                                     {% endfor %}
                                 </div>

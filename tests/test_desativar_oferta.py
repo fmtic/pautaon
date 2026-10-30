@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 
 from app import create_app
 from app.database import db
+from _helpers import login_as, professor_semente
 from app.models import (
     Aluno,
     Curso,
@@ -75,11 +76,7 @@ def client(app):
 
 
 def _loga(client, user_id, unidade_id=None):
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        if unidade_id is not None:
-            session["unidade_id"] = unidade_id
+    login_as(client, str(user_id), unidade_id)
     return client
 
 
@@ -123,7 +120,6 @@ def _seed(periodo="andamento", *, alunos_ativos=1, alunos_inativos=0,
 
     turma = Turma(
         nome="Turma M4", unidade_id=unidade.id, ativo=True, turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=(periodo_obj.data_inicio if periodo_obj
                      else HOJE - timedelta(days=30)),
         data_fim=(periodo_obj.data_fim if periodo_obj
@@ -141,9 +137,8 @@ def _seed(periodo="andamento", *, alunos_ativos=1, alunos_inativos=0,
         o = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=(k == 0), turno="Manhã",
-            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=turma.data_inicio, data_fim=turma.data_fim,
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(o)
         db.session.flush()

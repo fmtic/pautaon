@@ -23,7 +23,7 @@ from .helpers import (
     semanas_do_periodo,
     tendencia,
 )
-from .regras import FALTAS_SEGUIDAS_SINAL, ContextoSinaisTurma
+from .regras import FALTAS_SEGUIDAS_SINAL, LIMIAR_CRITICO, ContextoSinaisTurma
 from .sinais import sinais_turma
 
 
@@ -64,7 +64,7 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
         }
 
     semanas = semanas_do_periodo(periodo)
-    freq = frequencia.agregar_por_turma([turma.id]).get(
+    freq = frequencia.agregar_por_turma([turma.id], unidade_id=unidade_id).get(
         turma.id, FrequenciaTurma()
     )
     cons = conselho.por_turma([turma.id]).get(turma.id, {})
@@ -74,7 +74,7 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
     semanais = frequencia.semanal(freq.por_aluno, semanas)
     tend = tendencia(semanais)
 
-    media_periodo = _media_periodo(periodo)
+    media_periodo = _media_periodo(periodo, unidade_id)
     diff_media = (
         freq.pct_turma - media_periodo
         if media_periodo is not None else None
@@ -185,13 +185,16 @@ def _alunos_da_turma(turma: Turma, freq: FrequenciaTurma) -> list[dict]:
     return saida
 
 
-def _media_periodo(periodo) -> float | None:
-    turmas_periodo = Turma.query.filter_by(
-        periodo_letivo_id=periodo.id, ativo=True
-    ).all()
+def _media_periodo(periodo, unidade_id: int | None = None) -> float | None:
+    filtros = {"periodo_letivo_id": periodo.id, "ativo": True}
+    if unidade_id is not None:
+        filtros["unidade_id"] = unidade_id
+    turmas_periodo = Turma.query.filter_by(**filtros).all()
     if not turmas_periodo:
         return None
-    agg = frequencia.agregar_por_turma([t.id for t in turmas_periodo])
+    agg = frequencia.agregar_por_turma(
+        [t.id for t in turmas_periodo], unidade_id=unidade_id
+    )
     pres = sum(v.presentes for v in agg.values())
     tot = sum(v.total for v in agg.values())
     return pct(pres, tot) if tot else None

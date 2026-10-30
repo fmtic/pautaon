@@ -5,12 +5,53 @@
     <h2 class="fw-bold mb-0">
         <i class="bi bi-journal-check me-2 text-primary"></i>Conselho de Classe
     </h2>
-    {% if current_user.role == 'admin', 'pedagogico' %}
+    {% if current_user.role in ('admin', 'pedagogico', 'gerencia') %}
     <a href="{{ url_for('conselho.gerenciar_perguntas') }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-gear me-1"></i> Configurar Perguntas
     </a>
+    <button type="button" class="btn btn-outline-primary btn-sm ms-2"
+        data-bs-toggle="modal" data-bs-target="#modalImprimirConselho">
+        <i class="bi bi-printer me-1"></i> Imprimir formulário
+    </button>
     {% endif %}
 </div>
+
+{% if current_user.role in ('admin', 'pedagogico', 'gerencia') %}
+<div class="modal fade" id="modalImprimirConselho" tabindex="-1" aria-labelledby="modalImprimirConselhoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="GET" action="{{ url_for('conselho.imprimir_conselho') }}" class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="modalImprimirConselhoLabel">
+                    <i class="bi bi-printer text-primary me-2"></i>Imprimir formulário do Conselho
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="etapaImpressaoConselho" class="form-label fw-semibold">Etapa do Conselho</label>
+                    <select class="form-select" id="etapaImpressaoConselho" name="etapa" required>
+                        <option value="INICIAL">Etapa Inicial</option>
+                        <option value="PERCURSO">Etapa de Percurso</option>
+                        <option value="FINAL">Etapa Final</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="quantidadeImpressaoConselho" class="form-label fw-semibold">Quantidade de alunos</label>
+                    <input class="form-control" type="number" id="quantidadeImpressaoConselho"
+                        name="quantidade" min="1" max="100" value="12" required>
+                    <div class="form-text">As perguntas gerais serão impressas uma vez e as individuais para cada aluno. Limite: 100 alunos.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-printer me-1"></i> Preparar impressão
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 
 <div class="card shadow-sm border-0 mb-4 bg-light">
     <div class="card-body py-2">
@@ -87,17 +128,14 @@
                         'Não atribuído' }}
                     </p>
                     <p class="small text-muted mb-1">
-                        <i class="bi bi-calendar-event me-1"></i> {{ oferta.dias_semana or turma.dias_semana or 'N/A' }}
+                        {# H3e: dias e horário da OFERTA pela grade (uniforme = como
+                           antes; não uniforme = um segmento por dia). #}
+                        {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
+                        <i class="bi bi-calendar-event me-1"></i> {{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else 'N/A' }}
                         <span class="mx-2 text-black-50">|</span>
                         <i class="bi bi-clock me-1"></i>
-                        {% if oferta.hora_inicio and oferta.hora_fim %}
-                        {{ oferta.hora_inicio }} às {{ oferta.hora_fim }}
-                        {% elif oferta.hora_inicio %}
-                        {{ oferta.hora_inicio }}
-                        {% elif turma.hora_inicio and turma.hora_fim %}
-                        {{ turma.hora_inicio }} às {{ turma.hora_fim }}
-                        {% elif turma.horario %}
-                        {{ turma.horario }}
+                        {% if grade_oferta and grade_oferta.texto_horario %}
+                        {{ grade_oferta.texto_horario }}
                         {% else %}
                         Horário não definido
                         {% endif %}
@@ -120,15 +158,19 @@
                         class="btn btn-sm btn-outline-info text-start">
                         <i class="bi bi-3-circle me-2"></i> Lançar Final
                     </a>
+                    {% if current_user.role != 'professor' %}
                     <a href="{{ url_for('conselho.fechamento_turma', turma_id=turma.id, oferta_sel=oferta.id) }}"
                         class="btn btn-sm btn-primary text-start shadow-sm mt-2">
                         <i class="bi bi-mortarboard-fill me-2"></i> Situação Final do Aluno
                     </a>
+                    {% endif %}
                 </div>
             </div>
             <div class="card-footer bg-transparent border-0 text-center pb-3">
                 {# Encerramento MANUAL e por OFERTA (TurmaCurso.conselho_concluido);
-                   o status da turma é derivado (todas as ofertas ativas). #}
+                   o status da turma é derivado (todas as ofertas ativas).
+                   O professor não encerra/reabre (consenso de 29/10/2026). #}
+                {% if current_user.role != 'professor' %}
                 <form method="POST"
                     action="{{ url_for('planejamento.alternar_conselho', turma_id=turma.id) }}"
                     class="d-grid mb-2">
@@ -144,10 +186,11 @@
                     </button>
                     {% endif %}
                 </form>
-                <a href="{{ url_for('registros.ver_turma', id=turma.id) }}"
+                {% endif %}
+                <!-- <a href="{{ url_for('registros.ver_turma', id=turma.id) }}"
                     class="small text-decoration-none text-muted">
                     Ver detalhes da turma
-                </a>
+                </a> -->
             </div>
         </div>
     </div>

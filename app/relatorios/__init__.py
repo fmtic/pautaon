@@ -20,3 +20,5 @@ bp_relatorios = Blueprint(
 from . import geral, alunos, conselho  # noqa: E402,F401
 from . import bi_routes  # noqa: E402,F401
 from . import painel_pedagogico  # noqa: E402,F401
+# Depois do painel: reaproveita a escolha de período letivo daquela rota.
+from . import observacoes  # noqa: E402,F401

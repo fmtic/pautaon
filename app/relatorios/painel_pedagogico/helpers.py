@@ -6,6 +6,8 @@ from datetime import date, timedelta
 
 from app.models import PeriodoLetivo
 from app.models.enums import CONCEITOS_CONTABEIS
+# Alias: `percentual` é nome de parâmetro em faixa(); evitar sombreamento.
+from app.services.frequencia_oferta import percentual as percentual_unica
 
 from .regras import LIMIAR_ATENCAO, LIMIAR_CRITICO
 
@@ -29,15 +31,23 @@ def semana_de(data_ref: date, semanas: list[date]) -> int | None:
 
 
 def faixa(percentual: float) -> str:
-    if percentual >= LIMIAR_ATENCAO:
-        return "hi"
-    if percentual >= LIMIAR_CRITICO:
-        return "mid"
-    return "lo"
+    """hi/mid/lo sobre o valor JÁ ARREDONDADO a 1 casa — ETAPA D3b.2.
+
+    Delegado ao serviço único (fecha a brecha em que p.ex. 89,96 ficava
+    fora de todas as faixas ao comparar o valor cru com >= 90).
+    """
+    from app.services.frequencia_oferta import faixa as _faixa
+
+    return _faixa(percentual)
 
 
 def pct(presentes: int, total: int) -> float:
-    return round(presentes / total * 100, 1) if total else 0.0
+    """Regra única de percentual (presentes/(presentes+faltas), 1 casa).
+
+    `total` aqui já é o denominador contável (presentes + faltas, sem J),
+    então faltas = total - presentes.
+    """
+    return percentual_unica(presentes, total - presentes)
 
 
 def tendencia(

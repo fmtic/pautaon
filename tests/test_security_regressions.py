@@ -7,6 +7,7 @@ from app.database import db
 from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, Unidade, User
 from app.registros.shared import assert_unidade_context
 from config import Config
+from _helpers import login_as, professor_semente
 
 
 class SQLiteTestConfig(Config):
@@ -69,10 +70,7 @@ def test_pending_user_redirected_to_approval_screen(client, app):
         db.session.add(user)
         db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(user.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(user.id))
         resp = client.get("/dashboard", follow_redirects=False)
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/aguardando-aprovacao")
@@ -90,10 +88,7 @@ def test_first_login_user_redirected_to_password_change(client, app):
         db.session.add(user)
         db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(user.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(user.id))
         resp = client.get("/dashboard", follow_redirects=False)
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/trocar-senha")
@@ -111,10 +106,7 @@ def test_change_password_requires_current_password(client, app):
         db.session.add(user)
         db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(user.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(user.id))
         resp = client.post(
             "/trocar-senha",
             data={
@@ -169,6 +161,7 @@ def test_perfis_autorizados_podem_desenturmar_na_propria_unidade(client, app, ro
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -185,11 +178,7 @@ def test_perfis_autorizados_podem_desenturmar_na_propria_unidade(client, app, ro
         unidade_id = unidade.id
         inscricao_id = inscricao.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        session["unidade_id"] = unidade_id
-
+    login_as(client, str(user_id), unidade_id)
     response = client.post(
         f"/turma/desenturmar/{aluno_id}?turma_id={turma_id}",
         follow_redirects=False,
@@ -229,6 +218,7 @@ def test_professor_nao_pode_desenturmar_na_propria_unidade(client, app):
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -244,10 +234,7 @@ def test_professor_nao_pode_desenturmar_na_propria_unidade(client, app):
         turma_id = turma.id
         inscricao_id = inscricao.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     response = client.post(
         f"/turma/desenturmar/{aluno_id}?turma_id={turma_id}",
         follow_redirects=False,
@@ -290,7 +277,7 @@ def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role)
         db.session.add(TurmaCurso(
             turma_id=turma.id, curso_id=curso.id,
             unidade_id=unidade.id, ativo=True, principal=True,
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         ))
         db.session.commit()
         user_id = user.id
@@ -298,11 +285,7 @@ def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role)
         turma_id = turma.id
         unidade_id = unidade.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        session["unidade_id"] = unidade_id
-
+    login_as(client, str(user_id), unidade_id)
     response = client.post(
         f"/turma/enturmar/{turma_id}",
         data={"aluno_ids[]": str(aluno_id)},
@@ -342,10 +325,7 @@ def test_professor_nao_pode_enturmar(client, app):
         aluno_id = aluno.id
         turma_id = turma.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     response = client.post(
         f"/turma/enturmar/{turma_id}",
         data={"aluno_ids[]": str(aluno_id)},
@@ -380,10 +360,7 @@ def test_historico_aluno_rejects_unrelated_professor(client, app):
         db.session.add(aluno)
         db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(professor.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(professor.id))
         resp = client.get(f"/aluno/{aluno.id}/historico")
         assert resp.status_code == 403
 
@@ -409,10 +386,7 @@ def test_api_alunos_requires_authorized_role(client, app):
         db.session.add(turma)
         db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(professor.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(professor.id))
         resp = client.get(f"/api/alunos/{turma.id}")
         assert resp.status_code == 403
 
@@ -460,11 +434,7 @@ def _criar_admin_cursos(client, app):
         curso_a_id = curso_a.id
         curso_b_id = curso_b.id
 
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(user_id)
-        sess["_fresh"] = True
-        sess["unidade_id"] = unidade_a_id
-
+    login_as(client, str(user_id), unidade_a_id)
     return curso_a_id, curso_b_id
 
 

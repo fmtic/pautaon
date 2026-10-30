@@ -114,6 +114,12 @@
     <a href="{{ url_for('relatorios.busca_alunos') }}" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-search me-1"></i>Buscar aluno (ficha 360°)
     </a>
+    {# Acesso ao Diário de Bordo em modo global (período, turma, curso e
+       professor). Só aparece aqui, onde os perfis de ROLES_RELATORIOS já entram. #}
+    <a href="{{ url_for('relatorios.observacoes', periodo_letivo_id=periodo.id, turma_id=turma.id if turma else None) }}"
+      class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-chat-left-text me-1"></i>Diário de Bordo
+    </a>
   </form>
   {% endif %}
 </div>

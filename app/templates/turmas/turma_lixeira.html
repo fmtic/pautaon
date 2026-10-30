@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Turmas Excluídas (Lixeira)</h2>
+        <a href="{{ url_for('registros.turma') }}" class="btn btn-outline-secondary shadow-sm">
+            <i class="bi bi-arrow-left me-1"></i> Voltar à listagem
+        </a>
+    </div>
+
+    {% if visao_global %}
+    <div class="alert alert-info">
+        Visão Global: somente leitura. Selecione uma unidade para reativar turmas.
+    </div>
+    {% endif %}
+
+    <div class="alert alert-secondary small">
+        Só voltam os cursos desativados <strong>junto com a turma</strong> na exclusão
+        lógica. Curso removido da turma <strong>antes</strong> da exclusão continua
+        inativo — marque-o aqui somente se a intenção for reincluí-lo no curso.
+    </div>
+
+    {% if turmas %}
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Período</th>
+                    <th>Excluída em</th>
+                    <th>Cursos da turma</th>
+                    <th>Inscrições a reativar</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in turmas %}
+                {% set pv = previews[t.id] %}
+                <tr>
+                    <td>{{ t.nome }}</td>
+                    <td>{{ t.periodo_letivo.nome if t.periodo_letivo else '—' }}</td>
+                    <td>{{ t.updated_at.strftime('%d/%m/%Y %H:%M') if t.updated_at else '—' }}</td>
+                    <td>
+                        {% if pv.ofertas %}
+                        {% for o in pv.ofertas %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="oferta_ids"
+                                   value="{{ o.id }}" form="reativar_turma_{{ t.id }}"
+                                   id="of_{{ o.id }}" {{ 'checked' if o.reativar }}>
+                            <label class="form-check-label small" for="of_{{ o.id }}">
+                                {{ o.curso }}
+                                <span class="text-muted">({{ o.vigencia }})</span>
+                                {% if o.na_exclusao %}
+                                <span class="badge bg-warning text-dark">desativado na exclusão da turma</span>
+                                {% else %}
+                                <span class="badge bg-secondary">desativado antes / origem desconhecida</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-muted small">Sem cursos registrados.</span>
+                        {% endif %}
+                        {% if not pv.tem_marcador and pv.ofertas %}
+                        <div class="text-warning small mt-1">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Sem registro de quais cursos saíram junto com a turma
+                            (exclusão anterior a esta versão): escolha explicitamente.
+                        </div>
+                        {% endif %}
+                        {% if pv.viola_principal %}
+                        <div class="text-danger small mt-1">
+                            A seleção deixaria 2+ cursos ativos sem principal único —
+                            a reativação será recusada.
+                        </div>
+                        {% endif %}
+                        <div class="small text-muted mt-1">
+                            {{ pv.ofertas_reativar }} de {{ pv.ofertas_inativas }} curso(s)
+                            a reativar{% if pv.conflitos %} · {{ pv.conflitos }} inscrição(ões)
+                            em conflito permanecem inativas{% endif %}.
+                        </div>
+                    </td>
+                    <td>{{ pv.inscricoes_reativar }}</td>
+                    <td>
+                        {% if not visao_global %}
+                        <form method="post" id="reativar_turma_{{ t.id }}"
+                              action="{{ url_for('registros.reativar_turma_route', id=t.id) }}"
+                              class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="selecao_explicita" value="1">
+                            {% if pv.periodo_encerrado %}
+                            <div class="form-check d-inline-block me-2">
+                                <input class="form-check-input" type="checkbox" name="confirmar_periodo" value="1" id="conf_{{ t.id }}">
+                                <label class="form-check-label small" for="conf_{{ t.id }}">Confirmar período encerrado</label>
+                            </div>
+                            {% endif %}
+                            <button type="submit" class="btn btn-sm btn-success">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i> Reativar
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">Somente leitura</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-secondary">Nenhuma turma excluída.</div>
+    {% endif %}
+</div>
+{% endblock %}

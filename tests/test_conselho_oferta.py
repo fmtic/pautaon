@@ -45,7 +45,7 @@ from app.models import (
 )
 from app.models.enums import EtapaConselho
 from config import Config
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 
 DATA_INI = date(2026, 2, 2)
 DATA_FIM = date(2026, 6, 30)
@@ -79,13 +79,7 @@ def client(app):
 
 def _loga(client, ids, unidade_id=None):
     """Simula login gravando a sessão direto (padrão do harness B4)."""
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(ids["user_id"])
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(ids["user_id"]), unidade_id)
 def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
     """Semeia unidade A (e opcionalmente B), usuário, turma com N ofertas
     ativas (a última pode ser inativa via `ofertas='1+1i'`), 2 alunos com
@@ -116,7 +110,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
 
         turma = Turma(
             nome="Turma D52", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             periodo_letivo_id=periodo.id, unidade_id=un_a.id,
             ativo=True,
         )
@@ -124,7 +118,12 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
 
         aluno_a = Aluno(nome="Aluno Ana", unidade_id=un_a.id, ativo=True)
         aluno_b = Aluno(nome="Aluno Beto", unidade_id=un_a.id, ativo=True)
-        db.session.add_all([usuario, periodo, turma, aluno_a, aluno_b])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof D52", email="prof.d52@example.com", role="professor",
+            first_login=False, unidade_id=un_a.id,
+        )
+        db.session.add_all([usuario, periodo, turma, aluno_a, aluno_b, prof])
         db.session.flush()
 
         n_ativas = ofertas if isinstance(ofertas, int) else 1
@@ -135,7 +134,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             db.session.flush()
             o = nova_oferta(turma.id, curso.id, un_a.id,
                             programa=f"Programa {i + 1}",
-                            principal=(i == 0))
+                            professor_id=prof.id, principal=(i == 0))
             oferta_ids.append(o.id)
 
         oferta_inativa_id = None
@@ -144,7 +143,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             db.session.add(curso)
             db.session.flush()
             oi = nova_oferta(turma.id, curso.id, un_a.id, programa="Programa X",
-                             ativo=False)
+                             professor_id=prof.id, ativo=False)
             oferta_inativa_id = oi.id
 
         db.session.commit()
@@ -155,6 +154,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             "turma": turma.id,
             "aluno_a": aluno_a.id,
             "aluno_b": aluno_b.id,
+            "prof": prof.id,
             "ofertas": oferta_ids,
             "oferta_inativa": oferta_inativa_id,
         }
@@ -243,13 +243,13 @@ def test_lancamento_oferta_de_outra_turma_recusada(client, app):
         db.session.flush()
         turma2 = Turma(
             nome="Turma Z", turno="Tarde", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Terca",
+            data_fim=DATA_FIM,
             unidade_id=ids["un_a"], ativo=True,
         )
         db.session.add(turma2)
         db.session.flush()
         outra_oferta = nova_oferta(turma2.id, curso2.id, ids["un_a"],
-                                   programa="Programa Z")
+                                   programa="Programa Z", professor_id=ids["prof"])
         outra_oferta_id = outra_oferta.id
         db.session.commit()
     _loga(client, ids, unidade_id=ids["un_a"])
@@ -424,6 +424,8 @@ def test_avaliar_turma_sem_oferta_recusa(client, app):
 
     r = client.get(f"/turma/{ids['turma']}/avaliacao?etapa=INICIAL")
     assert r.status_code == 302
+    # Turma sem oferta volta para o painel canônico (main.painel).
+    assert r.headers["Location"].endswith("/painel")
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +570,7 @@ def _turma_de_unidade_b(app, ids):
         db.session.flush()
         turma_b = Turma(
             nome="Turma B", turno="Manhã", data_inicio=DATA_INI,
-            data_fim=DATA_FIM, dias_semana="Segunda",
+            data_fim=DATA_FIM,
             unidade_id=un_b.id, ativo=True,
         )
         db.session.add(turma_b)

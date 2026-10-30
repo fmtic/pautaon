@@ -213,7 +213,7 @@ def test_historico_frequencia_da_inscricao_nao_mistura_turmas(client, app):
     _enturma(app, ids, "aluno_a", oferta_idx=0)
     with app.app_context():
         outra = Turma(
-            nome="Turma Antiga", turno="Tarde", dias_semana="Sexta",
+            nome="Turma Antiga", turno="Tarde",
             unidade_id=ids["un_a"], ativo=True,
         )
         db.session.add(outra)

@@ -12,12 +12,19 @@ especificação §4/§5/§14:
       mais ofertas ativas deve existir exatamente um curso principal. O
       máximo já é garantido pelo índice único parcial `uix_turma_curso_principal`;
       a obrigatoriedade é validada aqui.
+    - Professor (G1/P2): toda oferta tem professor — vazio é recusado no
+      cadastro (`adicionar_oferta`, `criar_oferta_inicial_da_turma`) e na
+      edição (`editar_oferta`); trocar é permitido e, havendo lançamento na
+      oferta, exige confirmação e fica registrado em `log_acao`.
     - Concomitância: horários sobrepostos entre ofertas ativas da mesma turma
       são permitidos; o usuário recebe um aviso informativo.
     - Compatibilidade legada (§14): o espelhamento para as colunas de `Turma`
       só ocorre em turma com oferta única ativa e que nunca teve curso legado
       (situação criada por esta feature). Turmas do backfill e turmas com
       2+ ofertas mantêm as colunas legadas congeladas — sem dual-write.
+      H5a: o espelho NÃO inclui mais agenda — `dias_semana`/`hora_inicio`/
+      `hora_fim` de `Turma` e `TurmaCurso` não são lidos nem escritos aqui; a
+      grade (`turma_curso_horario`) é a única fonte.
 
 Todas as funções fazem `db.session.commit()` internamente e levantam
 `ValueError` com mensagem de usuário amigável em caso de violação de regra;
@@ -25,10 +32,12 @@ quem chama (rotas) converter em `flash`.
 """
 from __future__ import annotations
 
+import logging
+import re
 from datetime import date, time, timedelta
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.database import db
 from app.models import (
@@ -42,6 +51,32 @@ from app.models import (
     User,
 )
 from app.models.base import get_local_now
+from app.services.aluno_info_professor import condicao_professor_da_oferta
+from app.services.turma_curso_horario import (
+    Linha,
+    definir_grade,
+    grade_da_oferta,
+)
+from app.utils.dias_semana import (
+    weekday_para_nome,
+    weekdays_para_csv,
+)
+
+logger = logging.getLogger(__name__)
+
+# Mensagem única usada quando a oferta fica sem professor (G1/P2: toda oferta
+# precisa de um professor responsável — trocar é permitido, esvaziar, não).
+_PROFESSOR_OBRIGATORIO = (
+    "Selecione o professor responsável: toda oferta precisa de um professor."
+)
+
+
+# Mensagem única usada quando a agenda enviada está incompleta (H2: toda
+# oferta precisa de ao menos um dia e horário completo início+fim).
+_AGENDA_INCOMPLETA = (
+    "Selecione ao menos um dia de aula (segunda a sábado) e preencha as horas "
+    "de início e fim, com o fim maior que o início."
+)
 
 
 def ofertas_ativas(turma_id: int):
@@ -52,33 +87,6 @@ def ofertas_ativas(turma_id: int):
         .order_by(TurmaCurso.id)
         .all()
     )
-
-
-def turma_conselho_concluido(turma_ou_id) -> bool:
-    """Encerramento DERIVADO do conselho da turma (D5.3).
-
-    Verdadeiro somente quando a turma tem **ao menos uma oferta ativa** e
-    **todas** as ofertas ativas estão com `TurmaCurso.conselho_concluido`.
-    O encerramento é manual e por oferta (`alternar_conselho`); a turma é
-    derivada. Turma sem oferta ativa não abre conselho e não é considerada
-    concluída (fica fora das contagens). Não lê `Turma.conselho_concluido` —
-    a coluna permanece apenas como ponte de escrita até a D5.5.
-    """
-    turma_id = turma_ou_id.id if isinstance(turma_ou_id, Turma) else turma_ou_id
-    if turma_id is None:
-        return False
-    flags = [
-        bool(flag)
-        for (flag,) in (
-            db.session.query(TurmaCurso.conselho_concluido)
-            .filter(
-                TurmaCurso.turma_id == turma_id,
-                TurmaCurso.ativo.is_(True),
-            )
-            .all()
-        )
-    ]
-    return bool(flags) and all(flags)
 
 
 def contar_ofertas_conselho(unidade_id=None) -> tuple[int, int]:
@@ -141,6 +149,8 @@ def ofertas_do_painel_conselho(
             joinedload(TurmaCurso.turma),
             joinedload(TurmaCurso.curso),
             joinedload(TurmaCurso.professor),
+            # H3e: dias/horários exibidos no painel saem da grade (lote).
+            selectinload(TurmaCurso.horarios),
         )
         .filter(TurmaCurso.ativo.is_(True), Turma.ativo.is_(True))
     )
@@ -151,12 +161,11 @@ def ofertas_do_painel_conselho(
     if turno and turno != "Todos":
         query = query.filter(Turma.turno == turno)
     if professor_id:
-        query = query.filter(
-            or_(
-                TurmaCurso.professor_id == professor_id,
-                Turma.professor_id == professor_id,
-            )
-        )
+        # Consenso de 29/10/2026 (conselho do professor): "professor da
+        # oferta" SEM herança do professor da turma — a MESMA expressão da
+        # pauta/I1 (PARTE B/G1). O professor da turma que não está na oferta
+        # não enxerga esse conselho; o da oferta enxerga.
+        query = query.filter(condicao_professor_da_oferta(professor_id))
 
     ofertas = query.order_by(Turma.ordenacao, Turma.nome, TurmaCurso.id).all()
     contagens = alunos_ativos_por_oferta([oferta.id for oferta in ofertas])
@@ -216,11 +225,20 @@ def turma_tem_historico(turma_id: int) -> bool:
     return False
 
 
-def _parse_dias(dias_semana: str | None) -> set[str]:
-    """Converte CSV de dias ('Segunda, Quarta') em set normalizado (lowerstrip)."""
-    if not dias_semana:
-        return set()
-    return {d.strip().lower() for d in dias_semana.split(",") if d.strip()}
+def _normalizar_agenda(agenda: list) -> list[tuple[int, time | None, time | None]]:
+    """Normaliza a grade CANDIDATA para tuplas ordenadas por dia.
+
+    Aceita itens no formato do serviço — ``(dia, hora_inicio, hora_fim)`` — e
+    ``Linha`` da grade lida da oferta (``grade_da_oferta``).
+    """
+    itens: list[tuple[int, time | None, time | None]] = []
+    for item in agenda:
+        if isinstance(item, Linha):
+            itens.append((item.dia_semana, item.hora_inicio, item.hora_fim))
+        else:
+            dia, ini, fim = item
+            itens.append((int(dia), ini, fim))
+    return sorted(itens, key=lambda t: t[0])
 
 
 def _sobreposicao_horario(a_ini: time, a_fim: time, b_ini: time, b_fim: time) -> bool:
@@ -243,24 +261,85 @@ def _sobreposicao_vigencia(
     return True
 
 
+def _mensagem_conflito(
+    outra: TurmaCurso,
+    grade_outra: list[tuple[int, time | None, time | None]],
+    dias_conflito: list[int],
+) -> str:
+    """Aviso de concomitância citando o(s) dia(s) em conflito (H3b).
+
+    Grade uniforme da outra oferta → mantém o formato anterior
+    (``<dias CSV>, HH:MM–HH:MM``), que é o texto caracterizado nos testes.
+    Grade não uniforme → um segmento por dia em conflito
+    (``Terça 08:00–10:00; Quinta 14:00–16:00``).
+    """
+    curso_nome = outra.curso.nome if outra.curso else f"curso #{outra.curso_id}"
+    pares = {(ini, fim) for _, ini, fim in grade_outra}
+    if len(pares) == 1:
+        ini, fim = next(iter(pares))
+        # H3f: os dias citados no aviso saem da grade recebida (fonte da
+        # verdade), não da projeção escalar; para uniforme o CSV é o mesmo.
+        dias_txt = weekdays_para_csv([dia for dia, _, _ in grade_outra])
+        detalhe = f"{dias_txt}, {ini:%H:%M}–{fim:%H:%M}"
+    else:
+        por_dia = {dia: (ini, fim) for dia, ini, fim in grade_outra}
+        detalhe = "; ".join(
+            f"{weekday_para_nome(dia)} "
+            f"{por_dia[dia][0]:%H:%M}–{por_dia[dia][1]:%H:%M}"
+            for dia in dias_conflito
+        )
+    return (
+        f"Horário concomitante com '{curso_nome}' ({detalhe}). "
+        "A oferta foi salva."
+    )
+
+
+def _agenda_da_oferta(
+    oferta: TurmaCurso,
+) -> list[tuple[int, time | None, time | None]] | None:
+    """Itens ``(dia, início, fim)`` da **grade atual** da oferta (H3f/H5a).
+
+    Única fonte dos defaults de `editar_oferta` e da checagem de conflito.
+    Oferta **sem grade** é estado inválido desde o H5a: registra ``logger.error``
+    e devolve ``None`` — as colunas escalares nunca são lidas.
+    """
+    linhas = grade_da_oferta(oferta)
+    if linhas:
+        return [(l.dia_semana, l.hora_inicio, l.hora_fim) for l in linhas]
+    logger.error(
+        "Oferta %s sem grade: agenda indefinida (estado inválido desde o H5a).",
+        oferta.id,
+    )
+    return None
+
+
 def _conflitos_horario_concomitante(
     turma_id: int,
     *,
-    dias_semana: str | None,
-    hora_inicio: time | None,
-    hora_fim: time | None,
-    data_inicio: date | None,
-    data_fim: date | None,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
     exclude_oferta_id: int | None = None,
+    agenda: list | None = None,
 ) -> list[str]:
-    """Lista conflitos com outras ofertas ativas da mesma turma.
+    """Lista conflitos POR DIA com outras ofertas ativas da mesma turma (H3b).
 
-    A checagem é pulada quando faltam dados mínimos (sem dias OU sem horários).
-    Concomitância é permitida; as mensagens servem apenas como alerta.
+    Para cada weekday em comum, compara o intervalo DESSE dia; há conflito
+    quando os intervalos se sobrepõem (início_a < fim_b e início_b < fim_a).
+    Horários adjacentes (fim = início) NÃO conflitam. A vigência continua
+    limitando a comparação (sem interseção → sem conflito). Concomitância é
+    permitida; as mensagens servem apenas como ALERTA — nunca bloqueiam.
+
+    A grade candidata vem SEMPRE de `agenda` (itens ``(dia, ini, fim)`` ou
+    ``Linha``), necessária quando a oferta ainda não tem linhas no banco
+    (criação) ou tem grade diferente da atual. Sem `agenda` não há checagem
+    (H5a: não existe mais a conversão do trio escalar). As grades das demais
+    ofertas saem em UMA consulta: a relação ``horarios`` é ``selectin`` e vem
+    carregada junto com as ofertas (``grade_da_oferta`` não consulta de novo)
+    — sem N+1. Oferta ativa **sem grade** não é comparada (estado inválido,
+    ``logger.error``).
     """
-    # Dados insuficientes — não há como determinar conflito
-    dias_novos = _parse_dias(dias_semana)
-    if not dias_novos or hora_inicio is None or hora_fim is None:
+    grade_nova = _normalizar_agenda(agenda) if agenda is not None else []
+    if not grade_nova:
         return []
 
     outras = (
@@ -269,30 +348,41 @@ def _conflitos_horario_concomitante(
         .order_by(TurmaCurso.id)
         .all()
     )
+    outras = [
+        o for o in outras
+        if not (exclude_oferta_id and o.id == exclude_oferta_id)
+    ]
+
+    por_dia_nova = {dia: (ini, fim) for dia, ini, fim in grade_nova}
     conflitos = []
     for outra in outras:
-        if exclude_oferta_id and outra.id == exclude_oferta_id:
+        # A relação `horarios` é selectin: a grade já veio no lote acima.
+        grade_outra = [
+            (l.dia_semana, l.hora_inicio, l.hora_fim)
+            for l in grade_da_oferta(outra)
+        ]
+        if not grade_outra:
+            logger.error(
+                "Oferta %s sem grade: concomitância não comparada (estado "
+                "inválido desde o H5a).", outra.id,
+            )
             continue
-        # Precisa ter dados de horário para comparar
-        dias_outra = _parse_dias(outra.dias_semana)
-        if not dias_outra or outra.hora_inicio is None or outra.hora_fim is None:
+        if not _sobreposicao_vigencia(
+            data_inicio, data_fim, outra.data_inicio, outra.data_fim
+        ):
             continue
-        # Condição 1: dias em comum
-        if not dias_novos & dias_outra:
-            continue
-        # Condição 2: sobreposição estrita de horário
-        if not _sobreposicao_horario(hora_inicio, hora_fim, outra.hora_inicio, outra.hora_fim):
-            continue
-        # Condição 3: vigências se interceptam
-        if not _sobreposicao_vigencia(data_inicio, data_fim, outra.data_inicio, outra.data_fim):
-            continue
-        # Conflito detectado: alerta sem bloquear a operação.
-        curso_nome = outra.curso.nome if outra.curso else f"curso #{outra.curso_id}"
-        conflitos.append(
-            f"Horário concomitante com '{curso_nome}' "
-            f"({outra.dias_semana}, {outra.hora_inicio:%H:%M}–{outra.hora_fim:%H:%M}). "
-            "A oferta foi salva."
-        )
+
+        por_dia_outra = {dia: (ini, fim) for dia, ini, fim in grade_outra}
+        dias_conflito = []
+        for dia in sorted(set(por_dia_nova) & set(por_dia_outra)):
+            ini_a, fim_a = por_dia_nova[dia]
+            ini_b, fim_b = por_dia_outra[dia]
+            if None in (ini_a, fim_a, ini_b, fim_b):
+                continue  # dia sem horário (legado) não permite comparar
+            if _sobreposicao_horario(ini_a, fim_a, ini_b, fim_b):
+                dias_conflito.append(dia)
+        if dias_conflito:
+            conflitos.append(_mensagem_conflito(outra, grade_outra, dias_conflito))
     return conflitos
 
 
@@ -321,8 +411,15 @@ def _validar_curso(turma: Turma, curso_id: int) -> Curso:
 
 
 def _validar_professor(professor_id, unidade_id):
+    """Professor da oferta: obrigatório (G1/P2) e da unidade da turma.
+
+    Esvaziar não é aceito — a oferta sem professor não libera acesso a nada
+    (regra "sem herança" do I1, `professor_da_oferta`) e deixa a turma órfã na
+    tela do professor. Trocar (outro id) é permitido: quem decide a propagação
+    do acesso é a rota (`oferta_tem_lancamentos`).
+    """
     if not professor_id:
-        return None
+        raise ValueError(_PROFESSOR_OBRIGATORIO)
     professor = db.session.get(User, int(professor_id))
     if (
         professor is None
@@ -333,6 +430,133 @@ def _validar_professor(professor_id, unidade_id):
             "Professor inválido para a unidade da turma."
         )
     return professor.id
+
+
+# -----------------------------------------------------------------------------
+# Troca de professor da oferta (E2): confirmação quando há lançamento e registro
+# do anterior e do novo em `log_acao`.
+# -----------------------------------------------------------------------------
+
+#: `acao` da entrada de `log_acao` gravada na troca de professor da oferta.
+ACAO_TROCA_PROFESSOR_OFERTA = "Trocar Professor da Oferta"
+
+_PADRAO_TROCA_PROFESSOR = re.compile(
+    r"\Aoferta_id=(?P<oferta>\d+)"
+    r" anterior_id=(?P<anterior>\d+|none)"
+    r' anterior_nome="(?P<anterior_nome>[^"]*)"'
+    r" novo_id=(?P<novo>\d+|none)"
+    r' novo_nome="(?P<novo_nome>[^"]*)"\Z'
+)
+
+
+def _ref_professor(professor_id) -> tuple[str, str]:
+    """`(token_id, nome)` do professor para o texto do log (`none`/vazio)."""
+    if not professor_id:
+        return "none", ""
+    professor = db.session.get(User, int(professor_id))
+    return str(int(professor_id)), (professor.name if professor else "")
+
+
+def formatar_detalhe_troca_professor(oferta_id, anterior_id=None, novo_id=None) -> str:
+    """Texto (parseável) do `detalhes` da troca: id e nome de cada professor."""
+    a_token, a_nome = _ref_professor(anterior_id)
+    n_token, n_nome = _ref_professor(novo_id)
+    return (
+        f"oferta_id={int(oferta_id)} "
+        f'anterior_id={a_token} anterior_nome="{a_nome}" '
+        f'novo_id={n_token} novo_nome="{n_nome}"'
+    )
+
+
+def parsear_detalhe_troca_professor(detalhes) -> dict | None:
+    """`{oferta_id, anterior_id, anterior_nome, novo_id, novo_nome}` ou `None`."""
+    if not detalhes:
+        return None
+    achado = _PADRAO_TROCA_PROFESSOR.match(str(detalhes).strip())
+    if not achado:
+        return None
+
+    def _id(valor):
+        return None if valor == "none" else int(valor)
+
+    return {
+        "oferta_id": int(achado.group("oferta")),
+        "anterior_id": _id(achado.group("anterior")),
+        "anterior_nome": achado.group("anterior_nome"),
+        "novo_id": _id(achado.group("novo")),
+        "novo_nome": achado.group("novo_nome"),
+    }
+
+
+def oferta_tem_lancamentos(oferta_id: int) -> bool:
+    """Há lançamento (frequência, registro de aula ou conselho) na oferta?
+
+    Usado como guarda da troca de professor: com lançamento gravado, a troca
+    precisa de confirmação explícita (mesmo padrão da limpeza de lançamentos
+    na edição da turma).
+    """
+    from app.models import ConselhoClasse, Frequencia, RegistroAula
+
+    return bool(
+        db.session.query(Frequencia.id)
+        .filter(Frequencia.turma_curso_id == oferta_id)
+        .first()
+        or db.session.query(RegistroAula.id)
+        .filter(RegistroAula.turma_curso_id == oferta_id)
+        .first()
+        or db.session.query(ConselhoClasse.id)
+        .filter(ConselhoClasse.turma_curso_id == oferta_id)
+        .first()
+    )
+
+
+def ofertas_com_lancamentos(oferta_ids) -> set[int]:
+    """Versão em lote de `oferta_tem_lancamentos` (telas que listam ofertas).
+
+    Três consultas `DISTINCT` no total — uma por tipo de lançamento — em vez de
+    uma por linha da listagem.
+    """
+    from app.models import ConselhoClasse, Frequencia, RegistroAula
+
+    ids = [int(id_oferta) for id_oferta in oferta_ids if id_oferta]
+    if not ids:
+        return set()
+    com_lancamento: set[int] = set()
+    for modelo in (Frequencia, RegistroAula, ConselhoClasse):
+        com_lancamento.update(
+            id_oferta
+            for (id_oferta,) in (
+                db.session.query(modelo.turma_curso_id)
+                .filter(modelo.turma_curso_id.in_(ids))
+                .distinct()
+                .all()
+            )
+        )
+    return com_lancamento
+
+
+def gravar_troca_professor_da_oferta(
+    oferta_id, anterior_id, novo_id, *,
+    usuario_id=None, usuario_nome=None, ip=None, unidade_id=None,
+) -> None:
+    """Acrescenta o LogAcao da troca de professor (sem commit).
+
+    Grava só os ids e nomes do professor anterior e do novo — o formato das
+    demais entradas do log (repr do objeto, gravado pelo listener de
+    auditoria) permanece intocado.
+    """
+    from app.models import LogAcao
+
+    db.session.add(LogAcao(
+        usuario_id=usuario_id,
+        usuario_nome=usuario_nome,
+        acao=ACAO_TROCA_PROFESSOR_OFERTA,
+        detalhes=formatar_detalhe_troca_professor(
+            oferta_id, anterior_id=anterior_id, novo_id=novo_id
+        ),
+        ip=ip,
+        unidade_id=unidade_id,
+    ))
 
 
 def _validar_principal_obrigatorio(turma: Turma, principal_oferta: bool):
@@ -360,12 +584,10 @@ def _sincronizar_legado(turma: Turma, oferta: TurmaCurso) -> None:
     # Espelha a oferta única nas colunas legadas de Turma, para que a turma
     # criada no fluxo novo (sem curso) passe a exibir os dados do curso no
     # card da listagem e nos leitores que ainda usam as colunas de Turma.
+    # H5a: a agenda NÃO entra no espelho — dias/horários vivem só na grade.
     turma.curso_id = oferta.curso_id
     turma.professor_id = oferta.professor_id
     turma.turno = oferta.turno
-    turma.dias_semana = oferta.dias_semana
-    turma.hora_inicio = oferta.hora_inicio
-    turma.hora_fim = oferta.hora_fim
     turma.data_inicio = oferta.data_inicio
     turma.data_fim = oferta.data_fim
     turma.centro_custo = oferta.centro_custo
@@ -384,7 +606,9 @@ def sincronizar_programa_turma(turma: Turma) -> None:
     turma.programa = referencia.programa if referencia else None
 
 
-def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
+def criar_oferta_inicial_da_turma(
+    turma: Turma, agenda: list | None = None
+) -> TurmaCurso | None:
     """Cria a oferta inicial de uma turma recém-cadastrada que tem curso legado.
 
     Espelha o backfill da migration `311d554dfd6e`: se a turma tem `curso_id`
@@ -400,6 +624,17 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     `add`/`flush` — para que a rota grave turma e oferta na mesma transação
     (falha na oferta desfaz a turma). Não valida concomitância: a oferta
     replica exatamente a grade já aceita da turma.
+
+    Desde o H2 a agenda da oferta é a GRADE (`definir_grade`): toda oferta
+    nasce com ao menos um dia e o par completo de horários, e as colunas
+    escalares não são fonte nem destino. H5a: sem `agenda`, ou com agenda
+    vazia, a criação é recusada com ValueError — não existe mais herança a
+    partir das colunas da turma (nunca se cria oferta com grade parcial).
+    G1/P2: turma sem professor também não gera oferta (ValueError) — o
+    professor espelhado é o da própria turma.
+
+    H4: `agenda` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a grade por
+    dia enviada pelo formulário — é ela que é gravada (pode ser NÃO uniforme).
     """
     existente = (
         TurmaCurso.query
@@ -416,6 +651,19 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     if not turma.programa or not turma.programa.strip():
         raise ValueError("Toda oferta precisa ter um programa.")
 
+    # H5a: a agenda da oferta inicial vem SEMPRE do formulário (grade por
+    # dia). Os escalares da turma não são lidos em nenhuma hipótese.
+    itens = agenda or None
+    if itens is None:
+        raise ValueError(
+            f"A turma não tem agenda completa — {_AGENDA_INCOMPLETA.lower()}"
+        )
+
+    # G1/P2: a oferta espelha o professor da turma; sem professor não há como
+    # criar a oferta (a definição fica em Cursos da Turma, junto do curso).
+    if not turma.professor_id:
+        raise ValueError(_PROFESSOR_OBRIGATORIO)
+
     periodo = turma.periodo_letivo
 
     oferta = TurmaCurso(
@@ -424,9 +672,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
         principal=False,
         professor_id=turma.professor_id,
         turno=turma.turno,
-        dias_semana=turma.dias_semana,
-        hora_inicio=turma.hora_inicio,
-        hora_fim=turma.hora_fim,
+        # dias_semana/hora_inicio/hora_fim: projeção gravada pelo definir_grade.
         data_inicio=periodo.data_inicio if periodo else turma.data_inicio,
         data_fim=periodo.data_fim if periodo else turma.data_fim,
         centro_custo=turma.centro_custo,
@@ -436,6 +682,7 @@ def criar_oferta_inicial_da_turma(turma: Turma) -> TurmaCurso | None:
     )
     db.session.add(oferta)
     db.session.flush()
+    definir_grade(oferta, itens)
     sincronizar_programa_turma(turma)
     return oferta
 
@@ -447,19 +694,30 @@ def adicionar_oferta(
     principal: bool = False,
     professor_id=None,
     turno: str | None = None,
-    dias_semana: str | None = None,
-    hora_inicio=None,
-    hora_fim=None,
     data_inicio=None,
     data_fim=None,
     centro_custo: str | None = None,
     programa: str | None = None,
+    agenda: list | None = None,
 ) -> TurmaCurso:
-    """Cria uma oferta incremental na turma, aplicando as regras da Onda 4."""
+    """Cria uma oferta incremental na turma, aplicando as regras da Onda 4.
+
+    H4: `agenda` (itens ``(dia_semana, hora_inicio, hora_fim)``) é a grade por
+    dia vinda do formulário e é a fonte da agenda (admite grade NÃO uniforme):
+    vai para `definir_grade` e para a checagem de concomitância.
+
+    H5a: sem `agenda`, a herança de agenda vem da **grade** de uma oferta ativa
+    da turma (se houver); as colunas escalares de `Turma`/`TurmaCurso` não são
+    mais parâmetro nem fonte. Sem agenda resultante → `ValueError`.
+    """
     curso = _validar_curso(turma, curso_id)
     programa = (programa or "").strip()
     if not programa:
         raise ValueError("Toda oferta precisa ter um programa.")
+    # G1/P2: o professor pode vir da herança da turma (primeira oferta de uma
+    # turma sem vínculo legado), mas a ausência é recusada pela validação.
+    if turma.curso_id is None and not professor_id:
+        professor_id = turma.professor_id
     professor_id = _validar_professor(professor_id, turma.unidade_id)
     _validar_principal_obrigatorio(turma, principal)
 
@@ -478,25 +736,40 @@ def adicionar_oferta(
 
     avisos_horario = _conflitos_horario_concomitante(
         turma.id,
-        dias_semana=dias_semana,
-        hora_inicio=hora_inicio,
-        hora_fim=hora_fim,
         data_inicio=data_inicio,
         data_fim=data_fim,
+        agenda=agenda,
     )
 
-    # Herança de atributos: primeira oferta de uma turma sem vínculo legado
-    # parte dos valores da própria turma (compatibilidade com a UI antiga).
-    # Usa `or` para herdar os demais atributos de turma quando aplicável.
+    # Herança de atributos não-agenda: primeira oferta de uma turma sem vínculo
+    # legado parte dos valores da própria turma (compatibilidade com a UI
+    # antiga). A agenda só é herdada da GRADE de uma oferta ativa da turma
+    # (H3f/H5a) — nunca das colunas escalares.
+    agenda_herdada: list[tuple[int, time, time]] | None = None
     if turma.curso_id is None:
-        professor_id = professor_id or turma.professor_id
+        # Professor: resolvido e validado no topo da função (G1/P2).
         turno = turno or turma.turno
-        dias_semana = dias_semana or turma.dias_semana
-        hora_inicio = hora_inicio or turma.hora_inicio
-        hora_fim = hora_fim or turma.hora_fim
+        if agenda is None:
+            com_grade = [
+                (o, grade_da_oferta(o)) for o in ofertas_ativas(turma.id)
+            ]
+            com_grade = [(o, g) for o, g in com_grade if g]
+            if com_grade:
+                _ref, g_ref = next(
+                    ((o, g) for o, g in com_grade if o.principal), com_grade[0]
+                )
+                agenda_herdada = [
+                    (l.dia_semana, l.hora_inicio, l.hora_fim) for l in g_ref
+                ]
         data_inicio = data_inicio or turma.data_inicio
         data_fim = data_fim or turma.data_fim
         centro_custo = centro_custo or turma.centro_custo
+
+    # H2: a grade da oferta é a fonte dos dias/horários e nasce completa —
+    # valida ANTES de qualquer escrita (nada é alterado em caso de erro).
+    itens = agenda if agenda is not None else agenda_herdada
+    if itens is None:
+        raise ValueError(_AGENDA_INCOMPLETA)
 
     # A troca é feita antes do INSERT e dentro da mesma transação. O flush
     # libera o índice único parcial antes de gravar a nova oferta principal.
@@ -512,9 +785,7 @@ def adicionar_oferta(
         principal=bool(principal),
         professor_id=professor_id,
         turno=turno,
-        dias_semana=dias_semana,
-        hora_inicio=hora_inicio,
-        hora_fim=hora_fim,
+        # H5a: dias/horários vivem só na grade (definir_grade abaixo).
         data_inicio=data_inicio,
         data_fim=data_fim,
         centro_custo=centro_custo,
@@ -524,6 +795,7 @@ def adicionar_oferta(
     )
     db.session.add(oferta)
     db.session.flush()
+    definir_grade(oferta, itens)
     _sincronizar_legado(turma, oferta)
     sincronizar_programa_turma(turma)
 
@@ -534,8 +806,19 @@ def adicionar_oferta(
 
 def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
     """Atualiza os atributos da oferta. O campo `principal` não é editável
-    aqui (use `definir_principal`); alterações não retroativas: inscrições e
-    lançamentos existentes continuam como estão.
+    aqui (use `definir_principal`).
+
+    H2/H4: a agenda NÃO é gravada por setattr — `dados["agenda"]` (itens
+    ``(dia_semana, hora_inicio, hora_fim)``) substitui a grade inteira via
+    ``definir_grade`` (admite grade NÃO uniforme). Sem `agenda` no `dados`, a
+    grade não é tocada.
+
+    H5a: as colunas escalares de agenda deixaram de ser aceitas como fonte ou
+    default — enviá-las levanta ``ValueError`` (use ``agenda=``); os defaults
+    da checagem de conflito saem da **grade atual** (``_agenda_da_oferta``).
+
+    G1/P2: ``professor_id`` presente e vazio é recusado (trocar é permitido;
+    esvaziar, não). Quem segura a troca com lançamento gravado é a rota.
     """
     if "professor_id" in dados:
         dados["professor_id"] = _validar_professor(
@@ -548,27 +831,43 @@ def editar_oferta(oferta: TurmaCurso, **dados) -> TurmaCurso:
         if not dados["programa"]:
             raise ValueError("Toda oferta precisa ter um programa.")
 
-    # Concomitância: checar apenas se pelo menos um dos campos de horário/dias mudou
-    campos_horario = {"dias_semana", "hora_inicio", "hora_fim", "data_inicio", "data_fim"}
-    if campos_horario & set(dados):
+    escalares = {"dias_semana", "hora_inicio", "hora_fim"} & set(dados)
+    if escalares:
+        raise ValueError(
+            "Os dias e horários da oferta são definidos pela grade: envie "
+            "`agenda` com os itens (dia, início, fim)."
+        )
+    # H4: a grade por dia pode chegar pronta (itens ``(dia, ini, fim)``).
+    itens = dados.pop("agenda", None)
+
+    # Concomitância: checar ao mexer na vigência ou na agenda. A agenda usada
+    # é a nova (se veio) ou a grade **real** da oferta (relação já carregada —
+    # sem consulta extra); oferta sem grade não é comparada (H5a).
+    if {"data_inicio", "data_fim"} & set(dados) or itens is not None:
         avisos_horario = _conflitos_horario_concomitante(
             oferta.turma_id,
-            dias_semana=dados.get("dias_semana", oferta.dias_semana),
-            hora_inicio=dados.get("hora_inicio", oferta.hora_inicio),
-            hora_fim=dados.get("hora_fim", oferta.hora_fim),
             data_inicio=dados.get("data_inicio", oferta.data_inicio),
             data_fim=dados.get("data_fim", oferta.data_fim),
             exclude_oferta_id=oferta.id,
+            agenda=(
+                itens
+                if itens is not None
+                else _agenda_da_oferta(oferta)
+            ),
         )
     else:
         avisos_horario = []
 
     for campo in (
-        "curso_id", "professor_id", "turno", "dias_semana",
-        "hora_inicio", "hora_fim", "data_inicio", "data_fim", "centro_custo", "programa",
+        "curso_id", "professor_id", "turno",
+        "data_inicio", "data_fim", "centro_custo", "programa",
     ):
         if campo in dados:
             setattr(oferta, campo, dados[campo])
+
+    if itens is not None:
+        # Única escrita dos dias/horários da oferta: substitui a grade.
+        definir_grade(oferta, itens)
 
     sincronizar_programa_turma(oferta.turma)
 
@@ -672,21 +971,32 @@ def desativar_oferta(
 # RESOLUÇÃO DA OFERTA DE LANÇAMENTO (Onda 4 — Fase 4, §7)
 # =============================================================================
 
-_NOMES_DIA_SEMANA = (
-    'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo',
-)
+def _dias_set_da_oferta(oferta: TurmaCurso) -> set[int]:
+    """Dias (weekday 0-5) em que a oferta tem aula (H3a).
 
-
-def _data_bate_dias_semana(dias_semana: str | None, data: date) -> bool:
-    """True se `data` cai em um dos dias definidos para a oferta. Oferta sem
-    `dias_semana` definido não impõe restrição (True). Aceita a variante
-    'Segunda-feira' além de 'Segunda'.
+    Fonte única: a grade ``turma_curso_horario`` (lida da relação já carregada
+    — sem consulta por data/oferta). Oferta sem grade devolve conjunto vazio e
+    registra ``logger.error`` (estado inválido desde o H5a: não há leitura das
+    colunas escalares).
     """
-    dias = _parse_dias(dias_semana)
+    dias = {linha.dia_semana for linha in grade_da_oferta(oferta)}
+    if not dias:
+        logger.error(
+            "Oferta %s sem grade: dias da semana indefinidos (estado inválido "
+            "desde o H5a).",
+            oferta.id,
+        )
+    return dias
+
+
+def _data_bate_dias_semana(oferta: TurmaCurso, data: date) -> bool:
+    """True se `data` cai em um dos dias da grade da oferta. Oferta sem dias
+    em que a grade não define nada não impõe restrição (True).
+    """
+    dias = _dias_set_da_oferta(oferta)
     if not dias:
         return True
-    nome = _NOMES_DIA_SEMANA[data.weekday()]
-    return nome in dias or f"{nome}-feira" in dias
+    return data.weekday() in dias
 
 
 def _formatar_vigencia(oferta: TurmaCurso) -> str:
@@ -705,6 +1015,7 @@ def resolver_oferta_lancamento(
     data: date,
     turma_curso_id: int | None = None,
     tema_id: int | None = None,
+    tema_ids: list[int] | tuple[int, ...] | None = None,
 ) -> TurmaCurso | None:
     """Decide qual oferta (TurmaCurso) deve receber o lançamento de frequência/
     diário de `turma_id` na `data`, validando a escolha informada.
@@ -717,12 +1028,29 @@ def resolver_oferta_lancamento(
         - Oferta informada (turma_curso_id): rejeita (ValueError) quando a
           oferta não existe, está inativa, pertence a outra turma, a data está
           fora da vigência (NULL = aberto), o dia da semana não está nos dias
-          da oferta (quando definidos) ou o `tema_id` informado pertence a
+          da oferta (quando definidos) ou algum tema selecionado pertence a
           outro curso que não o da oferta.
 
     Não grava nada — apenas resolve e valida. Levanta ValueError com mensagem
     de usuário (convenção deste módulo; a rota converte em flash).
     """
+    ids_temas = list(dict.fromkeys(
+        tema_ids or ([] if tema_id is None else [tema_id])
+    ))
+    temas_selecionados = (
+        TemaAula.query.filter(TemaAula.id.in_(ids_temas)).all()
+        if ids_temas else []
+    )
+    if len(temas_selecionados) != len(ids_temas):
+        raise ValueError("Um ou mais temas selecionados não existem.")
+
+    def validar_temas_curso(oferta: TurmaCurso) -> None:
+        if any(t.curso_id not in (None, oferta.curso_id) for t in temas_selecionados):
+            raise ValueError(
+                f"Um dos temas selecionados pertence a outro curso, não a "
+                f"'{_nome_curso(oferta)}'. Escolha temas do curso da oferta."
+            )
+
     if turma_curso_id is not None:
         oferta = db.session.get(TurmaCurso, turma_curso_id)
         if oferta is None:
@@ -744,24 +1072,30 @@ def resolver_oferta_lancamento(
                 f"A data {data:%d/%m/%Y} está depois da vigência da oferta "
                 f"'{_nome_curso(oferta)}' ({_formatar_vigencia(oferta)})."
             )
-        if not _data_bate_dias_semana(oferta.dias_semana, data):
+        if not _data_bate_dias_semana(oferta, data):
+            # H3f: os dias citados na mensagem saem da grade (via leitura com
+            # fallback legado), não da projeção escalar.
             raise ValueError(
                 f"A data {data:%d/%m/%Y} não cai em um dia de aula da oferta "
-                f"'{_nome_curso(oferta)}' ({oferta.dias_semana})."
+                f"'{_nome_curso(oferta)}' "
+                f"({weekdays_para_csv(sorted(_dias_set_da_oferta(oferta)))})."
             )
-        if tema_id is not None:
-            tema = db.session.get(TemaAula, tema_id)
-            if tema is not None and tema.curso_id not in (None, oferta.curso_id):
-                raise ValueError(
-                    f"O tema selecionado pertence a outro curso, não a "
-                    f"'{_nome_curso(oferta)}'. Escolha um tema do curso da oferta."
-                )
+        validar_temas_curso(oferta)
         return oferta
 
     ativas = ofertas_ativas(turma_id)
     if not ativas:
+        turma = db.session.get(Turma, turma_id)
+        if turma and any(
+            tema.curso_id not in (None, turma.curso_id)
+            for tema in temas_selecionados
+        ):
+            raise ValueError(
+                "Um dos temas selecionados não pertence ao curso desta turma."
+            )
         return None  # sem oferta ativa → caminho legado (só turma_id)
     if len(ativas) == 1:
+        validar_temas_curso(ativas[0])
         return ativas[0]
     nomes = ", ".join(_nome_curso(o) for o in ativas)
     raise ValueError(
@@ -820,30 +1154,20 @@ def _alunos_da_oferta(
     )
 
 
-def _dias_efetivos_da_oferta(oferta: TurmaCurso) -> str | None:
-    """Dias da semana que regem a agenda da oferta; herda os da turma quando a
-    oferta não define os próprios (compatibilidade com o backfill legado)."""
-    if oferta.dias_semana:
-        return oferta.dias_semana
-    if oferta.turma is not None:
-        return oferta.turma.dias_semana
-    return None
-
-
 def datas_aula_oferta(
     oferta: TurmaCurso,
     limite: date | None = None,
     blocked: set | None = None,
 ) -> list[date]:
-    """Datas de aula da OFERTA, respeitando a vigência e os dias da semana
-    próprios da oferta (herdados da turma quando ausentes).
+    """Datas de aula da OFERTA, respeitando a vigência e os dias da GRADE.
 
     - Vigência: janela [data_inicio, data_fim]; NULL nos extremos herda da
       turma; sem início OU fim definíveis → sem datas.
-    - `limite`: teto exclusivo de projeção. `None` vai até a `data_fim`
-      efetiva; quando informado, corta em `min(limite, data_fim)`.
-    - Dias da semana: `_data_bate_dias_semana` com os dias efetivos da
-      oferta. Sem dias em nenhum dos dois → sem datas.
+    - `limite`: teto **inclusivo** de projeção. `None` vai até a `data_fim`
+      efetiva; quando informado, corta em `min(limite, data_fim)` e a data
+      igual ao teto ainda é incluída.
+    - Dias da semana: `_data_bate_dias_semana`/`_dias_set_da_oferta`, lendo
+      apenas a grade. Sem dias na grade → sem datas.
     - `blocked`: conjunto de strings 'YYYY-MM-DD' (feriados / dias sem aula).
     """
     blocked = blocked or set()
@@ -860,14 +1184,14 @@ def datas_aula_oferta(
     if inicio > limite_efetivo:
         return []
 
-    dias = _dias_efetivos_da_oferta(oferta)
-    if not _parse_dias(dias):
+    dias = _dias_set_da_oferta(oferta)
+    if not dias:
         return []
 
     datas: list[date] = []
     atual = inicio
     while atual <= limite_efetivo:
-        if _data_bate_dias_semana(dias, atual) and atual.strftime('%Y-%m-%d') not in blocked:
+        if atual.weekday() in dias and atual.strftime('%Y-%m-%d') not in blocked:
             datas.append(atual)
         atual += timedelta(days=1)
     return datas
@@ -875,13 +1199,417 @@ def datas_aula_oferta(
 
 def datas_esperadas_oferta(
     oferta: TurmaCurso,
-    hoje: date,
+    hoje: date | None,
     blocked: set | None = None,
 ) -> list[date]:
-    """Datas de aula da OFERTA até `hoje` (inclusive), cortadas na `data_fim`
-    efetiva — base da contagem de pendência por oferta (D3b-1).
+    """Datas esperadas da oferta até `hoje`, ou por toda a vigência se ``None``.
 
-    Delega para `datas_aula_oferta` com `limite=hoje` (a helper corta em
-    `min(hoje, data_fim)`, preservando exatamente o comportamento anterior).
+    A listagem de pendências passa uma data explícita (D3b-1); a C.H. da oferta
+    passa ``None`` para somar ocorrências de toda a vigência.
     """
     return datas_aula_oferta(oferta, limite=hoje, blocked=blocked)
+
+# =============================================================================
+# REATIVAÇÃO DE TURMA (L4 / L4.1)
+# =============================================================================
+
+# Motivo gravado em `Inscricao.motivo_desativacao` pela exclusão lógica da
+# turma (`excluir_turma`); espelha `MOTIVO_INSCRICAO_TURMA_DESATIVADA` da rota.
+MOTIVO_TURMA_DESATIVADA = "TURMA_DESATIVADA"
+
+#: `acao` do `LogAcao`-marcador gravado por `excluir_turma` no caminho lógico.
+#: É o ÚNICO sinal confiável de quais ofertas foram desativadas JUNTO com a
+#: turma (L4.1): o `updated_at` não serve — o listener de auditoria grava
+#: `updated_at = now()` em toda oferta tocada pela exclusão, inclusive as que
+#: já estavam inativas (medido em PostgreSQL e SQLite).
+ACAO_EXCLUSAO_LOGICA_TURMA = "Excluir turma (lógica)"
+
+_PADRAO_MARCADOR = re.compile(
+    r"\Aturma_id=(?P<turma>\d+)"
+    r" ofertas=\[(?P<ofertas>[\d,\s]*)\]"
+    r" inscricoes=\[(?P<inscricoes>[\d,\s]*)\]\Z"
+)
+
+
+def _csv_ids(ids) -> str:
+    return ",".join(str(int(i)) for i in (ids or []))
+
+
+def _parse_ids(texto: str) -> list[int]:
+    return [int(p) for p in texto.replace(" ", "").split(",") if p]
+
+
+def formatar_marcador_exclusao(turma_id, oferta_ids, inscricao_ids) -> str:
+    """Texto do `detalhes` do LogAcao-marcador (parseável por linha)."""
+    return (
+        f"turma_id={int(turma_id)} ofertas=[{_csv_ids(oferta_ids)}] "
+        f"inscricoes=[{_csv_ids(inscricao_ids)}]"
+    )
+
+
+def parsear_marcador_exclusao(detalhes) -> dict | None:
+    """`{turma_id, ofertas, inscricoes}` ou `None` se o texto não é o marcador."""
+    if not detalhes:
+        return None
+    achado = _PADRAO_MARCADOR.match(str(detalhes).strip())
+    if not achado:
+        return None
+    return {
+        "turma_id": int(achado.group("turma")),
+        "ofertas": _parse_ids(achado.group("ofertas")),
+        "inscricoes": _parse_ids(achado.group("inscricoes")),
+    }
+
+
+def gravar_marcador_exclusao(
+    turma_id, oferta_ids, inscricao_ids, *,
+    usuario_id=None, usuario_nome=None, ip=None, unidade_id=None,
+) -> None:
+    """Acrescenta o LogAcao-marcador da exclusão lógica (sem commit).
+
+    Chamado por `excluir_turma` na MESMA transação que desativa turma, ofertas
+    e inscrições — é isso que permite à reativação saber quais ofertas estavam
+    ativas. `oferta_ids` é a lista das que estavam **ativas** (as demais já
+    estavam fora da turma antes da exclusão e não podem voltar).
+    """
+    from app.models import LogAcao
+
+    db.session.add(LogAcao(
+        usuario_id=usuario_id,
+        usuario_nome=usuario_nome,
+        acao=ACAO_EXCLUSAO_LOGICA_TURMA,
+        detalhes=formatar_marcador_exclusao(turma_id, oferta_ids, inscricao_ids),
+        ip=ip,
+        unidade_id=unidade_id,
+    ))
+
+
+def _consulta_marcadores():
+    """Linhas de LogAcao-marcador (id, detalhes) da mais antiga para a mais nova."""
+    from app.models import LogAcao
+
+    return (
+        db.session.query(LogAcao.id, LogAcao.detalhes)
+        .filter(LogAcao.acao == ACAO_EXCLUSAO_LOGICA_TURMA)
+        .order_by(LogAcao.id)
+        .all()
+    )
+
+
+def marcador_exclusao_turma(turma_id: int) -> dict | None:
+    """Último marcador de exclusão lógica da turma (ou `None` se não há).
+
+    `None` é o caso da turma excluída ANTES desta versão: sem marcador não há
+    pré-seleção possível e a reativação exige escolha explícita.
+    """
+    prefixo = f"turma_id={int(turma_id)} ofertas="
+    from app.models import LogAcao
+
+    linhas = (
+        db.session.query(LogAcao.id, LogAcao.detalhes)
+        .filter(
+            LogAcao.acao == ACAO_EXCLUSAO_LOGICA_TURMA,
+            LogAcao.detalhes.startswith(prefixo, autoescape=True),
+        )
+        .order_by(LogAcao.id.desc())
+        .all()
+    )
+    for _id, detalhes in linhas:
+        marcador = parsear_marcador_exclusao(detalhes)
+        if marcador and marcador["turma_id"] == int(turma_id):
+            return marcador
+    return None
+
+
+def marcadores_exclusao_em_lote() -> dict[int, dict]:
+    """`{turma_id: marcador}` de UMA vez (última ocorrência por turma)."""
+    marcadores: dict[int, dict] = {}
+    for _id, detalhes in _consulta_marcadores():
+        marcador = parsear_marcador_exclusao(detalhes)
+        if marcador:
+            marcadores[marcador["turma_id"]] = marcador
+    return marcadores
+
+
+def _periodo_encerrado(turma: Turma, hoje: date) -> bool:
+    periodo = turma.periodo_letivo
+    return bool(periodo and periodo.data_fim and periodo.data_fim < hoje)
+
+
+def _hoje_local() -> date:
+    try:
+        return get_local_now().date()
+    except Exception:  # relógio/fuso indisponível: cai no do sistema
+        return date.today()
+
+
+def _selecionar_ofertas_reativacao(
+    inativas: list[TurmaCurso], marcador: dict | None, oferta_ids,
+) -> tuple[list[TurmaCurso], str | None]:
+    """`(selecionadas, motivo_recusa)` — regra única da pré-visualização e da
+    reativação (L4.1).
+
+    - `oferta_ids` informado (escolha explícita do operador na lixeira): só
+      podem ser ofertas inativas desta turma; qualquer outra coisa é recusada.
+    - `oferta_ids` ausente: usa a pré-seleção do marcador da exclusão lógica.
+      Sem marcador (turma excluída antes desta versão) nada é pré-marcado.
+    """
+    if oferta_ids is not None:
+        pedidos = [int(i) for i in oferta_ids]
+        por_id = {o.id: o for o in inativas}
+        invalidos = [i for i in pedidos if i not in por_id]
+        if invalidos:
+            return [], (
+                "A seleção contém curso(s) que não são ofertas inativas desta "
+                f"turma (ids {', '.join(str(i) for i in invalidos)})."
+            )
+        return [por_id[i] for i in dict.fromkeys(pedidos)], None
+
+    if marcador is None:
+        return [], None
+    do_marcador = set(marcador["ofertas"])
+    return [o for o in inativas if o.id in do_marcador], None
+
+
+def _classificar_inscricoes(
+    candidatas, ids_reativar, alunos_ativos, pares_ativos,
+) -> tuple[list, list]:
+    """`(reativaveis, conflitos)` das inscrições marcadas TURMA_DESATIVADA.
+
+    Só voltam as inscrições das ofertas que serão reativadas; aluno inativo ou
+    inscrição ativa do mesmo aluno na mesma oferta (outra linha) é conflito e
+    permanece inativa. `pares_ativos` é `{(aluno_id, turma_curso_id)}` das
+    inscrições ativas da turma.
+    """
+    reativaveis, conflitos = [], []
+    for insc in candidatas:
+        if insc.turma_curso_id not in ids_reativar:
+            continue
+        if insc.aluno_id not in alunos_ativos:
+            conflitos.append(insc.id)
+            continue
+        if (insc.aluno_id, insc.turma_curso_id) in pares_ativos:
+            conflitos.append(insc.id)
+            continue
+        reativaveis.append(insc)
+    return reativaveis, conflitos
+
+
+def _contexto_reativacao_em_lote(turmas) -> dict[int, dict]:
+    """Carga em lote das ofertas/inscrições/marcadores de N turmas.
+
+    Número de SELECTs CONSTANTE (ofertas, inscrições candidatas, alunos,
+    inscrições ativas, marcadores), independentemente de quantas turmas a
+    listagem mostra — sem N+1 na lixeira.
+    """
+    turma_ids = [t.id for t in turmas]
+    if not turma_ids:
+        return {}
+
+    ofertas_por_turma: dict[int, list[TurmaCurso]] = {tid: [] for tid in turma_ids}
+    for oferta in (
+        TurmaCurso.query
+        .options(joinedload(TurmaCurso.curso))
+        .filter(TurmaCurso.turma_id.in_(turma_ids))
+        .order_by(TurmaCurso.id)
+        .all()
+    ):
+        ofertas_por_turma.setdefault(oferta.turma_id, []).append(oferta)
+
+    candidatas_por_turma: dict[int, list[Inscricao]] = {tid: [] for tid in turma_ids}
+    for insc in (
+        Inscricao.query
+        .filter(
+            Inscricao.turma_id.in_(turma_ids),
+            Inscricao.motivo_desativacao == MOTIVO_TURMA_DESATIVADA,
+        )
+        .all()
+    ):
+        candidatas_por_turma.setdefault(insc.turma_id, []).append(insc)
+
+    aluno_ids = {i.aluno_id for lista in candidatas_por_turma.values() for i in lista}
+    alunos_ativos = {
+        aid for (aid,) in
+        db.session.query(Aluno.id).filter(Aluno.id.in_(aluno_ids), Aluno.ativo.is_(True))
+    } if aluno_ids else set()
+
+    pares_ativos = {
+        (aid, oid) for aid, oid in
+        db.session.query(Inscricao.aluno_id, Inscricao.turma_curso_id).filter(
+            Inscricao.turma_id.in_(turma_ids), Inscricao.ativo.is_(True)
+        )
+    }
+
+    marcadores = marcadores_exclusao_em_lote()
+    contexto = {}
+    por_turma = {t.id: t for t in turmas}
+    for tid in turma_ids:
+        contexto[tid] = {
+            "turma": por_turma[tid],
+            "ofertas": ofertas_por_turma.get(tid, []),
+            "candidatas": candidatas_por_turma.get(tid, []),
+            "alunos_ativos": alunos_ativos,
+            "pares_ativos": pares_ativos,
+            "marcador": marcadores.get(tid),
+        }
+    return contexto
+
+
+def _avaliar_reativacao(dados: dict, *, hoje: date, oferta_ids=None) -> dict:
+    """Núcleo comum: o que a lixeira mostra e o que `reativar_turma` faz."""
+    turma = dados["turma"]
+    ofertas = dados["ofertas"]
+    inativas = [o for o in ofertas if not o.ativo]
+    ativas = [o for o in ofertas if o.ativo]
+    marcador = dados["marcador"]
+
+    selecionadas, recusa = _selecionar_ofertas_reativacao(inativas, marcador, oferta_ids)
+    ids_reativar = {o.id for o in selecionadas}
+    reativaveis, conflitos = _classificar_inscricoes(
+        dados["candidatas"], ids_reativar,
+        dados["alunos_ativos"], dados["pares_ativos"],
+    )
+
+    lista_final = ativas + list(selecionadas)
+    principals = [o for o in lista_final if o.principal]
+    viola_principal = len(lista_final) >= 2 and len(principals) != 1
+
+    periodo_encerrado = _periodo_encerrado(turma, hoje)
+    return {
+        "turma": turma,
+        "marcador": marcador,
+        "inativas": inativas,
+        "selecionadas": selecionadas,
+        "ids_reativar": ids_reativar,
+        "mantidas_inativas": [o for o in inativas if o.id not in ids_reativar],
+        "reativaveis": reativaveis,
+        "conflitos": conflitos,
+        "viola_principal": viola_principal,
+        "recusa_selecao": recusa,
+        "tem_marcador": marcador is not None,
+        "periodo_encerrado": periodo_encerrado,
+    }
+
+
+def _montar_preview(avaliacao: dict) -> dict:
+    """View da lixeira: uma linha por oferta inativa, com a origem dela."""
+    do_marcador = set(avaliacao["marcador"]["ofertas"]) if avaliacao["tem_marcador"] else set()
+    return {
+        "ofertas": [
+            {
+                "id": o.id,
+                "curso": _nome_curso(o),
+                "reativar": o.id in avaliacao["ids_reativar"],
+                "na_exclusao": o.id in do_marcador,
+                "vigencia": _formatar_vigencia(o),
+            }
+            for o in avaliacao["inativas"]
+        ],
+        "ofertas_reativar": len(avaliacao["selecionadas"]),
+        "ofertas_inativas": len(avaliacao["inativas"]),
+        "inscricoes_reativar": len(avaliacao["reativaveis"]),
+        "conflitos": len(avaliacao["conflitos"]),
+        "periodo_encerrado": avaliacao["periodo_encerrado"],
+        "tem_marcador": avaliacao["tem_marcador"],
+        "viola_principal": avaliacao["viola_principal"],
+    }
+
+
+def preview_reativacao(turma: Turma) -> dict:
+    """Resumo da reativação de UMA turma (MESMA regra de `reativar_turma`).
+
+    A listagem da lixeira usa `previews_reativacao_em_lote` (carga única); esta
+    entrada avulsa serve a chamadas isoladas.
+    """
+    dados = _contexto_reativacao_em_lote([turma])[turma.id]
+    return _montar_preview(_avaliar_reativacao(dados, hoje=_hoje_local()))
+
+
+def previews_reativacao_em_lote(turmas) -> dict[int, dict]:
+    """Pré-visualização de várias turmas com carga única (sem N+1 na lixeira)."""
+    contexto = _contexto_reativacao_em_lote(turmas)
+    hoje = _hoje_local()
+    previews = {}
+    for turma in turmas:
+        dados = contexto.get(turma.id)
+        if dados is None:
+            continue
+        previews[turma.id] = _montar_preview(_avaliar_reativacao(dados, hoje=hoje))
+    return previews
+
+
+def reativar_turma(
+    turma: Turma, *,
+    confirmar_periodo_encerrado: bool = False,
+    oferta_ids: list[int] | tuple[int, ...] | None = None,
+) -> dict:
+    """Reativa uma turma logicamente excluída (sem commit) — L4/L4.1.
+
+    Só voltam as ofertas **desativadas junto com a turma**: a pré-seleção vem do
+    LogAcao-marcador gravado por `excluir_turma` e o operador pode ajustar a
+    lista (`oferta_ids` da lixeira). Oferta desativada ANTES (removida do curso
+    pela rota `turma_oferta_desativar`) permanece inativa — ressuscitá-la
+    violaria a intenção do responsável e a regra de curso principal.
+
+    Toda validação roda antes de qualquer mutação: violação recusa a operação
+    inteira, sem alteração parcial (quem chama faz `rollback` no `ValueError`).
+
+    L4.2: ao voltar ao menos uma oferta, `Turma.programa` é reprojetado pelo
+    programa da oferta principal ativa (`sincronizar_programa_turma`) na mesma
+    transação — a reativação pode mudar a referência (volta só uma oferta que
+    não era a principal). Turma sem ofertas reativadas não tem projeção a
+    recalcular e mantém o programa atual.
+    """
+    contexto = _contexto_reativacao_em_lote([turma])
+    hoje = _hoje_local()
+    avaliacao = _avaliar_reativacao(contexto[turma.id], hoje=hoje, oferta_ids=oferta_ids)
+
+    if avaliacao["periodo_encerrado"] and not confirmar_periodo_encerrado:
+        raise ValueError(
+            "O período letivo da turma já encerrou. Confirme a reativação."
+        )
+    if avaliacao["recusa_selecao"]:
+        raise ValueError(avaliacao["recusa_selecao"])
+    if not avaliacao["tem_marcador"] and oferta_ids is None and avaliacao["inativas"]:
+        raise ValueError(
+            "Não há registro de quais cursos foram desativados junto com a turma "
+            "(exclusão anterior a esta versão). Escolha explicitamente os cursos "
+            "a reativar."
+        )
+    if avaliacao["inativas"] and not avaliacao["selecionadas"]:
+        raise ValueError(
+            "Selecione ao menos um curso para reativar junto com a turma."
+        )
+    if avaliacao["viola_principal"]:
+        raise ValueError(
+            "Reativação violaria a regra de curso principal (2+ ofertas ativas "
+            "exigem exatamente 1 principal). Ajuste antes de reativar."
+        )
+
+    turma.ativo = True
+    for oferta in avaliacao["selecionadas"]:
+        oferta.ativo = True
+    for insc in avaliacao["reativaveis"]:
+        insc.ativo = True
+        insc.data_desativacao = None
+        insc.motivo_desativacao = None
+
+    # L4.2: `Turma.programa` é projeção da oferta principal ativa (§8.10) e a
+    # volta muda a referência (ex.: volta só uma oferta não principal). Só
+    # reprojeta quando alguma oferta volta: turma sem ofertas (estado legado)
+    # não tem referência e não pode perder o programa que ainda alimenta
+    # listagem e filtros. Sem commit — a transação é a do chamador.
+    if avaliacao["selecionadas"]:
+        sincronizar_programa_turma(turma)
+
+    return {
+        "ofertas_reativadas": len(avaliacao["selecionadas"]),
+        "ofertas_reativadas_ids": [o.id for o in avaliacao["selecionadas"]],
+        "cursos_reativados": [_nome_curso(o) for o in avaliacao["selecionadas"]],
+        "ofertas_inativas_restantes": [
+            {"id": o.id, "curso": _nome_curso(o)} for o in avaliacao["mantidas_inativas"]
+        ],
+        "inscricoes_reativadas": len(avaliacao["reativaveis"]),
+        "conflitos": list(avaliacao["conflitos"]),
+        "periodo_encerrado": avaliacao["periodo_encerrado"],
+    }

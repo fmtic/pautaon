@@ -90,15 +90,19 @@ def _seed(nome_user="Resp D5"):
     turma = Turma(
         nome="Turma D5", unidade_id=unidade.id, ativo=True,
         curso_id=curso.id, professor_id=user.id, turno="Manhã",
-        dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
     db.session.flush()
 
     # UNIQUE (turma_id, curso_id): duas ofertas da mesma turma exigem cursos.
-    o1 = nova_oferta(turma.id, curso.id, unidade.id, programa="Programa 1")
-    o2 = nova_oferta(turma.id, curso2.id, unidade.id, programa="Programa 2")
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — usa o responsável da turma.
+    o1 = nova_oferta(
+        turma.id, curso.id, unidade.id, programa="Programa 1", professor_id=user.id,
+    )
+    o2 = nova_oferta(
+        turma.id, curso2.id, unidade.id, programa="Programa 2", professor_id=user.id,
+    )
 
     aluno = Aluno(nome="Aluno D5", ativo=True, unidade_id=unidade.id)
     db.session.add(aluno)

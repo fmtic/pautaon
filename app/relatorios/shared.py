@@ -17,8 +17,8 @@ from app.models import (
     EnderecoAluno,
     PerfilDiversidade,
     PerfilSocioeconomico,
-    Turma,
 )
+from app.services.enturmado import cond_aluno_enturmado
 
 # Perfis com acesso aos relatórios administrativos/pedagógicos.
 ROLES_RELATORIOS = ["admin", "pedagogico", "secretaria", "gerencia"]
@@ -65,11 +65,16 @@ def aplicar_filtros_alunos(query, filtros):
     joined_models = set()
 
     # -------------------------------------------------------------------------
-    # Período letivo (não mudou — usa relação N:N existente)
+    # Período letivo — ETAPA D3b.3: filtro pela definição única de
+    # "enturmado" (`cond_aluno_enturmado`), que já exige Aluno.ativo +
+    # inscrição ativa em turma ativa + oferta efetiva (M4). Antes era um
+    # join por `Aluno.turmas` sem nenhum `ativo` — qualquer linha de
+    # inscrição contava (e duplicava o aluno na listagem quando havia 2+). 
+    # O EXISTS não multiplica linhas: cada aluno aparece uma única vez.
     # -------------------------------------------------------------------------
     periodo_id = filtros.get("periodo_letivo_id")
     if periodo_id:
-        query = query.join(Aluno.turmas).filter(Turma.periodo_letivo_id == periodo_id)
+        query = query.filter(cond_aluno_enturmado(periodo_letivo_id=periodo_id))
 
     # -------------------------------------------------------------------------
     # Diversidade (gênero, raça/cor) — PerfilDiversidade

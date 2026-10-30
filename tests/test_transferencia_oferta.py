@@ -45,7 +45,7 @@ from app import create_app, db
 from app.models import Aluno, Curso, Inscricao, Transferencia, Turma, Unidade, User
 from config import Config
 
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -76,9 +76,7 @@ def app():
 
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 
@@ -86,8 +84,7 @@ def _loga(app, user_id):
 def _turma(unidade_id, curso_id, professor_id, nome):
     turma = Turma(
         nome=nome, unidade_id=unidade_id, ativo=True, curso_id=curso_id,
-        professor_id=professor_id, turno="Manhã", dias_semana="Segunda",
-        hora_inicio=time(9, 0), hora_fim=time(10, 0),
+        professor_id=professor_id, turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
     )
     db.session.add(turma)
@@ -208,7 +205,7 @@ def test_destino_duas_ofertas_exige_escolha(app):
         i = _base()
         _, ativas, _ = _destino(i, n_ativas=2)
         db.session.commit()
-        aluno_id, of1, of2 = i["aluno"], ativas[0], ativas[1]
+        aluno_id, of2 = i["aluno"], ativas[1]
 
     client = _loga(app, i["resp"])
     # sem a oferta de destino: recusa com flash, nada muda

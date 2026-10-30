@@ -1,7 +1,9 @@
+from _helpers import login_as
 from datetime import date, time
 
 from app import create_app, db
 from app.models import Aluno, Curso, Inscricao, Turma, TurmaCurso, Unidade, User
+from app.services.turma_curso_horario import definir_grade
 from config import Config
 
 
@@ -30,8 +32,17 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
             first_login=False,
             unidade_id=unidade.id,
         )
+        # A Turma B precisa existir com outro dono: a premissa do teste é que
+        # o professor logged NÃO participa daquela oferta.
+        professor_outra = User(
+            name="Professor da Turma B",
+            email="pauta.professor.b@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
         curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
-        db.session.add_all([professor, curso])
+        db.session.add_all([professor, professor_outra, curso])
         db.session.flush()
 
         turma_associada = Turma(
@@ -73,18 +84,19 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
             turma_id=turma_associada.id, curso_id=curso.id,
             unidade_id=unidade.id, professor_id=professor.id,
             ativo=True, principal=True, programa="Teste",
-            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=date(2026, 1, 5), data_fim=date(2026, 12, 21),
         )
         oferta_nao_assoc = TurmaCurso(
             turma_id=turma_nao_associada.id, curso_id=curso.id,
-            unidade_id=unidade.id,
+            unidade_id=unidade.id, professor_id=professor_outra.id,
             ativo=True, principal=True, programa="Teste",
-            dias_semana="Segunda", hora_inicio=time(9, 0), hora_fim=time(10, 0),
             data_inicio=date(2026, 1, 5), data_fim=date(2026, 12, 21),
         )
         db.session.add_all([oferta_assoc, oferta_nao_assoc])
         db.session.flush()
+        # H5a: o calendário da pauta vem da GRADE da oferta (Segunda).
+        definir_grade(oferta_assoc, [(0, time(9, 0), time(10, 0))])
+        definir_grade(oferta_nao_assoc, [(0, time(9, 0), time(10, 0))])
 
         db.session.add_all(
             [
@@ -108,10 +120,7 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
         turma_associada_id = turma_associada.id
 
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     pauta_frequencia = client.get(
         f"/frequencia?turma_id={turma_associada_id}"
     )
@@ -194,10 +203,7 @@ def test_professor_nao_acessa_pauta_de_turma_de_outro_professor():
         turma_id = turma.id
 
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     detalhe = client.get(f"/turma/{turma_id}")
     impressao = client.get(f"/turma/{turma_id}/imprimir-pauta")
     frequencia = client.get(f"/frequencia?turma_id={turma_id}")

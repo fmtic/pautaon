@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-center h-100 p-4" style="min-height: 75vh;">
+    <div class="card shadow-sm border-0" style="max-width: 520px; width: 100%; border-radius: 16px;">
+        <div class="card-body text-center p-5">
+            
+            <!-- Ícone de Página Não Encontrada -->
+            <div class="d-flex align-items-center justify-content-center mx-auto mb-4" 
+                 style="width: 72px; height: 72px; background-color: #f1f5f9; border-radius: 50%; color: #64748b;">
+                <i class="bi bi-compass" style="font-size: 2.5rem;"></i>
+            </div>
+            
+            <!-- Badge de Status -->
+            <div class="d-inline-flex align-items-center gap-2 mb-4 px-3 py-1 rounded-pill" 
+                 style="background-color: #f8fafc; border: 1px solid #e2e8f0; color: #475569; font-size: 0.85rem; font-weight: 600;">
+                <span style="width: 8px; height: 8px; background-color: #94a3b8; border-radius: 50%; display: inline-block;"></span>
+                Erro 404 - Não Encontrado
+            </div>
+
+            <!-- Mensagem Principal -->
+            <h1 class="h4 fw-bold text-dark mb-3">Página não encontrada</h1>
+            <p class="text-muted mb-4" style="font-size: 0.95rem; line-height: 1.6;">
+                O link que tentou acessar pode estar quebrado, a página pode ter sido movida ou simplesmente não existe mais. Verifique se o endereço da web está correto.
+            </p>
+
+            <!-- Ações -->
+            <div class="d-flex flex-column gap-3 mt-2">
+                <a href="{{ url_for('main.painel') }}" class="btn btn-primary fw-semibold py-2 d-flex align-items-center justify-content-center gap-2" style="border-radius: 8px;">
+                    <i class="bi bi-house-door"></i> Voltar ao Painel Inicial
+                </a>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

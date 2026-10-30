@@ -1,14 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %}
+{# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
+   continua sendo apenas o texto da opção, sem a letra. #}
+{% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="text-primary fw-bold mb-0">Conselho de Classe</h2>
+            <h2 class="text-primary fw-bold mb-0">Conselho da Turma</h2>
             {# D5.2 (Q1): a avaliação coletiva é da OFERTA, não mais da turma #}
-            <p class="text-muted small">Avaliação Coletiva da Oferta: <strong>{{ turma.nome }}</strong>{% if oferta %} | {{ oferta.curso.nome }}{% endif %}</p>
+            <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta %} | {{ oferta.curso.nome }}{% endif %}</p>
         </div>
-        <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-outline-secondary">
+        {# Rota canônica do painel: `main.painel` monta `entradas`, `aulas_pendentes`
+           e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
+           mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
+        <a href="{{ url_for('main.painel') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar ao Painel
         </a>
     </div>
@@ -40,7 +46,7 @@
         <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}">
         <div class="card shadow-sm mb-5 border-0 border-start border-primary border-4">
             <div class="card-header bg-white py-3">
-                <h5 class="mb-0 text-primary fw-bold">Avaliação Coletiva da Oferta</h5>
+                <h5 class="mb-0 text-primary fw-bold">Avaliação Coletiva da sua Turma</h5>
             </div>
 
             <div class="row mb-4">
@@ -59,10 +65,11 @@
 
             <div class="card-body bg-light">
                 <div class="row">
-                    {% for pergunta in perguntas if pergunta.tipo == 'TURMA' %}
+                    {% set perguntas_turma = perguntas | selectattr('tipo', 'equalto', 'TURMA') | list %}
+                    {% for pergunta in perguntas_turma %}
                     <div class="col-md-6 mb-3">
                         <div class="p-3 bg-white rounded border h-100 shadow-sm">
-                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ pergunta.texto }}</label>
+                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ loop.index }}. {{ pergunta.texto }}</label>
 
                             {% if pergunta.opcoes %}
                             <div class="mb-2">
@@ -70,7 +77,7 @@
                                 <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
                                     style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
                                     onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = '{{ opcao }}'">
-                                    {{ opcao }}
+                                    {{ letras[loop.index0] }}) {{ opcao }}
                                 </button>
                                 {% endfor %}
                             </div>
@@ -88,7 +95,7 @@
 
         <div class="text-center mb-5">
             <button type="submit" class="btn btn-primary btn-lg px-5 shadow">
-                <i class="bi bi-save me-2"></i> Gravar Avaliação da Oferta
+                <i class="bi bi-save me-2"></i> Salvar Avaliação
             </button>
         </div>
     </form>

@@ -1,0 +1,123 @@
+{# ---------------------------------------------------------------------------
+   Componente de agenda por dia (H4c) — usado por ofertas.html (formulários de
+   nova oferta e de edição) e editar.html. Contrato (grade_do_formulario):
+     - checkboxes `dias_semana` com valor = weekday Python (0=Segunda..5=Sábado),
+       `data-weekday` para o JS compartilhado — SEM domingo;
+     - o par padrão `hora_inicio`/`hora_fim` agora é renderizado DENTRO da macro;
+     - interruptor `horario_por_dia` ("Horário por dia") + linhas por dia com
+       `hora_inicio_<w>`/`hora_fim_<w>`;
+     - `estado` (dict do rota: dias, por_dia, hora_inicio, hora_fim,
+       por_dia_map, erro) pré-preenche tudo — inclusive abre em modo
+       personalizado quando a grade não é uniforme.
+   A interação (ligar/desligar, pré-preenchimento, confirmação, C.H.
+   estimativa) é do static/js/turmas/grade_horario.js.
+--------------------------------------------------------------------------- #}
+
+{% macro agenda_campos(estado, prefix, com_switch=True, bloqueada=False) %}
+{% set nomes = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'] %}
+{% set dias_marcados = estado['dias'] if estado else [] %}
+{% set n_dias = dias_marcados|length %}
+{% set pode_habilitar_por_dia = n_dias >= 2 %}
+{% set modo_personalizado = estado['por_dia'] if estado else False %}
+
+<fieldset class="border p-3 rounded" aria-label="Agenda de dias e horários">
+  <legend class="small fw-bold text-primary mb-2">Dias da semana</legend>
+
+  {# Checkboxes de dia como botões de alternância #}
+  <div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Seleção de dias">
+    {% for w in range(6) %}
+    <input type="checkbox" class="btn-check" name="dias_semana"
+      value="{{ w }}" data-weekday="{{ w }}" id="{{ prefix }}_dia_{{ w }}"
+      {% if w in dias_marcados %}checked{% endif %}
+      {% if bloqueada %}disabled{% endif %}>
+    <label class="btn btn-outline-primary btn-sm" for="{{ prefix }}_dia_{{ w }}">
+      <i class="bi bi-calendar-check{{ '' if w in dias_marcados else '-minus' }} me-1"></i>{{ nomes[w] }}
+    </label>
+    {% endfor %}
+  </div>
+
+  {# Par padrão - "Mesmo horário para os dias marcados" #}
+  <div class="row g-2 mb-3{{ ' opacity-50' if modo_personalizado else '' }}" data-grade-padrao>
+    <div class="col-12">
+      <label class="small fw-bold text-muted">Mesmo horário para os dias marcados</label>
+    </div>
+    <div class="col-sm-6">
+      <label class="form-label small mb-0" for="{{ prefix }}_hora_inicio">Hora Início</label>
+      <input type="time" name="hora_inicio" id="{{ prefix }}_hora_inicio"
+        class="form-control form-control-sm"
+        value="{{ estado['hora_inicio'] if estado else '' }}"
+        {{ 'disabled' if modo_personalizado or bloqueada }}>
+    </div>
+    <div class="col-sm-6">
+      <label class="form-label small mb-0" for="{{ prefix }}_hora_fim">Hora Fim</label>
+      <input type="time" name="hora_fim" id="{{ prefix }}_hora_fim"
+        class="form-control form-control-sm"
+        value="{{ estado['hora_fim'] if estado else '' }}"
+        {{ 'disabled' if modo_personalizado or bloqueada }}>
+    </div>
+  </div>
+
+  {# Interruptor "Horário por dia" - habilitado só com 2+ dias #}
+  {% if com_switch and not bloqueada %}
+  <div class="form-check form-switch mb-3">
+    <input class="form-check-input" type="checkbox" name="horario_por_dia" value="1"
+      id="{{ prefix }}_horario_por_dia" data-grade-switch
+      {% if modo_personalizado %}checked{% endif %}
+      {% if not pode_habilitar_por_dia %}disabled{% endif %}
+      aria-describedby="{{ prefix }}_switch_help">
+    <label class="form-check-label small fw-bold" for="{{ prefix }}_horario_por_dia">
+      Horário por dia
+    </label>
+    <small id="{{ prefix }}_switch_help" class="form-text text-muted d-block">
+      {% if pode_habilitar_por_dia %}
+        Definir horários diferentes para cada dia marcado.
+      {% else %}
+        Marque 2 ou mais dias para definir horários diferentes.
+      {% endif %}
+    </small>
+  </div>
+  {% endif %}
+
+  {# Linhas por dia - uma linha por dia com horário ao lado #}
+  {% if com_switch and not bloqueada %}
+    {% for w in range(6) %}
+    {% set par = estado['por_dia_map'].get(w) if estado else None %}
+    {% set marcado = w in dias_marcados %}
+    {% set linha_esmaecida = not marcado or (not modo_personalizado and marcado) %}
+    <div class="row g-2 align-items-center mb-2{{ ' opacity-50' if linha_esmaecida else '' }}"
+      data-grade-dia="{{ w }}" id="{{ prefix }}_grade_dia_{{ w }}">
+      <div class="col-auto">
+        <span class="small fw-bold text-muted">{{ nomes[w] }}</span>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0 visually-hidden" for="{{ prefix }}_hora_inicio_{{ w }}">Início — {{ nomes[w] }}</label>
+        <input type="time" class="form-control form-control-sm" name="hora_inicio_{{ w }}"
+          id="{{ prefix }}_hora_inicio_{{ w }}"
+          value="{{ par[0] if par else (estado['hora_inicio'] if estado else '') }}"
+          {{ 'disabled' if not modo_personalizado or not marcado }}
+          placeholder="{{ estado['hora_inicio'] if estado else '' }}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0 visually-hidden" for="{{ prefix }}_hora_fim_{{ w }}">Fim — {{ nomes[w] }}</label>
+        <input type="time" class="form-control form-control-sm" name="hora_fim_{{ w }}"
+          id="{{ prefix }}_hora_fim_{{ w }}"
+          value="{{ par[1] if par else (estado['hora_fim'] if estado else '') }}"
+          {{ 'disabled' if not modo_personalizado or not marcado }}
+          placeholder="{{ estado['hora_fim'] if estado else '' }}">
+      </div>
+      <div class="col-auto">
+        {% if not modo_personalizado and marcado %}
+        <span class="small text-muted fst-italic">igual ao padrão</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if estado and estado.get('erro') %}
+  <div class="text-danger small mt-2" role="alert" id="{{ prefix }}_agenda_erro">
+    <i class="bi bi-exclamation-octagon-fill me-1"></i>{{ estado['erro'] }}
+  </div>
+  {% endif %}
+</fieldset>
+{% endmacro %}

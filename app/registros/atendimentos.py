@@ -219,9 +219,17 @@ def listar_atendimentos():
 
     pagination = Paginator(rows, page, per_page, total)
 
+    # H3e: dias/horário do aluno (oferta da inscrição ativa) pela grade.
+    from .alunos import _grade_por_aluno
+
+    grade_aluno_map = _grade_por_aluno(
+        [row.aluno_id for row in rows if row.aluno_id]
+    )
+
     return render_template(
         "alunos/atendimento_pedagogico.html",
         pagination=pagination,
+        grade_aluno_map=grade_aluno_map,
         setores=SETORES,
         search_nome=search_nome,
         search_matr=search_matr,

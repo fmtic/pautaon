@@ -37,7 +37,19 @@
         <i class="bi bi-printer"></i> Imprimir Pauta
       </button>
       <ul class="dropdown-menu">
-        {% if ofertas and ofertas|length >= 2 %} {# Onda 4 (D3b-1): 2+ cursos
+        {% if current_user.role == 'professor' %} {# E3 (I1): o professor só vê a
+        pauta das ofertas em que é o professor cadastrado — cada link carrega a
+        oferta (imprimir_pauta é por OFERTA, sem herança); nenhum link leva a 403. #}
+        {% for o in ofertas_do_professor %}
+        <li>
+          <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, turma_curso=o.id) }}"
+            target="_blank">
+            Pauta Completa — {{ o.curso.nome if o.curso else 'Curso #' ~
+            o.curso_id }} {%- if o.turno %} ({{ o.turno }}){% endif -%}
+          </a>
+        </li>
+        {% endfor %}
+        {% elif ofertas and ofertas|length >= 2 %} {# Onda 4 (D3b-1): 2+ cursos
         ativos — um link de pauta por oferta (identifica o curso), cada um
         imprime só aquela oferta. Com 0/1 o menu segue mensal + completa como
         antes. #} {% for o in ofertas %}
@@ -48,9 +60,12 @@
             o.curso_id }} {%- if o.turno %} ({{ o.turno }}){% endif -%}
           </a>
         </li>
-        {% endfor %} {% else %} {% for mes in meses %}
+        {% endfor %} {% else %} {# G1-4: com exatamente 1 oferta ativa a
+        oferta passa a ser explícita em todo link (turma_curso); com 0 vale o
+        legado por turma. #} {% set tc = ofertas[0].id if ofertas and ofertas|length
+        == 1 else None %} {% for mes in meses %}
         <li>
-          <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero) }}"
+          <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero, **({'turma_curso': tc} if tc else {})) }}"
             target="_blank">
             Pauta de {{ mes.nome }}
           </a>
@@ -60,7 +75,7 @@
           <hr class="dropdown-divider" />
         </li>
         <li>
-          <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id) }}"
+          <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id, **({'turma_curso': tc} if tc else {})) }}"
             target="_blank">
             Pauta Completa (Todos os meses)
           </a>
@@ -68,6 +83,21 @@
         {% endif %}
       </ul>
     </div>
+    {% if current_user.role == 'professor' %} {# E3 (I1): o professor abre o
+    Diário só das ofertas em que é o professor cadastrado (ver_observacoes por
+    OFERTA); admin e gestão mantêm o link único da turma. Nenhum link leva a 403. #}
+    {% for o in ofertas_do_professor %}
+    <a href="{{ url_for('registros.ver_observacoes', turma_id=turma.id, turma_curso=o.id) }}"
+      class="btn btn-outline-secondary btn-sm fw-bold">
+      <i class="bi bi-chat-left-text me-1"></i> Diário de Bordo{% if ofertas_do_professor|length >= 2 %} — {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}{% endif %}
+    </a>
+    {% endfor %}
+    {% else %}
+    <a href="{{ url_for('registros.ver_observacoes', turma_id=turma.id) }}"
+      class="btn btn-outline-secondary btn-sm fw-bold">
+      <i class="bi bi-chat-left-text me-1"></i> Diário de Bordo
+    </a>
+    {% endif %}
   </div>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 id="ofertas-heading" class="fw-bold mb-0">Ofertas da Turma</h5>
@@ -78,6 +108,8 @@
     {% for oferta in ofertas_todas %}
     {% set professor_oferta = oferta.professor or turma.professor %}
     {% set turno_oferta = oferta.turno or turma.turno %}
+    {# H3d: dias e horários vêm da GRADE da oferta (uniforme ou por dia). #}
+    {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
     <div class="col">
     <article class="card h-100 shadow-sm border-0">
       <h6 class="card-header p-0 border-0">
@@ -100,13 +132,17 @@
         <div class="card-body">
           <div class="row g-3 small">
             <div class="col-md-6">
-              <strong>Dias:</strong> {{ oferta.dias_semana or turma.dias_semana or 'Não informados' }}
+              <strong>Dias:</strong> {{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else 'Não informados' }}
             </div>
             <div class="col-md-6">
               <strong>Horários:</strong>
-              {% if oferta.hora_inicio or turma.hora_inicio %}{{ (oferta.hora_inicio or turma.hora_inicio).strftime('%H:%M') }}{% else %}--:--{% endif %}
+              {% if grade_oferta and grade_oferta.por_dia_texto %}
+              {{ grade_oferta.por_dia_texto }}
+              {% else %}
+              {{ grade_oferta.hora_inicio if grade_oferta and grade_oferta.hora_inicio else '--:--' }}
               às
-              {% if oferta.hora_fim or turma.hora_fim %}{{ (oferta.hora_fim or turma.hora_fim).strftime('%H:%M') }}{% else %}--:--{% endif %}
+              {{ grade_oferta.hora_fim if grade_oferta and grade_oferta.hora_fim else '--:--' }}
+              {% endif %}
             </div>
             <div class="col-md-6">
               {% set inicio_oferta = oferta.data_inicio or turma.data_inicio %}
@@ -241,8 +277,11 @@
             <option value="" {% if not oferta_sel %}selected{% endif %}>Selecione um curso</option>
             {% endif %}
             {% for o in ofertas %}
+            {# H3d: a hora do rótulo vem da GRADE; grade não uniforme simplesmente
+               omite a hora em vez de repetir a projeção escalar. #}
+            {% set grade_sel = grade_oferta_map.get(o.id) %}
             <option value="{{ o.id }}" {% if oferta_sel and o.id == oferta_sel.id %}selected{% elif ofertas|length == 1 %}selected{% endif %}>
-              {{ o.curso.nome }}{% if o.turno %} — {{ o.turno }}{% endif %}{% if o.hora_inicio %} {{ o.hora_inicio.strftime('%H:%M') }}{% endif %}
+              {{ o.curso.nome }}{% if o.turno %} — {{ o.turno }}{% endif %}{% if grade_sel and grade_sel.hora_inicio %} {{ grade_sel.hora_inicio }}{% endif %}
             </option>
             {% endfor %}
           </select>

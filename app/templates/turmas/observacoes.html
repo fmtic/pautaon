@@ -2,7 +2,60 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2><i class="bi bi-chat-dots text-primary me-2"></i> Diário de Observações - Turma {{ turma.nome }}</h2>
+    <h2>
+        <i class="bi bi-chat-dots text-primary me-2"></i>
+        Diário de Bordo{% if not modo_global %} - Turma {{ turma.nome }}{% elif turma %} - {{ turma.nome }}{% endif %}
+    </h2>
+    {% if modo_global %}
+    {% if periodo %}
+    <p class="text-muted small mb-3">
+        Período {{ periodo.nome }} · {{ periodo.data_inicio.strftime('%d/%m/%Y') if periodo.data_inicio else '—' }} a {{ periodo.data_fim.strftime('%d/%m/%Y') if periodo.data_fim else '—' }}
+    </p>
+    {% endif %}
+    <form method="get" action="{{ url_for('relatorios.observacoes') }}" class="row g-2 align-items-end mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <label class="form-label small fw-bold text-uppercase text-muted mb-1" for="filtroPeriodo">Período letivo</label>
+            <select id="filtroPeriodo" name="periodo_letivo_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                {% for p in periodos %}
+                <option value="{{ p.id }}" {% if periodo and p.id == periodo.id %}selected{% endif %}>{{ p.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label class="form-label small fw-bold text-uppercase text-muted mb-1" for="filtroTurma">Turma</label>
+            <select id="filtroTurma" name="turma_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">Todas as turmas</option>
+                {% for t in turmas_periodo %}
+                <option value="{{ t.id }}" {% if turma and t.id == turma.id %}selected{% endif %}>{{ t.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label class="form-label small fw-bold text-uppercase text-muted mb-1" for="filtroCurso">Curso (oferta)</label>
+            <select id="filtroCurso" name="turma_curso_id" class="form-select form-select-sm" onchange="this.form.submit()" {% if not turma %}disabled{% endif %}>
+                <option value="">{% if turma %}Todos os cursos{% else %}Selecione a turma{% endif %}</option>
+                {% for o in ofertas %}
+                <option value="{{ o.id }}" {% if oferta and o.id == oferta.id %}selected{% endif %}>{{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label class="form-label small fw-bold text-uppercase text-muted mb-1" for="filtroProfessor">Professor</label>
+            <select id="filtroProfessor" name="professor_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">Todos</option>
+                {% for p in professores %}
+                <option value="{{ p.id }}" {% if professor and p.id == professor.id %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-12 col-lg-1 d-grid">
+            <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+        </div>
+    </form>
+    {% if truncado %}
+    <div class="alert alert-warning py-2">Mostrando os {{ limite }} registros mais recentes. Refine os filtros para ver os demais.</div>
+    {% endif %}
+    {% endif %}
     <hr>
 
     {% if historico %}
@@ -12,8 +65,13 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <span class="badge rounded-pill bg-primary px-3 py-2">
                     <i class="bi bi-calendar3 me-1"></i>
-                    {{ registro.data[8:10] }}/{{ registro.data[5:7] }}/{{ registro.data[0:4] }}
+                    {{ registro.data.strftime('%d/%m/%Y') }}
                 </span>
+                {% if modo_global and registro.turma_rel %}
+                <span class="badge rounded-pill bg-secondary px-3 py-2 ms-2">
+                    <i class="bi bi-people me-1"></i>{{ registro.turma_rel.nome }}
+                </span>
+                {% endif %}
                 {% if mostrar_curso and registro.turma_curso %}
                 <span class="badge rounded-pill bg-info text-dark px-3 py-2 ms-2">
                     <i class="bi bi-mortarboard me-1"></i>
@@ -27,22 +85,56 @@
             </div>
 
             <h6 class="fw-bold text-dark mb-2">
-                Tema: <span class="text-secondary fw-normal">{{ registro.tema.titulo if registro.tema else 'Não informado' }}</span>
+                Temas:
+                <span class="text-secondary fw-normal">
+                    {% if registro.temas %}
+                        {{ registro.temas | map(attribute='titulo') | join(', ') }}
+                    {% elif registro.tema %}
+                        {{ registro.tema.titulo }}
+                    {% else %}
+                        Não informado
+                    {% endif %}
+                </span>
             </h6>
 
-            <div class="p-3 bg-light rounded shadow-sm border-0 position-relative">
-                <p class="mb-0 text-dark" style="line-height: 1.6;">
-                    <i class="bi bi-quote text-muted opacity-25 me-2"></i>
-                    {{ registro.observacoes }}
-                </p>
+            {% if registro.atividades %}
+            <div class="mb-3">
+                <div class="text-uppercase text-muted fw-bold" style="font-size: 0.75rem;">
+                    <i class="bi bi-list-check me-1"></i>Atividades da aula
+                </div>
+                <div class="p-3 bg-light rounded shadow-sm border-0 position-relative mt-1">
+                    <p class="mb-0 text-dark" style="line-height: 1.6;">{{ registro.atividades }}</p>
+                </div>
             </div>
+            {% endif %}
+
+            {% if registro.observacoes %}
+            <div>
+                <div class="text-uppercase text-muted fw-bold" style="font-size: 0.75rem;">
+                    <i class="bi bi-chat-left-dots-fill me-1"></i>Observações da aula
+                </div>
+                <div class="p-3 bg-light rounded shadow-sm border-0 position-relative mt-1">
+                    <p class="mb-0 text-dark" style="line-height: 1.6;">
+                        <i class="bi bi-quote text-muted opacity-25 me-2"></i>
+                        {{ registro.observacoes }}
+                    </p>
+                </div>
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <div class="alert alert-info">Nenhuma observação registrada para esta turma até o momento.</div>
+    <div class="alert alert-info">
+        {% if modo_global %}
+        Nenhuma observação ou atividade encontrada para os filtros selecionados.
+        {% else %}
+        Nenhuma observação ou atividade registrada para esta turma até o momento.
+        {% endif %}
+    </div>
     {% endif %}
 
-    <a href="{{ url_for('registros.painel_professor') }}" class="btn btn-secondary mt-3">Voltar</a>
+    <a href="{{ url_for('relatorios.painel_pedagogico') if modo_global else url_for('main.painel') }}"
+        class="btn btn-secondary mt-3">Voltar</a>
 </div>
 {% endblock %}

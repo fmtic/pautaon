@@ -1,6 +1,7 @@
 {
     "kiroAgent.configureMCP": "Disabled",
     "files.autoSave": "afterDelay",
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
     "editor.autoIndentOnPaste": true,
     "python.analysis.exclude": [
       "**/node_modules",

@@ -9,6 +9,8 @@ Regra:
       lançamentos/diário/conselho/transferências são preservados.
 """
 
+from _helpers import login_as
+
 from datetime import date, time
 
 from app import create_app, db
@@ -50,9 +52,7 @@ def _novo_app():
 
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 
@@ -93,8 +93,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
 
         turma = Turma(
             nome="T excl", unidade_id=u1.id, ativo=True, curso_id=cA.id,
-            professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-            hora_inicio=time(9, 0), hora_fim=time(10, 0),
+            professor_id=p1.id, turno="Manhã",
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(turma)
@@ -105,8 +104,7 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
             o = TurmaCurso(
                 turma_id=turma.id, curso_id=(cA.id if i == 0 else cB.id),
                 unidade_id=u1.id, ativo=True, principal=(i == 0),
-                professor_id=p1.id, turno="Manhã", dias_semana="Segunda",
-                hora_inicio=time(9, 0), hora_fim=time(10, 0),
+                professor_id=p1.id, turno="Manhã",
                 data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
             )
             db.session.add(o)
@@ -263,6 +261,7 @@ def test_aluno_disponivel_apos_desativacao():
         oferta_outra = TurmaCurso(
             turma_id=outra.id, curso_id=ids["cA"], unidade_id=ids["u1"],
             ativo=True, principal=True, programa="Teste",
+            professor_id=ids["p1"],
         )
         db.session.add(oferta_outra)
         db.session.flush()

@@ -2,9 +2,10 @@
 
 D5.4: a unidade de conselho é (oferta, aluno, etapa). `por_turma` continua
 recebendo ids de turma (o painel é por turma), mas agrega cada oferta
-separadamente com o rótulo "Turma — Curso". Linhas legadas com
-`turma_curso_id` NULL não entram na agregação — a lista fica em
-`scripts/verificar_onda4_d5.py` até a resolução manual antes da D5.5.
+separadamente com o rótulo "Turma — Curso". Desde a D5.5
+`turma_curso_id` é NOT NULL — linha legada sem oferta não existe mais (a
+lista de conferência prévia ficou registrada em
+`scripts/verificar_onda4_d5.py`).
 """
 
 from __future__ import annotations

@@ -87,7 +87,7 @@ def alternar_conselho(turma_id):
         # D5.5: a turma não guarda mais o encerramento — ele é exclusivamente
         # da oferta e a visão da turma é derivada na leitura.
         db.session.commit()
-    except Exception as e:
+    except Exception:
         db.session.rollback()
         flash("Erro ao salvar mudança de Status do conselho.", "danger")
 

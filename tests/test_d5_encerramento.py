@@ -3,8 +3,9 @@
 Regras cobertas (docs/D5_0_desenho.md §2.6 + D5.3):
     - Encerramento MANUAL e por OFERTA (`TurmaCurso.conselho_concluido`,
       via `alternar_conselho`).
-    - Encerramento da TURMA é DERIVADO: concluída somente com ao menos uma
-      oferta ativa e todas as ativas concluídas.
+    - A turma NÃO tem coluna de conclusão (removida na D5.5) nem ponte: a
+      visão da turma é lida pelas contagens e pelo painel por oferta
+      (`contar_ofertas_conselho()` e `ofertas_do_painel_conselho()`).
     - Turma sem oferta ativa não abre conselho e NÃO entra nas contagens.
     - Nenhum leitor lê `Turma.conselho_concluido`: a coluna foi REMOVIDA na
       D5.5 e o encerramento existe só na oferta.
@@ -31,7 +32,7 @@ from app.database import db
 from app.models import Curso, PeriodoLetivo, Turma, TurmaCurso, Unidade
 from app.services.turma_curso import (
     contar_ofertas_conselho,
-    turma_conselho_concluido,
+    ofertas_do_painel_conselho,
 )
 from app.utils.logica import calcular_metricas_conselho
 
@@ -51,7 +52,7 @@ def _turma_extra(app, ids, *, nome, unidade_id, com_oferta=True):
     with app.app_context():
         turma = Turma(
             nome=nome, turno="Tarde", data_inicio=None, data_fim=None,
-            dias_semana="Terca", unidade_id=unidade_id, ativo=True,
+            unidade_id=unidade_id, ativo=True,
         )
         db.session.add(turma)
         db.session.flush()
@@ -59,7 +60,7 @@ def _turma_extra(app, ids, *, nome, unidade_id, com_oferta=True):
             curso = Curso(nome=f"Curso {nome}", unidade_id=unidade_id, ativo=True)
             db.session.add(curso)
             db.session.flush()
-            nova_oferta(turma.id, curso.id, unidade_id)
+            nova_oferta(turma.id, curso.id, unidade_id, professor_id=ids["prof"])
         db.session.commit()
         return turma.id
 
@@ -72,14 +73,16 @@ def _unidade_b_com_turma(app, ids):
         db.session.flush()
         turma_b = Turma(
             nome="Turma B", turno="Manhã",
-            dias_semana="Segunda", unidade_id=un_b.id, ativo=True,
+            unidade_id=un_b.id, ativo=True,
         )
         db.session.add(turma_b)
         db.session.flush()
         curso_b = Curso(nome="Curso B", unidade_id=un_b.id, ativo=True)
         db.session.add(curso_b)
         db.session.flush()
-        oferta_b = nova_oferta(turma_b.id, curso_b.id, un_b.id)
+        oferta_b = nova_oferta(
+            turma_b.id, curso_b.id, un_b.id, professor_id=ids["prof"],
+        )
         # O aluno da unidade A participa da turma B só para o certificado.
         nova_inscricao(ids["aluno_a"], turma_b.id, oferta_b.id)
         db.session.commit()
@@ -97,19 +100,19 @@ def _painel_html(client):
 
 
 # ---------------------------------------------------------------------------
-# Derivação do encerramento da turma
+# Encerramento por oferta nas contagens e no painel
 # ---------------------------------------------------------------------------
 
 def test_derivacao_uma_oferta(app):
     ids = _setup(app, ofertas=1)
     with app.app_context():
-        assert turma_conselho_concluido(ids["turma"]) is False
+        assert contar_ofertas_conselho(ids["un_a"]) == (0, 1)
+        assert [o["concluida"] for o in ofertas_do_painel_conselho(ids["un_a"])] == [False]
 
     _concluir(app, ids["ofertas"], [True])
     with app.app_context():
-        assert turma_conselho_concluido(ids["turma"]) is True
-        # Aceita o objeto Turma também.
-        assert turma_conselho_concluido(db.session.get(Turma, ids["turma"])) is True
+        assert contar_ofertas_conselho(ids["un_a"]) == (1, 1)
+        assert [o["concluida"] for o in ofertas_do_painel_conselho(ids["un_a"])] == [True]
 
 
 def test_derivacao_duas_ofertas_uma_pendente(app):
@@ -117,18 +120,22 @@ def test_derivacao_duas_ofertas_uma_pendente(app):
 
     _concluir(app, ids["ofertas"], [True, False])
     with app.app_context():
-        assert turma_conselho_concluido(ids["turma"]) is False
+        assert contar_ofertas_conselho(ids["un_a"]) == (1, 2)
+        concluidas = [o["concluida"] for o in ofertas_do_painel_conselho(ids["un_a"])]
+        assert sorted(concluidas) == [False, True]
 
     _concluir(app, ids["ofertas"], [True, True])
     with app.app_context():
-        assert turma_conselho_concluido(ids["turma"]) is True
+        assert contar_ofertas_conselho(ids["un_a"]) == (2, 2)
+        assert all(o["concluida"] for o in ofertas_do_painel_conselho(ids["un_a"]))
 
 
 def test_turma_sem_oferta_ativa_nao_conclui_nem_conta(app):
     ids = _setup(app, ofertas=0)
     with app.app_context():
-        assert turma_conselho_concluido(ids["turma"]) is False
         assert contar_ofertas_conselho(ids["un_a"]) == (0, 0)
+        # Turma sem oferta ativa também não aparece no painel por oferta.
+        assert ofertas_do_painel_conselho(ids["un_a"]) == []
 
 
 def test_oferta_inativa_ignorada(app):
@@ -138,8 +145,11 @@ def test_oferta_inativa_ignorada(app):
     with app.app_context():
         # A oferta inativa está pendente, mas não entra em nada.
         assert db.session.get(TurmaCurso, ids["oferta_inativa"]).conselho_concluido is False
-        assert turma_conselho_concluido(ids["turma"]) is True
         assert contar_ofertas_conselho(ids["un_a"]) == (1, 1)
+        # O painel só lista a oferta ativa — a inativa fica de fora.
+        painel = ofertas_do_painel_conselho(ids["un_a"])
+        assert [o["oferta"].id for o in painel] == [ids["ofertas"][0]]
+        assert [o["concluida"] for o in painel] == [True]
 
 
 # ---------------------------------------------------------------------------

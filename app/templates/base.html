@@ -76,7 +76,7 @@
           {# GERAL #}
           <li class="sidebar-heading">Geral</li>
           <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'main.painel' %}active{% endif %}" href="{{ url_for('main.painel') }}" title="Painel Geral">
+            <a class="nav-link {% if request.endpoint in ('main.painel', 'main.painel_pedagogico_professor') %}active{% endif %}" href="{{ url_for('main.painel') }}" title="Painel Geral">
               <i class="bi bi-speedometer2"></i> <span>Painel Geral</span>
             </a>
           </li>
@@ -116,14 +116,18 @@
           </li>
           {% endif %} 
           
-          {# CONSELHO #} 
-          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
+          {# CONSELHO #}
+          {# O professor entra apenas no Painel de Turmas (lançamento das
+             respostas das ofertas dele); o restante segue restrito. #}
+          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria', 'professor'] %}
           <li class="sidebar-heading">Conselho</li>
+          {% if current_user.role in ['admin', 'pedagogico', 'gerencia', 'secretaria'] %}
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'conselho.informacoes' %}active{% endif %}" href="{{ url_for('conselho.informacoes') }}" title="Data-Informações">
               <i class="bi bi-info-circle"></i> <span>Data-Informações</span>
             </a>
           </li>
+          {% endif %}
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'conselho.index_conselho' %}active{% endif %}" href="{{ url_for('conselho.index_conselho') }}" title="Painel de Turmas">
               <i class="bi bi-grid-3x3-gap"></i> <span>Painel de Turmas</span>
