@@ -5,6 +5,8 @@ Valida a alternância exclusiva entre turmas vigentes e concluídas,
 além do cascateamento de todos os dropdowns de filtros pelo filtro-mestre de vigência.
 """
 
+from _helpers import login_as
+
 from datetime import date, timedelta
 import pytest
 from app import create_app, db
@@ -139,10 +141,7 @@ def test_carga_horaria_turmas_alternancia_exclusiva_e_filtros_cascateados(client
         db.session.commit()
 
         # Login com admin
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(admin.id)
-            sess["unidade_id"] = unidade.id
-
+        login_as(client, str(admin.id), unidade.id)
         # ── 1. ACESSO PADRÃO: MODO VIGENTE ──
         resp_padrao = client.get("/turmas/carga-horaria")
         assert resp_padrao.status_code == 200

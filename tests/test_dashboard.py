@@ -1,3 +1,4 @@
+from _helpers import login_as
 import re
 from datetime import date
 
@@ -81,10 +82,7 @@ def _prepare_dashboard(app, client):
         user_id = user.id
         unidade_a_id = unidade_a.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-
+    login_as(client, str(user_id))
     return unidade_a_id
 
 
@@ -141,10 +139,7 @@ def test_dashboard_professor_exibe_turma_com_responsavel_direto(app, client):
         db.session.commit()
         professor_id = professor.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     response = client.get("/dashboard")
 
     assert response.status_code == 200

@@ -5,6 +5,8 @@ Fixa o texto exibido na coluna/sub-linha de frequência e o resultado de
 `min_freq` numa turma com 2+ ofertas (compara a oferta principal).
 """
 
+from _helpers import login_as
+
 from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
@@ -13,11 +15,7 @@ from app.registros.turmas import pos_filtrar_turmas
 
 
 def _login(client, uid):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-
-
+    login_as(client, str(uid))
 def test_listagem_exibe_freq_geral_e_por_oferta(app, client):
     _base(app)
     with app.app_context():

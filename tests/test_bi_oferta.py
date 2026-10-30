@@ -33,7 +33,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import event
 
-from _helpers import nova_inscricao, nova_oferta  # noqa: F401 (padrão do harness)
+from _helpers import login_as, nova_inscricao, nova_oferta  # noqa: F401 (padrão do harness)
 from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app import db
@@ -764,11 +764,7 @@ def test_legado_regra_d2(cenario):
 
 
 def _login(client, user_id):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(user_id)
-        sess["_fresh"] = True
-
-
+    login_as(client, str(user_id))
 def test_rotas_bi_aceitam_oferta_sem_500(cenario, client):
     """Passo 3d/5: as três rotas aceitam curso_id/turma_id/professor_id e
     jamais devolvem 500 — valor inválido vira None (`type=int`) ou 400."""

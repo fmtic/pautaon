@@ -36,7 +36,7 @@ from app.services.turma_curso import (
 )
 from config import Config
 
-from _helpers import itens_grade
+from _helpers import login_as, itens_grade
 
 
 AGENDA = itens_grade("Segunda", time(9), time(10))   # Segunda 09:00–10:00
@@ -291,10 +291,7 @@ def test_edicao_de_oferta_rejeita_professor_de_outra_unidade(base):
 
 def _client_admin(app, base):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(base["admin_id"])
-        session["_fresh"] = True
-        session["unidade_id"] = base["unidade_a"]
+    login_as(client, str(base["admin_id"]), base["unidade_a"])
     return client
 
 

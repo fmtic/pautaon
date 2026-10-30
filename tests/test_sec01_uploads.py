@@ -5,6 +5,8 @@ from app.models import Aluno, Atendimento, Unidade, User
 from app.models.enums import UserRole
 from config import Config
 
+from _helpers import login_as
+
 
 class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -42,6 +44,7 @@ def test_static_uploads_documentos_nao_exposto(client):
 
 def test_acesso_anonimo_redireciona_para_login(client):
     """Garante que visitantes não autenticados não conseguem acessar as novas rotas."""
+
     resp = client.get("/aluno/2/documento/doc_laudo")
     assert resp.status_code in (302, 401)
 
@@ -89,11 +92,7 @@ def test_acesso_autenticado_documento_e_foto(app, client):
             db.session.add(aluno_foto)
             db.session.commit()
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(admin.id)
-            sess["_fresh"] = True
-            sess["unidade_id"] = str(unidade.id)
-
+        login_as(client, str(admin.id), str(unidade.id))
         resp_doc = client.get(f"/aluno/{aluno_doc.id}/documento/doc_laudo")
         if resp_doc.status_code == 200:
             assert resp_doc.content_type == "application/pdf"

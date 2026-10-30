@@ -10,6 +10,8 @@ transferência — sempre por HTTP, sem erro e com o texto por dia correto.
 Fecha com a checagem de ausência de N+1 de grade na listagem.
 """
 
+from _helpers import login_as
+
 import re
 from datetime import date, time
 
@@ -65,11 +67,7 @@ def _norm(html):
 
 def _client(app, user_id, unidade_id=None):
     cli = app.test_client()
-    with cli.session_transaction() as sess:
-        sess["_user_id"] = str(user_id)
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
+    login_as(cli, str(user_id), unidade_id)
     return cli
 
 

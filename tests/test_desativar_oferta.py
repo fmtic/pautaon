@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 
 from app import create_app
 from app.database import db
-from _helpers import professor_semente
+from _helpers import login_as, professor_semente
 from app.models import (
     Aluno,
     Curso,
@@ -76,11 +76,7 @@ def client(app):
 
 
 def _loga(client, user_id, unidade_id=None):
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        if unidade_id is not None:
-            session["unidade_id"] = unidade_id
+    login_as(client, str(user_id), unidade_id)
     return client
 
 

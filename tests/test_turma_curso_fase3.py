@@ -33,7 +33,7 @@ from app.services.turma_curso import (
 )
 from config import Config
 
-from _helpers import itens_grade
+from _helpers import login_as, itens_grade
 
 
 class SQLiteTestConfig(Config):
@@ -335,10 +335,7 @@ def test_rota_oferta_nova_conflito_com_aviso(base, app):
         data_inicio=date(2026, 1, 1), data_fim=date(2026, 6, 30),
     )
     client = app.test_client()
-    with client.session_transaction() as s:
-        s["_user_id"] = str(base["admin_id"])
-        s["_fresh"] = True
-        s["unidade_id"] = base["unidade_id"]
+    login_as(client, str(base["admin_id"]), base["unidade_id"])
     resp = client.post(
         f"/turma/{base['turma_id']}/ofertas/nova",
         data={

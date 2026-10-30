@@ -37,7 +37,7 @@ from app.services.turma_curso_horario import (
 )
 from config import Config
 
-from _helpers import itens_grade, nova_oferta
+from _helpers import login_as, itens_grade, nova_oferta
 
 DATA_INI = date(2026, 3, 2)   # segunda-feira
 DATA_FIM = date(2026, 12, 15)
@@ -271,9 +271,7 @@ def test_escritores_nao_corrompem_grade_nao_uniforme(app):
 # --- POST /turma/editar/<id> -------------------------------------------------------
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 

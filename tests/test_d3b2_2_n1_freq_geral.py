@@ -7,7 +7,7 @@ Testes de caracterização + equivalência + N+1. A semente é a de
 
 from datetime import date
 
-from _helpers import nova_inscricao, nova_oferta  # noqa: F401
+from _helpers import login_as, nova_inscricao, nova_oferta  # noqa: F401
 from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
@@ -82,10 +82,7 @@ def test_listagem_rota_nao_faz_n_plus_1(app, client):
     from app.models import User
 
     def _login(cid, uid):
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(uid)
-            sess["_fresh"] = True
-
+        login_as(client, str(uid))
     with app.app_context():
         u = User.query.filter_by(email="admin.freq@example.com").first()
         _login(client, u.id)

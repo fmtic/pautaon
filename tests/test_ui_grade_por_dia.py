@@ -16,6 +16,8 @@ que gravam agenda — nova_turma, editar_turma e rotas de oferta:
     - reenviar o mesmo formulário é idempotente (nada duplica nem deriva).
 """
 
+from _helpers import login_as
+
 import re
 from datetime import date, time
 
@@ -44,10 +46,7 @@ class SQLiteTestConfig(Config):
 
 def _loga(app, user_id, unidade_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        session["unidade_id"] = unidade_id
+    login_as(client, str(user_id), unidade_id)
     return client
 
 

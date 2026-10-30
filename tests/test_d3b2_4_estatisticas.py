@@ -1,7 +1,7 @@
 # ruff: noqa: F811
 """ETAPA D3b-2.4 — estatísticas do GET /frequencia por oferta."""
 
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
@@ -9,13 +9,7 @@ from app.models import User
 
 
 def _login(client, uid, unidade_id=None):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(uid), unidade_id)
 def _uid(app):
     with app.app_context():
         return User.query.filter_by(email="admin.freq@example.com").first().id

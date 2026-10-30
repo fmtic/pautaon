@@ -27,7 +27,7 @@ from app.models import (
 )
 from app.services.turma_curso_horario import definir_grade
 from config import Config
-from _helpers import professor_semente
+from _helpers import login_as, professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -146,9 +146,7 @@ def _seed(app, variavel=False):
 
 def _client(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(user_id)
-        sess["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 

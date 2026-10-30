@@ -42,7 +42,7 @@ from app.services.enturmacao import (
     enturmar_aluno,
 )
 from config import Config
-from _helpers import professor_semente
+from _helpers import login_as, professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -78,11 +78,7 @@ def client(app):
 def _loga(client, user_id, unidade_id=None):
     """Cria sessão de teste. unidade_id=None não grava a chave na sessão
     (caso do admin em Visão Global)."""
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-        if unidade_id is not None:
-            session["unidade_id"] = unidade_id
+    login_as(client, str(user_id), unidade_id)
     return client
 
 

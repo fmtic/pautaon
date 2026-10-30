@@ -31,7 +31,7 @@ from app.services.turma_curso import (
 from app.services.turma_curso_horario import definir_grade, grade_da_oferta
 from config import Config
 
-from _helpers import itens_grade
+from _helpers import login_as, itens_grade
 
 DATA_INI = date(2026, 3, 2)   # segunda-feira
 DATA_FIM = date(2026, 12, 15)
@@ -112,10 +112,7 @@ def _turma_oferta(ids, *, curso="cA", dias="Segunda", ini=time(8), fim=time(12),
 
 def _loga(app, user_id, unidade_id):
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(user_id)
-        sess["_fresh"] = True
-        sess["unidade_id"] = unidade_id
+    login_as(client, str(user_id), unidade_id)
     return client
 
 

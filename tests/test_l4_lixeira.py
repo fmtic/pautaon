@@ -1,3 +1,4 @@
+from _helpers import login_as
 # ruff: noqa: F811
 """ETAPA L4 — /turmas/lixeira e reativação de turma."""
 
@@ -13,13 +14,7 @@ from app.models import (
 
 
 def _login(client, uid, unidade_id=None):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(uid), unidade_id)
 def _uid(app, email="admin.freq@example.com"):
     with app.app_context():
         return User.query.filter_by(email=email).first().id

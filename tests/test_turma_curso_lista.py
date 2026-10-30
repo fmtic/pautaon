@@ -12,6 +12,8 @@ Cobre:
     - datas_esperadas_oferta inalterada após a extração de datas_aula_oferta.
 """
 
+from _helpers import login_as
+
 from datetime import date, time, timedelta
 
 from app import create_app, db
@@ -51,9 +53,7 @@ def _novo_app():
 
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 

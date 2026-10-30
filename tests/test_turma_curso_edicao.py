@@ -13,6 +13,8 @@ Cobertura (só servidor, rota /turma/editar/<id>):
     - falha na validação não grava nem a turma nem a oferta (transação única).
 """
 
+from _helpers import login_as
+
 from datetime import date, time
 
 import pytest
@@ -53,9 +55,7 @@ def _novo_app():
 
 def _loga(app, resp_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(resp_id)
-        session["_fresh"] = True
+    login_as(client, str(resp_id))
     return client
 
 

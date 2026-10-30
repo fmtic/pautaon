@@ -3,7 +3,7 @@
 
 from datetime import date
 
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
@@ -16,11 +16,7 @@ from app.utils.logica import calcular_estatisticas_frequencia
 
 
 def _login(client, uid):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-
-
+    login_as(client, str(uid))
 def test_equivalencia_batch_vs_antigo(app):
     s = _base(app)
     with app.app_context():
@@ -74,11 +70,7 @@ def test_n1_historico_constante(app, client):
         db.session.commit()
         uid = User.query.filter_by(email="admin.freq@example.com").first().id
         un = Unidade.query.first()
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(uid)
-            sess["_fresh"] = True
-            if un is not None:
-                sess["unidade_id"] = un.id
+        login_as(client, uid, un.id)
         aid = aluno.id
 
     from sqlalchemy import event

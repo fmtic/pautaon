@@ -15,11 +15,12 @@ Matriz coberta:
       da tela leva a 403.
 """
 
+from _helpers import login_as
+
 import re
 from datetime import date, time
 
 import pytest
-from flask import g, has_app_context
 
 from app import create_app, db
 from app.models import Aluno, Curso, Inscricao, Turma, TurmaCurso, Unidade, User
@@ -131,18 +132,13 @@ def cenario(app):
 def _login(app, cenario, usuario):
     """Cliente logado com `cenario[usuario]`.
 
-    Limpa `g._login_user` como `tests/_helpers.login_as`: o fixture segura um
+    Delega a `tests/_helpers.login_as`: o fixture segura um
     app context durante o teste inteiro e o Flask-Login cachea o usuário em `g`
     — sem a limpeza, o segundo cliente agia como o primeiro (armadilha
     documentada no MER, auditoria L4.2).
     """
-    if has_app_context():
-        g.pop("_login_user", None)
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(cenario[usuario])
-        sess["_fresh"] = True
-        sess["unidade_id"] = cenario["unidade"]
+    login_as(client, str(cenario[usuario]), cenario["unidade"])
     return client
 
 

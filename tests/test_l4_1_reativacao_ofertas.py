@@ -25,7 +25,7 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy import func
 
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app.database import db
@@ -39,13 +39,7 @@ DATA_FIM = date(2026, 6, 30)
 
 
 def _login(client, uid, unidade_id):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(uid), unidade_id)
 def _setup(app, client, *, b_com_aluno=False, b_principal=False, encerrar_periodo=False):
     """Semeia turma com ofertas A e B + histórico (garante exclusão LÓGICA).
 

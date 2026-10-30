@@ -5,7 +5,7 @@ from datetime import date, time
 from sqlalchemy import event
 
 from app import create_app, db
-from _helpers import professor_semente
+from _helpers import login_as, professor_semente
 from app.models import (
     Curso,
     DiaBloqueado,
@@ -167,9 +167,7 @@ def test_turma_com_uma_oferta_uniforme_iguala_total_da_oferta():
 
 def _loga(app, user_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
+    login_as(client, str(user_id))
     return client
 
 

@@ -36,7 +36,7 @@ from app.registros.core import _alunos_da_oferta
 from app.utils.frequencia import frequencias_lancadas
 from config import Config
 
-from _helpers import aplicar_grade, itens_grade, professor_semente
+from _helpers import login_as, aplicar_grade, itens_grade, professor_semente
 
 
 class SQLiteTestConfig(Config):
@@ -213,9 +213,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
 
 def _loga(app, resp_id):
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(resp_id)
-        session["_fresh"] = True
+    login_as(client, str(resp_id))
     return client
 
 

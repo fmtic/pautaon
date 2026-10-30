@@ -45,7 +45,7 @@ from app.models import (
 )
 from app.models.enums import EtapaConselho
 from config import Config
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 
 DATA_INI = date(2026, 2, 2)
 DATA_FIM = date(2026, 6, 30)
@@ -79,13 +79,7 @@ def client(app):
 
 def _loga(client, ids, unidade_id=None):
     """Simula login gravando a sessão direto (padrão do harness B4)."""
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(ids["user_id"])
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(ids["user_id"]), unidade_id)
 def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
     """Semeia unidade A (e opcionalmente B), usuário, turma com N ofertas
     ativas (a última pode ser inativa via `ofertas='1+1i'`), 2 alunos com

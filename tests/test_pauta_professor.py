@@ -1,3 +1,4 @@
+from _helpers import login_as
 from datetime import date, time
 
 from app import create_app, db
@@ -119,10 +120,7 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
         turma_associada_id = turma_associada.id
 
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     pauta_frequencia = client.get(
         f"/frequencia?turma_id={turma_associada_id}"
     )
@@ -205,10 +203,7 @@ def test_professor_nao_acessa_pauta_de_turma_de_outro_professor():
         turma_id = turma.id
 
     client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = str(professor_id)
-        session["_fresh"] = True
-
+    login_as(client, str(professor_id))
     detalhe = client.get(f"/turma/{turma_id}")
     impressao = client.get(f"/turma/{turma_id}/imprimir-pauta")
     frequencia = client.get(f"/frequencia?turma_id={turma_id}")

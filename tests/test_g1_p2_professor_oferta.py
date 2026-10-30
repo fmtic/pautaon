@@ -41,7 +41,7 @@ from app.services.turma_curso import (
 )
 from config import Config
 
-from _helpers import itens_grade
+from _helpers import login_as, itens_grade
 
 AGENDA = itens_grade("Segunda", time(9), time(10))
 FORM_AGENDA = {"dias_semana": "0", "hora_inicio": "09:00", "hora_fim": "10:00"}
@@ -131,10 +131,7 @@ def _oferta(base, *, curso="c1", professor="p1", principal=True):
 
 def _client(app, base):
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(base["admin"])
-        sess["_fresh"] = True
-        sess["unidade_id"] = base["unidade"]
+    login_as(client, str(base["admin"]), base["unidade"])
     return client
 
 

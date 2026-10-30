@@ -14,6 +14,8 @@ from app.services.turma_curso_horario import definir_grade
 from app.utils.timezone import get_local_now
 from config import Config
 
+from _helpers import login_as
+
 
 class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -336,11 +338,7 @@ def test_listagem_padrao_inclui_turma_sem_periodo_e_nao_quebra_sem_periodo_no_an
         unidade_id, admin_id = _seed_unidade_periodo_passado(app)
         turma_id = Turma.query.filter_by(nome="Turma Avulsa").first().id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(admin_id)
-        session["_fresh"] = True
-        session["unidade_id"] = unidade_id
-
+    login_as(client, str(admin_id), unidade_id)
     ano = get_local_now().year
     resp = client.get("/turma")
     # Anti-P2: a listagem não pode quebrar (KeyError) quando o ano corrente
@@ -371,11 +369,7 @@ def test_rota_listagem_aplica_filtro_nome(app, client):
             admin_id = admin.id
             unidade_id = unidade.id
 
-    with client.session_transaction() as session:
-        session["_user_id"] = str(admin_id)
-        session["_fresh"] = True
-        session["unidade_id"] = unidade_id
-
+    login_as(client, str(admin_id), unidade_id)
     resp = client.get("/turma?nome=Informática")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)

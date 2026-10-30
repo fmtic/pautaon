@@ -7,6 +7,8 @@ Um usuário por teste (T1 §5.6): cada teste cria o próprio `test_client()` e
 fixa a sessão uma única vez; nenhum teste troca de usuário no meio.
 """
 
+from _helpers import login_as
+
 from datetime import date
 
 import pytest
@@ -136,13 +138,7 @@ def _setup(app, role="admin"):
 def _loga(client, ids, unidade_id=None):
     """Fixa a sessão do cliente em uma única request de setup. Admin/gerência
     usam a unidade da sessão (get_unidade_id); sem `unidade_id` é Visão Global."""
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(ids["user_id"])
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(ids["user_id"]), unidade_id)
 def _form_turma(ids, periodo_id, nome="Turma A editada"):
     return {
         "turma": nome,

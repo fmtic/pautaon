@@ -12,6 +12,8 @@ Testa:
    - Renderização correta com status 200 para perfil professor
 """
 
+from _helpers import login_as
+
 from datetime import date, timedelta
 import pytest
 
@@ -262,10 +264,7 @@ def test_rota_painel_pedagogico_permissao_e_render(app):
     with app.app_context():
         prof = db.session.get(User, cenario["professor_id"])
 
-        with client.session_transaction() as sess:
-            sess["_user_id"] = str(prof.id)
-            sess["_fresh"] = True
-
+        login_as(client, str(prof.id))
         resp = client.get("/professor/painel-pedagogico")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)

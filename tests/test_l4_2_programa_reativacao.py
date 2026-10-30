@@ -29,7 +29,7 @@ expressando o comportamento-alvo: os casos 2 e 3 falham antes da P3.
 
 from datetime import date
 
-from _helpers import nova_inscricao, nova_oferta
+from _helpers import login_as, nova_inscricao, nova_oferta
 from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app.database import db
@@ -49,13 +49,7 @@ DATA_FIM = date(2026, 6, 30)
 
 
 def _login(client, uid, unidade_id):
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(uid)
-        sess["_fresh"] = True
-        if unidade_id is not None:
-            sess["unidade_id"] = unidade_id
-
-
+    login_as(client, str(uid), unidade_id)
 def _seed(
     app, client, *,
     programa_a="X", programa_b="Y",
