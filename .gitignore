@@ -36,6 +36,8 @@ instance/uploads/
 
 # Logs e cobertura
 *.log
+# Rotação do handler de log da app (error.log.1, .2, ...): `*.log` não pega.
+instance/error.log*
 .coverage
 htmlcov/
 .pytest_cache/
