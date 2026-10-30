@@ -1,6 +1,14 @@
 # puataon/app/__init__.py
 
-from flask import Flask, current_app, render_template, request, redirect, url_for
+from flask import (
+    Flask,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import current_user
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -159,7 +167,10 @@ def _register_security_hooks(app: Flask) -> None:
         if request.endpoint == "static" or request.path.startswith("/static/"):
             return response
 
-        if current_user.is_authenticated:
+        # `current_user.is_authenticated` do Flask-Login lê `is_active`, que é
+        # coluna: num objeto expirado por commit isso dispara um SELECT extra
+        # em toda resposta. O `_user_id` da sessão responde sem consulta.
+        if session.get("_user_id"):
             # `send_file`/`send_from_directory` já põem `no-cache` nos
             # downloads; trocamos por `no-store` (dado de aluno não fica em
             # disco) sem sobrescrever rotas que já pediram `no-store`.
