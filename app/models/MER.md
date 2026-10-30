@@ -753,6 +753,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | **data**     | **date** | não  | —       | Onda 2A                              |
 | **conceito** | **enum** | sim  | —       | `conceito_frequencia_enum` (Onda 2B) |
 | **valor_esportista_id** | **int** | sim | — | FK → `valor_esportista`, `ON DELETE SET NULL` (A1); **dado adicional**, não entra em nenhuma conta |
+| **autor_id** | **int** | sim | — | FK → `user`, `ON DELETE SET NULL` (F1, §8.24); último que salvou a linha |
+| **autor_nome** | **varchar(100)** | sim | — | Snapshot do nome do autor (F1) |
 | unidade_id   | int      | sim  | —       | FK → unidade                         |
 
 **Unicidade (Onda 4, Fase 4):** o antigo `UNIQUE (aluno_id, turma_id, data)` (`uix_frequencia_aluno_turma_data`) foi **substituído** por dois índices únicos **parciais**:
@@ -765,6 +767,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 **Property híbrida:** `presente` (A/B/C/D).
 
 **Obrigatoriedade para presença (V2, 28/10/2026):** a coluna continua **nullable no schema** (registros anteriores à V2 têm `NULL` e não são tocados), mas a escrita pela pauta (`salvar_frequencia`) passou a **exigir** valor quando o conceito é A/B/C/D e a unidade da turma tem ao menos um valor **ativo** no catálogo. Não há migration: a regra é só de aplicação. Regra completa em §8.1.
+
+**Autor do lançamento (F1, 30/10/2026):** `autor_id` (FK → `user`, `ON DELETE SET NULL`) + `autor_nome` (snapshot) guardam SEMPRE o último usuário que salvou a linha; gravar o mesmo conceito de novo **não** troca o autor. Histórico anterior à F1 segue NULL e scripts/seeds gravam NULL. Sem índice em `autor_id` (nenhuma consulta por autor). Regra completa em §8.24.
 
 ### 7.20 `registro_aula`
 
@@ -881,7 +885,11 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | pergunta_id | int  | não  | —       | FK → conselho_pergunta |
 | resposta    | text | sim  | —       | —                      |
 | observacao  | text | sim  | —       | —                      |
+| **autor_id** | **int** | sim | —    | FK → `user`, `ON DELETE SET NULL` (F1, §8.24); último que salvou |
+| **autor_nome** | **varchar(100)** | sim | — | Snapshot do nome do autor (F1) |
 | unidade_id  | int  | sim  | —       | FK → unidade           |
+
+**Autor (F1, 30/10/2026):** `salvar_conselho` grava `autor_id`/`autor_nome` ao criar a resposta e só troca o autor quando o **texto** muda; regravar o mesmo texto mantém quem gravou antes. As demais rotas de escrita do conselho (`avaliar_turma`, fechamento) não escrevem nesta tabela. Regra completa em §8.24.
 
 ### 7.26 `atendimento`
 
@@ -1302,7 +1310,7 @@ Pendência antiga (registrada em `docs/Relatórios/ConselhoProfessor.md` e no §
 
 **Nenhuma guarda foi alterada** (a etapa T1 ficou bloqueada pelo P0). A regra "professor da OFERTA, sem herança" (§8.12) já vale para pauta impressa (`turmas.py:2720-2726`), I1 (`services/aluno_info_professor.py:60-79`), painel do professor (`main/dashboard_professor.py:168`) e conselho (`conselho.py:526`), mas **seis guardas continuam em `turma.professor_id`**: `ver_turma` (`turmas.py:1374-1378`), `ver_observacoes` / Diário de Bordo (`:2640-2644`), `POST /frequencia` (`core.py:256-259`), `GET /frequencia` (`core.py:382-399`), `historico_aluno` (`alunos.py:881-893`) e `/aluno/<id>/foto` (`:1316-1327`). Migrá-las ainda **retiraria** o acesso dos professores que só entram pela turma — restam 3 ofertas ativas sem professor no principal (16, 17 e 18, com frequência lançada) e `turma_curso.professor_id` segue nullable; a obrigatoriedade de **escrita** chegou com a E2 (§8.21), a de **schema** não. Não são regra de acesso (ficam como estão): filtros/dropdowns com COALESCE (`turmas.py:562-573`, `:2447-2599`; `bi_alunos.py`; `relatorios/observacoes.py:133`; `conselho.py:292`), contagem em `dashboard_admin.py:34` e os espelhos de escrita turma ↔ oferta (`turma_curso.py:444`, `:521`, `:594`; `turmas.py:1844`, `:1945`).
 
-**Trocar o professor da oferta no meio do curso** (estado antes da E2, 28/10/2026): era permitido por duas rotas — `turma_oferta_editar` (`turmas.py:2194-2225`, via `_dados_oferta_form:2043-2052`) e `editar_turma` (grava `turma.professor_id` em `:1844` e espelha na oferta única em `:1945`) — **sem exigir professor** e **sem confirmação** sobre lançamentos existentes (a confirmação de `:1819-1835` cobria só agenda e datas). Desde a E2 (29/10/2026) a obrigatoriedade, a confirmação e o log do anterior e do novo estão em vigor (§8.21). Autoria do lançamento (inalterada): `frequencia` **não tem** coluna de autor; `registro_aula.instrutor_id` é **sobrescrito** a cada salvamento (`utils/logica.py:744`); `conselho_classe.instrutor_id` só é gravado no fechamento final (`conselho.py:963`) e nasce nulo no lançamento normal (`:766-772`); `conselho_resposta` não tem `turma_curso_id` nem autor. A troca já gerava `LogAcao` (`Alterar TurmaCurso`), mas `detalhes=repr(obj)` (`models/auditoria_listener.py:71`) produz `<TurmaCurso 14>` — **sem o valor anterior**; a entrada nova da troca carrega os dois professores (§8.21), sem alterar o formato das demais.
+**Trocar o professor da oferta no meio do curso** (estado antes da E2, 28/10/2026): era permitido por duas rotas — `turma_oferta_editar` (`turmas.py:2194-2225`, via `_dados_oferta_form:2043-2052`) e `editar_turma` (grava `turma.professor_id` em `:1844` e espelha na oferta única em `:1945`) — **sem exigir professor** e **sem confirmação** sobre lançamentos existentes (a confirmação de `:1819-1835` cobria só agenda e datas). Desde a E2 (29/10/2026) a obrigatoriedade, a confirmação e o log do anterior e do novo estão em vigor (§8.21). Autoria do lançamento (**atualizada pela F1, 30/10/2026**): `frequencia.autor_id/autor_nome` e `conselho_resposta.autor_id/autor_nome` guardam o **último** usuário que salvou (§8.24); `registro_aula.instrutor_id` continua **sobrescrito** a cada salvamento (`utils/logica.py:744`); `conselho_classe.instrutor_id` só é gravado no fechamento final (`conselho.py:963`) e nasce nulo no lançamento normal (`:766-772`). A troca já gerava `LogAcao` (`Alterar TurmaCurso`), mas `detalhes=repr(obj)` (`models/auditoria_listener.py:71`) produz `<TurmaCurso 14>` — **sem o valor anterior**; a entrada nova da troca carrega os dois professores (§8.21), sem alterar o formato das demais.
 
 **Higiene (T2, commit `72e9d40`):** removidos os imports sem uso `RegistroAula`/`User` de `app/registros/core.py` (F401) e 9 atribuições a variáveis nunca lidas em `tests/` (F841), preservando as chamadas que preparam o cenário. Nenhum comportamento alterado: suíte **1006 → 1006 passed**.
 
@@ -1341,6 +1349,19 @@ Rodada de fechamento `docs/Relatórios/G1P2_Fechamento_NotNull.md`. A trava de s
 - **Migration `d6e7f8a9b0c1` (E2):** `professor_id` NOT NULL em `turma_curso`, com pré-checagem somente leitura que recusa aplicar com qualquer NULL (RuntimeError em português com os ids — padrão `f6a7b8c9d0e1`), idempotência por inspeção e downgrade para nullable. Protocolo completo (backup, upgrade, `\d`, downgrade, upgrade) **primeiro no ensaio, depois no principal**; head `d6e7f8a9b0c1` conferido nos dois bancos. Backups `*_pre_notnull_professor.sql`. Modelo alinhado (`nullable=False`); índice `ix_turma_curso_professor_id` já existia.
 - **Efeito:** a obrigatoriedade deixa de depender só do serviço/formulário — INSERT bruto fora das rotas passa a ser recusado pelo banco. Histórico intocado: nenhuma linha foi corrigida ou atribuída; as três ofertas simplesmente deixaram de existir.
 - **Testes:** `tests/test_notnull_professor_oferta.py` (3) — INSERT bruto sem professor cai com `IntegrityError`, com professor passa, e guarda de coerência modelo × migration. Turmas 12/13 sem oferta ativa continuam legadas e acessíveis pelo caminho antigo (nenhum teste quebrado pela mudança de nullable).
+
+### 8.24 F1 — autor do lançamento em `frequencia` e `conselho_resposta` (30/10/2026)
+
+Rodada `docs/Relatórios/F1_AutorLancamento.md`. As duas tabelas de lançamento não tinham nenhum rastro de autoria (`registro_aula.instrutor_id` e `conselho_classe.instrutor_id` nunca cobriram a pauta nem a resposta do conselho). A F1 acrescenta `autor_id` (FK → `user`, `ON DELETE SET NULL`) + `autor_nome` (`String(100)`, snapshot) nas duas.
+
+- **Regra:** o autor é SEMPRE o **último usuário que salvou a linha** — não existe autor original (decisão do responsável). Em `frequencia`, "alterar" = mudar o **conceito** (mexer só no Valor do Esportista não conta); em `conselho_resposta`, "alterar" = mudar o **texto**. Regravar valor idêntico **não** troca o autor.
+- **Contextos sem usuário:** scripts (`scripts/semear_roteiro_manual.py`, `ensaio_l4_1_reativacao.py`, `verificar_sinal_updated_at.py`) e sementes de teste gravam **NULL** — nenhum autor é inventado (`app/utils/autor.py::autor_do_lancamento`).
+- **Histórico:** as 54 linhas de `frequencia` e as 78 de `conselho_resposta` do principal continuam NULL (sem backfill).
+- **Por que não `AuditoriaMixin`:** herdar o mixin faria o listener de `before_flush` gravar um `LogAcao` por linha de frequência a cada salvamento e um `updated_at` disparado por qualquer atributo. As colunas novas repetem o **formato** (id + snapshot), sem o efeito colateral.
+- **Sem índice em `autor_id`:** nenhuma consulta lê autor hoje (tela, BI, relatório ou impressão). Sem exibição, sem permissão nova e sem mudança no `POST /frequencia` ou no conselho.
+- **Escrita:** `app/utils/logica.py::salvar_frequencia` (criação sempre; troca só na mudança de conceito) e `app/conselho.py::salvar_conselho` (criação sempre; troca só na mudança do texto). `avaliar_turma` grava `TurmaCurso.avaliacao_*` e o fechamento grava `ConselhoClasse` — nenhum dos dois escreve `conselho_resposta`.
+- **Migration `c9d0e1f2a3b4`:** aditiva e idempotente por inspeção; upgrade só adiciona, downgrade só remove. Protocolo completo (backup, upgrade, `\d`, downgrade, upgrade) **primeiro no ensaio, depois no principal**; head `c9d0e1f2a3b4` nos dois bancos. Backups `*_pre_autor_lancamento.sql`.
+- **Testes:** `tests/test_f1_autor_lancamento.py` (12) — criação, troca por outro usuário, regravação idêntica, histórico NULL, FK `SET NULL` + linha sobrevivendo à exclusão do usuário, contexto sem usuário e ausência de SELECT por linha (≤1 na tabela `user` no POST com 3 alunos). Ensaio no `pautaon_ensaio` (oferta 45 da semente M1) com troca de autor e `SET NULL` reais, banco devolvido ao estado original.
 
 ---
 
@@ -1671,9 +1692,11 @@ Rodada de fechamento `docs/Relatórios/G1P2_Fechamento_NotNull.md`. A trava de s
 | `7c1d2e3f4a5b` | `5730d7c594ba` | **H5b-A**: aperta `ck_tch_dia` de 0–6 para 0–5; pré-checagem read-only recusa dia 6 listando ids; downgrade volta a 0–6 | ✅       |
 | `8d2e3f4a5b6c` | `7c1d2e3f4a5b` | **H5b-B**: drop das 6 colunas escalares de agenda (`turma`/`turma_curso`); pré-checagem read-only de oferta sem grade; downgrade recria colunas e recompõe a projeção da grade (perda documentada) | ✅       |
 | `b7c8d9e0f1a2` | `8d2e3f4a5b6c` | **A1 — Valores do Esportista**: tabela `valor_esportista` (FK unidade; UNIQUE funcional `lower(nome)`+`unidade_id`) + `frequencia.valor_esportista_id` (nullable, FK `ON DELETE SET NULL`, índice); sem backfill. Downgrade remove só a feature, preservando as linhas de `frequencia` | ✅       |
-| `c8d9e0f1a2b3` | `b7c8d9e0f1a2` | **A1 — Atividades da aula**: `registro_aula.atividades` (text, nullable, sem backfill); downgrade remove só a coluna, preservando as linhas. **Aplicada no principal em 28/10/2026** (**head atual**) | ✅       |
+| `c8d9e0f1a2b3` | `b7c8d9e0f1a2` | **A1 — Atividades da aula**: `registro_aula.atividades` (text, nullable, sem backfill); downgrade remove só a coluna, preservando as linhas. **Aplicada no principal em 28/10/2026** | ✅       |
+| `d6e7f8a9b0c1` | `e1f2a3b4c5d6` | **G1/P2**: `turma_curso.professor_id` **NOT NULL**; pré-checagem read-only recusa com `RuntimeError` (ids) se houver NULL; idempotência por inspeção; downgrade volta a nullable (§8.23) | ✅       |
+| `c9d0e1f2a3b4` | `d6e7f8a9b0c1` | **F1 — autor do lançamento**: `autor_id` (FK `user`, `ON DELETE SET NULL`, sem índice) + `autor_nome` (varchar(100)) em `frequencia` e `conselho_resposta`; sem backfill; downgrade remove só as colunas (§8.24) | ✅       |
 
-> **Head atual:** `c8d9e0f1a2b3` (A1 — Atividades da aula). `flask db heads` devolve apenas esse hash; `b7c8d9e0f1a2` (A1 — Valores do Esportista), `8d2e3f4a5b6c` (H5b-B), `7c1d2e3f4a5b` (H5b-A) e `5730d7c594ba` (H1) são as revisões anteriores.
+> **Head atual:** `c9d0e1f2a3b4` (F1 — autor do lançamento). `flask db heads` devolve apenas esse hash; `d6e7f8a9b0c1` (G1/P2), `c8d9e0f1a2b3` (A1 — Atividades da aula), `b7c8d9e0f1a2` (A1 — Valores do Esportista), `8d2e3f4a5b6c` (H5b-B), `7c1d2e3f4a5b` (H5b-A) e `5730d7c594ba` (H1) são as revisões anteriores.
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 
@@ -1868,6 +1891,16 @@ tabela estruturada, e não duplicados nesse JSON.
 - ~~**H5a** — **colunas escalares sem uso**: nenhum código de `app/`/`scripts/` lê ou escreve `Turma`/`TurmaCurso.dias_semana/hora_inicio/hora_fim`; projeção/espelho/fallbacks removidos, testes migrados e guarda AST.~~ **Concluída (26/10/2026, commits `9a3ae35`/`f0891a0` + docs)** — preflight 0/0/0/0; **632 passed**; prova por remoção (632 passed + 18 rotas sem 500); scratch 48 verificações/0 divergências (C.H. oferta 14 = 6.300 min); **sem schema**; relatório `docs/Relatórios/H5a_RemoverUsoColunasEscalares.md`.
 - ~~**H5b** — remoção **física** das colunas `turma.dias_semana/hora_inicio/hora_fim` e `turma_curso.dias_semana/hora_inicio/hora_fim` (migration + limpeza de modelos/testes históricos).~~ **Concluída (26/10/2026, head `8d2e3f4a5b6c`)** — duas migrations: `7c1d2e3f4a5b` (CHECK `ck_tch_dia` 0–6 → 0–5, pré-checagem read-only de dia 6) e `8d2e3f4a5b6c` (drop das 6 colunas, pré-checagem read-only de oferta sem grade, modelos limpos). Ensaio no scratch: 0 divergências em 61 comparações, downgrade/re-upgrade verificados (projeção reconstruída com perda documentada) e smoke de escrita no head; **641 passed**, ruff F821 limpo. **Aplicada no principal em 27/10/2026 00:04:55**, com backup pré/pós, conferência 3/5/8 e smoke GET-only (34/35; 500 de `/turmas/lixeira` é pré-existente, template ausente). Relatório `docs/Relatórios/H5b_DropColunasEscalaresCheck.md`.
 **Detalhes conhecidos:** o downgrade de `5730d7c594ba` NÃO reduz o varchar(80) de volta (evita truncar); a migration **foi aplicada no banco principal** em 26/10/2026 (H2-P0, após backup + prova de restore + autorização; tabela órfã vazia criada por `create_all` acidental foi dropada antes do upgrade). O CHECK `ck_tch_dia` do banco passou a admitir **0–5** no H5b-A (`7c1d2e3f4a5b`); o upgrade recusa qualquer dia 6 existente antes do DDL, listando os ids, e o downgrade volta a 0–6. O serviço sempre recusou domingo.
+
+---
+
+### 12.26 F1 — o que ficou fora do autor do lançamento
+
+**Onde:** `frequencia.autor_id/autor_nome`, `conselho_resposta.autor_id/autor_nome`, `registro_aula.instrutor_id`.
+**Pendências (decisão do responsável, 30/10/2026):**
+1. **Exibir o autor em tela** — a coluna existe e é preenchida, mas nenhuma tela/relatório/BI/impressão a lê; falta definir **quem pode ver** (professor, gestão, secretaria, todos).
+2. **Autor original** — a decisão atual guarda só o **último** que salvou: a cada reedição o primeiro lançador é perdido. Para histórico completo seria preciso uma tabela de auditoria de lançamentos, não uma coluna.
+3. **`registro_aula.instrutor_id`** — continua sobrescrito a cada salvamento da pauta, com a mesma limitação de "último que salvou" e sem snapshot do nome; alinhar (ou documentar como autor) numa próxima rodada.
 
 ---
 
