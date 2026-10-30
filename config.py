@@ -20,6 +20,17 @@ def get_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def get_int(name: str, default: int) -> int:
+    """Lê um inteiro do ambiente sem derrubar a aplicação por valor inválido."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
+
+
 #: Tamanho mínimo exigido para ``SECRET_KEY`` (S1-01).
 SECRET_KEY_MINIMO = 32
 
@@ -37,6 +48,32 @@ def _resolver_app_env() -> str:
     """
     valor = os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development"
     return valor.strip().lower()
+
+
+def _app_env_explicito() -> str | None:
+    """Valor de ``APP_ENV`` quando o operador o declarou (ou ``None``).
+
+    Serve para separar "desenvolvimento pedido" de "desenvolvimento por
+    omissão": as decisões de segurança usam o padrão seguro quando ninguém
+    declarou nada. ``FLASK_ENV`` não participa (S1-09).
+    """
+    valor = os.getenv("APP_ENV")
+    if valor is None or not valor.strip():
+        return None
+    return valor.strip().lower()
+
+
+def _resolver_session_cookie_secure() -> bool:
+    """``SESSION_COOKIE_SECURE`` seguro por padrão (S1-09).
+
+    O padrão é ``True`` em qualquer cenário — inclusive quando ``APP_ENV`` não
+    existe no ambiente. Só desliga com ``APP_ENV=development`` declarado e
+    explícito, porque o servidor embarcado roda em HTTP e o navegador
+    descartaria o cookie. ``SESSION_COOKIE_SECURE`` pode sobrepor nos dois
+    sentidos.
+    """
+    padrao = _app_env_explicito() != "development"
+    return get_bool("SESSION_COOKIE_SECURE", padrao)
 
 
 def _resolver_debug(app_env: str) -> bool:
@@ -120,9 +157,17 @@ class Config:
 
     REMEMBER_COOKIE_DURATION = timedelta(hours=8)
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
-    SESSION_COOKIE_SECURE = get_bool("SESSION_COOKIE_SECURE", APP_ENV == "production")
+    SESSION_COOKIE_SECURE = _resolver_session_cookie_secure()
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+
+    # S1-09: ``max-age`` do HSTS em segundos (padrão 180 dias). Só é enviado
+    # em respostas HTTPS; ``0`` desliga o cabeçalho.
+    HSTS_MAX_AGE = get_int("HSTS_MAX_AGE", 15552000)
+
+    # S1-15: liga o ProxyFix. Só deve ser ``true`` quando existe proxy reverso
+    # confiável (IIS/Apache) reescrevendo os cabeçalhos X-Forwarded-*.
+    TRUSTED_PROXY = get_bool("TRUSTED_PROXY", False)
 
     SQLALCHEMY_DATABASE_URI = _get_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False

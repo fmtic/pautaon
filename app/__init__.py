@@ -20,7 +20,12 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     # aplicação não sobe — a checagem fica aqui para que classes de teste possam
     # definir a própria chave sem afrouxar a regra.
     validar_configuracao(app.config)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    # S1-15: o ProxyFix só entra quando existe proxy reverso confiável na frente
+    # (TRUSTED_PROXY=true). Ligado sem proxy, qualquer cliente forja
+    # X-Forwarded-Proto/X-Forwarded-For e o app passa a acreditar em HTTPS,
+    # IP de origem e host que não aconteceram.
+    if app.config.get("TRUSTED_PROXY"):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Configura log em arquivo para captura de erros em produção/WSGI
     try:
@@ -131,9 +136,14 @@ def _register_security_hooks(app: Flask) -> None:
         response.headers.setdefault(
             "Referrer-Policy", "strict-origin-when-cross-origin"
         )
-        if app.config.get("APP_ENV") == "production":
+        # S1-09: HSTS só em resposta HTTPS de verdade (com terminador TLS na
+        # frente o header não adianta: o navegador só o aceita em HTTPS). Sem
+        # includeSubDomains e sem preload de propósito — os subdomínios da
+        # instituição não são geridos por este sistema.
+        max_age = app.config.get("HSTS_MAX_AGE", 15552000)
+        if request.is_secure and max_age:
             response.headers.setdefault(
-                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+                "Strict-Transport-Security", f"max-age={int(max_age)}"
             )
         return response
 

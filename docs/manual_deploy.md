@@ -63,6 +63,91 @@ Dê permissão Total para o usuário local `IIS_IUSRS` e `IUSR` na pasta root do
 iisreset
 ```
 
+### HTTPS, HSTS e proxy reverso (S1-09 / S1-15)
+
+No arranjo atual o **TLS termina no IIS** e o `wfastcgi` entrega a requisição ao
+Flask por HTTP. Consequências, todas deliberadas:
+
+- `SESSION_COOKIE_SECURE` é `true` por padrão e **não** depende de `request.is_secure`
+  — o cookie sai marcado `Secure` mesmo que o app veja HTTP.
+- O cabeçalho `Strict-Transport-Security` só é emitido quando `request.is_secure`
+  é verdadeiro. Sem `TRUSTED_PROXY` o app nunca vê HTTPS e o HSTS **não sai**.
+- O aplicativo **não** redireciona HTTP→HTTPS. Fazer isso no app, atrás de um
+  terminador TLS que não informa o esquema, provoca laço de redirecionamento.
+
+**Não há `includeSubDomains` nem `preload`** no HSTS: os demais subdomínios da
+instituição não são geridos por este sistema. `HSTS_MAX_AGE` (segundos, padrão
+`15552000` = 180 dias) ajusta o `max-age`; `0` desliga o cabeçalho.
+
+#### Ligar o `TRUSTED_PROXY` (só com proxy de verdade)
+
+1. Autorize a variável de servidor no IIS (uma vez, como administrador):
+   ```cmd
+   %windir%\system32\inetsrv\appcmd.exe set config ^
+     -section:system.webServer/rewrite/allowedServerVariables ^
+     /+"[name='HTTP_X_FORWARDED_PROTO']" /commit:apphost
+   ```
+2. No `web.config` do site, antes do handler FastCGI:
+   ```xml
+   <system.webServer>
+     <rewrite>
+       <rules>
+         <rule name="Informar esquema ao app" stopProcessing="true">
+           <match url=".*" />
+           <serverVariables>
+             <set name="HTTP_X_FORWARDED_PROTO" value="https" />
+           </serverVariables>
+           <action type="None" />
+         </rule>
+       </rules>
+     </rewrite>
+   </system.webServer>
+   ```
+3. Em `<appSettings>`, ligue a confiança no proxy:
+   ```xml
+   <add key="TRUSTED_PROXY" value="true" />
+   ```
+4. `iisreset` e confira (abaixo).
+
+> **Risco de ligar sem proxy:** o `ProxyFix` passa a acreditar em
+> `X-Forwarded-Proto`, `X-Forwarded-For` e `X-Forwarded-Host` enviados pelo
+> cliente. Qualquer pessoa forja HTTPS, IP de origem (burlar limite por IP,
+> auditoria) e host (links e redirecionamentos). Só ligue quando o IIS (ou outro
+> proxy confiável) **sobrescreve** esses cabeçalhos — nunca quando o site está
+> exposto direto.
+
+#### Redirecionar HTTP → HTTPS no IIS (não no app)
+
+```xml
+<rule name="Redirecionar para HTTPS" stopProcessing="true">
+  <match url="(.*)" />
+  <conditions>
+    <add input="{HTTPS}" pattern="off" ignoreCase="true" />
+  </conditions>
+  <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+</rule>
+```
+
+Ordem importa: a regra de redirecionamento vem **antes** da que define
+`HTTP_X_FORWARDED_PROTO` (um `302` para `https://` não deve ser marcado como
+HTTPS na requisição original).
+
+#### Como conferir
+
+```powershell
+# 1) HTTP deve redirecionar (301/308) para https
+curl.exe -sI http://pautaon.exemplo.br/ | Select-String "HTTP/|Location"
+
+# 2) HTTPS deve responder 200 e trazer o HSTS
+curl.exe -sI https://pautaon.exemplo.br/login | Select-String "HTTP/|Strict-Transport"
+
+# 3) O cookie de sessão deve sair com Secure
+curl.exe -sI https://pautaon.exemplo.br/login | Select-String "Set-Cookie"
+```
+
+Se o passo 2 não mostrar `Strict-Transport-Security`, o `TRUSTED_PROXY` está
+`false` ou o `HTTP_X_FORWARDED_PROTO` não chegou ao app.
+
 ---
 
 ## 2. Deploy no Apache Web Server (Linux / Ubuntu)

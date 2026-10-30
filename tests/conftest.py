@@ -20,6 +20,7 @@ Nada aqui muda o comportamento dos testes: banco SQLite em memória, schema via
 """
 
 from pathlib import Path
+import os
 import sys
 
 import pytest
@@ -27,6 +28,12 @@ import pytest
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
+
+# A suíte fala HTTP com o `test_client` (não há TLS): com o padrão seguro do
+# `SESSION_COOKIE_SECURE` (True, S1-09) o navegador de teste descartaria o
+# cookie de sessão e todo login falharia. `setdefault` preserva um `APP_ENV`
+# já declarado no ambiente.
+os.environ.setdefault("APP_ENV", "development")
 
 from app import create_app, db  # noqa: E402
 from config import Config  # noqa: E402
