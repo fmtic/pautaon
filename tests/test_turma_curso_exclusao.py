@@ -261,6 +261,7 @@ def test_aluno_disponivel_apos_desativacao():
         oferta_outra = TurmaCurso(
             turma_id=outra.id, curso_id=ids["cA"], unidade_id=ids["u1"],
             ativo=True, principal=True, programa="Teste",
+            professor_id=ids["p1"],
         )
         db.session.add(oferta_outra)
         db.session.flush()

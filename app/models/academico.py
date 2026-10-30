@@ -299,8 +299,9 @@ class TurmaCurso(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     )
 
     # Atributos da oferta (legado: ficavam em Turma; migrados fase a fase).
+    # G1/P2 (E2, migration d6e7f8a9b0c1): professor obrigatório também no schema.
     professor_id: int = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=True,
+        db.Integer, db.ForeignKey('user.id'), nullable=False,
         comment='Professor responsável pela oferta do curso na turma',
     )
     turno: str = db.Column(db.String(20))

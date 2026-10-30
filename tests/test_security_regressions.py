@@ -7,6 +7,7 @@ from app.database import db
 from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, Unidade, User
 from app.registros.shared import assert_unidade_context
 from config import Config
+from _helpers import professor_semente
 
 
 class SQLiteTestConfig(Config):
@@ -169,6 +170,7 @@ def test_perfis_autorizados_podem_desenturmar_na_propria_unidade(client, app, ro
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -229,6 +231,7 @@ def test_professor_nao_pode_desenturmar_na_propria_unidade(client, app):
         oferta = TurmaCurso(
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -290,7 +293,7 @@ def test_perfis_autorizados_podem_enturmar_na_propria_unidade(client, app, role)
         db.session.add(TurmaCurso(
             turma_id=turma.id, curso_id=curso.id,
             unidade_id=unidade.id, ativo=True, principal=True,
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         ))
         db.session.commit()
         user_id = user.id

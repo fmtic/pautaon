@@ -16,6 +16,9 @@ fora do escopo desta parte (registrado no backlog).
 
 from datetime import time, timedelta
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from _helpers import login_as, nova_inscricao, nova_oferta
 from _i1_helpers import conteudo, info
 from test_conselho_oferta import app, client  # noqa: F401
@@ -187,15 +190,22 @@ def test_professor_de_outra_oferta_recebe_403(app, client):
     assert _impressao(client, ids, ids["o2"]).status_code == 403
 
 
-def test_oferta_sem_professor_nao_libera_professor(app, client):
+def test_oferta_nao_pode_ficar_sem_professor_no_banco(app, client):
+    """G1/P2 (d6e7f8a9b0c1): a premissa do teste antigo — oferta com
+    `professor_id` NULL — não existe mais; o banco recusa a atribuição.
+    antigo × novo × motivo: testava o 403 defensivo com oferta sem professor;
+    agora prova o NOT NULL na camada do banco, que elimina o estado."""
     ids = _seed(app)
     with app.app_context():
         turma_curso = db.session.get(TurmaCurso, ids["o1"])
         turma_curso.professor_id = None
-        db.session.commit()
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
 
+    # Intacta, a oferta continua imprimível pelo dono e pelo admin.
     login_as(client, ids["prof_a"], ids["un"])
-    assert _impressao(client, ids, ids["o1"]).status_code == 403
+    assert _impressao(client, ids, ids["o1"]).status_code == 200
 
     login_as(client, ids["admin"], ids["un"])
     assert _impressao(client, ids, ids["o1"]).status_code == 200

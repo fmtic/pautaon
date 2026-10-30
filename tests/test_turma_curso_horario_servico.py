@@ -28,7 +28,7 @@ import pytest
 from sqlalchemy import event
 
 from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
+from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade, User
 from app.services.turma_curso_horario import (
     definir_grade,
     duracao_do_dia,
@@ -78,10 +78,20 @@ def _oferta(**legado):
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um
+    # (email numerado: `_oferta()` pode ser chamada mais de uma vez no teste).
+    professor = User(
+        name="Prof serv", email=f"prof.serv{db.session.query(User).count() + 1}@x.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(professor)
     db.session.flush()
     campos = dict(dias_semana=None, hora_inicio=None, hora_fim=None)
     campos.update(legado)
-    oferta = nova_oferta(turma.id, curso.id, unidade.id, programa="P", **campos)
+    oferta = nova_oferta(
+        turma.id, curso.id, unidade.id, programa="P",
+        professor_id=professor.id, **campos,
+    )
     db.session.commit()
     return oferta
 
@@ -276,7 +286,10 @@ def test_grades_em_lote_uma_consulta(app):
     curso2 = Curso(nome="Curso serv 2", unidade_id=o1.unidade_id, ativo=True)
     db.session.add(curso2)
     db.session.flush()
-    o2 = nova_oferta(o1.turma_id, curso2.id, o1.unidade_id, programa="P2")
+    o2 = nova_oferta(
+        o1.turma_id, curso2.id, o1.unidade_id, programa="P2",
+        professor_id=o1.professor_id,
+    )
     definir_grade(o2, [(1, time(14, 0), time(15, 0))])
     db.session.commit()
 

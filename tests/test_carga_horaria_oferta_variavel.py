@@ -5,6 +5,7 @@ from datetime import date, time
 from sqlalchemy import event
 
 from app import create_app, db
+from _helpers import professor_semente
 from app.models import (
     Curso,
     DiaBloqueado,
@@ -42,6 +43,7 @@ def _oferta(turma, curso, principal, dias, inicio, fim):
         ativo=True,
         principal=principal,
         programa="Teste",
+        professor_id=professor_semente(turma.unidade_id).id,
         data_inicio=inicio,
         data_fim=fim,
     )

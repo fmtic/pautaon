@@ -18,7 +18,7 @@ from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
 from app.services.turma_curso_horario import definir_grade
 from config import Config
 
-from _helpers import nova_oferta
+from _helpers import nova_oferta, professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -76,6 +76,9 @@ def _seed(*, ofertas=1):
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — semente idempotente
+    # (`_seed()` pode rodar mais de uma vez no mesmo teste, com unidades).
+    professor = professor_semente(unidade.id, email="prof.h5b@x.com", nome="Prof H5b")
     db.session.flush()
     ofertas_obj = []
     for i in range(ofertas):
@@ -86,11 +89,12 @@ def _seed(*, ofertas=1):
             db.session.flush()
         ofertas_obj.append(nova_oferta(
             turma.id, c.id, unidade.id, principal=(i == 0), programa="P",
+            professor_id=professor.id,
         ))
     db.session.flush()
     return {
         "unidade": unidade.id, "curso": curso.id, "turma": turma.id,
-        "ofertas": ofertas_obj, "periodo": periodo,
+        "ofertas": ofertas_obj, "periodo": periodo, "prof": professor.id,
     }
 
 

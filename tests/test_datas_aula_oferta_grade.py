@@ -21,7 +21,7 @@ from datetime import date, time, timedelta
 import pytest
 
 from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, Unidade
+from app.models import Curso, Turma, TurmaCurso, Unidade, User
 from app.services.turma_curso import datas_aula_oferta, datas_esperadas_oferta
 from app.services.turma_curso_horario import (
     definir_grade,
@@ -88,9 +88,16 @@ def _setup(*, grade=None, oferta_ini=SEG, oferta_fim=FIM_SEMANA,
         data_inicio=turma_ini, data_fim=turma_fim,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+    professor = User(
+        name=f"Prof {nome}", email=f"prof.{nome}@x.com", role="professor",
+        first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(professor)
     db.session.flush()
     oferta = nova_oferta(
         turma.id, curso.id, unidade.id,
+        professor_id=professor.id,
         data_inicio=oferta_ini, data_fim=oferta_fim,
     )
     if grade:
@@ -192,7 +199,9 @@ def test_dias_da_turma_e_uniao_das_ofertas_ativas(app):
     curso2 = Curso(nome="C2 uniao", unidade_id=o1.unidade_id, ativo=True)
     db.session.add(curso2)
     db.session.flush()
-    o2 = nova_oferta(o1.turma_id, curso2.id, o1.unidade_id)
+    o2 = nova_oferta(
+        o1.turma_id, curso2.id, o1.unidade_id, professor_id=o1.professor_id,
+    )
     definir_grade(o2, [(3, *_h(3))])
     db.session.commit()
     assert dias_da_turma(o1.turma_id) == {1, 3}
@@ -203,7 +212,10 @@ def test_dias_da_turma_ignora_ofertas_inativas(app):
     curso2 = Curso(nome="C2 inat", unidade_id=o1.unidade_id, ativo=True)
     db.session.add(curso2)
     db.session.flush()
-    o2 = nova_oferta(o1.turma_id, curso2.id, o1.unidade_id, ativo=False)
+    o2 = nova_oferta(
+        o1.turma_id, curso2.id, o1.unidade_id,
+        professor_id=o1.professor_id, ativo=False,
+    )
     definir_grade(o2, [(3, *_h(3))])
     db.session.commit()
     assert dias_da_turma(o1.turma_id) == {1}

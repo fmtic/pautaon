@@ -32,7 +32,7 @@ import pytest
 from sqlalchemy import inspect, text
 
 from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
+from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade, User
 from config import Config
 
 from _helpers import nova_oferta
@@ -112,8 +112,15 @@ def _ambiente():
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+    professor = User(
+        name="Prof mig", email=f"prof.mig{db.session.query(User).count() + 1}@x.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(professor)
     db.session.flush()
-    return {"unidade": unidade.id, "curso": curso.id, "turma": turma.id}
+    return {"unidade": unidade.id, "curso": curso.id, "turma": turma.id,
+            "prof": professor.id}
 
 
 def _escalares(tabela, registro_id, *, dias=None, ini=None, fim=None):
@@ -148,6 +155,7 @@ def _oferta_com_curso(
         db.session.add(curso)
         db.session.flush()
         curso_id = curso.id
+    campos.setdefault("professor_id", i["prof"])
     oferta = nova_oferta(i["turma"], curso_id, i["unidade"], **campos)
     _escalares(
         "turma_curso", oferta.id,

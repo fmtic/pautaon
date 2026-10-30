@@ -403,9 +403,11 @@ def test_g3_oferta_desativada_e_ativa_hidden_e_ativa_e_nome_aceito():
         db.session.flush()
         db.session.add_all([
             TurmaCurso(turma_id=turma.id, curso_id=cA.id, unidade_id=unidade.id,
-                       ativo=False, principal=False, programa="Teste"),                 # A desativada
+                       ativo=False, principal=False, programa="Teste",
+                       professor_id=p1.id),                                       # A desativada
             TurmaCurso(turma_id=turma.id, curso_id=cB.id, unidade_id=unidade.id,
-                       ativo=True, principal=True, programa="Teste"),                    # B ativa
+                       ativo=True, principal=True, programa="Teste",
+                       professor_id=p1.id),                                        # B ativa
         ])
         db.session.commit()
         ids = {"resp": resp.id, "turma": turma.id, "cA": cA.id, "cB": cB.id,

@@ -57,7 +57,12 @@ def _base(app):
             role="admin", first_login=False,
         )
         usuario.set_password("SenhaLocal!123")
-        db.session.add_all([un, usuario])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof Freq", email="prof.freq@example.com",
+            role="professor", first_login=False,
+        )
+        db.session.add_all([un, usuario, prof])
         db.session.flush()
         periodo = PeriodoLetivo(
             nome="Periodo Freq", data_inicio=DATA_INI, data_fim=DATA_FIM,
@@ -80,7 +85,7 @@ def _base(app):
             curso = Curso(nome=nome_curso, unidade_id=un.id, ativo=True)
             db.session.add(curso)
             db.session.flush()
-            return nova_oferta(turma.id, curso.id, un.id)
+            return nova_oferta(turma.id, curso.id, un.id, professor_id=prof.id)
 
         alfa = _turma("Turma Alfa")
         o1 = _oferta(alfa, "Curso Alfa 1")

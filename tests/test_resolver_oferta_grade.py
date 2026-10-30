@@ -23,7 +23,7 @@ from app.services.turma_curso import resolver_oferta_lancamento
 from app.services.turma_curso_horario import definir_grade
 from config import Config
 
-from _helpers import nova_oferta
+from _helpers import nova_oferta, professor_semente
 
 SEG = date(2026, 3, 2)
 TER = date(2026, 3, 3)
@@ -73,6 +73,9 @@ def _oferta(unidade, turma, nome_curso, grade, *, ativo=True,
     db.session.flush()
     oferta = nova_oferta(
         turma.id, curso.id, unidade.id,
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — semente compartilhada.
+        professor_id=professor_semente(unidade.id, email="prof.res@x.com",
+                                       nome="Prof res").id,
         ativo=ativo, data_inicio=ini, data_fim=fim,
     )
     definir_grade(oferta, grade)

@@ -40,6 +40,7 @@ from app.services.turma_curso_horario import (
     grades_por_oferta,
 )
 from config import Config
+from _helpers import professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -63,6 +64,7 @@ def app():
 
 def _oferta(turma, curso, principal, grade, **campos):
     """Oferta com grade (linhas ``(dia, ini, fim)``) gravada pelo serviço."""
+    campos.setdefault("professor_id", professor_semente(turma.unidade_id).id)
     oferta = TurmaCurso(
         turma_id=turma.id,
         curso_id=curso.id,
@@ -132,6 +134,7 @@ def _seed(app, variavel=False):
         o_leg = TurmaCurso(
             turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(unidade.id).id,
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(o_leg)

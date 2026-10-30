@@ -27,6 +27,7 @@ from app.models import (
 )
 from app.services.turma_curso_horario import definir_grade
 from config import Config
+from _helpers import professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -56,6 +57,7 @@ def _oferta(turma, curso, principal, grade, centro="Centro A"):
         ativo=True,
         principal=principal,
         programa="Teste",
+        professor_id=professor_semente(turma.unidade_id).id,
         data_inicio=DATA_INI,
         data_fim=DATA_FIM,
         centro_custo=centro,
@@ -120,6 +122,7 @@ def _seed(app, variavel=False):
             TurmaCurso(
                 turma_id=t_leg.id, curso_id=cursos[3].id, unidade_id=unidade.id,
                 ativo=True, principal=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
                 data_inicio=DATA_INI, data_fim=DATA_FIM, centro_custo="Centro A",
             )
         )

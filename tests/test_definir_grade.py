@@ -18,7 +18,7 @@ from datetime import date, time
 import pytest
 
 from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
+from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade, User
 from app.services.turma_curso_horario import definir_grade, grade_da_oferta
 from config import Config
 
@@ -61,8 +61,16 @@ def _oferta():
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+    professor = User(
+        name="Prof grade", email="prof.grade@x.com", role="professor",
+        first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(professor)
     db.session.flush()
-    oferta = nova_oferta(turma.id, curso.id, unidade.id, programa="P")
+    oferta = nova_oferta(
+        turma.id, curso.id, unidade.id, programa="P", professor_id=professor.id,
+    )
     db.session.commit()
     return oferta
 

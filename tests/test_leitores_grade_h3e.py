@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.services.turma_curso_horario import definir_grade, dias_da_turma
 from config import Config
+from _helpers import professor_semente
 
 DATA_INI = date(2026, 3, 2)  # segunda-feira
 DATA_FIM = date(2026, 12, 15)
@@ -72,6 +73,7 @@ def _client(app, user_id, unidade_id=None):
 
 
 def _oferta(turma, curso, principal, grade, **campos):
+    campos.setdefault("professor_id", professor_semente(turma.unidade_id).id)
     oferta = TurmaCurso(
         turma_id=turma.id,
         curso_id=curso.id,

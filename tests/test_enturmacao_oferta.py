@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.services.turma_curso import _alunos_da_oferta
 from config import Config
+from _helpers import professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -241,6 +242,7 @@ def test_oferta_de_outra_turma_recusada(app):
         oferta_outra = TurmaCurso(
             turma_id=outra.id, curso_id=i["cA"], unidade_id=i["unidade"],
             ativo=True, principal=True, programa="Teste",
+            professor_id=professor_semente(i["unidade"]).id,
             data_inicio=DATA_INI, data_fim=DATA_FIM,
         )
         db.session.add(oferta_outra)

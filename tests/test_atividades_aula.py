@@ -45,7 +45,12 @@ def _cenario(app, *, ofertas=1):
             first_login=False, unidade_id=un.id,
         )
         user.set_password("SenhaLocal!123")
-        db.session.add_all([un, user])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof ATV", email="prof.atv@x.com", role="professor",
+            first_login=False, unidade_id=un.id,
+        )
+        db.session.add_all([un, user, prof])
         db.session.flush()
 
         periodo = PeriodoLetivo(
@@ -74,6 +79,7 @@ def _cenario(app, *, ofertas=1):
             ids_ofertas.append(
                 nova_oferta(
                     turma.id, curso.id, un.id, principal=(i == 0),
+                    professor_id=prof.id,
                     dias_semana="Segunda, Terça, Quarta, Quinta, Sexta",
                     hora_inicio=time(8), hora_fim=time(10),
                 ).id

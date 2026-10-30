@@ -60,7 +60,7 @@ def _turma_extra(app, ids, *, nome, unidade_id, com_oferta=True):
             curso = Curso(nome=f"Curso {nome}", unidade_id=unidade_id, ativo=True)
             db.session.add(curso)
             db.session.flush()
-            nova_oferta(turma.id, curso.id, unidade_id)
+            nova_oferta(turma.id, curso.id, unidade_id, professor_id=ids["prof"])
         db.session.commit()
         return turma.id
 
@@ -80,7 +80,9 @@ def _unidade_b_com_turma(app, ids):
         curso_b = Curso(nome="Curso B", unidade_id=un_b.id, ativo=True)
         db.session.add(curso_b)
         db.session.flush()
-        oferta_b = nova_oferta(turma_b.id, curso_b.id, un_b.id)
+        oferta_b = nova_oferta(
+            turma_b.id, curso_b.id, un_b.id, professor_id=ids["prof"],
+        )
         # O aluno da unidade A participa da turma B só para o certificado.
         nova_inscricao(ids["aluno_a"], turma_b.id, oferta_b.id)
         db.session.commit()

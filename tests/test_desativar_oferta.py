@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 
 from app import create_app
 from app.database import db
+from _helpers import professor_semente
 from app.models import (
     Aluno,
     Curso,
@@ -141,7 +142,7 @@ def _seed(periodo="andamento", *, alunos_ativos=1, alunos_inativos=0,
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=(k == 0), turno="Manhã",
             data_inicio=turma.data_inicio, data_fim=turma.data_fim,
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(o)
         db.session.flush()

@@ -36,7 +36,7 @@ from app.registros.core import _alunos_da_oferta
 from app.utils.frequencia import frequencias_lancadas
 from config import Config
 
-from _helpers import aplicar_grade, itens_grade
+from _helpers import aplicar_grade, itens_grade, professor_semente
 
 
 class SQLiteTestConfig(Config):
@@ -85,6 +85,8 @@ def base(app):
         ativo=True,
         principal=True,
         programa="Teste",
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — semente compartilhada.
+        professor_id=professor_semente(unidade.id).id,
     )
     db.session.add(oferta)
 
@@ -158,6 +160,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id,
                 unidade_id=unidade.id, ativo=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oferta)
             db.session.flush()
@@ -199,6 +202,7 @@ def _sem_cenario(pares, cria_outra_turma=False):
             oo = TurmaCurso(
                 turma_id=outra.id, curso_id=oc.id,
                 unidade_id=unidade.id, ativo=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oo)
             info["outra_oferta_id"] = oo.id
@@ -320,7 +324,7 @@ def test_adicionar_oferta_turma_encerrada_mantem_heranca_e_nao_recebe_hoje(app):
     # Oferta A já existente (principal), sem dias/hora para não conflitar.
     db.session.add(TurmaCurso(
         turma_id=turma.id, curso_id=curso_a.id, unidade_id=unidade.id,
-        ativo=True, principal=True, programa="Teste",
+        ativo=True, principal=True, programa="Teste", professor_id=prof.id,
     ))
     db.session.commit()
 
@@ -377,7 +381,7 @@ def _seed_servico(*, ofertas):
             turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
             ativo=True, principal=(i == 0),
             data_inicio=cfg.get("ini"), data_fim=cfg.get("fim"),
-            programa="Teste",
+            programa="Teste", professor_id=professor_semente(unidade.id).id,
         )
         db.session.add(oferta)
         db.session.flush()
@@ -437,6 +441,7 @@ def _mk_rota(ofertas_cfg, *, data=DATA_ROTA):
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
                 ativo=True, principal=(i == 0),
                 data_inicio=data, data_fim=data, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
             )
             db.session.add(oferta)
             db.session.flush()

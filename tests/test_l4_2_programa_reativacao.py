@@ -75,7 +75,12 @@ def _seed(
             first_login=False,
         )
         admin.set_password("SenhaLocal!123")
-        db.session.add_all([un, admin])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof L42", email="prof.l42@example.com", role="professor",
+            first_login=False,
+        )
+        db.session.add_all([un, admin, prof])
         db.session.flush()
 
         periodo = PeriodoLetivo(
@@ -100,7 +105,7 @@ def _seed(
             db.session.flush()
             return nova_oferta(
                 turma.id, curso.id, un.id,
-                programa=programa, principal=principal,
+                programa=programa, principal=principal, professor_id=prof.id,
             )
 
         a = _oferta("A", programa_a, not b_principal)

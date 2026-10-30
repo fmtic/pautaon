@@ -65,7 +65,7 @@ def _oferta(app, ids, turma_id, nome_curso, *, programa="Programa Base"):
         db.session.flush()
         oferta = nova_oferta(
             turma_id, curso.id, ids["un_a"],
-            programa=programa, principal=False,
+            programa=programa, principal=False, professor_id=ids["prof"],
         )
         db.session.commit()
         return oferta.id
@@ -135,7 +135,12 @@ def _semear(app, *, com_turmas=True):
             role="admin", first_login=False,
         )
         usuario.set_password("SenhaLocal!123")
-        db.session.add_all([un_a, usuario])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof B7", email="prof.b7@example.com",
+            role="professor", first_login=False,
+        )
+        db.session.add_all([un_a, usuario, prof])
         db.session.flush()
         periodo = PeriodoLetivo(
             nome="Periodo B7", data_inicio=DATA_INI, data_fim=DATA_FIM,
@@ -147,6 +152,7 @@ def _semear(app, *, com_turmas=True):
             "user_id": usuario.id,
             "un_a": un_a.id,
             "periodo": periodo.id,
+            "prof": prof.id,
         }
 
     if not com_turmas:

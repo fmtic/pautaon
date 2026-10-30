@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app import create_app, db
+from _helpers import professor_semente
 from app.models import (
     Aluno,
     Curso,
@@ -122,19 +123,24 @@ def cenario(app):
 
     # Ofertas (TurmaCurso): turma1 e turma3 com 1 oferta; turma2 com 2.
     o1 = TurmaCurso(turma_id=turma1.id, curso_id=curso_x.id,
-                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+                    professor_id=professor_semente(unidade.id).id)
     o2 = TurmaCurso(turma_id=turma2.id, curso_id=curso_x.id,
-                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+                    professor_id=professor_semente(unidade.id).id)
     o3 = TurmaCurso(turma_id=turma2.id, curso_id=curso_y.id,
-                    unidade_id=unidade.id, ativo=True, principal=False, programa="Teste")
+                    unidade_id=unidade.id, ativo=True, principal=False, programa="Teste",
+                    professor_id=professor_semente(unidade.id).id)
     o4 = TurmaCurso(turma_id=turma3.id, curso_id=curso_y.id,
-                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste")
+                    unidade_id=unidade.id, ativo=True, principal=True, programa="Teste",
+                    professor_id=professor_semente(unidade.id).id)
     # Segunda oferta ativa de turma1 (curso distinto): permite ao aluno a6 ter
     # duas inscrições ativas sem violar uix_inscricao_ativa_aluno_oferta
     # (índice parcial por (aluno_id, turma_curso_id)). Serve para provar que
     # o helper conta LINHAS (media/total) enquanto as métricas distinct contam 1.
     o1b = TurmaCurso(turma_id=turma1.id, curso_id=curso_z.id,
-                     unidade_id=unidade.id, ativo=True, principal=False, programa="Teste")
+                     unidade_id=unidade.id, ativo=True, principal=False, programa="Teste",
+                     professor_id=professor_semente(unidade.id).id)
     db.session.add_all([o1, o2, o3, o4, o1b])
     db.session.flush()
 
@@ -280,6 +286,7 @@ def test_regressao_sem_turma_desativada(app):
     oferta = TurmaCurso(
         turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
         ativo=True, principal=True, programa="Teste",
+        professor_id=professor_semente(unidade.id).id,
     )
     db.session.add(oferta)
     aluno = Aluno(nome="A", unidade_id=unidade.id, ativo=True)

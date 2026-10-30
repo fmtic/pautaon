@@ -42,6 +42,7 @@ from app.services.enturmacao import (
     enturmar_aluno,
 )
 from config import Config
+from _helpers import professor_semente
 
 DATA_INI = date(2026, 3, 2)
 DATA_FIM = date(2026, 12, 15)
@@ -99,7 +100,8 @@ def _seed_turma(unidade, curso, nome="Turma M2"):
 def _seed_oferta(turma, curso, unidade, *, ativo=True, principal=False):
     oferta = TurmaCurso(
         turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
-        ativo=ativo, principal=principal, professor_id=None,
+        ativo=ativo, principal=principal,
+        professor_id=professor_semente(unidade.id).id,
         turno="Manhã",
         data_inicio=DATA_INI, data_fim=DATA_FIM, programa="Teste",
     )

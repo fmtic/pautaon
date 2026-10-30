@@ -26,7 +26,7 @@ from app.models.enums import ConceitoFrequencia
 from app.utils.frequencia import contar_pendencias_frequencia
 from config import Config
 
-from _helpers import aplicar_grade
+from _helpers import aplicar_grade, professor_semente
 
 HOJE = date.today()
 _DIAS = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
@@ -81,6 +81,7 @@ def _seed(app, ofertas_cfg):
             oferta = TurmaCurso(
                 turma_id=turma.id, curso_id=curso.id, unidade_id=unidade.id,
                 ativo=True, programa="Teste",
+                professor_id=professor_semente(unidade.id).id,
                 data_inicio=cfg["data_inicio"], data_fim=cfg["data_fim"],
             )
             db.session.add(oferta)

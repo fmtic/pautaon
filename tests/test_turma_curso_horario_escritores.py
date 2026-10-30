@@ -153,6 +153,7 @@ def test_adicionar_oferta_herda_agenda_da_grade_da_outra_oferta(app):
         turma = _get(Turma, ids["turma"])
         primeira = nova_oferta(
             turma.id, ids["c1"], ids["unidade"], principal=True,
+            professor_id=ids["p1"],
             dias_semana="Segunda, Quarta", hora_inicio=time(8), hora_fim=time(10),
         )
         db.session.commit()

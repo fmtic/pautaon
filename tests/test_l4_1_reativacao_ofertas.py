@@ -63,7 +63,12 @@ def _setup(app, client, *, b_com_aluno=False, b_principal=False, encerrar_period
             first_login=False,
         )
         admin.set_password("SenhaLocal!123")
-        db.session.add_all([un, admin])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof L41", email="prof.l41@example.com", role="professor",
+            first_login=False,
+        )
+        db.session.add_all([un, admin, prof])
         db.session.flush()
 
         fim = date.today() - timedelta(days=5) if encerrar_periodo else DATA_FIM
@@ -86,7 +91,9 @@ def _setup(app, client, *, b_com_aluno=False, b_principal=False, encerrar_period
             curso = Curso(nome=f"Curso {nome}", unidade_id=un.id, ativo=True)
             db.session.add(curso)
             db.session.flush()
-            return nova_oferta(turma.id, curso.id, un.id, principal=principal)
+            return nova_oferta(
+                turma.id, curso.id, un.id, principal=principal, professor_id=prof.id,
+            )
 
         a = _oferta("A", not b_principal)
         b = _oferta("B", b_principal)
@@ -113,6 +120,7 @@ def _setup(app, client, *, b_com_aluno=False, b_principal=False, encerrar_period
             "un": un.id, "admin": admin.id, "periodo": periodo.id,
             "turma": turma.id, "a": a.id, "b": b.id,
             "ana": ana.id, "bo": bo.id if bo else None, "insc_a": insc_a.id,
+            "prof": prof.id,
         }
 
     _login(client, dados["admin"], dados["un"])
@@ -442,7 +450,10 @@ def _excluida_sem_rota(app, dados, nome):
         curso = Curso(nome=f"Curso {nome}", unidade_id=dados["un"], ativo=True)
         db.session.add(curso)
         db.session.flush()
-        nova_oferta(turma.id, curso.id, dados["un"], principal=True, ativo=False)
+        nova_oferta(
+            turma.id, curso.id, dados["un"],
+            principal=True, ativo=False, professor_id=dados["prof"],
+        )
         db.session.commit()
 
 
@@ -528,7 +539,10 @@ def test_p4_marcador_nao_altera_comportamento_do_excluir_turma(app, client):
         curso = Curso(nome="Curso exclusão física", unidade_id=dados["un"], ativo=True)
         db.session.add(curso)
         db.session.flush()
-        nova_oferta(turma.id, curso.id, dados["un"], principal=True)
+        nova_oferta(
+            turma.id, curso.id, dados["un"],
+            principal=True, professor_id=dados["prof"],
+        )
         tid = turma.id
         db.session.commit()
     client.post(f"/turma/excluir/{tid}")
@@ -589,7 +603,18 @@ def _seed_perfil(app, role):
         curso = Curso(nome="Curso Perfil", unidade_id=un.id, ativo=True)
         db.session.add(curso)
         db.session.flush()
-        oferta = nova_oferta(turma.id, curso.id, un.id, principal=True, ativo=inativa)
+        # A identidade do teste nasce antes da oferta: G1/P2 (d6e7f8a9b0c1)
+        # exige professor na oferta — quem opera é o usuário do cenário.
+        usuario = User(
+            name=f"Perfil {role}", email=f"perfil.{role}.l41@example.com",
+            role=role, first_login=False, unidade_id=un.id,
+        )
+        db.session.add(usuario)
+        db.session.flush()
+        oferta = nova_oferta(
+            turma.id, curso.id, un.id,
+            principal=True, ativo=inativa, professor_id=usuario.id,
+        )
         aluno = Aluno(nome="Aluno Perfil", unidade_id=un.id, ativo=True)
         db.session.add(aluno)
         db.session.flush()
@@ -602,11 +627,6 @@ def _seed_perfil(app, role):
             aluno_id=aluno.id, turma_id=turma.id, turma_curso_id=oferta.id,
             data=date(2026, 3, 2), conceito="A", unidade_id=un.id,
         ))
-        usuario = User(
-            name=f"Perfil {role}", email=f"perfil.{role}.l41@example.com",
-            role=role, first_login=False, unidade_id=un.id,
-        )
-        db.session.add(usuario)
         db.session.commit()
         return {
             "un": un.id, "turma": turma.id, "oferta": oferta.id,

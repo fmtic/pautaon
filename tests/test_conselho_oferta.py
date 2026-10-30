@@ -124,7 +124,12 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
 
         aluno_a = Aluno(nome="Aluno Ana", unidade_id=un_a.id, ativo=True)
         aluno_b = Aluno(nome="Aluno Beto", unidade_id=un_a.id, ativo=True)
-        db.session.add_all([usuario, periodo, turma, aluno_a, aluno_b])
+        # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+        prof = User(
+            name="Prof D52", email="prof.d52@example.com", role="professor",
+            first_login=False, unidade_id=un_a.id,
+        )
+        db.session.add_all([usuario, periodo, turma, aluno_a, aluno_b, prof])
         db.session.flush()
 
         n_ativas = ofertas if isinstance(ofertas, int) else 1
@@ -135,7 +140,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             db.session.flush()
             o = nova_oferta(turma.id, curso.id, un_a.id,
                             programa=f"Programa {i + 1}",
-                            principal=(i == 0))
+                            professor_id=prof.id, principal=(i == 0))
             oferta_ids.append(o.id)
 
         oferta_inativa_id = None
@@ -144,7 +149,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             db.session.add(curso)
             db.session.flush()
             oi = nova_oferta(turma.id, curso.id, un_a.id, programa="Programa X",
-                             ativo=False)
+                             professor_id=prof.id, ativo=False)
             oferta_inativa_id = oi.id
 
         db.session.commit()
@@ -155,6 +160,7 @@ def _setup(app, *, ofertas=1, role="admin", turma_b=False, unidade="A"):
             "turma": turma.id,
             "aluno_a": aluno_a.id,
             "aluno_b": aluno_b.id,
+            "prof": prof.id,
             "ofertas": oferta_ids,
             "oferta_inativa": oferta_inativa_id,
         }
@@ -249,7 +255,7 @@ def test_lancamento_oferta_de_outra_turma_recusada(client, app):
         db.session.add(turma2)
         db.session.flush()
         outra_oferta = nova_oferta(turma2.id, curso2.id, ids["un_a"],
-                                   programa="Programa Z")
+                                   programa="Programa Z", professor_id=ids["prof"])
         outra_oferta_id = outra_oferta.id
         db.session.commit()
     _loga(client, ids, unidade_id=ids["un_a"])

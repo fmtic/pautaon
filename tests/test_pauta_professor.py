@@ -31,8 +31,17 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
             first_login=False,
             unidade_id=unidade.id,
         )
+        # A Turma B precisa existir com outro dono: a premissa do teste é que
+        # o professor logged NÃO participa daquela oferta.
+        professor_outra = User(
+            name="Professor da Turma B",
+            email="pauta.professor.b@example.com",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
         curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
-        db.session.add_all([professor, curso])
+        db.session.add_all([professor, professor_outra, curso])
         db.session.flush()
 
         turma_associada = Turma(
@@ -78,7 +87,7 @@ def test_professor_pauta_mostra_somente_alunos_da_turma_associada():
         )
         oferta_nao_assoc = TurmaCurso(
             turma_id=turma_nao_associada.id, curso_id=curso.id,
-            unidade_id=unidade.id,
+            unidade_id=unidade.id, professor_id=professor_outra.id,
             ativo=True, principal=True, programa="Teste",
             data_inicio=date(2026, 1, 5), data_fim=date(2026, 12, 21),
         )

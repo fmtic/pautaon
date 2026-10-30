@@ -24,6 +24,9 @@ do modelo nunca recebe as colunas escalares.
 ``nova_inscricao`` cria e persiste uma ``Inscricao`` sempre vinculada a uma
 oferta (``turma_curso_id`` obrigatório).
 
+``nova_oferta`` exige professor (G1/P2, ``d6e7f8a9b0c1``): quem não passa
+``professor_id=`` reusa o ``professor_semente`` da unidade.
+
 ``login_as`` fixa a identidade do ``test_client`` e **descarta o cache do
 Flask-Login em ``g``** — necessário quando o teste troca de perfil no meio.
 """
@@ -31,7 +34,7 @@ Flask-Login em ``g``** — necessário quando o teste troca de perfil no meio.
 from flask import g, has_app_context
 
 from app import db
-from app.models import Inscricao, TurmaCurso
+from app.models import Inscricao, TurmaCurso, User
 from app.services.turma_curso_horario import definir_grade, grade_da_oferta
 from app.utils.dias_semana import csv_para_weekdays
 
@@ -61,6 +64,24 @@ def login_as(client, user, unidade_id=None):
         sess["_fresh"] = True
         if unidade_id is not None:
             sess["unidade_id"] = unidade_id
+
+
+def professor_semente(unidade_id=None, *, email="prof.semente@x.com", nome="Prof Semente"):
+    """Garante um ``User`` professor e devolve a linha (idempotente por email).
+
+    G1/P2 (``d6e7f8a9b0c1``): ``turma_curso.professor_id`` é NOT NULL — sementes
+    que criam mais de uma oferta por teste usam este professor compartilhado em
+    vez de criar um por oferta (o email é único globalmente).
+    """
+    prof = User.query.filter_by(email=email).first()
+    if prof is None:
+        prof = User(
+            name=nome, email=email, role="professor",
+            first_login=False, unidade_id=unidade_id,
+        )
+        db.session.add(prof)
+        db.session.flush()
+    return prof
 
 
 def itens_grade(dias_semana, hora_inicio, hora_fim):
@@ -114,13 +135,14 @@ def nova_oferta(
     ativo=True,
     principal=False,
     salvar=True,
+    professor_id=None,
     dias_semana=None,
     hora_inicio=None,
     hora_fim=None,
     grade=None,
     **campos,
 ):
-    """Cria uma ``TurmaCurso`` com ``programa`` preenchido (NOT NULL).
+    """Cria uma ``TurmaCurso`` com ``programa`` e ``professor_id`` preenchidos.
 
     A agenda NUNCA vai para o construtor: ``dias_semana``/``hora_inicio``/
     ``hora_fim`` (ou ``grade=[(dia, início, fim), ...]``) viram linhas de
@@ -128,12 +150,26 @@ def nova_oferta(
 
     Aceita ``salvar=False`` apenas para montar o objeto sem gravar (ex.: quando
     o teste quer forçar um IntegrityError no commit).
+
+    ``professor_id`` (G1/P2, migration `d6e7f8a9b0c1`):
+    antigo × novo × motivo — antes a semente podia omitir o professor (coluna
+    nullable, estado que só existia como dado de teste); agora a coluna é
+    NOT NULL no schema e no modelo. Quem não informa o professor reusa o
+    `professor_semente` da unidade (idempotente por email) — sementes que
+    exigem um professor específico passam `professor_id=` explicitamente.
     """
+    if professor_id is None:
+        professor_id = campos.pop("professor_id", None)
+    else:
+        campos.pop("professor_id", None)
+    if professor_id is None:
+        professor_id = professor_semente(unidade_id).id
     oferta = TurmaCurso(
         turma_id=turma_id,
         curso_id=curso_id,
         unidade_id=unidade_id,
         programa=programa,
+        professor_id=professor_id,
         ativo=ativo,
         principal=principal,
         **campos,

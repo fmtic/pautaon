@@ -58,6 +58,13 @@ def base(app):
         role="admin", first_login=False, unidade_id=unidade.id,
     )
     db.session.add(admin)
+    # G1/P2 (d6e7f8a9b0c1): turma_curso.professor_id é NOT NULL — a semente
+    # entrega um professor para as ofertas construídas nos testes.
+    prof = User(
+        name="Professor Base", email="prof.base@example.com",
+        role="professor", first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(prof)
 
     curso1 = Curso(nome="Carpintaria", unidade_id=unidade.id, ativo=True)
     curso2 = Curso(nome="Mecânica", unidade_id=unidade.id, ativo=True)
@@ -75,6 +82,7 @@ def base(app):
         "curso2": curso2.id,
         "turma1": turma1.id,
         "turma2": turma2.id,
+        "prof": prof.id,
     }
 
 
@@ -83,7 +91,7 @@ def test_oferta_unica_sem_principal(base):
     oferta = TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     )
     db.session.add(oferta)
     db.session.commit()
@@ -98,14 +106,14 @@ def test_mesmo_curso_nao_pode_repetir_na_mesma_turma(base):
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     ))
     db.session.commit()
 
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     ))
     with pytest.raises(IntegrityError):
         db.session.commit()
@@ -116,9 +124,11 @@ def test_mesmo_curso_em_turmas_diferentes_e_permitido(base):
     """O mesmo curso pode ser ofertado em turmas distintas."""
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
-                   unidade_id=base["unidade_id"], ativo=True, programa="Teste"),
+                   unidade_id=base["unidade_id"], ativo=True, programa="Teste",
+                   professor_id=base["prof"]),
         TurmaCurso(turma_id=base["turma2"], curso_id=base["curso1"],
-                   unidade_id=base["unidade_id"], ativo=True, programa="Teste"),
+                   unidade_id=base["unidade_id"], ativo=True, programa="Teste",
+                   professor_id=base["prof"]),
     ])
     db.session.commit()
 
@@ -130,10 +140,10 @@ def test_multiplos_cursos_com_um_exato_principal(base):
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
                    principal=True, unidade_id=base["unidade_id"], ativo=True,
-                   programa="Teste"),
+                   programa="Teste", professor_id=base["prof"]),
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso2"],
                    principal=False, unidade_id=base["unidade_id"], ativo=True,
-                   programa="Teste"),
+                   programa="Teste", professor_id=base["prof"]),
     ])
     db.session.commit()
 
@@ -150,14 +160,14 @@ def test_nao_pode_haver_dois_principais_na_mesma_turma(base):
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=True, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     ))
     db.session.commit()
 
     db.session.add(TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso2"],
         principal=True, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     ))
     with pytest.raises(IntegrityError):
         db.session.commit()
@@ -169,10 +179,10 @@ def test_principal_pode_repetir_em_turmas_diferentes(base):
     db.session.add_all([
         TurmaCurso(turma_id=base["turma1"], curso_id=base["curso1"],
                    principal=True, unidade_id=base["unidade_id"], ativo=True,
-                   programa="Teste"),
+                   programa="Teste", professor_id=base["prof"]),
         TurmaCurso(turma_id=base["turma2"], curso_id=base["curso1"],
                    principal=True, unidade_id=base["unidade_id"], ativo=True,
-                   programa="Teste"),
+                   programa="Teste", professor_id=base["prof"]),
     ])
     db.session.commit()
 
@@ -184,7 +194,7 @@ def test_inscricao_vinculada_a_oferta(base):
     oferta = TurmaCurso(
         turma_id=base["turma1"], curso_id=base["curso1"],
         principal=False, unidade_id=base["unidade_id"], ativo=True,
-        programa="Teste",
+        programa="Teste", professor_id=base["prof"],
     )
     db.session.add(oferta)
     db.session.flush()

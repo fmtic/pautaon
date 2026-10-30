@@ -94,6 +94,7 @@ def _cenario(app, *, alunos=1, ofertas=1, com_valores=True):
             ids_ofertas.append(
                 nova_oferta(
                     turma.id, curso.id, un.id, principal=(indice == 0),
+                    professor_id=professor.id,
                     dias_semana="Segunda, Terça, Quarta, Quinta, Sexta",
                     hora_inicio=time(8), hora_fim=time(10),
                 ).id

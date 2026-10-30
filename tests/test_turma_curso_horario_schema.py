@@ -22,7 +22,7 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
 from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade
+from app.models import Curso, Turma, TurmaCurso, TurmaCursoHorario, Unidade, User
 from config import Config
 
 from _helpers import nova_oferta
@@ -72,9 +72,18 @@ def _seed():
         data_inicio=DATA_INI, data_fim=DATA_FIM,
     )
     db.session.add(turma)
+    # G1/P2 (d6e7f8a9b0c1): oferta exige professor — a semente garante um.
+    professor = User(
+        name="Prof grade", email="prof.grade@x.com", role="professor",
+        first_login=False, unidade_id=unidade.id,
+    )
+    db.session.add(professor)
     db.session.flush()
-    oferta = nova_oferta(turma.id, curso.id, unidade.id, programa="P")
-    return {"unidade": unidade.id, "curso": curso.id, "turma": turma.id, "oferta": oferta.id}
+    oferta = nova_oferta(
+        turma.id, curso.id, unidade.id, programa="P", professor_id=professor.id,
+    )
+    return {"unidade": unidade.id, "curso": curso.id, "turma": turma.id,
+            "oferta": oferta.id, "prof": professor.id}
 
 
 def _linha(oferta_id, dia, ini=None, fim=None):
@@ -102,7 +111,9 @@ def test_mesmo_dia_em_ofertas_diferentes_permitido(app):
     curso2 = Curso(nome="Curso grade 2", unidade_id=i["unidade"], ativo=True)
     db.session.add(curso2)
     db.session.flush()
-    oferta2 = nova_oferta(i["turma"], curso2.id, i["unidade"], programa="P2")
+    oferta2 = nova_oferta(
+        i["turma"], curso2.id, i["unidade"], programa="P2", professor_id=i["prof"],
+    )
     _linha(i["oferta"], 1, time(13, 0), time(15, 0))
     _linha(oferta2.id, 1, time(13, 0), time(15, 0))
     db.session.commit()
