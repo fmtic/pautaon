@@ -59,13 +59,21 @@
                             {% endif %}
                         </td>
                         <td class="text-end pe-3">
-                            <button class="btn btn-sm btn-outline-primary border-0" 
-                                onclick="editConselho({{ c.id }}, '{{ c.nome }}', '{{ c.data_inicio.strftime('%Y-%m-%d') }}', '{{ c.data_fim.strftime('%Y-%m-%d') }}', {{ 'true' if c.conselho_final else 'false' }}, {{ c.periodo_letivo_id }})"
+                            {# S1-07: o nome vem em data-* (atributo é autoescapado pelo Jinja)
+                               e o listener lê o dataset — nenhum dado de usuário entra em
+                               string JS inline, onde a entidade HTML seria decodificada. #}
+                            <button type="button" class="btn btn-sm btn-outline-primary border-0 js-editar-conselho"
+                                data-conselho-id="{{ c.id }}"
+                                data-nome="{{ c.nome }}"
+                                data-inicio="{{ c.data_inicio.strftime('%Y-%m-%d') }}"
+                                data-fim="{{ c.data_fim.strftime('%Y-%m-%d') }}"
+                                data-final="{{ 'true' if c.conselho_final else 'false' }}"
+                                data-periodo-letivo-id="{{ c.periodo_letivo_id }}"
                                 title="Editar">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger border-0" 
-                                onclick="deleteConselho({{ c.id }})"
+                            <button type="button" class="btn btn-sm btn-outline-danger border-0 js-excluir-conselho"
+                                data-conselho-id="{{ c.id }}"
                                 title="Excluir">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -226,5 +234,27 @@ async function deleteConselho(id) {
         alert("Erro de comunicação com o servidor.");
     }
 }
+
+// S1-07: os botões da tabela carregam os dados em data-* e o listener repassa ao
+// modal; o nome nunca passa por uma string JS construída no servidor.
+document.querySelectorAll('.js-editar-conselho').forEach((botao) => {
+    botao.addEventListener('click', () => {
+        const dados = botao.dataset;
+        editConselho(
+            Number(dados.conselhoId),
+            dados.nome,
+            dados.inicio,
+            dados.fim,
+            dados.final === 'true',
+            Number(dados.periodoLetivoId),
+        );
+    });
+});
+
+document.querySelectorAll('.js-excluir-conselho').forEach((botao) => {
+    botao.addEventListener('click', () => {
+        deleteConselho(Number(botao.dataset.conselhoId));
+    });
+});
 </script>
 {% endblock %}
