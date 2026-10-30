@@ -596,6 +596,8 @@ def frequencia():
     # V3a (R10): o botão Imprimir só aparece quando a impressão é permitida —
     # 2+ ofertas sem escolha ou professor que não é o professor da oferta
     # (a guarda da impressão é por OFERTA, sem herdar o professor da turma).
+    # G1-4: exigir_escolha vai ao template para esconder o botão também
+    # enquanto o curso não foi escolhido (nenhum link sai sem turma_curso).
     pode_imprimir_pauta = True
     if len(ofertas) >= 2 and oferta_atual is None:
         pode_imprimir_pauta = False
@@ -633,6 +635,7 @@ def frequencia():
                            # H3e: horário do seletor de oferta pela grade.
                            grade_oferta_map=grades_para_exibicao(ofertas),
                            oferta_atual=oferta_atual,
+                           exigir_escolha=exigir_escolha,
                            situacao_datas=situacao_datas,
                            dias_abrev=dias_abrev,
                            pode_imprimir_pauta=pode_imprimir_pauta,

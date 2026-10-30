@@ -60,9 +60,12 @@
             o.curso_id }} {%- if o.turno %} ({{ o.turno }}){% endif -%}
           </a>
         </li>
-        {% endfor %} {% else %} {% for mes in meses %}
+        {% endfor %} {% else %} {# G1-4: com exatamente 1 oferta ativa a
+        oferta passa a ser explícita em todo link (turma_curso); com 0 vale o
+        legado por turma. #} {% set tc = ofertas[0].id if ofertas and ofertas|length
+        == 1 else None %} {% for mes in meses %}
         <li>
-          <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero) }}"
+          <a class="dropdown-item" href="{{ url_for('registros.imprimir_pauta', id=turma.id, mes=mes.numero, **({'turma_curso': tc} if tc else {})) }}"
             target="_blank">
             Pauta de {{ mes.nome }}
           </a>
@@ -72,7 +75,7 @@
           <hr class="dropdown-divider" />
         </li>
         <li>
-          <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id) }}"
+          <a class="dropdown-item text-primary" href="{{ url_for('registros.imprimir_pauta', id=turma.id, **({'turma_curso': tc} if tc else {})) }}"
             target="_blank">
             Pauta Completa (Todos os meses)
           </a>

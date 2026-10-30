@@ -10,7 +10,10 @@
 </div>
 {# V3a (R10): o botão só aparece quando a impressão é permitida — 2+ ofertas
 sem escolha ou professor que não é o professor cadastrado da oferta. #}
-{% if pode_imprimir_pauta %}
+{# G1-4: guarda explícita contra exigir_escolha — enquanto o curso não foi
+escolhido nenhum link de impressão é ofertado; todo link publicado leva
+turma_curso quando há oferta. #}
+{% if pode_imprimir_pauta and not exigir_escolha %}
 <div class="btn-group mb-3">
     <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown" {% if not turma
         %}disabled{% endif %}>
