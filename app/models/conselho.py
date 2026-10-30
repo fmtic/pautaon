@@ -216,6 +216,12 @@ class ConselhoResposta(TenantMixin, db.Model):
 
     Cada linha é uma resposta individual; o conjunto de respostas forma o
     parecer do aluno naquela etapa.
+
+    F1 (autor do lançamento): `autor_id` (FK → user, ON DELETE SET NULL) é
+    SEMPRE o último usuário que salvou a resposta — não há autor original.
+    `autor_nome` é o snapshot que sobrevive à exclusão do usuário (mesmo
+    formato de `AuditoriaMixin`, sem herdar o mixin e seu `LogAcao` por linha).
+    Respostas anteriores à F1 e gravações sem usuário (scripts/seeds) ficam NULL.
     """
     __tablename__ = 'conselho_resposta'
 
@@ -230,4 +236,21 @@ class ConselhoResposta(TenantMixin, db.Model):
     resposta: str = db.Column(db.Text)
     observacao: str = db.Column(db.Text)
 
+    # F1: autor da resposta (último que salvou). ON DELETE SET NULL — a linha
+    # sobrevive à exclusão do usuário; o snapshot do nome fica.
+    autor_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            'user.id', name='fk_conselho_resposta_autor', ondelete='SET NULL',
+        ),
+        nullable=True,
+        comment='Último usuário que salvou a resposta (NULL = legado/script)',
+    )
+    autor_nome: str = db.Column(
+        db.String(100),
+        nullable=True,
+        comment='Snapshot do nome do autor no momento do salvamento',
+    )
+
     unidade = db.relationship('Unidade', backref='respostas_conselho')
+    autor = db.relationship('User', foreign_keys=[autor_id])

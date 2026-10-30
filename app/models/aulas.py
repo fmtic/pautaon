@@ -29,6 +29,14 @@ NOTAS A1 — VALORES DO ESPORTISTA
     `Frequencia.valor_esportista_id` (FK → valor_esportista, ON DELETE SET
     NULL) é um dado ADICIONAL do lançamento: não entra em nenhuma conta de
     presença/falta/total nem em pauta, diário, relatório ou exportação.
+
+NOTAS F1 — AUTOR DO LANÇAMENTO
+    `autor_id` (FK → user, ON DELETE SET NULL) + `autor_nome` (snapshot) guardam
+    SEMPRE o último usuário que salvou a linha — não existe campo de autor
+    original. É o mesmo formato de `AuditoriaMixin` (id + nome), mas sem herdar
+    o mixin: herdar traria `LogAcao` por linha de frequência e `updated_at`
+    disparado por qualquer atributo. Histórico anterior à F1 permanece NULL e
+    contextos sem usuário (scripts/seeds) gravam NULL.
 ================================================================================
 """
 
@@ -136,9 +144,26 @@ class Frequencia(TenantMixin, db.Model):
         comment='FK → valor_esportista (dado adicional do lançamento)',
     )
 
+    # F1: autor do lançamento (último que salvou). ON DELETE SET NULL — a linha
+    # de frequência sobrevive à exclusão do usuário; o snapshot do nome fica.
+    autor_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            'user.id', name='fk_frequencia_autor', ondelete='SET NULL',
+        ),
+        nullable=True,
+        comment='Último usuário que salvou a linha (NULL = legado/script)',
+    )
+    autor_nome: str = db.Column(
+        db.String(100),
+        nullable=True,
+        comment='Snapshot do nome do autor no momento do salvamento',
+    )
+
     unidade = db.relationship('Unidade', backref='frequencias')
     turma_curso = db.relationship('TurmaCurso', backref='frequencias')
     valor_esportista = db.relationship('ValorEsportista', backref='frequencias')
+    autor = db.relationship('User', foreign_keys=[autor_id])
 
     @hybrid_property
     def presente(self) -> bool:
