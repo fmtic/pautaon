@@ -147,6 +147,35 @@ def _register_security_hooks(app: Flask) -> None:
             )
         return response
 
+    @app.after_request
+    def set_cache_headers(response):
+        """S1-10: página autenticada não fica no cache do navegador/proxy.
+
+        `private` impede cache compartilhado; `no-store` impede o histórico em
+        disco do navegador (botão Voltar após o logout). `setdefault` respeita
+        rotas que já definiram o próprio `Cache-Control` e não toca em
+        `/static/`, cujo cache é justamente o desejado.
+        """
+        if request.endpoint == "static" or request.path.startswith("/static/"):
+            return response
+
+        if current_user.is_authenticated:
+            # `send_file`/`send_from_directory` já põem `no-cache` nos
+            # downloads; trocamos por `no-store` (dado de aluno não fica em
+            # disco) sem sobrescrever rotas que já pediram `no-store`.
+            if "no-store" not in response.headers.get("Cache-Control", ""):
+                response.headers["Cache-Control"] = "no-store, private"
+            response.headers.setdefault("Pragma", "no-cache")
+            response.headers.setdefault("Expires", "0")
+        elif response.status_code >= 400 or request.endpoint in {
+            "auth.login",
+            "main.home",
+        }:
+            # Login e páginas de erro: não guardar, mas sem `no-store` — não há
+            # conteúdo de usuário e o `no-store` atrapalha fluxos (Voltar).
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
 
 def _register_user_loader() -> None:
     from app.models import User
