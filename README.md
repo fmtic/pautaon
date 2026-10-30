@@ -61,11 +61,11 @@ cp .env.example .env
 
 Variáveis obrigatórias:
 
-| Variável | Descrição |
-|---|---|
-| `SECRET_KEY` | Chave criptográfica da sessão Flask |
+| Variável       | Descrição                           |
+|----------------|-------------------------------------|
+| `SECRET_KEY`   | Chave criptográfica da sessão Flask |
 | `DATABASE_URL` | URI de conexão com o banco de dados |
-| `APP_ENV` | `development` ou `production` |
+| `APP_ENV`      | `development` ou `production`       |
 
 ### 4. Banco de dados
 
@@ -173,13 +173,13 @@ aplicados simultaneamente na execução e na exportação.
 
 Resultados do tipo *distribuição* (lista) podem ser exibidos em:
 
-| Modo | Descrição |
-|---|---|
-| Tabela de Dados | Tabela HTML com linhas zebradas |
-| Gráfico de Barras | Barras com rótulo de valor no topo |
-| Gráfico de Linhas | Linha com área preenchida e rótulo por ponto |
-| Gráfico de Pizza | Fatias com percentual e valor absoluto embutidos |
-| Gráfico de Rosca | Idem pizza em formato de rosca |
+| Modo              | Descrição                                        |
+|-------------------|--------------------------------------------------|
+| Tabela de Dados   | Tabela HTML com linhas zebradas                  |
+| Gráfico de Barras | Barras com rótulo de valor no topo               |
+| Gráfico de Linhas | Linha com área preenchida e rótulo por ponto     |
+| Gráfico de Pizza  | Fatias com percentual e valor absoluto embutidos |
+| Gráfico de Rosca  | Idem pizza em formato de rosca                   |
 
 Os **percentuais são exibidos diretamente nas fatias** (pizza/rosca) via
 [chartjs-plugin-datalabels](https://chartjs-plugin-datalabels.netlify.app/).
@@ -188,13 +188,12 @@ A **legenda** também exibe o percentual de cada categoria.
 
 ### Exportações
 
-| Tipo | Mecanismo | Nome do arquivo |
-|---|---|---|
-| `.xlsx` | Servidor Flask (`xlsxwriter`) | `pautaON_{CODIGO}_{YYYYMMDD_HHMM}.xlsx` |
-| `.png` | Client-side (`canvas.toDataURL`) | `pautaON_{CODIGO}_{YYYY-MM-DD}.png` |
+| Tipo    | Mecanismo                        | Nome do arquivo                         |
+|---------|----------------------------------|-----------------------------------------|
+| `.xlsx` | Servidor Flask (`xlsxwriter`)    | `pautaON_{CODIGO}_{YYYYMMDD_HHMM}.xlsx` |
+| `.png`  | Client-side (`canvas.toDataURL`) | `pautaON_{CODIGO}_{YYYY-MM-DD}.png`     |
 
-- **XLSX:** planilha formatada com cabeçalho, tabela zebrada, rodapé e paginação.
-  Resultados escalares aparecem em célula mesclada com fonte grande.
+- **XLSX:** planilha formatada com cabeçalho, tabela zebrada, rodapé e paginação. Resultados escalares aparecem em célula mesclada com fonte grande.
 - **PNG:** captura exata do gráfico visível na tela — apenas disponível quando um gráfico estiver ativo.
 
 Consulte [`app/relatorios/indicadores.md`](app/relatorios/indicadores.md) para a
@@ -204,15 +203,15 @@ documentação completa de todos os indicadores e das funcionalidades de exporta
 
 ## Perfis de acesso (RBAC)
 
-| Perfil | Descrição |
-|---|---|
-| `admin` | Acesso total, gestão de usuários e unidades |
-| `gerencia` | Visão global entre unidades, sem gestão de usuários |
-| `pedagogico` | Gestão de turmas, alunos, frequência e conselho |
-| `secretaria` | Cadastro e matrícula de alunos |
-| `professor` | Lançamento de frequência e visualização de suas turmas |
-| `servico_social` | Atendimentos e agendamentos do serviço social |
-| `pendente` | Acesso bloqueado — aguarda aprovação administrativa |
+| Perfil           | Descrição                                              |
+|------------------|--------------------------------------------------------|
+| `admin`          | Acesso total, gestão de usuários e unidades            |
+| `gerencia`       | Visão global entre unidades, sem gestão de usuários    |
+| `pedagogico`     | Gestão de turmas, alunos, frequência e conselho        |
+| `secretaria`     | Cadastro e matrícula de alunos                         |
+| `professor`      | Lançamento de frequência e visualização de suas turmas |
+| `servico_social` | Atendimentos e agendamentos do serviço social          |
+| `pendente`       | Acesso bloqueado — aguarda aprovação administrativa    |
 
 ---
 
@@ -223,6 +222,7 @@ python scripts/ImportaçãoPlanilha/importar_matriculas.py caminho/para/arquivo.
 ```
 
 Regras:
+
 - A coluna de unidade é obrigatória em cada linha com dados
 - A unidade informada deve existir no cadastro do sistema
 - Linhas sem nome são ignoradas
@@ -297,17 +297,18 @@ CC-YYYYMMDDThhmmss-XXXXXX
 
 Exemplo: `01-20260909T111523-3f4a1b`
 
-| Prefixo | Categoria |
-|---|---|
-| `01` | Banco de dados / SQLAlchemy |
-| `02` | Chamadas externas / HTTP APIs |
-| `03` | LDAP / Active Directory |
-| `04` | Template / URL building |
-| `05` | Autenticação / Autorização |
-| `06` | Validação de entrada |
-| `99` | Desconhecido / Outros |
+| Prefixo | Categoria                     |
+|---------|-------------------------------|
+| `01`    | Banco de dados / SQLAlchemy   |
+| `02`    | Chamadas externas / HTTP APIs |
+| `03`    | LDAP / Active Directory       |
+| `04`    | Template / URL building       |
+| `05`    | Autenticação / Autorização    |
+| `06`    | Validação de entrada          |
+| `99`    | Desconhecido / Outros         |
 
 **Para suporte:**
+
 1. Solicite ao usuário o código exibido na tela
 2. Pesquise o código em `instance/error.log` (ex.: `grep "01-20260909T111523-3f4a1b" instance/error.log`)
 3. Leia o stacktrace completo registrado ao lado do código
@@ -319,10 +320,10 @@ O helper de geração e registro dos códigos está em `app/utils/errors.py`.
 
 ## Documentação adicional
 
-| Documento | Conteúdo |
-|---|---|
-| [`docs/manual_deploy.md`](docs/manual_deploy.md) | Deploy no IIS e Apache, configuração WSGI |
-| [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md) | Google Cloud, OAuth2, Calendar e Chat |
-| [`docs/checklist_seguranca_dividas_tecnicas.md`](docs/checklist_seguranca_dividas_tecnicas.md) | Auditoria de segurança e LGPD |
-| [`app/models/MER.md`](app/models/MER.md) | Modelo entidade-relacionamento |
-| [`app/relatorios/indicadores.md`](app/relatorios/indicadores.md) | Catálogo completo de indicadores de BI e exportações |
+| Documento                                                                                      | Conteúdo                                             |
+|------------------------------------------------------------------------------------------------|------------------------------------------------------|
+| [`docs/manual_deploy.md`](docs/manual_deploy.md)                                               | Deploy no IIS e Apache, configuração WSGI            |
+| [`docs/manual_google_integracao.md`](docs/manual_google_integracao.md)                         | Google Cloud, OAuth2, Calendar e Chat                |
+| [`docs/checklist_seguranca_dividas_tecnicas.md`](docs/checklist_seguranca_dividas_tecnicas.md) | Auditoria de segurança e LGPD                        |
+| [`app/models/MER.md`](app/models/MER.md)                                                       | Modelo entidade-relacionamento                       |
+| [`app/relatorios/indicadores.md`](app/relatorios/indicadores.md)                               | Catálogo completo de indicadores de BI e exportações |
