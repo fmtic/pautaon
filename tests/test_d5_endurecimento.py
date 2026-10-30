@@ -23,13 +23,7 @@ import json
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
-from test_conselho_oferta import (  # noqa: F401  (fixtures/helpers reaproveitados)
-    _enturma,
-    _loga,
-    _setup,
-    app,
-    client,
-)
+from test_conselho_oferta import _enturma, _loga, _setup
 
 from app.database import db
 from app.models import (

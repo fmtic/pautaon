@@ -29,11 +29,6 @@ def app():
         db.drop_all()
 
 
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 def _prepare_dashboard(app, client):
     with app.app_context():
         unidade_a = Unidade(nome="Unidade A")

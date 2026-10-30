@@ -16,7 +16,6 @@ from datetime import time, timedelta
 from pathlib import Path
 
 from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (

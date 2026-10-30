@@ -27,19 +27,7 @@ from _helpers import login_as
 
 from app import db
 from app.models import TurmaCurso
-from test_v3a_datas_lancadas import (
-    HOJE,
-    SQLiteTestConfig,  # noqa: F401 — V3a reusa a config; aqui o que interessa são as fixtures
-    _abrev,
-    _br,
-    _datas_ate_hoje,
-    _get,
-    _iso,
-    _lancar_direto,
-    _seed,
-    app,      # noqa: F401 — fixture reaproveitada do módulo V3a
-    client,   # noqa: F401 — fixture reaproveitada do módulo V3a
-)
+from test_v3a_datas_lancadas import HOJE, _abrev, _br, _datas_ate_hoje, _get, _iso, _lancar_direto, _seed
 
 
 def _opcoes_seletor(html):

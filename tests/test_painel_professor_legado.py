@@ -18,7 +18,6 @@ Coberto aqui:
 """
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 from test_conselho_professor import _setup
 
 

@@ -5,10 +5,8 @@ Testes de caracterização + equivalência + N+1. A semente é a de
 `tests/test_frequencia_oferta.py::_base`.
 """
 
-from datetime import date
 
 from _helpers import login_as, nova_inscricao, nova_oferta  # noqa: F401
-from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
 from app.database import db

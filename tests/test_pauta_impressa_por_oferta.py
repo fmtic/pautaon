@@ -21,7 +21,6 @@ from sqlalchemy.exc import IntegrityError
 
 from _helpers import login_as, nova_inscricao, nova_oferta
 from _i1_helpers import conteudo, info
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (

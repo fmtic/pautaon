@@ -1,8 +1,7 @@
 import pytest
 from app import create_app
 from app.database import db
-from app.models import Aluno, Atendimento, Unidade, User
-from app.models.enums import UserRole
+from app.models import Aluno, Unidade, User
 from config import Config
 
 from _helpers import login_as
@@ -26,11 +25,6 @@ def app():
         yield test_app
         db.session.remove()
         db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def test_static_uploads_documentos_nao_exposto(client):

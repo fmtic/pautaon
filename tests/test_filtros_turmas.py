@@ -36,11 +36,6 @@ def app():
         db.drop_all()
 
 
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 def _nomes(stmt):
     return {t.nome for t in db.session.execute(stmt).scalars().all()}
 

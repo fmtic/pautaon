@@ -49,11 +49,6 @@ def app():
     shutil.rmtree(pasta_uploads, ignore_errors=True)
 
 
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 def _usuario(nome, email, role, unidade_id):
     user = User(name=nome, email=email, role=role, first_login=False,
                 unidade_id=unidade_id)

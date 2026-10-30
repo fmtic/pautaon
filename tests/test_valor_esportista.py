@@ -13,7 +13,6 @@ from html.parser import HTMLParser
 
 import pytest
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import create_app
 from app import db as db_module

@@ -9,9 +9,8 @@ ou 1 oferta o cálculo continua por turma, exatamente como antes.
 
 from datetime import date, time, timedelta
 
-import pytest
 
-from app import create_app, db
+from app import db
 from app.main.dashboard_professor import _aulas_pendentes
 from app.models import (
     Aluno,
@@ -38,21 +37,6 @@ class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
 
 
 def _seed(app, ofertas_cfg):

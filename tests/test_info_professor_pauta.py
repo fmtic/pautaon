@@ -13,7 +13,6 @@ from pathlib import Path
 
 from _helpers import login_as
 from _i1_helpers import dois_blocos, mais_alunos, pauta, seed
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 

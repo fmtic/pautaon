@@ -23,7 +23,6 @@ Um usuário por teste (T1 §5.6): cada teste loga uma única vez via
 from datetime import date
 
 from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (

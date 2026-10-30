@@ -3,13 +3,12 @@
 
 from datetime import date
 
-from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
+from _helpers import login_as, nova_inscricao
 from test_frequencia_oferta import _base
 
 from app.database import db
 from app.models import (
-    Aluno, Curso, Frequencia, PeriodoLetivo, Turma, TurmaCurso, Unidade, User,
+    Aluno, Frequencia, Unidade, User,
 )
 from app.services.frequencia_oferta import frequencias_aluno_por_inscricao
 from app.utils.logica import calcular_estatisticas_frequencia

@@ -27,11 +27,6 @@ def app():
         db.drop_all()
 
 
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 def _create_user(app, role):
     with app.app_context():
         user = User(

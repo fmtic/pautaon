@@ -16,7 +16,6 @@ Antes: FRE-005 = 11/17 = 64,7% (soma das duas). Depois: 9/15 = 60,0%.
 from datetime import date, timedelta
 
 from _helpers import nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (

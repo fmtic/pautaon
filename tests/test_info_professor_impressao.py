@@ -10,7 +10,6 @@ período não encerrado. Medicação continua inalterada.
 
 from _helpers import login_as
 from _i1_helpers import conteudo, dois_blocos, impressao, seed
-from test_conselho_oferta import app, client  # noqa: F401
 
 
 def _com_medicacao(app, ids):

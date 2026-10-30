@@ -20,7 +20,7 @@ usuário de outra unidade → 403; admin sem unidade na sessão → 403.
 Um usuário por teste (regra do responsável).
 """
 
-from datetime import date, time, timedelta
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -68,11 +68,6 @@ def app():
         yield test_app
         db.session.remove()
         db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _loga(client, user_id, unidade_id=None):

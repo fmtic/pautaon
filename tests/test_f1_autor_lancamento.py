@@ -14,10 +14,8 @@ Regras cobertas:
 
 from datetime import time, timedelta
 
-import pytest
 
 from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 from sqlalchemy import event
 
 from app import db

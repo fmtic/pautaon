@@ -34,7 +34,6 @@ import pytest
 from sqlalchemy import event
 
 from _helpers import login_as, nova_inscricao, nova_oferta  # noqa: F401 (padrão do harness)
-from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app import db
 from app.models import (
@@ -44,13 +43,11 @@ from app.models import (
     Curso,
     EnderecoAluno,
     Frequencia,
-    Inscricao,
     PerfilDiversidade,
     PerfilSocioeconomico,
     PeriodoLetivo,
     RegistroAula,
     Turma,
-    TurmaCurso,
     Unidade,
     User,
 )

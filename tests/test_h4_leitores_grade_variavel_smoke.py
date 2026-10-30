@@ -298,13 +298,23 @@ class TestLeitoresSemErroComGradeVariavel:
         )
         assert f"Horário: {POR_DIA}" in transferir
 
+        # Identidade DISCRIMINADORA (L5-E2): os dois leitores abaixo exigem
+        # perfis diferentes, então o par 200/403 prova que a troca de usuário
+        # valeu. `/conselho/fechamento` aborta para PROFESSOR (`conselho.py:826`)
+        # e `/frequencia_relatorio` só aceita role PEDAGOGICO exato
+        # (`core.py:648`) — se o login ficasse preso em `coord`, o 403 do
+        # professor viraria 200 e o 200 do pedagógico viraria 403.
         prof_cli = _client(app, ids["prof"])
-        r_freq = prof_cli.get(f"/frequencia?turma_id={ids['turma']}")
-        assert r_freq.status_code == 200
-        r_rel = _client(app, ids["pedag"], ids["unidade"]).get(
+        assert prof_cli.get(f"/frequencia?turma_id={ids['turma']}").status_code == 200
+        assert prof_cli.get(
+            f"/conselho/fechamento/{ids['turma']}"
+        ).status_code == 403
+        assert cli.get(
             f"/frequencia_relatorio?turma={ids['turma']}"
-        )
-        assert r_rel.status_code == 200
+        ).status_code == 403  # coord (admin) não é PEDAGOGICO
+        assert _client(app, ids["pedag"], ids["unidade"]).get(
+            f"/frequencia_relatorio?turma={ids['turma']}"
+        ).status_code == 200
 
     def test_sem_n1_de_grade_na_listagem(self):
         app, ids = _seed()

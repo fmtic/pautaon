@@ -35,11 +35,6 @@ def app():
         db.drop_all()
 
 
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
 def test_carga_horaria_turmas_alternancia_exclusiva_e_filtros_cascateados(client, app):
     """
     Testa se a rota /turmas/carga-horaria:

@@ -17,7 +17,7 @@ from datetime import date, time
 
 import pytest
 
-from app import create_app, db
+from app import db
 from app.models import Curso, Turma, Unidade
 from app.services.turma_curso import resolver_oferta_lancamento
 from app.services.turma_curso_horario import definir_grade
@@ -35,21 +35,6 @@ class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
 
 
 def _h(dia: int) -> tuple[time, time]:

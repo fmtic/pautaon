@@ -18,7 +18,7 @@ Serviço ``app.services.enturmacao.enturmar_aluno`` (unitários):
 Um usuário por teste (regra do responsável).
 """
 
-from datetime import date, time
+from datetime import date
 
 import pytest
 
@@ -68,11 +68,6 @@ def app():
         yield test_app
         db.session.remove()
         db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _loga(client, user_id, unidade_id=None):

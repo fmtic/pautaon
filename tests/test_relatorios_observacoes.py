@@ -10,7 +10,6 @@ continua sem filtros e com a sua própria permissão.
 from datetime import date, time, timedelta
 
 from _helpers import login_as, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (
