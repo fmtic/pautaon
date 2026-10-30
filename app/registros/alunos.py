@@ -55,6 +55,7 @@ from app.services.enturmado import cond_aluno_enturmado
 from app.services.enturmacao import enturmar_aluno
 from app.services.turma_curso_horario import grades_para_exibicao
 from app.utils.datetime_parse import parse_date
+from app.utils.fotos import mimetype_da_foto
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
 from . import bp
@@ -538,7 +539,11 @@ def novo_aluno():
         # ---------------------------------------------------------------------
         foto = request.files.get("foto")
         if foto and foto.filename:
-            salvar_foto(foto, novo)
+            # S1-08: recusa (extensão, conteúdo, 2 MB) avisa por flash e o
+            # cadastro segue — a foto é opcional.
+            erro_foto = salvar_foto(foto, novo)
+            if erro_foto:
+                flash(erro_foto, "warning")
 
         # ---------------------------------------------------------------------
         # 5. Documentos entregues (JSONB `documentos_entregues`)
@@ -642,7 +647,10 @@ def editar_aluno(id):
             # -----------------------------------------------------------------
             foto = request.files.get("foto")
             if foto and foto.filename:
-                salvar_foto(foto, aluno)
+                # S1-08: mesma validação do cadastro (whitelist, conteúdo, 2 MB).
+                erro_foto = salvar_foto(foto, aluno)
+                if erro_foto:
+                    flash(erro_foto, "warning")
 
             # -----------------------------------------------------------------
             # 5. Documentos entregues (JSONB)
@@ -1343,7 +1351,13 @@ def foto_aluno(aluno_id: int):
 
         foto_dir = upload_root / "fotos"
         if (foto_dir / filename).is_file():
-            return send_from_directory(str(foto_dir), filename)
+            # S1-08: mimetype fixo pela extensão validada (nunca o que o cliente
+            # declarou) e `nosniff` para o navegador não reinterpretar o arquivo.
+            resposta = send_from_directory(
+                str(foto_dir), filename, mimetype=mimetype_da_foto(filename)
+            )
+            resposta.headers["X-Content-Type-Options"] = "nosniff"
+            return resposta
 
     from app.services.informacao_padrao import get_informacao_padrao_context
 

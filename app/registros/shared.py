@@ -5,6 +5,7 @@ from flask import abort, current_app
 from werkzeug.utils import secure_filename
 
 from app.models import Turma
+from app.utils.fotos import nome_foto_aluno, validar_foto
 
 
 def obter_proximo_ordenacao(periodo_letivo_id):
@@ -60,11 +61,26 @@ def _build_upload_path(*parts: str) -> str:
 
 
 def salvar_foto(foto, aluno):
-    filename = secure_filename(f"aluno_{aluno.id}_{foto.filename}")
+    """Grava a foto do aluno depois de validada (S1-08).
+
+    Devolve a mensagem de erro em português quando o arquivo é recusado — nada
+    é gravado nesse caso — ou `None` quando a foto foi salva. Quem chama decide
+    como avisar o usuário (`flash`), sem derrubar o cadastro do aluno.
+    """
+    if not foto or not getattr(foto, "filename", ""):
+        return None
+
+    erro, extensao = validar_foto(foto)
+    if erro:
+        return erro
+
     upload_path = _build_upload_path("fotos")
     os.makedirs(upload_path, exist_ok=True)
+    # Nome gerado pelo servidor: nada do `filename` do cliente chega ao disco.
+    filename = nome_foto_aluno(aluno.id, extensao)
     foto.save(os.path.join(upload_path, filename))
     aluno.foto_path = filename
+    return None
 
 
 def salvar_documento(documento, aluno, doc_id):
