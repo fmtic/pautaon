@@ -29,6 +29,7 @@ DATA_FIM = date(2026, 12, 15)
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False

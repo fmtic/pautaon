@@ -1,3 +1,7 @@
+### Alterações do dia — 30/10/2026 (S1 — execução do Prompt A: E1 a E7)
+
+- **E1 (S1-01/S1-02):** `config.py` sem fallback de `SECRET_KEY`; `validar_configuracao` chamada por `create_app` recusa chave ausente, vazia, `dev-key*` ou com menos de 32 caracteres em qualquer `APP_ENV`, com mensagem que ensina `secrets.token_urlsafe(48)`. `DEBUG` agora é `False` por padrão e só liga com `FLASK_DEBUG=true` **e** `APP_ENV=development`; `DEBUG` em produção falha na inicialização. `APP_ENV` é a chave oficial e `FLASK_ENV` ficou como alias legado. `run.py` usa `app/utils/execucao.escolher_bind_dev`: debug só em `127.0.0.1`, `development` sem debug em `0.0.0.0`, outros ambientes recusam o servidor embarcado (mensagem para waitress/gunicorn/IIS). `.env.example` atualizado. **53** arquivos de teste ganharam `SECRET_KEY` explícita (a suíte deixou de depender do `.env`); 19 testes novos em `test_s1_config_endurecimento.py`. Suíte **1054 → 1073**.
+
 ### Alterações do dia — 30/10/2026 (S1 — análise de segurança)
 
 - **Natureza:** somente análise; **nenhum código de aplicação alterado**. Relatório `docs/Relatórios/S1_AnaliseSeguranca.md` (matriz de 207 rotas, 24 achados, o que está correto, o que não é verificável e ordem de correção).

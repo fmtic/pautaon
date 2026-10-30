@@ -51,6 +51,7 @@ RECURSA_VAZIO = "toda oferta precisa de um professor"
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False

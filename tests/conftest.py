@@ -33,6 +33,7 @@ from config import Config  # noqa: E402
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 

@@ -1912,6 +1912,16 @@ tabela estruturada, e não duplicados nesse JSON.
 **Resultado:** principal `turma` 5→2 e `frequencia` 54→52; ensaio `turma` 8→7; todas as demais contagens idênticas (incl. `log_acao`); **zero turma ativa sem oferta ativa** nos dois bancos.
 **Nota:** o seed `scripts/semear_roteiro_manual.py` recria a turma vizinha do ensaio se rodado de novo — a limpeza não mexe no seed.
 
+### 12.28 Endurecimento de segurança S1 (30/10/2026)
+
+Registro da execução do Prompt A sobre os achados de `docs/Relatórios/S1_AnaliseSeguranca.md`. **Nenhuma migration** nas etapas — só configuração, rotas, templates e upload; head continua `c9d0e1f2a3b4`.
+
+**S1-01 — `SECRET_KEY` (E1).** `config.py` deixou de ter o fallback `dev-key-substituir-em-producao`: `SECRET_KEY` é lida do ambiente sem valor padrão e `validar_configuracao` (chamada por `create_app`) recusa chave ausente, vazia, com prefixo `dev-key` ou com menos de 32 caracteres, em **qualquer** `APP_ENV`. A mensagem orienta `python -c "import secrets; print(secrets.token_urlsafe(48))"`. A validação fica em `create_app` (e não no import de `config.py`) para que as Configs de teste definam a própria chave explicitamente — 53 arquivos de teste passaram a ter `SECRET_KEY` explícita, então a suíte não depende do `.env`. `APP_ENV` é a chave oficial; `FLASK_ENV` permanece apenas como alias legado.
+
+**S1-02 — `DEBUG` (E1).** Padrão `False` em qualquer ambiente; só liga com `FLASK_DEBUG=true` **e** `APP_ENV=development`; `DEBUG` com `APP_ENV=production` falha na inicialização. `run.py` passou a usar `app.utils.execucao.escolher_bind_dev`: com debug escuta **somente** `127.0.0.1:5000`; em `development` sem debug mantém `0.0.0.0:5000`; fora de `development` recusa o servidor embarcado com mensagem apontando waitress/gunicorn/IIS (o deploy do IIS usa `run.app` como handler WSGI, onde o bloco `__main__` não roda). `.env.example` atualizado (SECRET_KEY obrigatória, `APP_ENV`, `FLASK_DEBUG=false`).
+
+**Testes:** `tests/test_s1_config_endurecimento.py` (19) — chave ausente/vazia/padrão/curta recusadas, chave de 32 aceita, `create_app` falhando nos três casos, DEBUG falso por padrão, DEBUG só em development, DEBUG em produção recusando, alias `FLASK_ENV` e os três binds do servidor de desenvolvimento. Suíte **1054 → 1073**.
+
 ---
 
 ## Apêndice A — Como ler/escrever perfil do aluno

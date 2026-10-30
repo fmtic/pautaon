@@ -24,6 +24,7 @@ from config import Config
 def app_csrf():
     """App com CSRF LIGADO (a fixture padrão da suíte o desliga)."""
     class Cfg(Config):
+        SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
         SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
     test_app = create_app(Cfg)
