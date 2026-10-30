@@ -1,3 +1,11 @@
+### Alterações do dia — 30/10/2026 (fechamento G1/P2 — E0 a E5)
+
+- **E0:** suíte verde no working tree (**1042 passed**; 1033 da linha de base + 9 do `test_g1p2_links_impressao.py`); commits por assunto `53d6f2e` (G1-4 links), `9ed074b` (topbar 56px), `49aa982` (README) e `d91969a` (interpretador do VS Code). O rename “Diário de Observações”→“Diário de Bordo” já estava em `9652adc`. Cinco arquivos revertidos pela sincronização do Nextcloud foram restaurados do HEAD antes da E0 (backup em `.tmp/revert_bak/`).
+- **E1/E2:** já aplicados em 29/10 (`ee922c5`, `59880c3`, `3af4ee2`, `434c53f`; MER §8.23) e reconferidos por SELECT em 30/10: zero ofertas com `professor_id` NULL, `turma_curso.professor_id` com `is_nullable = NO` e head `d6e7f8a9b0c1` nos dois bancos.
+- **E3:** links de impressão explícitos (`lancar.html`/`detalhe.html`) — item (4) do G1 resolvido (código `53d6f2e`, docs `a0a5926`).
+- **E4:** harness — 38 arquivos e 50 blocos de login local migrados para `login_as` (`d744693`; seção do harness acima).
+- **E5:** merge local sem push — `a24574b` (nova_feature ← main), `37b2042` (main ← nova_feature, `--no-ff`) e `484cbcf` (higiene: `tmpfldc2ofh` vazio). Relatório: `docs/Relatórios/G1P2_Fechamento_NotNull.md`.
+
 ### Alterações do dia — 29/10/2026 (E1-2ª rodada — saneamento das ofertas 16, 17 e 18 com lançamentos)
 
 - **Pedido:** decisão do usuário — as três ofertas do principal bloqueadas na rodada anterior (frequência lançada) são **dados de teste**: remover as ofertas junto com os lançamentos vinculados (frequencia, registro_aula, conselho_classe/conselho_resposta, inscrições e grade), **somente** as linhas com `turma_curso_id` em 16/17/18; legados com `turma_curso_id IS NULL` intocáveis.
