@@ -1902,6 +1902,15 @@ tabela estruturada, e não duplicados nesse JSON.
 2. **Autor original** — a decisão atual guarda só o **último** que salvou: a cada reedição o primeiro lançador é perdido. Para histórico completo seria preciso uma tabela de auditoria de lançamentos, não uma coluna.
 3. **`registro_aula.instrutor_id`** — continua sobrescrito a cada salvamento da pauta, com a mesma limitação de "último que salvou" e sem snapshot do nome; alinhar (ou documentar como autor) numa próxima rodada.
 
+### 12.27 Turmas de teste sem oferta — remoção física (L5, 30/10/2026)
+
+**Onde:** `turma` (12 "Turma Alfa", 13 "Turma Gema", 14 "Turma Zeta" no principal; 34 no ensaio) e `frequencia` (2 linhas legadas da turma 13).
+**Fato:** as três turmas do principal estavam ativas sem **nenhuma** oferta; só a 13 tinha lançamento, e só legado (`turma_curso_id IS NULL`, ids 23 e 24). A turma 34 do ensaio não tinha nenhum vínculo. Varredura por FK dinâmica (`pg_constraint`) e por nome de coluna confirmou que não existe outra referência (`log_acao` não tem FK para `turma`).
+**Decisão do responsável:** são dados de teste → **remoção física** (não soft delete), incluindo as 2 frequências legadas.
+**Ferramenta:** `scripts/limpar_turmas_sem_oferta.py` — dry-run por padrão, `--aplicar` faz **backup automático** (`instance/backups/<banco>_pre_limpeza_turmas.sql`), `--autorizar-principal` para o banco principal, recusa turma com oferta ou com vínculo fora da frequência legada e **valida o delta antes do commit** (só `turma` e `frequencia` podem mudar).
+**Resultado:** principal `turma` 5→2 e `frequencia` 54→52; ensaio `turma` 8→7; todas as demais contagens idênticas (incl. `log_acao`); **zero turma ativa sem oferta ativa** nos dois bancos.
+**Nota:** o seed `scripts/semear_roteiro_manual.py` recria a turma vizinha do ensaio se rodado de novo — a limpeza não mexe no seed.
+
 ---
 
 ## Apêndice A — Como ler/escrever perfil do aluno

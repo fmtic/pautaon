@@ -1,3 +1,8 @@
+### Alterações do dia — 30/10/2026 (L5 — turmas sem oferta e resíduos do harness)
+
+- **E0 (leitura):** inventário por FK dinâmica (`pg_constraint` → `turma`) e por nome de coluna nos dois bancos. Principal: turmas 12 (Alfa), 13 (Gema) e 14 (Zeta) ativas, unidade 3, **zero ofertas**, zero inscrições/registro de aula/conselho/transferência/dia bloqueado — só `frequencia` na 13, com **2 linhas legadas** (ids 23 e 24, aluno 1455, 04 e 05/03/2026, autor NULL). Ensaio: turma 34 sem **nenhum** vínculo. `log_acao` não tem FK para `turma` (guarda texto). Bate com o esperado.
+- **E1:** remoção **física** das quatro turmas + as 2 frequências legadas — `scripts/limpar_turmas_sem_oferta.py` (dry-run padrão, backup automático no `--aplicar`, `--autorizar-principal` para o principal, recusa turma com oferta/vínculo inesperado e valida o delta antes do commit). Ensaio primeiro: `turma` 8→7, demais contagens idênticas. Principal depois: `turma` 5→2 e `frequencia` 54→52, demais idênticas (`inscricoes` 13, `registro_aula` 4, `conselho_classe` 39, `conselho_resposta` 78, `log_acao` 1014). Backups `pautaon_pre_limpeza_turmas.sql` e `pautaon_ensaio_pre_limpeza_turmas.sql`. Zero turma ativa sem oferta ativa nos dois bancos (MER §12.27).
+
 ### Alterações do dia — 30/10/2026 (F1 — autor do lançamento em frequência e conselho)
 
 - **Pedido:** registrar o autor em `frequencia` e `conselho_resposta` — sempre o **último** usuário que salvou a linha (sem campo de autor original), histórico antigo NULL e contextos sem usuário (scripts/seeds) NULL. Sem exibição, relatório, BI, impressão ou permissão.
