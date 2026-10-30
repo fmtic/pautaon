@@ -25,6 +25,12 @@ NOTA ONDA 4 — D5.2 (escrita do conselho por oferta)
     em `TurmaCurso.avaliacao_*` (Q1) e deixam de ser gravadas em
     ConselhoResposta. Isolamento por unidade (B3/B4) vale para todos os
     perfis em todas as rotas de escrita daqui.
+
+NOTA F1 — AUTOR DA RESPOSTA
+    `salvar_conselho` grava `autor_id`/`autor_nome` em `ConselhoResposta`:
+    o autor é SEMPRE o último que salvou a resposta. Reescrever o MESMO texto
+    não troca o autor; mudar o conteúdo troca. As demais rotas de escrita daqui
+    (fechamento e avaliação coletiva) não gravam em `conselho_resposta`.
 ================================================================================
 """
 
@@ -55,6 +61,7 @@ from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
 from datetime import datetime, date
 from collections import OrderedDict
+from app.utils.autor import autor_do_lancamento
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
 logger = logging.getLogger(__name__)
@@ -749,6 +756,9 @@ def salvar_conselho():
         ).distinct()
     }
 
+    # F1: autor do lançamento (None/None em contexto sem usuário).
+    autor_id, autor_nome = autor_do_lancamento()
+
     for key, value in normalized["respostas"].items():
         parts = key.split('_')
         if len(parts) < 2:
@@ -781,13 +791,20 @@ def salvar_conselho():
         ).first()
 
         if resposta:
-            resposta.resposta = value
+            # F1: só a mudança de CONTEÚDO troca o autor; regravar o mesmo
+            # texto mantém quem gravou antes.
+            if resposta.resposta != value:
+                resposta.resposta = value
+                resposta.autor_id = autor_id
+                resposta.autor_nome = autor_nome
         else:
             db.session.add(ConselhoResposta(
                 conselho_id=conselho.id,
                 aluno_id=aluno_id,
                 pergunta_id=pergunta_id,
-                resposta=value
+                resposta=value,
+                autor_id=autor_id,
+                autor_nome=autor_nome
             ))
 
     db.session.commit()
