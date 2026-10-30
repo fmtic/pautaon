@@ -127,6 +127,11 @@ font-src 'self' data: https://cdn.jsdelivr.net
 - `--aplicar` exige `--autorizar-principal` fora do banco de ensaio, grava backup `.sql` do valor anterior de `first_login` em `instance/backups/` e marca apenas as contas com senha local e hash idêntico ao vazado.
 - Gera `.tmp/forcar_troca_producao_<banco>_<carimbo>.sql`, com um `UPDATE` por e-mail (o hash entra no `WHERE`, então a conta só é marcada se a senha ainda for a que vazou). O relatório informa o caminho; o conteúdo não é reproduzido aqui.
 
+**Arquivos gerados no dry-run (30/10/2026):**
+
+- `.tmp/forcar_troca_producao_pautaon_20261030_202242.sql`
+- `.tmp/forcar_troca_producao_pautaon_ensaio_20261030_202242.sql`
+
 **Contagens do dry-run (30/10/2026)**
 
 | Dump | Pares e-mail/hash |
