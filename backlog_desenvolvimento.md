@@ -4,6 +4,8 @@
 
 - **E2 (S1-04):** `app/main/rota_disparo_email.py` **removido** e o import tirado de `app/main/__init__.py`; `main.teste_email` saiu do `url_map` (207 → 206). `GET /teste-email` → 404 para anônimo e autenticado. Nenhum template/teste/script usava a rota (restam só menções históricas no relatório S1 e em entradas antigas do backlog). 3 testes em `test_s1_teste_email_removido.py`.
 
+- **E3 (S1-05):** `/informacoes`, `POST /api/conselho-periodo` e `DELETE /api/conselho-periodo/<id>` exigem `admin`/`pedagogico`/`gerencia`/`secretaria` (mesma lista da navegação); professor 403. `@csrf.exempt` removido das duas rotas e `X-CSRFToken` enviado nos `fetch` de `conselho/informacoes.html`. A unidade do conselho passou a ser validada com `assert_unidade_context` na edição e na exclusão (**antes era filtrada na consulta e devolvia 404**; agora 403 quando é de outra unidade, 404 quando não existe). 14 testes em `test_s1_conselho_periodos.py`.
+
 ### Alterações do dia — 30/10/2026 (S1 — análise de segurança)
 
 - **Natureza:** somente análise; **nenhum código de aplicação alterado**. Relatório `docs/Relatórios/S1_AnaliseSeguranca.md` (matriz de 207 rotas, 24 achados, o que está correto, o que não é verificável e ordem de correção).

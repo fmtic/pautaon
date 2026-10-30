@@ -143,6 +143,8 @@
 {% block scripts %}
 <script>
 const modal = new bootstrap.Modal(document.getElementById('modalConselho'));
+// S1-05: as rotas /api/conselho-periodo exigem CSRF (mesmo padrão do calendário).
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
 function openModal() {
     document.getElementById('formConselho').reset();
@@ -179,7 +181,8 @@ async function saveConselho() {
         const response = await fetch("{{ url_for('conselho.salvar_periodo_conselho') }}", {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({
                 id: id,
@@ -208,7 +211,8 @@ async function deleteConselho(id) {
 
     try {
         const response = await fetch(`{{ url_for('conselho.deletar_periodo_conselho', conselho_id=0) }}`.replace('0', id), {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': csrfToken }
         });
 
         const data = await response.json();

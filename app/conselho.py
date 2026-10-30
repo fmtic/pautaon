@@ -49,7 +49,6 @@ from app.models.enums import (
     UserRole,
 )
 from app.database import db
-from app.extensions import csrf
 from app.registros.shared import assert_unidade_context
 from app.services.aluno_info_professor import professor_da_oferta
 from app.services.turma_curso import (
@@ -66,6 +65,21 @@ from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
+
+# S1-05: papéis com acesso a Conselho > Data-Informações — espelha a guarda de
+# navegação em `base.html` (o professor entra apenas no Painel de Turmas).
+_ROLES_PERIODOS_CONSELHO = (
+    UserRole.ADMIN,
+    UserRole.PEDAGOGICO,
+    UserRole.GERENCIA,
+    UserRole.SECRETARIA,
+)
+
+
+def _exigir_gestao_periodos_conselho() -> None:
+    """Recusa (403) os perfis sem acesso à gestão de períodos de conselho."""
+    if current_user.role not in _ROLES_PERIODOS_CONSELHO:
+        abort(403)
 
 
 def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
@@ -1089,6 +1103,7 @@ def avaliar_turma(turma_id):
 @bp.route('/informacoes', methods=['GET', 'POST'])
 @login_required
 def informacoes():
+    _exigir_gestao_periodos_conselho()
     unidade_id = get_unidade_id()
     if request.method == 'POST':
         pass
@@ -1109,9 +1124,9 @@ def informacoes():
 
 
 @bp.route('/api/conselho-periodo', methods=['POST'])
-@csrf.exempt
 @login_required
 def salvar_periodo_conselho():
+    _exigir_gestao_periodos_conselho()
     try:
         unidade_id = get_unidade_id()
         data = request.get_json(force=True, silent=True)
@@ -1161,9 +1176,11 @@ def salvar_periodo_conselho():
         PeriodoConselho.query.filter_by(unidade_id=unidade_id, conselho_final=True).update({'conselho_final': False})
 
     if conselho_id:
-        conselho = PeriodoConselho.query.filter_by(id=conselho_id, unidade_id=unidade_id).first()
+        conselho = PeriodoConselho.query.filter_by(id=conselho_id).first()
         if not conselho:
             return jsonify({"success": False, "msg": "Conselho não encontrado."}), 404
+        # S1-05: a unidade do conselho precisa ser a do contexto (403 quando não é).
+        assert_unidade_context(conselho.unidade_id, unidade_id)
         conselho.nome = nome
         conselho.data_inicio = dt_ini
         conselho.data_fim = dt_fim
@@ -1190,13 +1207,15 @@ def salvar_periodo_conselho():
 
 
 @bp.route('/api/conselho-periodo/<int:conselho_id>', methods=['DELETE'])
-@csrf.exempt
 @login_required
 def deletar_periodo_conselho(conselho_id):
+    _exigir_gestao_periodos_conselho()
     unidade_id = get_unidade_id()
-    conselho = PeriodoConselho.query.filter_by(id=conselho_id, unidade_id=unidade_id).first()
+    conselho = PeriodoConselho.query.filter_by(id=conselho_id).first()
     if not conselho:
         return jsonify({"success": False, "msg": "Conselho não encontrado."}), 404
+    # S1-05: antes a unidade era filtrada na consulta (404); agora é explícita (403).
+    assert_unidade_context(conselho.unidade_id, unidade_id)
 
     try:
         db.session.delete(conselho)

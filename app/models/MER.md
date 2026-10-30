@@ -1925,6 +1925,9 @@ Registro da execução do Prompt A sobre os achados de `docs/Relatórios/S1_Anal
 **S1-04 — `/teste-email` (E2).** Rota pública removida: `app/main/rota_disparo_email.py` apagado e o import retirado de `app/main/__init__.py`. O endpoint `main.teste_email` deixou de existir no `url_map` (207 → 206 rotas); `GET /teste-email` responde 404 para anônimo e para autenticado. Nenhum template, teste ou script consumia a rota (as únicas menções restantes são registros históricos: §5 do relatório S1 e entradas antigas do backlog).
 **Testes:** `tests/test_s1_teste_email_removido.py` (3) — endpoint fora do `url_map`, 404 anônimo e 404 autenticado.
 
+**S1-05 — períodos de conselho (E3).** `GET /informacoes`, `POST /api/conselho-periodo` e `DELETE /api/conselho-periodo/<id>` passam a exigir os papéis de **Conselho > Data-Informações** (`admin`, `pedagogico`, `gerencia`, `secretaria` — a mesma lista da navegação em `base.html`); professor e demais recebem 403. As duas rotas de API perderam `@csrf.exempt` e o template `conselho/informacoes.html` passou a enviar `X-CSRFToken` nos dois `fetch` (padrão do calendário do período letivo). A unidade passou a ser validada explicitamente: na edição e na exclusão o conselho é carregado por id e `assert_unidade_context(conselho.unidade_id, unidade_id)` responde 403 quando é de outra unidade (antes a exclusão/edição filtravam `unidade_id` na consulta e devolviam 404 — a checagem existia, mas não era explícita e a mensagem confundia “inexistente” com “de outra unidade”); id inexistente continua 404.
+**Testes:** `tests/test_s1_conselho_periodos.py` (14) — 4 papéis × `/informacoes` 200, professor 403 nas três rotas (com token), anônimo 302, POST/DELETE sem token 400 de CSRF, POST/DELETE com token 200, conselho de outra unidade 403 na edição e na exclusão, id inexistente 404.
+
 ---
 
 ## Apêndice A — Como ler/escrever perfil do aluno
