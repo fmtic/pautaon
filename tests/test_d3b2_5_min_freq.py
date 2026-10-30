@@ -1,7 +1,6 @@
 # ruff: noqa: F811
 """ETAPA D3b-2.5 — min_freq coerente com a frequência exibida (D7)."""
 
-from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
 from app.models import Turma

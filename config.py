@@ -20,6 +20,73 @@ def get_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+#: Tamanho mínimo exigido para ``SECRET_KEY`` (S1-01).
+SECRET_KEY_MINIMO = 32
+
+#: Valor padrão antigo — público e, portanto, proibido.
+SECRET_KEY_PROIBIDA = "dev-key-substituir-em-producao"
+
+_COMANDO_CHAVE = 'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+
+
+def _resolver_app_env() -> str:
+    """Ambiente da aplicação.
+
+    ``APP_ENV`` é a chave oficial; ``FLASK_ENV`` continua aceito apenas como
+    alias legado (o padrão do Flask migrou para ``FLASK_ENV`` → ``APP_ENV``).
+    """
+    valor = os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "development"
+    return valor.strip().lower()
+
+
+def _resolver_debug(app_env: str) -> bool:
+    """``DEBUG`` só liga com ``FLASK_DEBUG=true`` explícito **e** development.
+
+    O padrão passa a ser ``False`` em qualquer ambiente: depurar exige ação
+    deliberada do operador (S1-02).
+    """
+    return get_bool("FLASK_DEBUG", False) and app_env == "development"
+
+
+def validar_secret_key(valor: str | None) -> str:
+    """Valida a ``SECRET_KEY`` e devolve o valor aceito (S1-01).
+
+    A aplicação não inicia sem chave, com a chave padrão histórica ou com
+    menos de :data:`SECRET_KEY_MINIMO` caracteres — em qualquer ``APP_ENV``.
+    """
+    if not valor or not str(valor).strip():
+        raise RuntimeError(
+            "SECRET_KEY ausente: defina a variável de ambiente SECRET_KEY com "
+            f"pelo menos {SECRET_KEY_MINIMO} caracteres. "
+            f"Gere uma chave com: {_COMANDO_CHAVE}"
+        )
+    valor = str(valor).strip()
+    if valor == SECRET_KEY_PROIBIDA or valor.startswith("dev-key"):
+        raise RuntimeError(
+            "SECRET_KEY inválida: o valor padrão de desenvolvimento é público e "
+            "não pode ser usado (sessões e cookies poderiam ser forjados). "
+            f"Gere uma chave com: {_COMANDO_CHAVE}"
+        )
+    if len(valor) < SECRET_KEY_MINIMO:
+        raise RuntimeError(
+            f"SECRET_KEY inválida: use pelo menos {SECRET_KEY_MINIMO} caracteres "
+            f"(atual: {len(valor)}). Gere uma chave com: {_COMANDO_CHAVE}"
+        )
+    return valor
+
+
+def validar_configuracao(config) -> None:
+    """Recusa configurações inseguras na inicialização (S1-01 e S1-02)."""
+    app_env = str(config.get("APP_ENV") or "development").strip().lower()
+    validar_secret_key(config.get("SECRET_KEY"))
+    if config.get("DEBUG") and app_env == "production":
+        raise RuntimeError(
+            "DEBUG não pode estar ligado com APP_ENV=production: o depurador do "
+            "Werkzeug permite execução de código no servidor. Defina "
+            "FLASK_DEBUG=false (ou remova a variável) e reinicie."
+        )
+
+
 def _get_database_uri() -> str:
     raw_uri = os.getenv("DATABASE_URL")
     if not raw_uri:
@@ -42,15 +109,14 @@ class Config:
     sessões e cookies inseguros.
     """
 
-    APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "development"))
-    DEBUG = get_bool("FLASK_DEBUG", APP_ENV == "development")
+    APP_ENV = _resolver_app_env()
+    DEBUG = _resolver_debug(APP_ENV)
     TEMPLATES_AUTO_RELOAD = True
 
+    # Sem fallback: a validação acontece em `create_app` (ver
+    # `validar_configuracao`) para que configurações de teste possam definir a
+    # própria chave explicitamente, sem afrouxar a regra da aplicação.
     SECRET_KEY = os.getenv("SECRET_KEY")
-    if not SECRET_KEY:
-        if APP_ENV == "production":
-            raise RuntimeError("SECRET_KEY deve ser definido no ambiente para produção.")
-        SECRET_KEY = "dev-key-substituir-em-producao"
 
     REMEMBER_COOKIE_DURATION = timedelta(hours=8)
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)

@@ -24,7 +24,6 @@ from pathlib import Path
 import pytest
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 from test_valor_obrigatorio import _cenario, _post, _url_pauta
 
 ARQ_JS = (

@@ -10,7 +10,6 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 from test_valor_esportista_lancamento import _cenario, _post
 
 from app import db

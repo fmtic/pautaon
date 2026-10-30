@@ -18,7 +18,6 @@ from datetime import date
 import pytest
 from _helpers import login_as, nova_inscricao, nova_oferta
 from sqlalchemy import event
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import (

@@ -2,7 +2,6 @@ import pytest
 from flask_login import login_user
 from werkzeug.exceptions import Forbidden
 
-from app import create_app
 from app.database import db
 from app.models import Aluno, Curso, Inscricao, TemaAula, Turma, TurmaCurso, Unidade, User
 from app.registros.shared import assert_unidade_context
@@ -11,29 +10,14 @@ from _helpers import login_as, professor_semente
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
 @pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update({
-        "TESTING": True,
-        "WTF_CSRF_ENABLED": False,
-        "SERVER_NAME": "localhost",
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
-    })
-    with test_app.app_context():
-        assert db.engine.dialect.name == "sqlite"
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
+def app(app_com_servidor):
+    """Reaproveita a variante do conftest (corpo idêntico, sem duplicar)."""
+    return app_com_servidor
 
 
 def test_local_login_succeeds_with_audited_turma_model(client, app):

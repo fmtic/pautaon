@@ -18,7 +18,7 @@ Serviço ``app.services.enturmacao.enturmar_aluno`` (unitários):
 Um usuário por teste (regra do responsável).
 """
 
-from datetime import date, time
+from datetime import date
 
 import pytest
 
@@ -49,6 +49,7 @@ DATA_FIM = date(2026, 12, 15)
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
@@ -68,11 +69,6 @@ def app():
         yield test_app
         db.session.remove()
         db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _loga(client, user_id, unidade_id=None):

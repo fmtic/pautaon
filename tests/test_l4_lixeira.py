@@ -4,12 +4,11 @@ from _helpers import login_as
 
 from datetime import date, timedelta
 
-from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
 from app.database import db
 from app.models import (
-    Aluno, Inscricao, LogAcao, Turma, TurmaCurso, Unidade, User,
+    LogAcao, Turma, TurmaCurso, User,
 )
 
 

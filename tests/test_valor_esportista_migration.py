@@ -51,6 +51,7 @@ mig = _carregar("mig_valor_esportista", "b7c8d9e0f1a2_valor_esportista.py")
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False

@@ -44,6 +44,7 @@ FORM_AGENDA = {"dias_semana": "0", "hora_inicio": "09:00", "hora_fim": "10:00"}
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False

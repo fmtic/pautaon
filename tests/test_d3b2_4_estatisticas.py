@@ -1,8 +1,7 @@
 # ruff: noqa: F811
 """ETAPA D3b-2.4 — estatísticas do GET /frequencia por oferta."""
 
-from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
+from _helpers import login_as
 from test_frequencia_oferta import _base
 
 from app.models import User

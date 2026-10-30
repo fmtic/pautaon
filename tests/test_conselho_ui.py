@@ -11,14 +11,7 @@ realiza um único login.
 
 import re
 
-from test_conselho_oferta import (  # noqa: F401  (fixtures reaproveitadas)
-    _enturma,
-    _loga,
-    _perguntas,
-    _setup,
-    app,
-    client,
-)
+from test_conselho_oferta import _enturma, _loga, _perguntas, _setup
 
 from app.database import db
 from app.models import ConselhoResposta, PerguntaConselho

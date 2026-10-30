@@ -25,7 +25,6 @@ relatório de frequência) adicionadas no passo 5.
 from datetime import date
 
 from _helpers import nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app.database import db
 from app.models import (

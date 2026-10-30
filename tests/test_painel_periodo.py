@@ -19,7 +19,7 @@ Um usuário por teste (T1 §5.6); SQLite in-memory.
 from datetime import date
 
 from _helpers import nova_inscricao, nova_oferta
-from test_conselho_oferta import _loga, app, client  # noqa: F401
+from test_conselho_oferta import _loga
 
 from app.database import db
 from app.models import (

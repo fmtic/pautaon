@@ -21,7 +21,6 @@ Estes testes fixam o padrão de prova da auditoria:
 # ruff: noqa: F811 — fixtures `app`/`client` reaproveitadas do harness D5.
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app import create_app
 from app.database import db
@@ -33,6 +32,7 @@ ROTA_SO_GESTAO = "/turmas/lixeira"
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False

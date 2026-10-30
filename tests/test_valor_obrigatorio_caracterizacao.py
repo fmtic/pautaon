@@ -17,7 +17,6 @@ ativo é coberta em `test_valor_obrigatorio.py`.
 import pytest
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 from test_valor_esportista_lancamento import (  # noqa: F401
     _cenario,
     _post,

@@ -20,13 +20,7 @@ import re
 from datetime import date
 
 from _helpers import nova_inscricao, nova_oferta
-from test_conselho_oferta import (  # noqa: F401  (fixtures reaproveitadas)
-    _enturma,
-    _loga,
-    _setup,
-    app,
-    client,
-)
+from test_conselho_oferta import _enturma, _loga, _setup
 
 from app.database import db
 from app.models import Curso, PeriodoLetivo, Turma, TurmaCurso, Unidade

@@ -19,7 +19,6 @@ import re
 from datetime import date, time
 
 from _helpers import login_as, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import Curso, PeriodoLetivo, Turma, Unidade, User

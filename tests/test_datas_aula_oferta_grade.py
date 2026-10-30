@@ -20,8 +20,8 @@ from datetime import date, time, timedelta
 
 import pytest
 
-from app import create_app, db
-from app.models import Curso, Turma, TurmaCurso, Unidade, User
+from app import db
+from app.models import Curso, Turma, Unidade, User
 from app.services.turma_curso import datas_aula_oferta, datas_esperadas_oferta
 from app.services.turma_curso_horario import (
     definir_grade,
@@ -45,24 +45,10 @@ FIM_SEMANA = DOM  # data_fim cobre toda a semana
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
 
 
 def _h(dia: int) -> tuple[time, time]:

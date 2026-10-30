@@ -11,7 +11,6 @@ import re
 from urllib.parse import parse_qs, urlparse
 
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import db
 from app.models import PerguntaConselho, Unidade, User

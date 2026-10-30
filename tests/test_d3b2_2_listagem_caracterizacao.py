@@ -7,7 +7,6 @@ Fixa o texto exibido na coluna/sub-linha de frequência e o resultado de
 
 from _helpers import login_as
 
-from test_conselho_oferta import app, client  # noqa: F401
 from test_frequencia_oferta import _base
 
 from app.models import Turma, User

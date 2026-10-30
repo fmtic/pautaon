@@ -4,7 +4,7 @@ from flask import Flask, current_app, render_template, request, redirect, url_fo
 from flask_login import current_user
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
-from config import Config
+from config import Config, validar_configuracao
 from app.extensions import csrf, db, login_manager, mail
 from app.models import auditoria_listener  # noqa: F401
 import logging
@@ -16,6 +16,10 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     """Cria a aplicação Flask sem efeitos colaterais no import."""
     app = Flask(__name__)
     app.config.from_object(config_class)
+    # S1-01/S1-02: sem SECRET_KEY utilizável (ou com DEBUG em produção) a
+    # aplicação não sobe — a checagem fica aqui para que classes de teste possam
+    # definir a própria chave sem afrouxar a regra.
+    validar_configuracao(app.config)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Configura log em arquivo para captura de erros em produção/WSGI

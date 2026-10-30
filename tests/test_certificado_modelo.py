@@ -24,6 +24,7 @@ PNG_2 = b"\x89PNG\r\n\x1a\n" + b"1" * 512
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
@@ -47,11 +48,6 @@ def app():
         db.session.remove()
         db.drop_all()
     shutil.rmtree(pasta_uploads, ignore_errors=True)
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _usuario(nome, email, role, unidade_id):

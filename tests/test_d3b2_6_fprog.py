@@ -3,13 +3,11 @@
 
 from datetime import date, timedelta
 
-from test_conselho_oferta import app, client  # noqa: F401
 from app.database import db
 from app.models import (
     Aluno, Curso, Frequencia, PeriodoLetivo, Turma, TurmaCurso, Unidade, User,
 )
 from app.utils.logica import calcular_frequencias_relatorio
-from app.utils.frequencia import alunos_ativos_da_turma
 
 
 def _seed_divergente(app):

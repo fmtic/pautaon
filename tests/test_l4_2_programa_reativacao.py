@@ -30,7 +30,6 @@ expressando o comportamento-alvo: os casos 2 e 3 falham antes da P3.
 from datetime import date
 
 from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401 (fixtures)
 
 from app.database import db
 from app.models import (

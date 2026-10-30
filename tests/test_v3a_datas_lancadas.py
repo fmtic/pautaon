@@ -10,14 +10,13 @@ alunos da pauta da oferta têm conceito registrado na data.
 """
 
 import re
-from datetime import date, time, timedelta
+from datetime import time, timedelta
 
-import pytest
 from sqlalchemy import event
 
 from _helpers import login_as, nova_inscricao, nova_oferta
 
-from app import create_app, db
+from app import db
 from app.models import (
     Aluno,
     Curso,
@@ -35,7 +34,6 @@ from app.services.turma_curso import (
     datas_aula_oferta,
     datas_esperadas_oferta,
 )
-from app.utils.datetime_parse import parse_date
 from app.utils.dias_semana import weekday_para_abrev
 from app.utils.frequencia import (
     datas_bloqueadas_str,
@@ -51,29 +49,10 @@ DIAS_GRADE_2 = "Terça, Quinta"
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _usuario(nome, email, role, unidade_id):

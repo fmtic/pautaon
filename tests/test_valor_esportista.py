@@ -13,7 +13,6 @@ from html.parser import HTMLParser
 
 import pytest
 from _helpers import login_as
-from test_conselho_oferta import app, client  # noqa: F401
 
 from app import create_app
 from app import db as db_module
@@ -25,6 +24,7 @@ from config import Config
 def app_csrf():
     """App com CSRF LIGADO (a fixture padrão da suíte o desliga)."""
     class Cfg(Config):
+        SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
         SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
     test_app = create_app(Cfg)

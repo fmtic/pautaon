@@ -22,7 +22,7 @@ from datetime import date, time
 
 import pytest
 
-from app import create_app, db
+from app import db
 from app.models import Aluno, Curso, Inscricao, Turma, TurmaCurso, Unidade, User
 from app.services.turma_curso import adicionar_oferta
 from config import Config
@@ -35,24 +35,10 @@ DATA_FIM = date(2026, 12, 15)
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     TESTING = True
     WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
 
 
 @pytest.fixture

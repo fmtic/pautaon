@@ -23,7 +23,6 @@ from datetime import time, timedelta
 
 import pytest
 from _helpers import login_as, nova_inscricao, nova_oferta
-from test_conselho_oferta import app, client  # noqa: F401
 from test_valor_esportista_lancamento import _estatisticas  # noqa: F401
 
 from app import db

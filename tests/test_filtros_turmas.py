@@ -18,6 +18,7 @@ from _helpers import login_as
 
 
 class SQLiteTestConfig(Config):
+    SECRET_KEY = "chave-de-teste-s1-sem-valor-real-1234567890"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
@@ -34,11 +35,6 @@ def app():
         yield test_app
         db.session.remove()
         db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _nomes(stmt):

@@ -16,7 +16,6 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-from test_conselho_oferta import app, client  # noqa: F401
 
 RAIZ = Path(__file__).resolve().parents[1]
 TEMPLATE = RAIZ / "app" / "templates" / "frequencia" / "lancar.html"

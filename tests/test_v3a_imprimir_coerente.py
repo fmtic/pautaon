@@ -6,32 +6,11 @@ professor da turma. Reaproveita a semente/helpers de `test_v3a_datas_lancadas`.
 
 import re
 
-from test_v3a_datas_lancadas import SQLiteTestConfig, _get, _seed, login_as
+from test_v3a_datas_lancadas import _get, _seed, login_as
 
-import pytest
 
-from app import create_app, db
+from app import db
 from app.models import TurmaCurso
-
-
-@pytest.fixture
-def app():
-    test_app = create_app(SQLiteTestConfig)
-    test_app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-    )
-    with test_app.app_context():
-        db.create_all()
-        yield test_app
-        db.session.remove()
-        db.drop_all()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def test_imprimir_visivel_para_o_professor_da_oferta(app, client):
