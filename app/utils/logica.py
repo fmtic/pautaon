@@ -52,6 +52,7 @@ from app.models.enums import (
     CONCEITOS_CONTABEIS,
     UserRole,
 )
+from app.utils.autor import autor_do_lancamento
 from app.utils.datetime_parse import parse_date
 from app.utils.timezone import get_local_now
 from app.services.turma_curso import resolver_oferta_lancamento
@@ -652,6 +653,11 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
     continua sendo gravado em ambas as tabelas.
 
     :return: (turma_id, data_str) em caso de sucesso; (0, None) em caso de erro.
+
+    F1 (autor do lançamento): cada linha criada recebe `autor_id`/`autor_nome`
+    do usuário logado. Em linha existente o autor só é trocado quando o
+    CONCEITO muda — regravar o mesmo conceito (ou só mexer no Valor do
+    Esportista) mantém o autor anterior.
     """
     try:
         turma_raw = form.get('turma', '0').strip()
@@ -756,6 +762,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             db.session.add(registro)
 
         # --- Frequência por aluno (plano já validado) ---
+        autor_id, autor_nome = autor_do_lancamento()
         for aluno, conceito, freq, valor_id in plano:
             if freq is None:
                 freq = Frequencia(
@@ -763,8 +770,15 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                     turma_id=turma_id,
                     turma_curso_id=oferta_id,
                     data=data_alvo,
+                    autor_id=autor_id,
+                    autor_nome=autor_nome,
                 )
                 db.session.add(freq)
+            elif freq.conceito != conceito:
+                # F1: o autor é o último que MUDOU o conceito; regravar o
+                # mesmo valor não troca o autor.
+                freq.autor_id = autor_id
+                freq.autor_nome = autor_nome
             freq.conceito = conceito
             # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
             # sem tocar em nenhuma outra coluna.
