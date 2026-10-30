@@ -10,5 +10,6 @@ from flask import Blueprint
 bp = Blueprint("main", __name__)
 
 # Importa os módulos após a criação do blueprint para registrar as rotas.
+# A rota pública de teste de e-mail (`GET /teste-email`) foi removida no S1-04:
+# permitia enviar e-mail para qualquer destinatário sem autenticação.
 from . import home, dashboard, secretaria, unidade
-from app.main import rota_disparo_email

@@ -1922,6 +1922,9 @@ Registro da execução do Prompt A sobre os achados de `docs/Relatórios/S1_Anal
 
 **Testes:** `tests/test_s1_config_endurecimento.py` (19) — chave ausente/vazia/padrão/curta recusadas, chave de 32 aceita, `create_app` falhando nos três casos, DEBUG falso por padrão, DEBUG só em development, DEBUG em produção recusando, alias `FLASK_ENV` e os três binds do servidor de desenvolvimento. Suíte **1054 → 1073**.
 
+**S1-04 — `/teste-email` (E2).** Rota pública removida: `app/main/rota_disparo_email.py` apagado e o import retirado de `app/main/__init__.py`. O endpoint `main.teste_email` deixou de existir no `url_map` (207 → 206 rotas); `GET /teste-email` responde 404 para anônimo e para autenticado. Nenhum template, teste ou script consumia a rota (as únicas menções restantes são registros históricos: §5 do relatório S1 e entradas antigas do backlog).
+**Testes:** `tests/test_s1_teste_email_removido.py` (3) — endpoint fora do `url_map`, 404 anônimo e 404 autenticado.
+
 ---
 
 ## Apêndice A — Como ler/escrever perfil do aluno
