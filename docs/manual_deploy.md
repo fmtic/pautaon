@@ -380,3 +380,8 @@ python scripts/notificador.py
 Para criar o projeto no Google Cloud, ativar APIs, compartilhar calendário com a conta de serviço, escopos, variáveis de ambiente e solução de problemas, consulte:
 
 **[docs/manual_google_integracao.md](manual_google_integracao.md)**
+
+Para rodar a suíte de testes (desenvolvimento), instale também as dependências de dev:
+```bash
+pip install -r requirements-dev.txt
+```
