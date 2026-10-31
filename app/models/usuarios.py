@@ -74,6 +74,19 @@ class User(db.Model, UserMixin):
 
     first_login: bool = db.Column(db.Boolean, default=True)
 
+    # S1-06: versão da sessão. O login grava o valor em `session["sv"]` e o
+    # `user_loader` compara com esta coluna; incrementar revoga todas as
+    # sessões emitidas antes (logout, troca/reset de senha, mudança de papel
+    # ou unidade, exclusão). A coluna é alterada por UPDATE Core, nunca pelo
+    # ORM, para não disparar o listener de auditoria.
+    session_version: int = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Versão da sessão; incrementar revoga as sessões ativas",
+    )
+
     # Autenticação federada via Google OAuth
     google_id: str | None = db.Column(db.String(100), unique=True, nullable=True, index=True)
     google_email: str | None = db.Column(db.String(120), nullable=True)

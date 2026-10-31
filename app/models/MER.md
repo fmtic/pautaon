@@ -1962,6 +1962,14 @@ Registro da execução do Prompt B sobre os mesmos achados do relatório S1. **N
 
 **Testes:** `test_seguranca_e1_headers.py` (19), `test_seguranca_e2_cache.py` (6), `test_seguranca_e3_csp.py` (18) e `test_forcar_troca_contas_expostas.py` (14, com repositório Git temporário e dumps sintéticos). O `conftest.py` fixa `APP_ENV=development` por `setdefault`, porque o `test_client` fala HTTP e o cookie `Secure` derrubaria todo login da suíte.
 
+### 12.29 `user.session_version` — versão de sessão (S1-06)
+
+Coluna `session_version` (`INTEGER NOT NULL DEFAULT 0`) na tabela `user`, criada pela migration **`b5c6d7e8f9a0`** (revises `c9d0e1f2a3b4`). Não é campo de negócio: é o contador que permite revogar as sessões de um usuário sem depender do cookie.
+
+- **Contrato:** o login grava o valor atual em `session['sv']` (e o instante em `session['iat']`); o `user_loader` compara `sv` com a coluna na linha que ele **já carrega** (nenhum SELECT extra) e devolve `None` quando diverge ou quando `sv` está ausente. Sessões emitidas antes desta versão (sem `sv`) caem uma vez e o usuário refaz o login.
+- **Quem incrementa** (sempre por `UPDATE` Core, nunca pelo ORM): logout, troca de senha em `/trocar-senha` (a sessão atual recebe o `sv` novo e continua logada), reset de senha pelo admin, edição que mude `role` ou `unidade_id` e exclusão do usuário. `User` **não** herda `AuditoriaMixin` e o listener `before_flush` só audita objetos com `updated_by_id`, então o incremento não gera `LogAcao` de alteração do usuário.
+- **Migration:** aditiva e idempotente por inspeção. `DEFAULT 0` cobre as linhas existentes (sem backfill); `downgrade` só remove a coluna. Aplicada em `pautaon_ensaio` (25 linhas) e `pautaon` (21 linhas), com 36 tabelas contadas sem variação de linhas e backup em `instance/backups/<banco>_pre_session_version_<carimbo>.sql`.
+
 ---
 
 ## Apêndice A — Como ler/escrever perfil do aluno
