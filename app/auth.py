@@ -35,75 +35,163 @@ from app.services.auth_service import (
 
 bp = Blueprint('auth', __name__)
 
-# O histórico fica no banco compartilhado para funcionar em múltiplos workers.
-_MAX_ATTEMPTS = 5
-_ATTEMPT_WINDOW_SECONDS = 900
+# Rate limit por conta e por IP (S1-11). Configuráveis por ambiente.
+from config import get_int
+
+_CONTA_MAX_FALHAS = get_int("LOGIN_CONTA_MAX_FALHAS", 5)
+_CONTA_JANELA_SEGUNDOS = get_int("LOGIN_CONTA_JANELA_SEGUNDOS", 900)
+_CONTA_BLOQUEIO_MINUTOS_BASE = get_int("LOGIN_CONTA_BLOQUEIO_MINUTOS", 15)
+_IP_MAX_FALHAS = get_int("LOGIN_IP_MAX_FALHAS", 30)
+_IP_JANELA_SEGUNDOS = get_int("LOGIN_IP_JANELA_SEGUNDOS", 900)
+_IP_BLOQUEIO_MINUTOS = get_int("LOGIN_IP_BLOQUEIO_MINUTOS", 15)
+_RETENCAO_DIAS = get_int("LOGIN_RETENCAO_DIAS", 30)
+
+from app.models import LoginControle
+from app.utils.hash_seguro import hmac_identificador
+from app.models.base import get_local_now
 
 
-def _login_attempts_key(ip_address: str) -> str:
-    """Gera uma chave curta e estável sem armazenar o IP em claro."""
-    digest = hashlib.sha256(ip_address.encode("utf-8")).hexdigest()[:32]
-    return f"login_attempts:{digest}"
+def _agora():
+    return get_local_now().replace(tzinfo=None)
 
 
-def _load_failed_attempts(ip_address: str) -> list[int]:
-    """Carrega timestamps Unix persistidos; erros de banco são propagados."""
-    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
-    if not record or not record.valor:
-        return []
+def _normalizar_email_login(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _chave_conta(email: str) -> str:
+    return hmac_identificador(_normalizar_email_login(email))
+
+
+def _chave_ip(ip: str) -> str:
+    return hmac_identificador(ip or "unknown")
+
+
+def _minutos_bloqueio_conta(nivel: int) -> int:
+    # escalonamento 15 -> 30 -> 60 (teto 60)
+    base = _CONTA_BLOQUEIO_MINUTOS_BASE
+    # nivel 1 -> 15, 2 -> 30, 3 -> 60
+    if nivel <= 1:
+        return base
+    if nivel == 2:
+        return base * 2
+    return min(base * 4, 60)
+
+
+def _obter_controle(escopo: str, chave_hash: str):
+    return LoginControle.query.filter_by(escopo=escopo, chave_hash=chave_hash).first()
+
+
+def _bloqueio_ativo(reg) -> tuple[bool, int]:
+    if not reg or not reg.bloqueado_ate:
+        return False, 0
+    agora = _agora()
+    if reg.bloqueado_ate > agora:
+        restante = int((reg.bloqueado_ate - agora).total_seconds() // 60) + 1
+        return True, restante
+    return False, 0
+
+
+def _limpar_retencao():
+    # apagar linhas sem atividade há mais de 30 dias (oportunista)
     try:
-        payload = json.loads(record.valor)
-    except (TypeError, ValueError):
-        return []
-    values = []
-    for item in payload:
-        try:
-            values.append(int(item))
-        except (TypeError, ValueError):
-            continue
-    return values
+        limite = _agora() - timedelta(days=_RETENCAO_DIAS)
+        LoginControle.query.filter(LoginControle.atualizado_em < limite).delete()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
-def _persist_failed_attempts(ip_address: str, attempts: list[int]) -> None:
-    """Persiste timestamps compactos (compatíveis com valor varchar(100))."""
-    key = _login_attempts_key(ip_address)
-    record = ConfiguracaoSistema.query.filter_by(chave=key).first()
-    if not attempts:
-        if record:
-            db.session.delete(record)
-            db.session.commit()
-        return
-    payload = json.dumps(attempts, separators=(",", ":"))
-    if record is None:
-        record = ConfiguracaoSistema(chave=key, valor=payload)
-        db.session.add(record)
+def _verificar_bloqueio_conta_ou_ip(email: str, ip: str):
+    """Retorna (bloqueado: bool, minutos_restantes: int)."""
+    # conta
+    reg_c = _obter_controle("conta", _chave_conta(email))
+    bloq, mins = _bloqueio_ativo(reg_c)
+    if bloq:
+        return True, mins
+    # ip
+    reg_i = _obter_controle("ip", _chave_ip(ip))
+    bloq, mins = _bloqueio_ativo(reg_i)
+    if bloq:
+        return True, mins
+    return False, 0
+
+
+def _registrar_falha_conta(email: str):
+    chave = _chave_conta(email)
+    agora = _agora()
+    reg = _obter_controle("conta", chave)
+    if reg is None:
+        reg = LoginControle(escopo="conta", chave_hash=chave, falhas=1,
+                            janela_inicio=agora, nivel=0, atualizado_em=agora)
+        db.session.add(reg)
+        db.session.commit()
+        return reg
+    # janela de 15 min expirou -> nova janela
+    if reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= _CONTA_JANELA_SEGUNDOS:
+        # escalonamento dentro de 24h
+        if (reg.janela_inicio is not None
+                and (agora - reg.janela_inicio).total_seconds() < 86400
+                and reg.bloqueado_ate is not None):
+            reg.nivel = min((reg.nivel or 0) + 1, 3)
+            if reg.nivel < 1:
+                reg.nivel = 1
+        elif reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= 86400:
+            reg.nivel = 0
+        reg.falhas = 1
+        reg.janela_inicio = agora
+        reg.bloqueado_ate = None
     else:
-        record.valor = payload
+        reg.falhas += 1
+    reg.atualizado_em = agora
+    if reg.falhas >= _CONTA_MAX_FALHAS:
+        nivel = reg.nivel if reg.nivel and reg.nivel >= 1 else 1
+        if nivel == 1:
+            mins = _CONTA_BLOQUEIO_MINUTOS_BASE
+        elif nivel == 2:
+            mins = _CONTA_BLOQUEIO_MINUTOS_BASE * 2
+        else:
+            mins = min(_CONTA_BLOQUEIO_MINUTOS_BASE * 4, 60)
+        reg.bloqueado_ate = agora + timedelta(minutes=mins)
+        # preparar próxima reincidência
+        reg.nivel = min(nivel + 1, 3)
     db.session.commit()
+    return reg
 
 
-def _is_login_blocked(ip_address: str) -> bool:
-    """Bloqueia temporariamente IPs com muitas tentativas consecutivas de login."""
-    attempts = _load_failed_attempts(ip_address)
-    now = int(datetime.now().timestamp())
-    attempts = [ts for ts in attempts if now - ts < _ATTEMPT_WINDOW_SECONDS]
-    _persist_failed_attempts(ip_address, attempts)
-    return len(attempts) >= _MAX_ATTEMPTS
+
+def _registrar_falha_ip(ip: str):
+    chave = _chave_ip(ip)
+    agora = _agora()
+    reg = _obter_controle("ip", chave)
+    if reg is None:
+        reg = LoginControle(escopo="ip", chave_hash=chave, falhas=1,
+                            janela_inicio=agora, nivel=0, atualizado_em=agora)
+        db.session.add(reg)
+        db.session.commit()
+        return reg
+    if reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= _IP_JANELA_SEGUNDOS:
+        reg.falhas = 1
+        reg.janela_inicio = agora
+        reg.bloqueado_ate = None
+    else:
+        reg.falhas += 1
+    reg.atualizado_em = agora
+    if reg.falhas >= _IP_MAX_FALHAS:
+        reg.bloqueado_ate = agora + timedelta(minutes=_IP_BLOQUEIO_MINUTOS)
+    db.session.commit()
+    return reg
 
 
-def _register_failed_attempt(ip_address: str) -> None:
-    """Registra uma tentativa falha para posterior bloqueio temporário."""
-    attempts = _load_failed_attempts(ip_address)
-    now = int(datetime.now().timestamp())
-    attempts = [ts for ts in attempts if now - ts < _ATTEMPT_WINDOW_SECONDS]
-    attempts.append(now)
-    _persist_failed_attempts(ip_address, attempts)
-
-
-def _clear_failed_attempts(ip_address: str) -> None:
-    record = ConfiguracaoSistema.query.filter_by(chave=_login_attempts_key(ip_address)).first()
-    if record:
-        db.session.delete(record)
+def _zerar_conta(email: str):
+    chave = _chave_conta(email)
+    reg = _obter_controle("conta", chave)
+    if reg:
+        reg.falhas = 0
+        reg.nivel = 0
+        reg.bloqueado_ate = None
+        reg.janela_inicio = None
+        reg.atualizado_em = _agora()
         db.session.commit()
 
 
@@ -137,25 +225,29 @@ def login():
 
         ip_address = request.remote_addr or "unknown"
         try:
-            blocked = _is_login_blocked(ip_address)
+            _limpar_retencao()
+        except Exception:
+            db.session.rollback()
+        # checagem de bloqueio ANTES de qualquer consulta de senha/AD
+        try:
+            bloqueado, mins = _verificar_bloqueio_conta_ou_ip(email, ip_address)
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao consultar rate limit de login.")
             flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
             return redirect(url_for('auth.login'))
-        if blocked:
-            flash('Muitas tentativas de login foram detectadas. Tente novamente mais tarde.', 'danger')
+        if bloqueado:
+            flash(f'Muitas tentativas. Tente novamente em {mins} minutos.', 'danger')
             return redirect(url_for('auth.login'))
 
         # Defensivo contra envio vazio
         if not email or not password:
             flash('Informe Email e Senha.', 'warning')
             try:
-                _register_failed_attempt(ip_address)
+                _registrar_falha_conta(email)
+                _registrar_falha_ip(ip_address)
             except Exception:
                 db.session.rollback()
-                current_app.logger.exception("Falha ao persistir rate limit de login.")
-                flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
             return redirect(url_for('auth.login'))
 
         # Busca o usuário já registrado localmente. Para contas federadas,
@@ -186,15 +278,18 @@ def login():
             ldap_identity = f"{ldap_identity}@{current_app.config.get('LDAP_DOMAIN')}"
 
         # === 1. TENTATIVA DE AUTENTICAÇÃO LOCAL (HASH) ===
-        # Este fluxo é reservado a usuários que realmente possuem credencial
-        # local persistida no banco. Usuários AD/LDAP não dependem dessa senha.
-        if user and user.password and user.check_password(password):
-            login_ok = True
+        # Tempo constante: se usuário não existe ou não tem senha, executar
+        # check_password_hash contra hash dummy de mesmo custo.
+        _DUMMY_HASH = "pbkdf2:sha256:600000$abcdefghijklmnop$0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        if user and user.password:
+            if user.check_password(password):
+                login_ok = True
+        else:
+            from werkzeug.security import check_password_hash
+            check_password_hash(_DUMMY_HASH, password)
 
         # === 2. TENTATIVA DE AUTENTICAÇÃO NO DOMÍNIO AD/LDAP ===
-        # Quando a validação no servidor do domínio acontece com sucesso, o
-        # sistema apenas provisiona a identidade local em status `pendente`.
-        else:
+        if not login_ok:
             if authenticate_against_ldap(ldap_identity, password):
                 login_ok = True
                 # O autoprovisionamento providencia a vida local de um AD Autorizado mas sem cadastro local
@@ -232,7 +327,7 @@ def login():
         # === 3. CONCLUSÃO COM SUCESSO ===
         if login_ok and user and user.is_active:
             try:
-                _clear_failed_attempts(ip_address)
+                _zerar_conta(email)
             except Exception:
                 db.session.rollback()
                 current_app.logger.exception("Falha ao limpar rate limit após login válido.")
@@ -254,15 +349,25 @@ def login():
             return redirect(url_for('main.painel'))
 
         # Falha total ou Desabilitado
-        register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo hash: {hashlib.sha256((email or '').strip().lower().encode()).hexdigest()[:12]}")
+        register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo hash: {hmac_identificador(email)[:12]}")
         try:
-            _register_failed_attempt(ip_address)
+            _registrar_falha_conta(email)
+            _registrar_falha_ip(ip_address)
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao persistir rate limit de login.")
             flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
             return redirect(url_for('auth.login'))
-        flash('Credenciais recusadas pelo domínio e banco de dados.', 'danger')
+        # mensagem
+        reg_c2 = _obter_controle("conta", _chave_conta(email))
+        msg = 'Credenciais recusadas pelo domínio e banco de dados.'
+        if reg_c2 and reg_c2.falhas == 4 and reg_c2.bloqueado_ate is None:
+            msg = 'Credenciais recusadas pelo domínio e banco de dados. Atenção: resta 1 tentativa antes do bloqueio temporário.'
+        if reg_c2 and reg_c2.bloqueado_ate is not None:
+            mins = int((reg_c2.bloqueado_ate - _agora()).total_seconds() // 60) + 1
+            msg = f'Muitas tentativas. Tente novamente em {mins} minutos.'
+        flash(msg, 'danger')
+        return redirect(url_for('auth.login'))
 
     return render_template('login.html')
 
