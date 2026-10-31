@@ -1559,3 +1559,7 @@ Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2,
 ## §12.29 - Saltos de versao principal (Prompt H)
 
 Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, requirements-dev.txt). Pendentes: cryptography 46.0.7 (7 vulns, exige 48+) e oauthlib 3.3.1 (3 vulns, exige 4.0.0). wfastcgi 3.0.0 sem evidencia de suporte a Python 3.14 (metadata ate 3.6).
+
+## AJ2 - Ajustes pontuais 3 e 5
+
+Entregue: conselho de classe lancamento com resposta e observacao separadas (commit f3d2b15); painel pedagogico com nome_exibicao no select de periodos (commit 9794165). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
