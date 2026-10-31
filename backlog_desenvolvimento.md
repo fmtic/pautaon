@@ -1,3 +1,14 @@
+### Alterações do dia — 30/10/2026 (Geração de senhas temporárias aleatórias e opção de senha inicial)
+
+- **Contexto:** reset administrativo usava `ADMIN_DEFAULT_PASSWORD` (estática, compartilhada, falhava se não definida) e o cadastro manual exigia senha digitada sem validação de complexidade. Ambos enviavam a senha em texto claro por e-mail.
+- **Camada de serviço:** `app/services/auth_service.py` ganhou `generate_secure_random_password(length=12)` — geração criptográfica via `secrets`, garante ao menos 1 maiúscula, 1 minúscula, 1 dígito e 1 caractere especial de `!@#$%*-_=+`, preenche o restante do conjunto combinado e embaralha com `secrets.SystemRandom().shuffle`; executa `validate_password_strength` como asserção de integridade. Comprimento mínimo 8 (padrão 12).
+- **Reset de senha** (`POST /usuarios/resetar/<id>`): gera senha temporária única, persiste o hash, define `first_login = True`, revoga sessões (`revogar_sessoes(alvo_id, "reset_senha_admin")`), envia e-mail e exibe a senha ao admin (flash + banner com botão de copiar). Usuários AD (`is_ad_user = True`) continuam bloqueados de reset local. Não depende mais de `ADMIN_DEFAULT_PASSWORD`.
+- **Cadastro manual** (`POST /admin/cadastrar`): opção "Criar senha automaticamente" (`gerar_senha_inicial`). Se marcada (ou senha vazia): gera senha segura e exibe ao admin. Se digitada: valida obrigatoriamente com `validate_password_strength` (rejeita senhas fracas). Sempre `first_login = True`, hash persistido, e-mail enviado e auditoria registrada.
+- **Interface:** `app/templates/admin/painel_admin.html` exibe banner de senha gerada (reset ou cadastro) com nome, e-mail, senha em fonte monoespaçada e botão "Copiar Senha" (Clipboard API), além de checkbox/switch "Criar senha automaticamente" com script JS que habilita/desabilita o campo de senha manual.
+- **Testes:** `tests/test_reset_senha_aleatoria.py` (9 testes) cobrindo geração, reset, cadastro automático, senha manual forte/fraca e bloqueio LDAP. Suíte: **9 passed**.
+- **Docs:** `app/models/MER.md` §7.3 e nova §8.25.
+
+---
 ### Alterações do dia — 30/10/2026 (S1 — execução do Prompt B: E1 a E5)
 
 - **E1 (S1-09/S1-15):** `SESSION_COOKIE_SECURE` passou a `True` **por padrão** em qualquer ambiente (inclusive sem `APP_ENV`); só desliga com `APP_ENV=development` **declarado** (`_app_env_explicito`) e `FLASK_ENV` não participa da decisão. HSTS só em resposta HTTPS (`request.is_secure`), `max-age` configurável por `HSTS_MAX_AGE` (padrão **15552000**; `0` desliga) e **sem** `includeSubDomains`/`preload`. `ProxyFix` deixou de ser incondicional: entra só com `TRUSTED_PROXY=true` (ligado sem proxy, o cliente forja `X-Forwarded-Proto/For/Host`). Redirecionamento HTTP→HTTPS continua **fora** do app; `docs/manual_deploy.md` ganhou o roteiro do IIS (URL Rewrite, `HTTP_X_FORWARDED_PROTO`, `appcmd`, ordem das regras e conferência por `curl`). `.env.example` documenta as três variáveis. **19** testes em `test_seguranca_e1_headers.py`.

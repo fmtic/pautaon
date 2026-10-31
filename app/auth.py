@@ -30,6 +30,7 @@ from app.services.auth_service import (
     authenticate_against_ldap,
     register_security_log,
     validate_password_strength,
+    generate_secure_random_password,
 )
 
 bp = Blueprint('auth', __name__)
@@ -522,7 +523,9 @@ def painel_admin():
         select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
     ).scalars().all()
 
-    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades)
+    senha_gerada = session.pop('senha_gerada', None)
+
+    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades, senha_gerada=senha_gerada)
 
 
 @bp.route('/admin/cadastrar', methods=['POST'])
@@ -536,12 +539,24 @@ def cadastrar_usuario():
         flash("Este correio eletrônico corporativo já existe localmente!", "danger")
         return redirect(url_for('auth.painel_admin'))
 
-    nome  = request.form.get('nome')
-    senha = request.form.get('password')
+    nome = (request.form.get('nome') or '').strip()
+    senha = (request.form.get('password') or '').strip()
+    gerar_senha_inicial = request.form.get('gerar_senha_inicial') in ('1', 'true', 'on', 'yes')
 
-    if not nome or not senha:
-         flash("Preencha todos os dados corretamente.", "warning")
-         return redirect(url_for('auth.painel_admin'))
+    if not nome:
+        flash("Preencha todos os dados corretamente.", "warning")
+        return redirect(url_for('auth.painel_admin'))
+
+    foi_gerada = False
+    if gerar_senha_inicial or not senha:
+        senha = generate_secure_random_password()
+        foi_gerada = True
+    else:
+        erros = validate_password_strength(senha)
+        if erros:
+            for erro in erros:
+                flash(erro, "danger")
+            return redirect(url_for('auth.painel_admin'))
 
     try:
         unidade_id = request.form.get('unidade_id')
@@ -569,7 +584,16 @@ def cadastrar_usuario():
             body_html=html_content
         )
         # -------------------------------------
-        flash(f"Conta para {nome} criada com sucesso!", "success")
+        if foi_gerada:
+            session['senha_gerada'] = {
+                'nome': nome,
+                'email': email,
+                'senha': senha,
+                'tipo': 'cadastro',
+            }
+            flash(f"Conta para {nome} criada com sucesso! Senha inicial gerada: {senha}", "success")
+        else:
+            flash(f"Conta para {nome} criada com sucesso!", "success")
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao cadastrar usuário manualmente.")
@@ -623,13 +647,9 @@ def resetar_senha(id):
             return redirect(url_for('auth.painel_admin'))
 
         try:
-            default_password = current_app.config.get("ADMIN_DEFAULT_PASSWORD")
-            if not default_password:
-                flash("Defina ADMIN_DEFAULT_PASSWORD no ambiente para permitir o reset.", "warning")
-                return redirect(url_for('auth.painel_admin'))
-
+            nova_senha = generate_secure_random_password()
             alvo_id = usuario.id
-            usuario.set_password(default_password)
+            usuario.set_password(nova_senha)
             usuario.first_login = True
             db.session.commit()
             # S1-06: reset pelo admin derruba qualquer sessão aberta da conta.
@@ -639,7 +659,7 @@ def resetar_senha(id):
             html_content = render_template(
                 "emails/senha_redefinida.html",
                 nome=usuario.name,
-                nova_senha=default_password
+                nova_senha=nova_senha
             )
 
             send_email(
@@ -648,7 +668,13 @@ def resetar_senha(id):
                 body_html=html_content
             )
             # -------------------------------------
-            flash(f"Senha de {usuario.name} resetada. Troca obrigatória no próximo login.", "info")
+            session['senha_gerada'] = {
+                'nome': usuario.name,
+                'email': usuario.email,
+                'senha': nova_senha,
+                'tipo': 'reset',
+            }
+            flash(f"Senha de {usuario.name} resetada com sucesso! Nova senha temporária gerada: {nova_senha}", "success")
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao resetar senha de usuário.")

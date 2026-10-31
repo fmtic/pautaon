@@ -27,6 +27,44 @@
         </div>
     </div>
 
+    {% if senha_gerada %}
+    <div class="alert alert-success border-2 shadow-sm mb-4 p-4" role="alert">
+        <div class="d-flex align-items-start gap-3">
+            <div class="rounded-circle bg-success bg-opacity-10 text-success p-2 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 48px; height: 48px;">
+                <i class="bi bi-key-fill fs-4"></i>
+            </div>
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <h5 class="alert-heading fw-bold mb-0">
+                        {% if senha_gerada.tipo == 'reset' %}
+                        Senha Temporária Redefinida com Sucesso!
+                        {% else %}
+                        Senha Inicial Temporária Gerada com Sucesso!
+                        {% endif %}
+                    </h5>
+                    <span class="badge bg-success text-white">Temporária</span>
+                </div>
+                <p class="mb-2 text-secondary">
+                    Usuário: <strong>{{ senha_gerada.nome }}</strong> (<code>{{ senha_gerada.email }}</code>)
+                </p>
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="text-muted small fw-semibold">SENHA GERADA:</span>
+                    <div class="input-group" style="max-width: 320px;">
+                        <input type="text" id="campoSenhaGerada" class="form-control font-monospace fw-bold bg-white text-dark border-success" value="{{ senha_gerada.senha }}" readonly>
+                        <button class="btn btn-success" type="button" id="btnCopiarSenha" onclick="copiarSenhaGerada()">
+                            <i class="bi bi-clipboard me-1"></i> Copiar
+                        </button>
+                    </div>
+                </div>
+                <p class="small text-muted mb-0">
+                    <i class="bi bi-info-circle me-1"></i>
+                    A senha temporária também foi enviada para o e-mail do usuário. O sistema exigirá a troca por uma nova senha no primeiro acesso.
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="row g-4">
         <!-- FORMULÁRIO DE CADASTRO -->
         <div class="col-lg-4">
@@ -52,8 +90,20 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-semibold text-muted small text-uppercase">Senha Temporária</label>
-                            <input type="password" name="password" class="form-control bg-light" required placeholder="Senha inicial">
+                            <label class="form-label fw-semibold text-muted small text-uppercase">Senha de Acesso</label>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="checkGerarSenha" name="gerar_senha_inicial" value="1" checked onchange="toggleCampoSenha()">
+                                <label class="form-check-label fw-semibold text-muted small text-uppercase" for="checkGerarSenha">
+                                    Criar senha automaticamente
+                                </label>
+                            </div>
+                            <div id="wrapperCampoSenha" style="display: none;">
+                                <label class="form-label fw-semibold text-muted small text-uppercase">Senha Temporária Manual</label>
+                                <input type="password" id="inputSenhaCadastro" name="password" class="form-control bg-light" placeholder="Digite uma senha forte">
+                                <div class="form-text small text-muted">
+                                    Mínimo 8 caracteres, com maiúsculas, minúsculas, números e símbolos.
+                                </div>
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -287,6 +337,52 @@
 
         // Reanexa as linhas na tabela já ordenadas
         rows.forEach(row => tbody.appendChild(row));
+    }
+
+    function toggleCampoSenha() {
+        const check = document.getElementById("checkGerarSenha");
+        const wrapper = document.getElementById("wrapperCampoSenha");
+        const info = document.getElementById("infoSenhaAutomatica");
+        const input = document.getElementById("inputSenhaCadastro");
+        if (check && wrapper && info && input) {
+            if (check.checked) {
+                wrapper.style.display = "none";
+                info.style.display = "block";
+                input.required = false;
+                input.value = "";
+            } else {
+                wrapper.style.display = "block";
+                info.style.display = "none";
+                input.required = true;
+                input.focus();
+            }
+        }
+    }
+
+    function copiarSenhaGerada() {
+        const campo = document.getElementById("campoSenhaGerada");
+        const btn = document.getElementById("btnCopiarSenha");
+        if (!campo) return;
+        const texto = campo.value;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(texto).then(() => {
+                if (btn) {
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i> Copiado!';
+                    btn.classList.replace("btn-success", "btn-dark");
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                        btn.classList.replace("btn-dark", "btn-success");
+                    }, 2000);
+                }
+            }).catch(() => {
+                campo.select();
+                document.execCommand('copy');
+            });
+        } else {
+            campo.select();
+            document.execCommand('copy');
+        }
     }
 </script>
 {% endblock %}

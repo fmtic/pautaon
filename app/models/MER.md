@@ -353,6 +353,8 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 
 **CHECK:** `ck_user_role` — restringe `role` aos valores de `UserRole`.
 
+**Senha local (auth):** a senha é sempre persistida como hash Werkzeug. Senhas iniciais temporárias são geradas de forma criptograficamente segura (`secrets`) por `app/services/auth_service.py::generate_secure_random_password` (mín. 8, padrão 12 caracteres; ao menos 1 maiúscula, 1 minúscula, 1 dígito e 1 caractere especial de `!@#$%*-_=+`), tanto no reset administrativo quanto no cadastro com a opção "Criar senha automaticamente". Senhas digitadas manualmente passam obrigatoriamente por `validate_password_strength`. Todo usuário criado/resetado recebe `first_login = True` e tem as sessões ativas revogadas (`revogar_sessoes`). A senha gerada é exibida ao administrador (banner + flash) e enviada por e-mail. Usuários AD (`is_ad_user = True`) não possuem senha local e são bloqueados de reset local.
+
 ### 7.4 `curso`
 
 | Coluna     | Tipo         | Nulo | Default | Descrição     |
@@ -1362,6 +1364,14 @@ Rodada `docs/Relatórios/F1_AutorLancamento.md`. As duas tabelas de lançamento 
 - **Escrita:** `app/utils/logica.py::salvar_frequencia` (criação sempre; troca só na mudança de conceito) e `app/conselho.py::salvar_conselho` (criação sempre; troca só na mudança do texto). `avaliar_turma` grava `TurmaCurso.avaliacao_*` e o fechamento grava `ConselhoClasse` — nenhum dos dois escreve `conselho_resposta`.
 - **Migration `c9d0e1f2a3b4`:** aditiva e idempotente por inspeção; upgrade só adiciona, downgrade só remove. Protocolo completo (backup, upgrade, `\d`, downgrade, upgrade) **primeiro no ensaio, depois no principal**; head `c9d0e1f2a3b4` nos dois bancos. Backups `*_pre_autor_lancamento.sql`.
 - **Testes:** `tests/test_f1_autor_lancamento.py` (12) — criação, troca por outro usuário, regravação idêntica, histórico NULL, FK `SET NULL` + linha sobrevivendo à exclusão do usuário, contexto sem usuário e ausência de SELECT por linha (≤1 na tabela `user` no POST com 3 alunos). Ensaio no `pautaon_ensaio` (oferta 45 da semente M1) com troca de autor e `SET NULL` reais, banco devolvido ao estado original.
+
+### 8.25 Autenticação e gestão de senhas administrativas (30/10/2026)
+
+- **Geração segura:** `app/services/auth_service.py::generate_secure_random_password(length=12)` usa `secrets` (criptograficamente seguro), garante ao menos 1 maiúscula, 1 minúscula, 1 dígito e 1 caractere especial de `!@#$%*-_=+`, preenche o restante a partir do conjunto combinado e embaralha com `secrets.SystemRandom().shuffle`. Executa `validate_password_strength` como asserção de integridade antes de retornar. Comprimento mínimo 8 (padrão 12).
+- **Validação de complexidade:** `validate_password_strength` é obrigatória para senhas digitadas manualmente (cadastro e troca de senha). Retorna lista de problemas; senha inválida bloqueia a operação.
+- **Reset administrativo** (`POST /usuarios/resetar/<id>`): gera senha temporária única, persiste o hash, define `first_login = True`, revoga sessões (`revogar_sessoes(usuario_id, "reset_senha_admin")`), envia e-mail e exibe a senha ao admin (flash + banner com botão de copiar). Usuários AD (`is_ad_user = True`) são bloqueados de reset local. Não depende mais de `ADMIN_DEFAULT_PASSWORD`.
+- **Cadastro manual** (`POST /admin/cadastrar`): opção "Criar senha automaticamente" (`gerar_senha_inicial`). Se marcada (ou senha vazia): gera senha segura e exibe ao admin. Se digitada: valida complexidade. Sempre `first_login = True`, hash persistido, e-mail enviado e auditoria registrada.
+- **Sessões:** toda criação/reset revoga sessões ativas do alvo.
 
 ---
 

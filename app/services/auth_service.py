@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import secrets
 import ssl
+import string
 
 from flask import current_app, request
 from flask_login import current_user
@@ -107,3 +109,42 @@ def validate_password_strength(password: str) -> list[str]:
     if not re.search(r"""[!@#$%^&*()\-_=+\[\]{};:'",.<>?/\\|`~]""", password):
         errors.append("A senha deve conter ao menos um caractere especial (!@#$%...).")
     return errors
+
+
+_SAFE_SPECIAL_CHARS = "!@#$%*-_=+"
+
+
+def generate_secure_random_password(length: int = 12) -> str:
+    """Gera uma senha aleatória segura que atende aos requisitos de complexidade.
+
+    Garante:
+      - Ao menos 1 letra maiúscula [A-Z]
+      - Ao menos 1 letra minúscula [a-z]
+      - Ao menos 1 número [0-9]
+      - Ao menos 1 caractere especial permitido (!@#$%*-_=+)
+      - Comprimento mínimo de 8 caracteres (padrão: 12)
+      - Aleatoriedade criptográfica via ``secrets``
+    """
+    if length < 8:
+        length = 8
+
+    # Garante os 4 requisitos obrigatórios
+    chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(_SAFE_SPECIAL_CHARS),
+    ]
+
+    # Preenche os caracteres restantes com a união dos conjuntos permitidos
+    todos_caracteres = string.ascii_letters + string.digits + _SAFE_SPECIAL_CHARS
+    chars.extend(secrets.choice(todos_caracteres) for _ in range(length - 4))
+
+    # Embaralha de forma criptograficamente segura
+    rng = secrets.SystemRandom()
+    rng.shuffle(chars)
+    password = "".join(chars)
+
+    # Asserção de integridade contra os critérios de complexidade
+    assert not validate_password_strength(password), "Senha gerada não atendeu aos critérios de complexidade"
+    return password
