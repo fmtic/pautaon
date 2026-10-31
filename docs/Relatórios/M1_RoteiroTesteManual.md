@@ -42,7 +42,7 @@ versionada. Nenhum arquivo fora de `scripts/`, `docs/` e do backlog foi tocado.
 - Perfis (`UserRole`): `admin`, `gerencia`, `pedagogico`, `secretaria`, `professor`.
 - **Escolha de unidade:** dropdown **Unidade** na sidebar (`app/templates/base.html` — menu único; o
   partial legado `partials/sidebar.html` foi removido em 29/10/2026),
-  visível para `admin` e `gerencia`, apontando para `GET /trocar-unidade/<id>`; `id=0` = **Visão
+  visível para `admin` e `gerencia`, apontando para `POST /trocar-unidade/<id> com CSRF (desde o Prompt D)`; `id=0` = **Visão
   Global** (somente leitura). O admin da semente tem `unidade_id = NULL`, então **entra em Visão
   Global** e precisa escolher a unidade para escrever.
 - Escritas/impressões passam por `assert_unidade_context`, que responde **403** quando a sessão está

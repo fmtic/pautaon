@@ -37,3 +37,10 @@
 5. Testar 5 falhas e desbloqueio pelo painel.
 6. Apagar chaves login_attempts:* antigas com script do D2.
 7. Seed no ensaio precisa ser reexecutado com ROTEIRO_SENHA para trocar senha dos [ROTEIRO].
+
+## Complemento (F)
+
+- Commits do D3: `d9bbf7b`, `1f3c679`, `3af5f36`, `13bcdda`, `5baa565`, `0f3599b` (branch `nova_feature`, sem push).
+- Suíte final (S9): `1218 passed, 693 warnings in 420.35s (0:07:00)`.
+- Ruff: `ruff check --select F821,F811,F841 app tests scripts migrations` → All checks passed!
+- Referências: `docs/Relatórios/S9_CorrecoesSeguranca_F.md` e `docs/Relatórios/S10_FechamentoSegurancaE4E5E6.md`.
