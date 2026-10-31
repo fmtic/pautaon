@@ -38,7 +38,7 @@ versionada. Nenhum arquivo fora de `scripts/`, `docs/` e do backlog foi tocado.
   fallback, LDAP/AD. Sucesso → `login_user` + `session["unidade_id"] = user.unidade_id`
   (ou removido quando o usuário não tem unidade) → redirect `main.painel`.
 - `first_login=True` (usuário local) força `/trocar-senha`; a semente cria os 5 usuários com
-  `first_login=False` e senha local conhecida (`Roteiro!2026`).
+  `first_login=False` e senha local conhecida (`[senha definida pelo seed / ROTEIRO_SENHA]`).
 - Perfis (`UserRole`): `admin`, `gerencia`, `pedagogico`, `secretaria`, `professor`.
 - **Escolha de unidade:** dropdown **Unidade** na sidebar (`app/templates/base.html` — menu único; o
   partial legado `partials/sidebar.html` foi removido em 29/10/2026),
@@ -89,7 +89,7 @@ $env:DATABASE_URL = "postgresql://usuario:senha@localhost:5432/pautaon_ensaio"
 
 - **Unidades:** `[ROTEIRO] Unidade Central` e `[ROTEIRO] Unidade Vizinha` (isolamento).
 - **Usuários:** 5 perfis (`admin|gerencia|pedagogico|secretaria|professor .m1@roteiro.local`),
-  senha `Roteiro!2026` impressa no final.
+  senha `[senha definida pelo seed / ROTEIRO_SENHA]` impressa no final.
 - **Períodos:** Vigente (01/08–31/12/2026), Encerrado (01/01–31/07/2026), Vizinha.
 - **Cursos/temas/perguntas:** 4 cursos, 3 temas, 5 perguntas de conselho (INICIAL TURMA×2,
   INICIAL ALUNO×2, FINAL ALUNO), 2 opções de próxima turma, 1 centro de custo.

@@ -50,9 +50,22 @@ from sqlalchemy.engine import make_url  # noqa: E402
 from config import Config  # noqa: E402
 
 ROTULO = "[ROTEIRO]"
-SENHA = "Roteiro!2026"
 DOMINIO = "roteiro.local"
 DB_PADRAO = "pautaon_ensaio"
+
+def resolver_senha(args) -> tuple[str, str]:
+    """Resolve a senha na ordem: --senha > ROTEIRO_SENHA > gerada.
+
+    Retorna (senha, origem) onde origem in {'argumento','ambiente','gerada'}.
+    """
+    import os as _os
+    if getattr(args, "senha", None):
+        return args.senha, "argumento"
+    env = _os.getenv("ROTEIRO_SENHA")
+    if env:
+        return env, "ambiente"
+    from app.services.auth_service import generate_secure_random_password
+    return generate_secure_random_password(16), "gerada"
 
 #: códigos de cor/turno usados pelas telas
 TURNO_MANHA = "Manhã"
@@ -235,7 +248,7 @@ def _semear(hoje: date) -> dict:
             },
             email=f"{perfil.lower()}.m1@{DOMINIO}",
         )
-        usuario.set_password(SENHA)
+        usuario.set_password(senha)
         db.session.flush()
         return usuario
 
@@ -954,7 +967,7 @@ def _relatorio(dados: dict, contagens: dict, rotulo: dict, esperados: dict) -> N
           f"B2 {ids['dias_b2'][0]} ; C {ids['dias_c'][0]} ; D {ids['dias_d'][0]}")
     print("\nUsuarios (senha unica):")
     for perfil, usuario in ids["usuarios"].items():
-        print(f"  {perfil:11s} {usuario.email:32s} {SENHA}")
+        print(f"  {perfil:11s} {usuario.email:32s} {'(senha definida por argumento/ambiente)' if origem != 'gerada' else '(gerada)'}")
     print("\nURLs prontas (troque a porta se o app nao estiver em 5000):")
     base = "http://127.0.0.1:5000"
     ana = ids["alunos"]["Ana A1"].id
@@ -1019,7 +1032,20 @@ def main() -> int:
         "--limpar", action="store_true",
         help="remove apenas os registros com o rotulo [ROTEIRO] e sai",
     )
+    parser.add_argument(
+        "--senha", default=None,
+        help="senha para os usuarios [ROTEIRO] (opcional; senao ROTEIRO_SENHA ou gerada)",
+    )
     args = parser.parse_args()
+
+    senha, origem = resolver_senha(args)
+    # validar
+    from app.services.auth_service import validate_password_strength
+    erros = validate_password_strength(senha)
+    if erros:
+        for e in erros:
+            print("Senha fraca:", e)
+        return 2
 
     dsn = _dsn(args.db)
     from flask_login import login_user
@@ -1056,6 +1082,10 @@ def main() -> int:
             rotulo = _contagens_rotulo()
             esperados = _esperados(dados)
         _relatorio(dados, contagens, rotulo, esperados)
+        if origem == "gerada":
+            print(f"\nSenha dos usuarios [ROTEIRO] (gerada agora): {senha}")
+        else:
+            print("\nSenha definida por argumento/ambiente.")
         return 0
 
 

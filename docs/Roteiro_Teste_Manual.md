@@ -38,7 +38,7 @@ ambiente — logo o `.env` versionado continua apontando para o banco principal 
 ou em configuração versionada precisa ser alterado**. Se o app não escutar em `5000`, ajuste a
 porta no `run.py` (ou use `flask run --port 5055`) e troque `{BASE}` nos casos abaixo.
 
-### 0.3 Credenciais (todas com a senha `Roteiro!2026`)
+### 0.3 Credenciais (todas com a senha `[senha definida pelo seed / ROTEIRO_SENHA]`)
 
 | Perfil | E-mail |
 |---|---|
@@ -98,7 +98,7 @@ C `05/08`, `12/08` · D `05/01`, `12/01`.
 
 | ID | Perfil / unidade | URL | Passos | Resultado esperado | Marcar |
 |---|---|---|---|---|---|
-| B1-01 | admin / — | `{BASE}/login` | 1. Informar `admin.m1@roteiro.local` e `Roteiro!2026` 2. Clicar em **ACESSAR SISTEMA** | Redireciona para `/painel`. O admin da semente **não tem unidade**, então entra em **Visão Global** e os cards somam o banco inteiro (no scratch de referência: Períodos Ativos 5, Turmas ativas 7, Alunos ativos 1164 — inclui dados preexistentes do banco de ensaio) | ☐ OK ☐ Falhou ☐ Obs. ___ |
+| B1-01 | admin / — | `{BASE}/login` | 1. Informar `admin.m1@roteiro.local` e `[senha definida pelo seed / ROTEIRO_SENHA]` 2. Clicar em **ACESSAR SISTEMA** | Redireciona para `/painel`. O admin da semente **não tem unidade**, então entra em **Visão Global** e os cards somam o banco inteiro (no scratch de referência: Períodos Ativos 5, Turmas ativas 7, Alunos ativos 1164 — inclui dados preexistentes do banco de ensaio) | ☐ OK ☐ Falhou ☐ Obs. ___ |
 | B1-02 | admin / — | `{BASE}/login` | 1. Senha errada 2. Enviar | Permanece no login com a mensagem **Credenciais recusadas pelo domínio e banco de dados.** A tentativa entra na auditoria (Aviso de Invasão/Falha) e conta para o rate limit | ☐ OK ☐ Falhou ☐ Obs. ___ |
 | B1-03 | admin / — | `{BASE}/painel` | 1. No menu lateral, seção **Unidade**, abrir o dropdown 2. Escolher **[ROTEIRO] Unidade Central** 3. Voltar ao **Painel Geral** | Badge do topo passa a mostrar `[ROTEIRO] Unidade Central`; os cards passam a refletir só a unidade: **Períodos Ativos 2**, **Turmas ativas 3**, **Alunos ativos 9**, **Professores 1** | ☐ OK ☐ Falhou ☐ Obs. ___ |
 | B1-04 | admin / Unidade Central | `{BASE}/turma` | 1. Conferir a listagem 2. Clicar em **Imprimir** e **Lixeira** | As 3 turmas do cenário aparecem (A, B, C) e a **Turma D** não aparece (está na lixeira). **Imprimir** e **Lixeira** abrem sem 500 | ☐ OK ☐ Falhou ☐ Obs. ___ |
