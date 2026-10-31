@@ -362,10 +362,12 @@ def google_callback():
     """
     # --- 1. Verificação CSRF ---
     state_retornado = request.args.get("state", "")
-    state_esperado = session.pop("google_oauth_state", None)
+    state_esperado = session.get("google_oauth_state")
     if not state_esperado or state_retornado != state_esperado:
+        session.pop("google_oauth_state", None)
         flash("Falha de segurança na verificação do estado OAuth. Tente novamente.", "danger")
         return redirect(url_for("auth.login"))
+    session.pop("google_oauth_state", None)
 
     # Erro explícito do Google (usuário cancelou ou conta bloqueada)
     error = request.args.get("error")
