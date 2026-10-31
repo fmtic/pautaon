@@ -1972,6 +1972,22 @@ Registro da execução do Prompt B sobre os mesmos achados do relatório S1. **N
 
 **Testes:** `test_seguranca_e1_headers.py` (19), `test_seguranca_e2_cache.py` (6), `test_seguranca_e3_csp.py` (18) e `test_forcar_troca_contas_expostas.py` (14, com repositório Git temporário e dumps sintéticos). O `conftest.py` fixa `APP_ENV=development` por `setdefault`, porque o `test_client` fala HTTP e o cookie `Secure` derrubaria todo login da suíte.
 
+### S1-11/S1-12/S1-19 — rate limit por conta e IP, tempo constante e HMAC no log (Prompt D2)
+
+**S1-11 — rate limit por conta e por IP (E2).** Nova tabela `login_controle` (migration `c1d2e3f4a5b6`) com
+escopo (`conta`/`ip`), `chave_hash` (HMAC-SHA256), falhas, janela, bloqueio, nível, atualização. Conta: 5
+falhas em 15 min bloqueiam por 15/30/60 min (escalonamento dentro de 24 h, teto 60). IP: 30 falhas em 15 min
+bloqueiam por 15 min. Checagem antes de qualquer consulta de senha/AD. Mensagens idênticas para e-mail
+existente e inexistente. Sucesso zera a conta (não o IP). Retenção: 30 dias (limpeza oportunista).
+
+**S1-12 — tempo constante (E2).** Quando o usuário local não existe ou não tem senha, executa
+`check_password_hash` contra hash dummy de mesmo custo.
+
+**S1-19 — HMAC (E4).** `LogAcao` de login grava os 12 primeiros hex do `hmac_identificador` (HKDF da
+SECRET_KEY) em vez de SHA-256 simples. Linhas antigas não alteradas.
+
+---
+
 ### 12.29 `user.session_version` — versão de sessão (S1-06)
 
 Coluna `session_version` (`INTEGER NOT NULL DEFAULT 0`) na tabela `user`, criada pela migration **`b5c6d7e8f9a0`** (revises `c9d0e1f2a3b4`). Não é campo de negócio: é o contador que permite revogar as sessões de um usuário sem depender do cookie.
