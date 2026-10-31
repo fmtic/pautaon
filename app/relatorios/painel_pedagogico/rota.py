@@ -64,7 +64,7 @@ def painel_pedagogico():
     periodos_q = PeriodoLetivo.query
     if unidade_id:
         periodos_q = periodos_q.filter_by(unidade_id=unidade_id)
-    periodos = periodos_q.order_by(PeriodoLetivo.data_inicio.desc()).all()
+    periodos = periodos_q.options(joinedload(PeriodoLetivo.unidade)).order_by(PeriodoLetivo.data_inicio.desc()).all()
 
     if not periodos:
         return render_template(
