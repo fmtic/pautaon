@@ -254,7 +254,7 @@ def login():
             return redirect(url_for('main.painel'))
 
         # Falha total ou Desabilitado
-        register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo de e-mail: {email}")
+        register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo hash: {hashlib.sha256((email or '').strip().lower().encode()).hexdigest()[:12]}")
         try:
             _register_failed_attempt(ip_address)
         except Exception:
