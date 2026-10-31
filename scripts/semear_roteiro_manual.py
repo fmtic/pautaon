@@ -183,7 +183,7 @@ def _upsert(model, *, criar_com: dict, atualizar: dict | None = None, **filtro):
 # Semente
 # ---------------------------------------------------------------------------
 
-def _semear(hoje: date) -> dict:
+def _semear(hoje: date, senha: str) -> dict:
     from app.database import db
     from app.models import (
         Aluno,
@@ -252,11 +252,11 @@ def _semear(hoje: date) -> dict:
         db.session.flush()
         return usuario
 
-    admin = _usuario("Admin", "admin", None, senha)  # noqa: F821
-    gerencia = _usuario("Gerencia", "gerencia", None, senha)  # noqa: F821
-    pedagogico = _usuario("Pedagogico", "pedagogico", unidade.id, senha)  # noqa: F821
-    secretaria = _usuario("Secretaria", "secretaria", unidade.id, senha)  # noqa: F821
-    professor = _usuario("Professor", "professor", unidade.id, senha)  # noqa: F821
+    admin = _usuario("Admin", "admin", None, senha)
+    gerencia = _usuario("Gerencia", "gerencia", None, senha)
+    pedagogico = _usuario("Pedagogico", "pedagogico", unidade.id, senha)
+    secretaria = _usuario("Secretaria", "secretaria", unidade.id, senha)
+    professor = _usuario("Professor", "professor", unidade.id, senha)
     db.session.commit()
 
     # ---- períodos -------------------------------------------------------
@@ -451,11 +451,13 @@ def _semear(hoje: date) -> dict:
     turma_viz = _turma(
         "Turma Vizinha - Oferta Unica", periodo=periodo_viz, programa="Outros",
         curso_id=curso_vizinho.id, unidade_id=vizinha.id,
+        professor_id=professor.id,
         datas=(ini_vig, fim_vig),
     )
     oferta_viz = _oferta(
         turma_viz, curso_vizinho, programa="Outros",
         grade=[(0, time(8, 0), time(10, 0))],
+        professor_id=professor.id,
     )
     sincronizar_programa_turma(turma_viz)
 
@@ -1071,7 +1073,7 @@ def main() -> int:
             ).scalars().first()
             if admin is not None:
                 login_user(admin, force=True)
-            dados = _semear(get_local_now().date())
+            dados = _semear(get_local_now().date(), senha)
             login_user(
                 db.session.execute(
                     db.select(User).filter_by(email=f"admin.m1@{DOMINIO}")
@@ -1081,6 +1083,7 @@ def main() -> int:
             contagens = _contagens()
             rotulo = _contagens_rotulo()
             esperados = _esperados(dados)
+        globals()["origem"] = origem
         _relatorio(dados, contagens, rotulo, esperados)
         if origem == "gerada":
             print(f"\nSenha dos usuarios [ROTEIRO] (gerada agora): {senha}")
