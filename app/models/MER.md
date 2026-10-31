@@ -2058,3 +2058,8 @@ class MinhaEntidade(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
     # `ativo`, `unidade_id`, `updated_by_id`, `updated_by_name` e `updated_at`
     # já vêm dos mixins; o listener before_flush preenche a auditoria.
 ```
+
+
+### Desbloqueio de login pelo admin (Prompt D3)
+
+Rotas (blueprint auth, POST, CSRF, @login_required, UserRole.ADMIN): `/admin/login-controle/desbloquear-conta` (campo email) e `/admin/login-controle/desbloquear-ip` (campo ip). Validação com `ipaddress`. Ação zera falhas/bloqueio/nível. LogAcao acao="Desbloqueio de login" com detalhes `escopo=... chave=<8> por_usuario_id=<id> encontrado=sim|nao`. Painel lista bloqueios ativos (max 50). S1-21 resolvido: seed sem senha fixa (resolver_senha).

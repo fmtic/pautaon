@@ -1545,3 +1545,9 @@ Esta atualização inclui:
 - **Testes:** +3 em `tests/test_frequencia_oferta.py` — GET do dia sem diário com tema ativo, GET com `data=DD/MM/AAAA` e asserção direta do contrato da função nos dois caminhos. Helpers `_tema_da_oferta`/`_linha_do_tema` afirmam que o loop de temas **executou** e que o checkbox chega **desmarcado** (sem isso o teste passaria mesmo com o bug, porque `temas` vazio nunca entra no `{% if %}`). Os três foram validados contra o código antigo (revertido temporariamente): falham com o `TypeError` original.
 - **Escopo:** nenhuma migration (head `8d2e3f4a5b6c`); nenhum comportamento alterado para diários já lançados; `ruff` sem achados novos nos 3 arquivos (só I001/F401 pré-existentes em linhas intocadas). Docs: MER §7.20 (contrato de leitura da pauta) e §10 (nota de correção no item dos temas múltiplos).
 - Suíte ao final: **659 passed**, 0 falhas (656 → +3).
+
+
+## Prompt D3 (segurança) — concluído
+
+- Desbloqueio de login pelo admin (rotas POST, CSRF, ADMIN) e S1-21 (seed sem senha fixa) resolvidos.
+- Pendentes mantidos: S1-13, S1-24, vínculo de contas Google sem senha local, CSP enforcing, reescrita do histórico do Git (S3).
