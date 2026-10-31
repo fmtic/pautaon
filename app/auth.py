@@ -15,6 +15,7 @@ from flask import Blueprint, current_app, render_template, request, redirect, fl
 from flask_login import logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
+import ipaddress
 import json
 import secrets
 import hashlib
@@ -59,12 +60,20 @@ def _normalizar_email_login(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def _chave_conta(email: str) -> str:
+def chave_conta(email: str) -> str:
+    """Chave (HMAC) da conta para login_controle."""
     return hmac_identificador(_normalizar_email_login(email))
 
 
-def _chave_ip(ip: str) -> str:
+_chave_conta = chave_conta
+
+
+def chave_ip(ip: str) -> str:
+    """Chave (HMAC) do IP para login_controle."""
     return hmac_identificador(ip or "unknown")
+
+
+_chave_ip = chave_ip
 
 
 def _minutos_bloqueio_conta(nivel: int) -> int:
@@ -632,7 +641,90 @@ def painel_admin():
 
     senha_gerada = session.pop('senha_gerada', None)
 
-    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades, senha_gerada=senha_gerada)
+    # Bloqueios ativos (S1-11/S1-12, desbloqueio pelo admin D3)
+    agora = _agora()
+    bloqueios_ativos = db.session.execute(
+        select(LoginControle)
+        .where(LoginControle.bloqueado_ate.isnot(None))
+        .where(LoginControle.bloqueado_ate > agora)
+        .order_by(LoginControle.bloqueado_ate.desc())
+        .limit(50)
+    ).scalars().all()
+
+    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades, senha_gerada=senha_gerada, bloqueios_ativos=bloqueios_ativos, agora=agora)
+
+
+@bp.route('/admin/login-controle/desbloquear-conta', methods=['POST'])
+@login_required
+def desbloquear_conta():
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+    email = request.form.get('email', '').strip()
+    if not email or len(email) > 254:
+        flash('Informe um e-mail válido.', 'danger')
+        return redirect(url_for('auth.painel_admin'))
+    chave = chave_conta(email)
+    reg = LoginControle.query.filter_by(escopo='conta', chave_hash=chave).first()
+    encontrado = reg is not None
+    if reg:
+        reg.falhas = 0
+        reg.bloqueado_ate = None
+        reg.janela_inicio = None
+        reg.nivel = 0
+        reg.atualizado_em = _agora()
+        db.session.commit()
+        flash('Conta desbloqueada.', 'success')
+    else:
+        flash('Nenhum bloqueio encontrado para esse identificador.', 'warning')
+    # auditoria
+    log = LogAcao(
+        usuario_id=current_user.id,
+        usuario_nome=current_user.name,
+        acao='Desbloqueio de login',
+        detalhes=f'escopo=conta chave={chave[:8]} por_usuario_id={current_user.id} encontrado={"sim" if encontrado else "nao"}',
+        ip=request.remote_addr,
+        unidade_id=current_user.unidade_id,
+    )
+    db.session.add(log)
+    db.session.commit()
+    return redirect(url_for('auth.painel_admin'))
+
+
+@bp.route('/admin/login-controle/desbloquear-ip', methods=['POST'])
+@login_required
+def desbloquear_ip():
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+    valor = request.form.get('ip', '').strip()
+    try:
+        ip_norm = str(ipaddress.ip_address(valor))
+    except ValueError:
+        flash('Informe um IP válido.', 'danger')
+        return redirect(url_for('auth.painel_admin'))
+    chave = chave_ip(ip_norm)
+    reg = LoginControle.query.filter_by(escopo='ip', chave_hash=chave).first()
+    encontrado = reg is not None
+    if reg:
+        reg.falhas = 0
+        reg.bloqueado_ate = None
+        reg.janela_inicio = None
+        reg.nivel = 0
+        reg.atualizado_em = _agora()
+        db.session.commit()
+        flash('IP desbloqueado.', 'success')
+    else:
+        flash('Nenhum bloqueio encontrado para esse identificador.', 'warning')
+    log = LogAcao(
+        usuario_id=current_user.id,
+        usuario_nome=current_user.name,
+        acao='Desbloqueio de login',
+        detalhes=f'escopo=ip chave={chave[:8]} por_usuario_id={current_user.id} encontrado={"sim" if encontrado else "nao"}',
+        ip=request.remote_addr,
+        unidade_id=current_user.unidade_id,
+    )
+    db.session.add(log)
+    db.session.commit()
+    return redirect(url_for('auth.painel_admin'))
 
 
 @bp.route('/admin/cadastrar', methods=['POST'])

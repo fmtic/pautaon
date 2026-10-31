@@ -293,6 +293,65 @@
             </div>
         </div>
     </div>
+    <!-- Bloqueios de login (S1-11/S1-12, desbloqueio pelo admin D3) -->
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-header bg-white p-4 border-bottom">
+            <h5 class="fw-bold mb-0"><i class="bi bi-lock-fill text-danger me-2"></i>Bloqueios de login</h5>
+        </div>
+        <div class="card-body p-4">
+            {% if bloqueios_ativos %}
+            <div class="table-responsive mb-4">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Escopo</th>
+                            <th>Identificador</th>
+                            <th>Bloqueado até</th>
+                            <th>Nível</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in bloqueios_ativos %}
+                        <tr>
+                            <td>{{ 'Conta' if b.escopo == 'conta' else 'IP' }}</td>
+                            <td><code class="font-monospace">{{ b.chave_hash[:8] }}</code></td>
+                            <td>{{ b.bloqueado_ate.strftime('%d/%m/%Y %H:%M') }}</td>
+                            <td>{{ b.nivel }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">Nenhum bloqueio ativo.</p>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <form method="POST" action="{{ url_for('auth.desbloquear_conta') }}" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <label class="form-label small fw-semibold">Desbloquear conta</label>
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control" placeholder="e-mail" autocomplete="off">
+                            <button type="submit" class="btn btn-outline-danger">Desbloquear</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="col-md-6">
+                    <form method="POST" action="{{ url_for('auth.desbloquear_ip') }}" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <label class="form-label small fw-semibold">Desbloquear IP</label>
+                        <div class="input-group">
+                            <input type="text" name="ip" class="form-control" placeholder="IP" autocomplete="off">
+                            <button type="submit" class="btn btn-outline-danger">Desbloquear</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
 </div>
 {% endblock %}
 
