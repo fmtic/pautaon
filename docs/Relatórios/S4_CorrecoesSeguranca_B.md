@@ -14,8 +14,8 @@
 | E1 | S1-09 (cookie `Secure`, HSTS) e S1-15 (`ProxyFix`) | `8c73977` | cookie seguro por padrão, HSTS só em HTTPS, ProxyFix desligado por padrão |
 | E2 | S1-10 (cache de página autenticada) | `a6b7c1f` | `no-store, private` em resposta autenticada |
 | E3 | S1-14 (CSP) | `e77b88c` | `Content-Security-Policy-Report-Only` com o inventário |
-| E4 | logs versionados | *pendente de commit* | `.gitignore` com `instance/error.log*`; `error.log.1` fora do índice |
-| E5 | senhas expostas nos dumps | *pendente de commit* | script + 14 testes; dry-run executado, aplicação não executada |
+| E4 | logs versionados | `3a220eb` | `.gitignore` com `instance/error.log*`; `error.log.1` fora do índice |
+| E5 | senhas expostas nos dumps | `1ccf0ea` | script + 14 testes; dry-run executado, aplicação não executada |
 
 ## 1. E0 — leitura e inventário
 
