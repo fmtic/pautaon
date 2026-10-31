@@ -1563,3 +1563,7 @@ Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, require
 ## AJ2 - Ajustes pontuais 3 e 5
 
 Entregue: conselho de classe lancamento com resposta e observacao separadas (commit f3d2b15); painel pedagogico com nome_exibicao no select de periodos (commit 9794165). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
+
+## AJ1 - Ajustes pontuais 1 e 2
+
+Entregue: servico_social acessa Relatorios (commit 8598145); filtro de logs por categoria (commit f79c964). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
