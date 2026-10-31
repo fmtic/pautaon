@@ -148,6 +148,13 @@ def exportar_relatorio():
         df_freq_turma = pd.DataFrame(
             list(f_turma.items()), columns=["Turma", "% Presença"]
         )
+        from app.utils.xlsx import sanitizar_dataframe
+
+        df_idade_prog = sanitizar_dataframe(df_idade_prog)
+        df_idade_turma = sanitizar_dataframe(df_idade_turma)
+        df_freq_prog = sanitizar_dataframe(df_freq_prog)
+        df_freq_prof = sanitizar_dataframe(df_freq_prof)
+        df_freq_turma = sanitizar_dataframe(df_freq_turma)
 
         output = BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:

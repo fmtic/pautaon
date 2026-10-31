@@ -223,7 +223,9 @@ def exportar_relatorio_alunos():
                 row[COLUMN_LABELS[col]] = getattr(a, col, "-")
         data_to_df.append(row)
 
-    df = pd.DataFrame(data_to_df)
+    from app.utils.xlsx import sanitizar_dataframe
+
+    df = sanitizar_dataframe(pd.DataFrame(data_to_df))
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, sheet_name="Lista de Alunos", index=False)

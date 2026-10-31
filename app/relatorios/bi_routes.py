@@ -263,12 +263,15 @@ def bi_exportar_xlsx():
                 "bg_color": "#f0f4ff" if row_idx % 2 == 0 else "#ffffff",
                 "border": 1, "border_color": "#dee2e6",
             })
-            worksheet.write(row_idx, 0, item.get("nome") or item.get("id") or "—", fmt_linha)
+            from app.utils.xlsx import sanitizar_valor_xlsx
+
+            worksheet.write(row_idx, 0, sanitizar_valor_xlsx(item.get("nome") or item.get("id") or "—"), fmt_linha)
             valor = item.get("valor")
             if isinstance(valor, (int, float)):
                 worksheet.write_number(row_idx, 1, valor, fmt_valor_linha)
             else:
-                worksheet.write(row_idx, 1, valor if valor is not None else "—", fmt_linha)
+                from app.utils.xlsx import sanitizar_valor_xlsx
+                worksheet.write(row_idx, 1, sanitizar_valor_xlsx(valor if valor is not None else "—"), fmt_linha)
         # Rodapé
         rodape_row = len(resultado) + 6
         worksheet.write(rodape_row, 0, f"Total de registros: {len(resultado)}", fmt_rodape)
