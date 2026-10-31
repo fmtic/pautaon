@@ -1551,3 +1551,7 @@ Esta atualização inclui:
 
 - Desbloqueio de login pelo admin (rotas POST, CSRF, ADMIN) e S1-21 (seed sem senha fixa) resolvidos.
 - Pendentes mantidos: S1-13, S1-24, vínculo de contas Google sem senha local, CSP enforcing, reescrita do histórico do Git (S3).
+
+## §12.28 — Atualização de dependências (Prompt G)
+
+Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2, mako, python-dotenv, Pillow, Werkzeug). Pendentes por salto MAJOR: cryptography, oauthlib, Pillow (13.x), pytest (dev).
