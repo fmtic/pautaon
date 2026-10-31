@@ -1972,6 +1972,7 @@ Coluna `session_version` (`INTEGER NOT NULL DEFAULT 0`) na tabela `user`, criada
 - **Recusa:** o `before_request` de segurança descarta `g._login_user` (o Flask-Login cacheia o usuário no AppContext; a produção abre um novo por request, o `test_client` não) e força o loader. Sessão recusada vira `logout` + `session.clear()` + `flash` em português + `302` para `/login`, com mensagem própria para geração antiga e para expiração.
 - **Limite absoluto:** `SESSION_ABSOLUTE_LIFETIME` (padrão 8 h, `SESSION_ABSOLUTE_HOURS` no ambiente) conta de `iat` e **não** é prorrogado por atividade; o deslizante de 60 min (`PERMANENT_SESSION_LIFETIME` com `SESSION_REFRESH_EACH_REQUEST=True`) continua valendo em paralelo.
 - **Custo:** uma requisição autenticada faz **um** SELECT em `user` — o mesmo que o `user_loader` já fazia; `sv` e `iat` são conferidos no objeto já carregado.
+- **Logout (S1-16):** só `POST /logout` (CSRF obrigatório) encerra a sessão e incrementa a versão. `GET /logout` redireciona para `/painel` (autenticado) ou `/login` (anônimo) sem efeito colateral — link, pré-busca ou `<img>` não derrubam mais a sessão. O botão Sair do `base.html` passou a ser formulário POST com as mesmas classes.
 
 ---
 

@@ -39,7 +39,11 @@
           <i class="bi bi-person-circle me-1"></i> {{ current_user.name }}
           <span class="badge bg-secondary ms-1">{{ unidade_contexto }}</span>
         </span>
-        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm">Sair</a>
+        {# S1-16: logout só por POST, com CSRF — GET não encerra a sessão. #}
+        <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-danger btn-sm">Sair</button>
+        </form>
         {% endif %}
       </div>
     </header>

@@ -266,9 +266,22 @@ def login():
     return render_template('login.html')
 
 
-@bp.route('/logout')
-@login_required
+@bp.route('/logout', methods=['GET', 'POST'])
 def logout():
+    """Encerra a sessão — só por POST (S1-16).
+
+    GET é inócuo de propósito: link, pré-busca do navegador ou `<img>` não
+    podem derrubar a sessão. Autenticado volta ao painel; anônimo, ao login.
+    O POST exige CSRF (validação global do Flask-WTF).
+    """
+    if request.method != 'POST':
+        if current_user.is_authenticated:
+            return redirect(url_for('main.painel'))
+        return redirect(url_for('auth.login'))
+
+    if not current_user.is_authenticated:
+        return redirect(url_for('auth.login'))
+
     register_security_log("Logoff", "Sessão encerrada voluntariamente.")
     # S1-06: revoga a geração atual — o cookie copiado para outro navegador
     # deixa de autenticar na hora. O evento de auditoria já é o "Logoff".

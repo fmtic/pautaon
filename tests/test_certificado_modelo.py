@@ -332,7 +332,8 @@ def test_arquivo_exige_login(app, client):
     login_as(client, ids["usuarios"]["pedagogico"], ids["un_a"])
     _enviar(client, ids, ids["cc1"])
 
-    client.get("/logout")
+    # S1-16: logout só por POST (GET é inócuo).
+    client.post("/logout")
     resposta = client.get(
         f"/periodo-letivo/{ids['periodo']}/certificado-modelo/{ids['cc1']}/arquivo"
     )

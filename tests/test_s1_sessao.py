@@ -6,6 +6,7 @@ de sessão sem carimbo/geração antiga e o limite absoluto de 8 horas, que a
 atividade não prorroga.
 """
 
+import re
 import time
 
 import pytest
@@ -55,7 +56,7 @@ def test_cookie_copiado_nao_autentica_depois_do_logout(app, client):
     _clonar_cookie(client, outro)
     assert outro.get("/painel").status_code == 200, "pré-condição: cópia vale"
 
-    assert client.get("/logout").status_code == 302
+    assert client.post("/logout").status_code == 302
 
     recusado = outro.get("/painel")
     assert recusado.status_code == 302
@@ -335,7 +336,73 @@ def test_logout_nao_gera_log_extra(app, client):
     login_as(client, usuario)
 
     ultimo = db.session.query(func.max(LogAcao.id)).scalar() or 0
-    client.get("/logout")
+    client.post("/logout")
 
     acoes = [log.acao for log in LogAcao.query.filter(LogAcao.id > ultimo).all()]
     assert acoes == ["Logoff"]
+
+
+# ---------------------------------------------------------------------------
+# S1-16 — logout só por POST
+# ---------------------------------------------------------------------------
+
+
+def test_get_logout_nao_encerra_a_sessao(app, client):
+    usuario = _usuario("get.logout@example.invalid")
+    login_as(client, usuario)
+
+    resposta = client.get("/logout")
+    assert resposta.status_code == 302
+    assert "/painel" in resposta.headers["Location"]
+    assert db.session.get(User, usuario.id).session_version == 0
+    assert client.get("/painel").status_code == 200
+
+
+def test_get_logout_anonimo_vai_para_o_login(client):
+    resposta = client.get("/logout")
+    assert resposta.status_code == 302
+    assert "/login" in resposta.headers["Location"]
+
+
+def test_post_logout_desloga_revoga_e_redireciona(app, client):
+    usuario = _usuario("post.logout@example.invalid")
+    login_as(client, usuario)
+
+    resposta = client.post("/logout")
+    assert resposta.status_code == 302
+    assert "/login" in resposta.headers["Location"]
+    assert db.session.get(User, usuario.id).session_version == 1
+    assert client.get("/painel").status_code == 302
+
+
+def test_post_logout_sem_token_e_recusado(app, client):
+    usuario = _usuario("csrf.logout@example.invalid")
+    login_as(client, usuario)
+    app.config["WTF_CSRF_ENABLED"] = True
+
+    assert client.post("/logout").status_code == 400
+    assert db.session.get(User, usuario.id).session_version == 0
+
+
+def test_post_logout_com_token_funciona(app, client):
+    usuario = _usuario("token.logout@example.invalid")
+    login_as(client, usuario)
+    app.config["WTF_CSRF_ENABLED"] = True
+
+    html = client.get("/painel").get_data(as_text=True)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+
+    resposta = client.post("/logout", data={"csrf_token": token})
+    assert resposta.status_code == 302
+    assert "/login" in resposta.headers["Location"]
+    assert db.session.get(User, usuario.id).session_version == 1
+
+
+def test_menu_tem_formulario_de_logout(app, client):
+    usuario = _usuario("menu.logout@example.invalid", role="admin")
+    login_as(client, usuario)
+
+    html = client.get("/painel").get_data(as_text=True)
+    assert 'action="/logout"' in html
+    assert 'name="csrf_token"' in html
+    assert 'href="/logout"' not in html
