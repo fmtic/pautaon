@@ -70,7 +70,6 @@ class TestResetSenhaAdmin:
 
         # Verifica envio de e-mail
         assert len(emails_enviados) == 1
-        corpo = emails_enviados[0]["body_html"]
         assert emails_enviados[0]["recipients"] == [alvo.email]
 
         # Extrai a senha temporária do e-mail ou do flash
