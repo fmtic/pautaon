@@ -1,6 +1,6 @@
 """Troca do contexto de unidade ativa na sessão do usuário."""
 
-from flask import abort, flash, redirect, session, url_for
+from flask import abort, flash, redirect, request, session, url_for
 from flask_login import current_user, login_required
 
 from app.models import Unidade
@@ -8,9 +8,13 @@ from app.models import Unidade
 from . import bp
 
 
-@bp.route("/trocar-unidade/<int:id>")
+@bp.route("/trocar-unidade/<int:id>", methods=["GET", "POST"])
 @login_required
 def trocar_unidade(id):
+    # S1-16: GET é inócuo — não altera a unidade ativa.
+    if request.method == "GET":
+        return redirect(url_for("main.painel"))
+
     if current_user.role not in ["admin", "gerencia"]:
         abort(403)
 

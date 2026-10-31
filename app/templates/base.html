@@ -64,12 +64,18 @@
               </button>
               <ul class="dropdown-menu shadow w-100">
                 <li>
-                  <a class="dropdown-item {% if session.get('unidade_id') in (None, 0) %}active{% endif %}" href="{{ url_for('main.trocar_unidade', id=0) }}">Visão Global</a>
+                  <form method="post" action="{{ url_for('main.trocar_unidade', id=0) }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="dropdown-item {% if session.get('unidade_id') in (None, 0) %}active{% endif %}">Visão Global</button>
+                  </form>
                 </li>
                 <li><hr class="dropdown-divider" /></li>
                 {% for unit in unidades_lista %}
                 <li>
-                  <a class="dropdown-item {% if session.get('unidade_id') == unit.id %}active{% endif %}" href="{{ url_for('main.trocar_unidade', id=unit.id) }}">{{ unit.nome }}</a>
+                  <form method="post" action="{{ url_for('main.trocar_unidade', id=unit.id) }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="dropdown-item {% if session.get('unidade_id') == unit.id %}active{% endif %}">{{ unit.nome }}</button>
+                  </form>
                 </li>
                 {% endfor %}
               </ul>
