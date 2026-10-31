@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from werkzeug.security import check_password_hash, generate_password_hash
 
 RAIZ = Path(__file__).resolve().parents[1]
 SCRIPT = RAIZ / "scripts" / "forcar_troca_contas_expostas.py"
@@ -47,7 +48,8 @@ def _criar_sqlite(caminho: Path, contas: list[tuple]) -> Path:
     conexao = sqlite3.connect(caminho)
     conexao.execute(
         "CREATE TABLE user (id INTEGER PRIMARY KEY, email TEXT, password TEXT, "
-        "is_active INTEGER, is_ad_user INTEGER, first_login INTEGER)"
+        "is_active INTEGER, is_ad_user INTEGER, first_login INTEGER, "
+        "session_version INTEGER NOT NULL DEFAULT 0)"
     )
     conexao.executemany(
         "INSERT INTO user (id, email, password, is_active, is_ad_user, first_login) "
@@ -182,9 +184,11 @@ def test_classificar_conta_os_casos(banco, mapa):
     assert contagem.so_ldap == 1
     assert contagem.inativas == 1
     assert contagem.ja_marcadas == 1
-    # vazada + inativa (a "ja" já está marcada e as outras trocaram a senha)
+    # vazada + inativa + ja (a "ja" já está marcada e a "trocada" trocou a senha)
     assert contagem.mesmo_hash == 3
-    assert sorted(contagem.candidatas) == [1, 4]
+    # E5: só conta ATIVA com senha local entra na lista de trabalho — a inativa
+    # (id 4) tem o mesmo hash, mas não é tocada. Antes a lista era [1, 4].
+    assert contagem.candidatas == [1]
 
 
 def test_classificar_sem_mapa_nao_marca_ninguem(banco):
@@ -207,7 +211,7 @@ def test_aplicar_marca_somente_as_candidatas(banco, mapa):
         linha[0]: linha[5] for linha in script.consultar(_dsn(banco))
     }
     assert estados[1] == 1  # vazada
-    assert estados[4] == 1  # inativa, mesmo hash
+    assert estados[4] == 0  # inativa: intocada desde a regra do E5
     assert estados[2] == 0  # senha trocada
     assert estados[3] == 0  # sem senha local
     assert estados[5] == 1  # já estava marcada, não muda de novo
@@ -222,7 +226,7 @@ def test_gerar_sql_producao_usa_email_e_hash(banco, mapa, tmp_path):
 
     assert gerado == destino
     texto = destino.read_text(encoding="utf-8")
-    assert texto.count("UPDATE") == 2
+    assert texto.count("UPDATE") == 1
     assert "vazada@example.invalid" in texto
     assert "hashA" in texto
     assert texto.startswith("--")
@@ -304,3 +308,183 @@ def test_main_aplicar_com_autorizacao_marca_e_faz_backup(
     conteudo = arquivos[0].read_text(encoding="utf-8")
     # O backup guarda o valor anterior (false) para poder voltar atrás.
     assert 'first_login = false WHERE id = 1;' in conteudo
+
+
+# ------------------------------------------------------------------- reset E5
+
+SENHA_DO_DUMP = "SenhaDoDump!123"
+HASH_VAZADO = generate_password_hash(SENHA_DO_DUMP)
+
+
+@pytest.fixture
+def banco_reset(tmp_path):
+    return _criar_sqlite(
+        tmp_path / "reset.db",
+        [
+            (1, "vazada@example.invalid", HASH_VAZADO, 1, 0, 0),
+            (2, "trocada@example.invalid", generate_password_hash("Outra!123"), 1, 0, 0),
+            (3, "ldap@example.invalid", None, 1, 1, 0),
+            (4, "inativa@example.invalid", HASH_VAZADO, 0, 0, 0),
+            # Já marcada no Prompt B, mas a senha vazada continua autenticando.
+            (6, "ja.marcada@example.invalid", HASH_VAZADO, 1, 0, 1),
+            # Federada que também tem senha local: o login tenta o hash antes
+            # do AD, então NÃO é "só-LDAP" e entra no reset.
+            (7, "ad.com.senha@example.invalid", HASH_VAZADO, 1, 1, 0),
+        ],
+    )
+
+
+@pytest.fixture
+def mapa_reset():
+    return {
+        "vazada@example.invalid": {HASH_VAZADO},
+        "inativa@example.invalid": {HASH_VAZADO},
+        "ja.marcada@example.invalid": {HASH_VAZADO},
+        "ad.com.senha@example.invalid": {HASH_VAZADO},
+    }
+
+
+def _por_id(url: str) -> dict[int, tuple]:
+    return {linha[0]: linha for linha in script.consultar(url)}
+
+
+def test_reset_inclui_conta_ja_marcada_com_hash_vazado(banco_reset, mapa_reset):
+    """O modo reset pega quem já está `first_login=True` mas ainda tem o hash.
+
+    `first_login` só exige a troca **depois** do login: a senha vazada
+    continua autenticando. Por isso a lista do reset é maior que a do modo
+    histórico, que não remarca quem já estava marcado.
+    """
+    linhas = script.consultar(_dsn(banco_reset))
+
+    historico = script.classificar(linhas, mapa_reset)
+    reset = script.classificar(linhas, mapa_reset, incluir_ja_marcadas=True)
+
+    assert 6 not in historico.candidatas
+    assert sorted(reset.candidatas) == [1, 6, 7]
+
+
+def test_reset_troca_o_hash_e_revoga_a_sessao(banco_reset, mapa_reset):
+    url = _dsn(banco_reset)
+    linhas = script.consultar(url)
+    contagem = script.classificar(linhas, mapa_reset, incluir_ja_marcadas=True)
+    assert sorted(contagem.candidatas) == [1, 6, 7]
+
+    assert script.aplicar_reset(url, contagem, linhas) == 3
+
+    linha = _por_id(url)[1]
+    assert linha[2] != HASH_VAZADO
+    assert not check_password_hash(linha[2], SENHA_DO_DUMP)
+    assert linha[5] == 1, "first_login ligado"
+    assert linha[6] == 1, "session_version incrementado"
+
+
+def test_reset_nao_toca_ldap_trocada_nem_inativa(banco_reset, mapa_reset):
+    url = _dsn(banco_reset)
+    antes = _por_id(url)
+    linhas = script.consultar(url)
+    script.aplicar_reset(url, script.classificar(linhas, mapa_reset), linhas)
+    depois = _por_id(url)
+
+    for user_id in (2, 3, 4):
+        assert depois[user_id][2] == antes[user_id][2]
+        assert depois[user_id][5] == antes[user_id][5]
+        assert depois[user_id][6] == antes[user_id][6]
+
+
+def test_reset_backup_tem_aviso_e_valores_anteriores(banco_reset, mapa_reset, tmp_path):
+    url = _dsn(banco_reset)
+    linhas = script.consultar(url)
+    contagem = script.classificar(linhas, mapa_reset)
+    destino = tmp_path / "backup.sql"
+
+    script._backup_reset(url, contagem, linhas, destino, com_versao=True)
+
+    texto = destino.read_text(encoding="utf-8")
+    assert "ATENCAO" in texto and "hashes de senha" in texto
+    assert HASH_VAZADO in texto
+    assert 'first_login = false WHERE id = 1;' in texto
+    assert "session_version anterior = 0" in texto
+
+
+def test_reset_dry_run_nao_altera_e_gera_duas_variantes(
+    banco_reset, mapa_reset, tmp_path, capsys
+):
+    saida = tmp_path / "sql"
+
+    codigo = script.main(
+        ["--url", _dsn(banco_reset), "--modo", "reset", "--saida", str(saida)],
+        mapa=mapa_reset,
+    )
+
+    assert codigo == 0
+    stdout = capsys.readouterr().out
+    assert "vazada@example.invalid" not in stdout
+    assert HASH_VAZADO not in stdout
+    assert _por_id(_dsn(banco_reset))[1][2] == HASH_VAZADO, "dry-run não altera"
+
+    arquivos = sorted(p.name for p in saida.glob("reset_contas_producao_*"))
+    assert len(arquivos) == 2
+    com = (saida / arquivos[0]).read_text(encoding="utf-8")
+    sem = (saida / arquivos[1]).read_text(encoding="utf-8")
+    assert arquivos[0].endswith("_com_sessao.sql")
+    assert arquivos[1].endswith("_sem_sessao.sql")
+    assert "session_version = session_version + 1" in com
+    assert "session_version" not in sem
+
+
+def test_reset_aplicar_exige_autorizacao(banco_reset, mapa_reset, tmp_path, capsys):
+    codigo = script.main(
+        [
+            "--url",
+            _dsn(banco_reset),
+            "--modo",
+            "reset",
+            "--aplicar",
+            "--saida",
+            str(tmp_path / "sql"),
+        ],
+        mapa=mapa_reset,
+        backup_dir=tmp_path / "bak",
+    )
+
+    assert codigo == 2
+    assert "autorizar-principal" in capsys.readouterr().err
+    assert _por_id(_dsn(banco_reset))[1][2] == HASH_VAZADO
+
+
+def test_reset_aplicar_com_autorizacao_faz_backup_e_conta(
+    banco_reset, mapa_reset, tmp_path, capsys
+):
+    backups = tmp_path / "bak"
+
+    codigo = script.main(
+        [
+            "--url",
+            _dsn(banco_reset),
+            "--modo",
+            "reset",
+            "--aplicar",
+            "--autorizar-principal",
+            "--saida",
+            str(tmp_path / "sql"),
+            "--backup-dir",
+            str(backups),
+        ],
+        mapa=mapa_reset,
+        backup_dir=backups,
+    )
+
+    assert codigo == 0
+    stdout = capsys.readouterr().out
+    assert "contas resetadas: 3" in stdout
+    # Vazada, já marcada e AD-com-senha saem do hash antigo (4 -> 1); a
+    # inativa permanece porque a regra do E5 manda não tocar conta inativa.
+    assert "hash do dump ainda em uso: 4 -> 1" in stdout
+    assert "vazada@example.invalid" not in stdout
+
+    assert len(list(backups.glob("*_pre_reset_contas_*.sql"))) == 1
+    linha = _por_id(_dsn(banco_reset))[1]
+    assert not check_password_hash(linha[2], SENHA_DO_DUMP)
+    assert linha[5] == 1
+    assert linha[6] == 1
