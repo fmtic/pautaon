@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', function () {
             let pendentes = [];
 
             // 1. Validar Perguntas da Turma (Geral)
-            const camposTurma = document.querySelectorAll('textarea[id^="resp_turma_"]');
+            const camposTurma = document.querySelectorAll('textarea[id^="resp_turma_"], input[type="hidden"][id^="resp_turma_"]');
             camposTurma.forEach(campo => {
                 if (!campo.value.trim()) {
                     if (!pendentes.includes("Avaliação Geral da Turma")) {
@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             // 2. Validar Perguntas Individuais (Alunos)
-            const camposAlunos = document.querySelectorAll('textarea[id^="resp_"]:not([id^="resp_turma_"])');
+            const camposAlunos = document.querySelectorAll('textarea[id^="resp_"]:not([id^="resp_turma_"]), input[type="hidden"][id^="resp_"]:not([id^="resp_turma_"])');
             let idsAlunosIncompletos = new Set();
 
             camposAlunos.forEach(campo => {
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // 3. Mapear IDs para Nomes
             idsAlunosIncompletos.forEach(id => {
-                const cardAluno = document.querySelector(`textarea[id^="resp_${id}_"]`).closest('.card');
+                const cardAluno = document.querySelector(`textarea[id^="resp_${id}_"], input[type="hidden"][id^="resp_${id}_"]`).closest('.card');
                 if (cardAluno) {
                     const nomeExibicao = cardAluno.querySelector('h6').innerText;
                     pendentes.push(nomeExibicao);

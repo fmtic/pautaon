@@ -241,6 +241,7 @@ def _normalize_conselho_request(form_data) -> dict:
         "data_inicio": form_data.get("data_inicio", ""),
         "data_fim": form_data.get("data_fim", ""),
         "respostas": {},
+        "observacoes": {},
     }
 
     turma_id = form_data.get("turma_id", "")
@@ -251,7 +252,7 @@ def _normalize_conselho_request(form_data) -> dict:
             normalized["turma_id"] = None
 
     for key, value in form_data.items():
-        if key.startswith("resp_"):
+        if key.startswith(("resp_", "resposta_")):
             parts = key.split("_")
             # D5.2: só existem respostas de ALUNO neste formulário. Campos
             # 'resp_turma_*' não são mais parseados aqui — a avaliação
@@ -262,6 +263,13 @@ def _normalize_conselho_request(form_data) -> dict:
                 pergunta_id = parts[2]
                 if aluno_id.isdigit() and pergunta_id.isdigit():
                     normalized["respostas"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
+        if key.startswith(("obs_", "observacao_")):
+            parts = key.split("_")
+            if len(parts) >= 3:
+                aluno_id = parts[1]
+                pergunta_id = parts[2]
+                if aluno_id.isdigit() and pergunta_id.isdigit():
+                    normalized["observacoes"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
 
     return normalized
 
@@ -677,6 +685,7 @@ def lancamento_conselho():
         ConselhoClasse.etapa == etapa
     ).all()
     respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": r.resposta for r in respostas_db}
+    observacoes_map = {f"{r.aluno_id}_{r.pergunta_id}": r.observacao for r in respostas_db}
 
     return render_template('conselho/lancamento.html',
                            turma=turma_obj,
@@ -687,6 +696,7 @@ def lancamento_conselho():
                            perguntas=perguntas,
                            conselho=conselho,
                            respostas=respostas_map,
+                           observacoes=observacoes_map,
                            **render_base)
 
 
@@ -773,12 +783,17 @@ def salvar_conselho():
     # F1: autor do lançamento (None/None em contexto sem usuário).
     autor_id, autor_nome = autor_do_lancamento()
 
-    for key, value in normalized["respostas"].items():
+    for key in set(normalized["respostas"]) | set(normalized["observacoes"]):
         parts = key.split('_')
         if len(parts) < 2:
             continue
         aluno_id = int(parts[0])
         pergunta_id = int(parts[1])
+
+        value_resposta = normalized["respostas"].get(key)
+        value_obs = normalized["observacoes"].get(key)
+        has_resposta = key in normalized["respostas"]
+        has_obs = key in normalized["observacoes"]
 
         if aluno_id not in alunos_oferta:
             continue
@@ -807,8 +822,14 @@ def salvar_conselho():
         if resposta:
             # F1: só a mudança de CONTEÚDO troca o autor; regravar o mesmo
             # texto mantém quem gravou antes.
-            if resposta.resposta != value:
-                resposta.resposta = value
+            changed = False
+            if has_resposta and resposta.resposta != value_resposta:
+                resposta.resposta = value_resposta
+                changed = True
+            if has_obs and resposta.observacao != value_obs:
+                resposta.observacao = value_obs
+                changed = True
+            if changed:
                 resposta.autor_id = autor_id
                 resposta.autor_nome = autor_nome
         else:
@@ -816,7 +837,8 @@ def salvar_conselho():
                 conselho_id=conselho.id,
                 aluno_id=aluno_id,
                 pergunta_id=pergunta_id,
-                resposta=value,
+                resposta=value_resposta if has_resposta else None,
+                observacao=value_obs if has_obs else None,
                 autor_id=autor_id,
                 autor_nome=autor_nome
             ))

@@ -4,6 +4,12 @@
    continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container-fluid mt-4">
+    <style>
+        :root { --conselho-pergunta-cor: #0a3d62; }
+        .conselho-pergunta { color: var(--conselho-pergunta-cor); }
+        .conselho-opcao.active { border-color: #0a3d62; background-color: #e7f1ff; font-weight: 700; }
+        .conselho-opcao:focus-visible { outline: 2px solid #0a3d62; outline-offset: 2px; }
+    </style>
 
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body">
@@ -124,25 +130,36 @@
                         <div class="row">
                             {% for pergunta in perguntas_aluno %}
                             <div class="col-md-6 mb-3">
-                                <label class="fw-bold mb-2 small text-muted text-uppercase"
+                                <label class="fw-bold mb-2 small conselho-pergunta text-uppercase"
                                     for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
 
                                 {% if pergunta.opcoes %}
-                                <div class="mb-2">
+                                <input type="hidden" name="resp_{{ aluno.id }}_{{ pergunta.id }}"
+                                    id="resp_{{ aluno.id }}_{{ pergunta.id }}"
+                                    value="{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}">
+                                <div class="mb-2 conselho-opcoes" data-resp-id="resp_{{ aluno.id }}_{{ pergunta.id }}">
                                     {% for opcao in pergunta.opcoes.split(' | ') %}
-                                    <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
+                                    <button type="button"
+                                        class="btn btn-xs btn-outline-primary me-1 mb-1 conselho-opcao {% if respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') == opcao %}active fw-bold{% endif %}"
                                         style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
-                                        onclick='document.getElementById("resp_{{ aluno.id }}_{{ pergunta.id }}").value = {{ opcao | tojson }};'>
+                                        data-valor="{{ opcao }}"
+                                        onclick="document.getElementById('resp_{{ aluno.id }}_{{ pergunta.id }}').value = this.getAttribute('data-valor'); this.parentElement.querySelectorAll('.conselho-opcao').forEach(b=>b.classList.remove('active','fw-bold')); this.classList.add('active','fw-bold');">
                                         {{ letras[loop.index0] }}) {{ opcao }}
                                     </button>
                                     {% endfor %}
                                 </div>
-                                {% endif %}
-
+                                {% else %}
                                 <textarea name="resp_{{ aluno.id }}_{{ pergunta.id }}"
                                     id="resp_{{ aluno.id }}_{{ pergunta.id }}"
+                                    class="form-control mb-2" rows="2"
+                                    placeholder="Digite a resposta...">{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
+                                {% endif %}
+
+                                <label class="small text-muted mb-1" for="obs_{{ aluno.id }}_{{ pergunta.id }}">Observação (texto livre)</label>
+                                <textarea name="obs_{{ aluno.id }}_{{ pergunta.id }}"
+                                    id="obs_{{ aluno.id }}_{{ pergunta.id }}"
                                     class="form-control" rows="2"
-                                    placeholder="Digite sua observação...">{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
+                                    placeholder="Digite sua observação...">{{ observacoes.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
                             </div>
                             {% endfor %}
                         </div>
