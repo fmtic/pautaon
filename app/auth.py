@@ -611,14 +611,34 @@ def editar_usuario(id):
     usuario = db.session.get(User, id)
     if usuario:
         try:
+            # S1-22: valida role contra UserRole e e-mail (formato + unicidade).
+            nome = (request.form.get('nome') or '').strip()
+            email = (request.form.get('email') or '').strip()
+            role = request.form.get('role')
+            if not nome:
+                flash("Nome é obrigatório.", "danger")
+                return redirect(url_for('auth.painel_admin'))
+            if not email or '@' not in email:
+                flash("E-mail inválido.", "danger")
+                return redirect(url_for('auth.painel_admin'))
+            if role not in {r.value for r in UserRole}:
+                flash("Perfil de acesso inválido.", "danger")
+                return redirect(url_for('auth.painel_admin'))
+            existente = db.session.execute(
+                select(User).where(User.email == email, User.id != id)
+            ).scalar()
+            if existente:
+                flash("Este e-mail já está em uso por outro usuário.", "danger")
+                return redirect(url_for('auth.painel_admin'))
+
             # S1-06: mudar papel ou unidade muda o que a pessoa pode fazer; as
             # sessões abertas com o perfil antigo precisam cair.
             papel_antes = usuario.role
             unidade_antes = usuario.unidade_id
             alvo_id = usuario.id
-            usuario.name  = request.form.get('nome')
-            usuario.email = request.form.get('email')
-            usuario.role  = request.form.get('role')
+            usuario.name = nome
+            usuario.email = email
+            usuario.role = role
             unidade_id = request.form.get('unidade_id')
             usuario.unidade_id = int(unidade_id) if unidade_id and unidade_id.isdigit() else None
             db.session.commit()
