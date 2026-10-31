@@ -1021,6 +1021,34 @@ def alternar_unidade_status(id):
 from unidecode import unidecode
 
 
+def categoria_acao(acao: str | None) -> str:
+    """Classifica uma ação de auditoria em uma categoria estável.
+
+    Categorias: 'login', 'criacao', 'edicao', 'exclusao', 'outras'.
+    """
+    texto = (acao or "").strip().lower()
+    if not texto:
+        return "outras"
+    if texto.startswith((
+        "login", "logoff", "logout", "cadastro local", "reset de senha",
+        "desbloqueio de login", "acesso aprovado", "aviso de invas",
+    )):
+        return "login"
+    if texto.startswith("criar"):
+        return "criacao"
+    if texto.startswith(("alterar", "alteração", "editar", "trocar", "troca")):
+        return "edicao"
+    if texto.startswith(("excluir", "remover", "remoção")):
+        return "exclusao"
+    return "outras"
+
+
+_CATEGORIAS_ACAO = {
+    "login": ["Login", "Logoff", "Logout", "Cadastro Local", "Reset de Senha", "Desbloqueio de login", "Acesso Aprovado", "Aviso de Invasão"],
+    "criacao": ["Criar"],
+    "edicao": ["Alterar", "Alteração", "Editar", "Trocar", "Troca"],
+    "exclusao": ["Excluir", "Remover", "Remoção"],
+}
 @bp.route('/admin/logs')
 @login_required
 def ver_logs():
@@ -1045,22 +1073,42 @@ def ver_logs():
         except ValueError:
             pass
 
-    # Paginação primeiro
-    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(page=page, per_page=20, error_out=False)
+    # Filtro por categoria de ação (no banco, com parâmetro; nunca f-string SQL).
+    categoria = acao_busca.lower() if acao_busca else ''
+    categorias_validas = {'login', 'criacao', 'edicao', 'exclusao', 'outras'}
+    if categoria not in categorias_validas:
+        categoria = ''
 
-    # Filtro por ação (em memória, apenas nos itens da página atual)
-    if acao_busca:
-        termo_normalizado = unidecode(acao_busca.lower())
-        pagination.items = [
-            log for log in pagination.items
-            if termo_normalizado in unidecode(log.acao).lower()
-        ]
+    prefixos = {
+        'login': ['Login', 'Logoff', 'Logout', 'Cadastro Local', 'Reset de Senha', 'Desbloqueio de login', 'Acesso Aprovado', 'Aviso de Invasão'],
+        'criacao': ['Criar'],
+        'edicao': ['Alterar', 'Alteração', 'Editar', 'Trocar', 'Troca'],
+        'exclusao': ['Excluir', 'Remover', 'Remoção'],
+    }
+
+    if categoria and categoria != 'outras':
+        from sqlalchemy import or_ as _or
+        condicoes = [LogAcao.acao.ilike(f'{p}%') for p in prefixos[categoria]]
+        query = query.filter(_or(*condicoes))
+    elif categoria == 'outras':
+        from sqlalchemy import or_ as _or
+        condicoes = []
+        for lista in prefixos.values():
+            for p in lista:
+                condicoes.append(LogAcao.acao.ilike(f'{p}%'))
+        query = query.filter(~_or(*condicoes))
+
+    # Paginação
+    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(page=page, per_page=20, error_out=False)
 
     return render_template(
         'admin/logs.html',
         logs=pagination.items,
         pagination=pagination,
         manutencao_ativa=is_maintenance_enabled(),
+        usuario_selecionado=usuario_busca,
+        acao_selecionada=categoria,
+        data_selecionada=data_busca,
     )
 
 

@@ -65,10 +65,12 @@
                 <div class="col-md-3">
                     <label for="acao" class="visually-hidden">Ação</label>
                     <select name="acao" id="acao" class="form-select">
-                        <option value="">Todas as Ações</option>
+                        <option value="" {% if not acao_selecionada %}selected{% endif %}>Todas as Ações</option>
                         <option value="login" {% if acao_selecionada == 'login' %}selected{% endif %}>Login</option>
+                        <option value="criacao" {% if acao_selecionada == 'criacao' %}selected{% endif %}>Criação</option>
                         <option value="edicao" {% if acao_selecionada == 'edicao' %}selected{% endif %}>Edição</option>
                         <option value="exclusao" {% if acao_selecionada == 'exclusao' %}selected{% endif %}>Exclusão</option>
+                        <option value="outras" {% if acao_selecionada == 'outras' %}selected{% endif %}>Outras</option>
                     </select>
                 </div>
                 <div class="col-md-3">
