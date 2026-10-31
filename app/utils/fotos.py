@@ -63,6 +63,9 @@ def tipo_por_assinatura(cabecalho: bytes) -> str | None:
     return None
 
 
+#: Limite de megapixels aceito (bomba de descompressão).
+FOTO_MAX_MEGAPIXELS = 25
+
 def _verificar_com_pillow(stream) -> bool | None:
     """`True`/`False` quando o Pillow está instalado; `None` quando não está."""
     try:
@@ -72,6 +75,10 @@ def _verificar_com_pillow(stream) -> bool | None:
     try:
         with Image.open(stream) as imagem:
             imagem.verify()
+            stream.seek(0)
+            with Image.open(stream) as imagem2:
+                if imagem2.width * imagem2.height > FOTO_MAX_MEGAPIXELS * 1_000_000:
+                    return False
         return True
     except Exception:
         return False
