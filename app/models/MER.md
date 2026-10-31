@@ -1969,6 +1969,9 @@ Coluna `session_version` (`INTEGER NOT NULL DEFAULT 0`) na tabela `user`, criada
 - **Contrato:** o login grava o valor atual em `session['sv']` (e o instante em `session['iat']`); o `user_loader` compara `sv` com a coluna na linha que ele **já carrega** (nenhum SELECT extra) e devolve `None` quando diverge ou quando `sv` está ausente. Sessões emitidas antes desta versão (sem `sv`) caem uma vez e o usuário refaz o login.
 - **Quem incrementa** (sempre por `UPDATE` Core, nunca pelo ORM): logout, troca de senha em `/trocar-senha` (a sessão atual recebe o `sv` novo e continua logada), reset de senha pelo admin, edição que mude `role` ou `unidade_id` e exclusão do usuário. `User` **não** herda `AuditoriaMixin` e o listener `before_flush` só audita objetos com `updated_by_id`, então o incremento não gera `LogAcao` de alteração do usuário.
 - **Migration:** aditiva e idempotente por inspeção. `DEFAULT 0` cobre as linhas existentes (sem backfill); `downgrade` só remove a coluna. Aplicada em `pautaon_ensaio` (25 linhas) e `pautaon` (21 linhas), com 36 tabelas contadas sem variação de linhas e backup em `instance/backups/<banco>_pre_session_version_<carimbo>.sql`.
+- **Recusa:** o `before_request` de segurança descarta `g._login_user` (o Flask-Login cacheia o usuário no AppContext; a produção abre um novo por request, o `test_client` não) e força o loader. Sessão recusada vira `logout` + `session.clear()` + `flash` em português + `302` para `/login`, com mensagem própria para geração antiga e para expiração.
+- **Limite absoluto:** `SESSION_ABSOLUTE_LIFETIME` (padrão 8 h, `SESSION_ABSOLUTE_HOURS` no ambiente) conta de `iat` e **não** é prorrogado por atividade; o deslizante de 60 min (`PERMANENT_SESSION_LIFETIME` com `SESSION_REFRESH_EACH_REQUEST=True`) continua valendo em paralelo.
+- **Custo:** uma requisição autenticada faz **um** SELECT em `user` — o mesmo que o `user_loader` já fazia; `sv` e `iat` são conferidos no objeto já carregado.
 
 ---
 

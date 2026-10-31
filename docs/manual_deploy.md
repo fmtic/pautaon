@@ -148,6 +148,32 @@ curl.exe -sI https://pautaon.exemplo.br/login | Select-String "Set-Cookie"
 Se o passo 2 não mostrar `Strict-Transport-Security`, o `TRUSTED_PROXY` está
 `false` ou o `HTTP_X_FORWARDED_PROTO` não chegou ao app.
 
+### Sessões: limite absoluto e revogação (S1-06)
+
+O cookie de sessão é assinado com a `SECRET_KEY`, mas não pode ser invalidado
+individualmente: quem copia o cookie continua autenticado até ele expirar. O
+sistema resolve isso com um contador por usuário (`user.session_version`):
+
+- **Logout** (POST) incrementa o contador — o cookie que ficou em outro
+  navegador ou máquina deixa de autenticar no mesmo instante.
+- **Troca de senha** incrementa e mantém apenas a sessão que fez a troca;
+  **reset pelo admin** incrementa e derruba todas.
+- **Mudança de papel ou de unidade** e **exclusão** também derrubam.
+- Sessões emitidas antes desta versão (sem o carimbo `sv`) caem uma vez: cada
+  usuário refaz o login depois do deploy.
+
+Dois prazos valem em paralelo e a sessão cai no que acontecer primeiro:
+
+| Prazo | Padrão | Como mudar |
+|---|---|---|
+| Inatividade (deslizante, renovado a cada requisição) | 60 min | `PERMANENT_SESSION_LIFETIME` no `config.py` |
+| **Duração absoluta** desde o login (não é prorrogada por atividade) | **8 h** | `SESSION_ABSOLUTE_HOURS` no ambiente |
+
+Não há como revogar sessões de um usuário pela interface além dos eventos
+acima: para forçar a saída de alguém, use `Definir nova senha` (reset) no painel
+administrativo — a conta cai em todos os dispositivos e entra com
+`first_login=True`.
+
 ---
 
 ## 2. Deploy no Apache Web Server (Linux / Ubuntu)

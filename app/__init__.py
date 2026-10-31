@@ -3,13 +3,15 @@
 from flask import (
     Flask,
     current_app,
+    flash,
+    g,
     redirect,
     render_template,
     request,
     session,
     url_for,
 )
-from flask_login import current_user
+from flask_login import current_user, logout_user
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config, validar_configuracao
@@ -103,6 +105,7 @@ def _register_template_filters(app: Flask) -> None:
 def _register_security_hooks(app: Flask) -> None:
     from app.models.enums import UserRole
     from app.services.maintenance import is_maintenance_enabled
+    from app.services.sessao import MENSAGENS, motivo_pendente
 
     @app.before_request
     def enforce_user_access_state():
@@ -110,6 +113,26 @@ def _register_security_hooks(app: Flask) -> None:
             return None
         if request.endpoint.startswith("static"):
             return None
+
+        # S1-06: força o `user_loader` (o Flask-Login cacheia em `g`) antes de
+        # qualquer decisão. Se `sv`/`iat` não conferem — sessão de outra
+        # geração, sem carimbo ou acima do limite absoluto — o pedido morre
+        # aqui: o cookie antigo deixa de autenticar e o usuário volta ao login
+        # com a explicação. A comparação usa a linha que o loader já carregou,
+        # então não há SELECT extra por requisição.
+        #
+        # O `g.pop` descarta o usuário que o Flask-Login guardou no AppContext:
+        # em produção cada request tem o seu, mas o `test_client` reaproveita o
+        # AppContext do fixture — sem isto a revogação passaria despercebida
+        # justamente nos testes. Em request real o `g` já nasce vazio.
+        g.pop("_login_user", None)
+        current_user.is_authenticated  # noqa: B018 — dispara o carregamento
+        motivo = motivo_pendente()
+        if motivo:
+            logout_user()
+            session.clear()
+            flash(MENSAGENS.get(motivo, MENSAGENS["versao"]), "warning")
+            return redirect(url_for("auth.login"))
 
         if is_maintenance_enabled():
             if current_user.is_authenticated and current_user.role == UserRole.ADMIN:
@@ -207,13 +230,25 @@ def _register_security_hooks(app: Flask) -> None:
 
 def _register_user_loader() -> None:
     from app.models import User
+    from app.services.sessao import motivo_recusa, recusar_sessao
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:
         try:
-            return db.session.get(User, int(user_id))
+            usuario = db.session.get(User, int(user_id))
         except (TypeError, ValueError):
             return None
+        if usuario is None:
+            return None
+        # S1-06: `sv` (versão da sessão) e `iat` (limite absoluto) são checados
+        # aqui, depois de carregar o usuário — a linha veio na mesma consulta
+        # que o loader já fazia. Recusa = None + marca em `g` para o
+        # `before_request` explicar e redirecionar.
+        motivo = motivo_recusa(usuario)
+        if motivo:
+            recusar_sessao(motivo)
+            return None
+        return usuario
 
 
 def _register_blueprints(app: Flask) -> None:

@@ -157,6 +157,14 @@ class Config:
 
     REMEMBER_COOKIE_DURATION = timedelta(hours=8)
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=60)
+    # O deslizante do Flask renova o prazo a cada requisição; explícito para que
+    # o limite absoluto (abaixo) seja o único que não pode ser prorrogado.
+    SESSION_REFRESH_EACH_REQUEST = True
+
+    # S1-06: tempo máximo de vida de uma sessão, desde o login, independente de
+    # atividade. ``SESSION_ABSOLUTE_HOURS`` (horas) permite ajustar sem deploy.
+    SESSION_ABSOLUTE_LIFETIME = timedelta(hours=get_int("SESSION_ABSOLUTE_HOURS", 8))
+
     SESSION_COOKIE_SECURE = _resolver_session_cookie_secure()
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")

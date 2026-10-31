@@ -17,8 +17,16 @@ Estes testes fixam o padrão de prova da auditoria:
        exercitado);
     3. `login_as` (harness) limpa o cache de `g` e faz o 403 acontecer no
        fixture com contexto aberto — correção padrão proposta na P7.
+
+S1-06 (30/10/2026): o hook de sessão passou a descartar `g._login_user` no
+início de cada request — sem isso a revogação (`sv`) passaria despercebida no
+harness, que reaproveita o AppContext do fixture. Efeito colateral medido: a
+classe (b) deixou de reusar o admin depois da troca de sessão, então o teste
+de caracterização passou a exigir o 403 (antes ele documentava o vazamento).
 """
 # ruff: noqa: F811 — fixtures `app`/`client` reaproveitadas do harness D5.
+
+import time
 
 from _helpers import login_as
 
@@ -63,6 +71,9 @@ def _login_inline(client, uid, unidade_id=None):
     with client.session_transaction() as sess:
         sess["_user_id"] = str(uid)
         sess["_fresh"] = True
+        # S1-06: o `user_loader` exige o carimbo (`sv`/`iat`) da sessão.
+        sess["sv"] = 0
+        sess["iat"] = int(time.time())
         if unidade_id is not None:
             sess["unidade_id"] = unidade_id
 
@@ -88,13 +99,15 @@ def test_p6_classe_a_app_sem_contexto_aberto_a_troca_de_perfil_vale():
     assert cli_prof.get(ROTA_SO_GESTAO).status_code == 403
 
 
-def test_p6_classe_b_fixture_com_contexto_aberto_ignora_a_troca(app, client):
-    """Classe (b): o fixture mantém o AppContext — o 2º perfil NÃO assume.
+def test_p6_classe_b_fixture_com_contexto_aberto_troca_de_perfil_vale(app, client):
+    """Classe (b): depois da S1-06, o 2º perfil assume mesmo no fixture.
 
-    Caracterização do harness (não da aplicação): depois de um request como
-    admin, gravar o professor na sessão continua executando como admin. Um
-    assert `status_code == 403` aqui falharia; um assert de permissão "ok"
-    passaria sem nunca exercitar o perfil restrito.
+    Antes o request reaproveitava o `g._login_user` do AppContext mantido pelo
+    fixture e o professor continuava agindo como admin (200). O hook de sessão
+    agora limpa esse cache a cada request — o mesmo que a produção já fazia ao
+    abrir um AppContext novo —, então a troca de perfil é real e o 403
+    acontece. A motivação da limpeza é a revogação por `session_version`, que
+    também precisa valer no harness.
     """
     with app.app_context():
         ids = _seed_identidades()
@@ -102,11 +115,11 @@ def test_p6_classe_b_fixture_com_contexto_aberto_ignora_a_troca(app, client):
     _login_inline(client, ids["admin"], ids["un"])
     assert client.get(ROTA_SO_GESTAO).status_code == 200
 
-    _login_inline(client, ids["prof"])  # troca só a sessão: cache de g permanece
+    _login_inline(client, ids["prof"])
     resp = client.get(ROTA_SO_GESTAO)
-    assert resp.status_code == 200, (
-        "com o AppContext preso ao fixture o request reusa o admin de `g` — "
-        "se aqui der 403, o harness mudou e a auditoria L4.2 precisa ser revista"
+    assert resp.status_code == 403, (
+        "o hook da S1-06 descarta `g._login_user` por request; 200 aqui significa "
+        "que a limpeza saiu e a revogação de sessão deixou de ser testável"
     )
 
 

@@ -12,7 +12,7 @@ Cobre:
 """
 
 from flask import Blueprint, current_app, render_template, request, redirect, flash, url_for, abort, session
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
 import json
@@ -23,6 +23,7 @@ from app.models import User, LogAcao, Unidade, ConfiguracaoSistema
 from app.models.enums import UserRole
 from app.database import db
 from app.services.maintenance import MANUTENCAO_CONFIG_KEY, is_maintenance_enabled
+from app.services.sessao import iniciar_sessao, revogar_sem_commit, revogar_sessoes
 from app.utils.disparo_email import send_email
 from app.services.auth_service import (
     _build_ldap_bind_user,
@@ -234,8 +235,7 @@ def login():
             except Exception:
                 db.session.rollback()
                 current_app.logger.exception("Falha ao limpar rate limit após login válido.")
-            login_user(user)
-            session.permanent = True
+            iniciar_sessao(user)
             if user.unidade_id:
                 session["unidade_id"] = user.unidade_id
             else:
@@ -270,7 +270,11 @@ def login():
 @login_required
 def logout():
     register_security_log("Logoff", "Sessão encerrada voluntariamente.")
+    # S1-06: revoga a geração atual — o cookie copiado para outro navegador
+    # deixa de autenticar na hora. O evento de auditoria já é o "Logoff".
+    revogar_sessoes(current_user.id, "logout", registrar_log=False)
     logout_user()
+    session.clear()
     return redirect(url_for('auth.login'))
 
 
@@ -470,8 +474,7 @@ def google_callback():
         flash("Sua conta está desativada. Entre em contato com o administrador.", "danger")
         return redirect(url_for("auth.login"))
 
-    login_user(user)
-    session.permanent = True
+    iniciar_sessao(user)
     if user.unidade_id:
         session["unidade_id"] = user.unidade_id
     else:
@@ -571,12 +574,19 @@ def editar_usuario(id):
     usuario = db.session.get(User, id)
     if usuario:
         try:
+            # S1-06: mudar papel ou unidade muda o que a pessoa pode fazer; as
+            # sessões abertas com o perfil antigo precisam cair.
+            papel_antes = usuario.role
+            unidade_antes = usuario.unidade_id
+            alvo_id = usuario.id
             usuario.name  = request.form.get('nome')
             usuario.email = request.form.get('email')
             usuario.role  = request.form.get('role')
             unidade_id = request.form.get('unidade_id')
             usuario.unidade_id = int(unidade_id) if unidade_id and unidade_id.isdigit() else None
             db.session.commit()
+            if (usuario.role, usuario.unidade_id) != (papel_antes, unidade_antes):
+                revogar_sessoes(alvo_id, "papel_ou_unidade")
             register_security_log("Alteração de Cadastros", f"Admin alterou {usuario.email}.")
             flash(f"Dados atualizados no perfil de {usuario.name}!", "success")
         except Exception:
@@ -605,9 +615,12 @@ def resetar_senha(id):
                 flash("Defina ADMIN_DEFAULT_PASSWORD no ambiente para permitir o reset.", "warning")
                 return redirect(url_for('auth.painel_admin'))
 
+            alvo_id = usuario.id
             usuario.set_password(default_password)
             usuario.first_login = True
             db.session.commit()
+            # S1-06: reset pelo admin derruba qualquer sessão aberta da conta.
+            revogar_sessoes(alvo_id, "reset_senha_admin")
             register_security_log("Reset de Senha", f"Senha de {usuario.email} resetada pelo admin.")
             # --- DISPARO DE E-MAIL ASSÍNCRONO ---
             html_content = render_template(
@@ -640,9 +653,18 @@ def excluir_usuario(id):
     usuario = db.session.get(User, id)
     if usuario and usuario.id != current_user.id:
         try:
+            alvo_id = usuario.id
+            email_alvo = usuario.email
+            # S1-06: incrementa a geração na MESMA transação do DELETE. O
+            # registro some de qualquer forma (o user_loader não acha a linha);
+            # o contador evita que uma exclusão revertida deixe a sessão viva.
+            revogar_sem_commit(alvo_id)
             db.session.delete(usuario)
             db.session.commit()
-            register_security_log("Remoção Grave", f"O perfil de {usuario.email} foi apagado.")
+            register_security_log(
+                "Sessões revogadas", f"motivo=exclusao usuario_id={alvo_id}"
+            )
+            register_security_log("Remoção Grave", f"O perfil de {email_alvo} foi apagado.")
             flash(f"Usuário deletado de forma definitiva.", "success")
         except Exception:
             db.session.rollback()
@@ -915,8 +937,7 @@ def google_confirmar_vinculo():
             return redirect(url_for("auth.login"))
 
         session.pop("google_link_pending", None)
-        login_user(user)
-        session.permanent = True
+        iniciar_sessao(user)
         if user.unidade_id:
             session["unidade_id"] = user.unidade_id
         else:
@@ -968,10 +989,17 @@ def trocar_senha():
             return redirect(url_for('auth.trocar_senha'))
 
         try:
-            current_user.set_password(nova)
-            current_user.first_login = False   # libera acesso normal após troca
+            usuario = current_user._get_current_object()
+            nome = usuario.name
+            usuario.set_password(nova)
+            usuario.first_login = False   # libera acesso normal após troca
             db.session.commit()
-            register_security_log("Troca de Senha", f"{current_user.name} definiu nova senha.")
+            # S1-06: as outras sessões do mesmo usuário caem (o cookie antigo
+            # carrega o `sv` velho); esta continua, com o carimbo renovado.
+            session["sv"] = revogar_sessoes(
+                usuario.id, "troca_senha", registrar_log=False
+            )
+            register_security_log("Troca de Senha", f"{nome} definiu nova senha.")
             flash('Senha atualizada com sucesso!', 'success')
             return redirect(url_for('main.painel'))
         except Exception:

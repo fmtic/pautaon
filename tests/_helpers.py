@@ -29,7 +29,13 @@ oferta (``turma_curso_id`` obrigatório).
 
 ``login_as`` fixa a identidade do ``test_client`` e **descarta o cache do
 Flask-Login em ``g``** — necessário quando o teste troca de perfil no meio.
+
+S1-06: desde a versão de sessão, o ``user_loader`` recusa cookie sem carimbo.
+``login_as`` passou a gravar ``sv`` (a ``session_version`` da linha) e
+``iat`` (agora), como o login real faz — a semântica dos testes não muda.
 """
+
+import time
 
 from flask import g, has_app_context
 
@@ -40,6 +46,21 @@ from app.utils.dias_semana import csv_para_weekdays
 
 #: Programa padrão usado pelas sementes quando o teste não exige um específico.
 PROGRAMA_PADRAO = "Programa de Teste"
+
+
+def _session_version(client, user_id: int) -> int:
+    """Lê a ``session_version`` atual do usuário (0 quando não existir).
+
+    Usa o app context já aberto quando houver; caso contrário abre um curto
+    sobre ``client.application`` — ``login_as`` também é chamado fora do
+    ``with app.app_context()`` em testes que só falam com ``client``.
+    """
+    if has_app_context():
+        instancia = db.session.get(User, user_id)
+        return int(getattr(instancia, "session_version", 0) or 0)
+    with client.application.app_context():
+        instancia = db.session.get(User, user_id)
+        return int(getattr(instancia, "session_version", 0) or 0)
 
 
 def login_as(client, user, unidade_id=None):
@@ -59,9 +80,17 @@ def login_as(client, user, unidade_id=None):
     """
     if has_app_context():
         g.pop("_login_user", None)
+    uid = getattr(user, "id", user)
+    try:
+        versao = _session_version(client, int(uid))
+    except (TypeError, ValueError):
+        versao = 0
     with client.session_transaction() as sess:
-        sess["_user_id"] = str(getattr(user, "id", user))
+        sess["_user_id"] = str(uid)
         sess["_fresh"] = True
+        # S1-06: o `user_loader` compara esta geração e o instante de início.
+        sess["sv"] = versao
+        sess["iat"] = int(time.time())
         if unidade_id is not None:
             sess["unidade_id"] = unidade_id
 
