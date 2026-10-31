@@ -63,6 +63,7 @@ from app.models.conselho import (
 from app.models.atendimento import Atendimento
 from app.models.servico_social import AgendaServicoSocial, RespostaFormulario
 from app.models.auditoria import LogAcao
+from app.models.seguranca import LoginControle
 from app.models.legado import Registro
 
 
@@ -97,6 +98,8 @@ __all__ = [
     'AgendaServicoSocial', 'RespostaFormulario',
     # Auditoria
     'LogAcao',
+    # Segurança
+    'LoginControle',
     # Legado
     'Registro',
 ]
