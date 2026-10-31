@@ -21,7 +21,7 @@ from app.models import (
 from app.services.enturmado import cond_aluno_enturmado
 
 # Perfis com acesso aos relatórios administrativos/pedagógicos.
-ROLES_RELATORIOS = ["admin", "pedagogico", "secretaria", "gerencia"]
+ROLES_RELATORIOS = ["admin", "pedagogico", "secretaria", "gerencia", "servico_social"]
 
 
 def ler_filtros_alunos(args):
