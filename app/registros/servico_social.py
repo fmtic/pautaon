@@ -311,7 +311,7 @@ def dados_aluno(aluno_id):
         "turno": turno_escolar,
         "deficiencia": deficiencia,
         "foto_url": (
-            url_for("static", filename=aluno.foto_path)
+            url_for("registros.foto_aluno", aluno_id=aluno.id)
             if aluno.foto_path
             else url_for("static", filename="img/default.png")
         ),
