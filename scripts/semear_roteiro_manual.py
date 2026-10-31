@@ -229,7 +229,7 @@ def _semear(hoje: date) -> dict:
     )
 
     # ---- usuários (5 perfis) --------------------------------------------
-    def _usuario(perfil: str, papel: str, unidade_id):
+    def _usuario(perfil: str, papel: str, unidade_id, senha_local: str):
         usuario, _ = _upsert(
             User,
             criar_com={
@@ -248,15 +248,15 @@ def _semear(hoje: date) -> dict:
             },
             email=f"{perfil.lower()}.m1@{DOMINIO}",
         )
-        usuario.set_password(senha)
+        usuario.set_password(senha_local)
         db.session.flush()
         return usuario
 
-    admin = _usuario("Admin", "admin", None)
-    gerencia = _usuario("Gerencia", "gerencia", None)
-    pedagogico = _usuario("Pedagogico", "pedagogico", unidade.id)
-    secretaria = _usuario("Secretaria", "secretaria", unidade.id)
-    professor = _usuario("Professor", "professor", unidade.id)
+    admin = _usuario("Admin", "admin", None, senha)  # noqa: F821
+    gerencia = _usuario("Gerencia", "gerencia", None, senha)  # noqa: F821
+    pedagogico = _usuario("Pedagogico", "pedagogico", unidade.id, senha)  # noqa: F821
+    secretaria = _usuario("Secretaria", "secretaria", unidade.id, senha)  # noqa: F821
+    professor = _usuario("Professor", "professor", unidade.id, senha)  # noqa: F821
     db.session.commit()
 
     # ---- períodos -------------------------------------------------------
@@ -967,7 +967,7 @@ def _relatorio(dados: dict, contagens: dict, rotulo: dict, esperados: dict) -> N
           f"B2 {ids['dias_b2'][0]} ; C {ids['dias_c'][0]} ; D {ids['dias_d'][0]}")
     print("\nUsuarios (senha unica):")
     for perfil, usuario in ids["usuarios"].items():
-        print(f"  {perfil:11s} {usuario.email:32s} {'(senha definida por argumento/ambiente)' if origem != 'gerada' else '(gerada)'}")
+        print(f"  {perfil:11s} {usuario.email:32s}")
     print("\nURLs prontas (troque a porta se o app nao estiver em 5000):")
     base = "http://127.0.0.1:5000"
     ana = ids["alunos"]["Ana A1"].id

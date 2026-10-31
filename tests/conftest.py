@@ -81,6 +81,18 @@ def app_com_servidor():
         db.drop_all()
 
 
+@pytest.fixture(autouse=True)
+def _limpar_login_controle(app):
+    yield
+    with app.app_context():
+        try:
+            from app.models import LoginControle
+            LoginControle.query.delete()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+
 @pytest.fixture
 def client(app):
     return app.test_client()
