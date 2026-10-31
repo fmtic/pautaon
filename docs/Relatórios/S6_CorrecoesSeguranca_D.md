@@ -46,4 +46,4 @@
 
 ## MER e backlog
 
-- S1-11, S1-12, S1-16 (trocar-unidade), S1-17 a S1-23 e a foto do Serviço Social parcialmente marcados conforme implementado; S1-23 parcial (state corrigido, vínculo pendente).
+- S1-16 (trocar-unidade), S1-17 a S1-20, S1-22 e a foto do Serviço Social parcialmente marcados conforme implementado; S1-23 parcial (state corrigido, vínculo pendente). S1-11, S1-12 e S1-19 (HMAC) pendentes até o fim do Prompt D2.
