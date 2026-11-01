@@ -83,13 +83,63 @@ def salvar_foto(foto, aluno):
     return None
 
 
-def salvar_documento(documento, aluno, doc_id):
-    if not documento or not documento.filename:
-        return False
+#: Limite de tamanho aceito por documento PDF entregue (2 MB) — AJ5-B.
+DOC_MAX_BYTES = 2 * 1024 * 1024
+
+
+def validar_pdf(documento, max_bytes=DOC_MAX_BYTES):
+    """Valida um PDF **antes** de gravar qualquer byte (AJ5-B).
+
+    Devolve o motivo da recusa em português ou `None` quando o arquivo é um
+    PDF aceito. Regras, na mesma linha do padrão S1-08 da foto:
+
+    - a extensão `.pdf` continua exigida (nunca confiamos só no conteúdo);
+    - o tamanho vem de `seek`/`tell`, sem carregar o arquivo inteiro em
+      memória: vazio é rejeitado, exatamente `max_bytes` passa, acima não;
+    - a assinatura `%PDF-` é procurada nos primeiros 1024 bytes, como a
+      especificação permite (um PDF pode ter até 1023 bytes de lixo antes).
+
+    Nada é gravado nem lido por completo aqui; quem chama decide o que fazer.
+    """
+    if not documento or not getattr(documento, "filename", ""):
+        return "documento não enviado."
 
     _, ext = os.path.splitext(documento.filename)
     if ext.lower() != ".pdf":
-        return False
+        return "use um arquivo no formato PDF."
+
+    stream = documento.stream
+    stream.seek(0, os.SEEK_END)
+    tamanho = stream.tell()
+    stream.seek(0)
+    if tamanho == 0:
+        return "o arquivo está vazio."
+    if tamanho > max_bytes:
+        return f"o arquivo tem mais de {max_bytes // (1024 * 1024)} MB."
+
+    cabecalho = stream.read(1024)
+    stream.seek(0)
+    if b"%PDF-" not in cabecalho:
+        return "o conteúdo do arquivo não é um PDF válido."
+
+    return None
+
+
+def salvar_documento(documento, aluno, doc_id):
+    """Grava um documento PDF do aluno depois de validado (AJ5-B).
+
+    Devolve o **motivo da recusa** em português quando o arquivo não é aceito
+    — nada é gravado nesse caso — ou `None` quando salvou. Antes de escrever
+    um byte, `validar_pdf` confere tamanho (seek/tell, sem ler tudo em
+    memória) e a assinatura `%PDF-`. O nome do arquivo enviado pelo cliente
+    nunca aparece: o gravado é sempre `<doc_id>.pdf`.
+    """
+    if not documento or not documento.filename:
+        return "documento não enviado."
+
+    erro = validar_pdf(documento)
+    if erro:
+        return erro
 
     mat_folder = aluno.matricula.replace(".", "_") if aluno.matricula else f"aluno_{aluno.id}"
     upload_path = _build_upload_path("documentos", mat_folder)
@@ -97,4 +147,4 @@ def salvar_documento(documento, aluno, doc_id):
 
     filename = secure_filename(f"{doc_id}.pdf")
     documento.save(os.path.join(upload_path, filename))
-    return True
+    return None

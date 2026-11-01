@@ -374,6 +374,30 @@ def _register_error_handlers(app: Flask) -> None:
         # return render_template("erros/sistema_indisponivel.html"), 404
         return render_template("erros/404.html"), 404
 
+    @app.errorhandler(413)
+    def handle_413_error(e):
+        """AJ5-B: corpo acima de MAX_CONTENT_LENGTH — flash amigável de volta
+        ao form, sem stack trace.
+
+        O POST se perde (o corpo foi cortado antes do parsing e não há como
+        recuperá-lo), então o operador é devolvido à página de origem. O
+        referrer só é usado quando é do mesmo host — um referrer de fora
+        viraria open redirect; sem ele, cai na raiz.
+        """
+        from urllib.parse import urlparse
+
+        app.logger.warning(f"Upload rejeitado por tamanho (413): {request.path}")
+        limite = (app.config.get("MAX_CONTENT_LENGTH") or 0) // (1024 * 1024)
+        flash(
+            f"Envio recusado: os arquivos ultrapassam o limite de {limite} MB "
+            "por formulário. Reduza o tamanho e tente novamente.",
+            "error",
+        )
+        ref = request.referrer
+        if ref and urlparse(ref).netloc not in ("", request.host):
+            ref = None
+        return redirect(ref or "/")
+
     # ==========================================
     # FALHAS DE SISTEMA / ERROS GERAIS
     # ==========================================

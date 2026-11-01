@@ -29,6 +29,7 @@ from flask import (
 from flask_login import current_user, login_required
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
+from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 from app.database import db
@@ -177,6 +178,18 @@ DOC_IDS = [
     "doc_laudo",
 ]
 
+#: Nome amigável por documento — usado no flash de recusa (AJ5-B). O motivo da
+#: recusa nunca traz o nome do arquivo enviado pelo cliente, só este rótulo.
+DOC_LABELS = {
+    "doc_aluno": "RG/CPF Aluno",
+    "doc_residencia": "Comprovante Residência",
+    "doc_declaracao": "Declaração Escolar",
+    "doc_atestado": "Atestado Médico",
+    "doc_termo": "Termo Imagem/Som",
+    "doc_responsavel": "RG/CPF Responsável",
+    "doc_laudo": "Laudo Médico",
+}
+
 
 def _atualizar_documentos_entregues(aluno: Aluno) -> None:
     """
@@ -185,17 +198,24 @@ def _atualizar_documentos_entregues(aluno: Aluno) -> None:
 
     Formato:
         {'doc_entregue': {'doc_aluno': True, 'doc_termo': False, ...}}
+
+    AJ5-B: um documento recusado (tamanho, formato, vazio) avisa por flash com
+    o nome amigável e o motivo, mas NÃO desfaz o cadastro nem os outros
+    documentos válidos do mesmo POST — cada arquivo é tratado por vez, e a
+    flag de um recusado permanece como estava (nada é gravado nesse caso).
     """
     docs = dict(aluno.documentos_entregues or {})
     entregues = dict(docs.get("doc_entregue", {}))
 
     for doc_id in DOC_IDS:
         documento = request.files.get(doc_id)
-        if (
-            documento
-            and documento.filename
-            and salvar_documento(documento, aluno, doc_id)
-        ):
+        if not (documento and documento.filename):
+            continue
+        erro = salvar_documento(documento, aluno, doc_id)
+        if erro:
+            label = DOC_LABELS.get(doc_id, doc_id)
+            flash(f'Documento "{label}" não aceito: {erro}', "warning")
+        else:
             entregues[doc_id] = True
 
     docs["doc_entregue"] = entregues
@@ -555,6 +575,11 @@ def novo_aluno():
             f"Aluno {novo.nome_social or novo.nome} cadastrado com sucesso!",
             "success",
         )
+    except HTTPException:
+        # AJ5-B: erros HTTP legítimos (ex.: 413 do MAX_CONTENT_LENGTH ao
+        # analisar o corpo) não podem ser engolidos como falha de banco —
+        # sobem para os handlers globais, que respondem com flash amigável.
+        raise
     except Exception as exc:
         from app.utils.errors import flash_and_log
 
@@ -685,6 +710,9 @@ def editar_aluno(id):
             )
             retorno = session.pop(f"retorno_edicao_aluno_{aluno.id}", None)
             return redirect(retorno or url_for("registros.gerenciar_alunos"))
+        except HTTPException:
+            # AJ5-B: mesmo do novo_aluno — o 413 do corpo vai ao handler global.
+            raise
         except Exception as exc:
             from app.utils.errors import flash_and_log
 
@@ -1300,12 +1328,19 @@ def ver_documento_aluno(aluno_id: int, doc_id: str):
         dir_path = upload_root / "documentos" / folder
         target = dir_path / filename
         if target.is_file():
-            return send_from_directory(
+            resposta = send_from_directory(
                 str(dir_path),
                 filename,
                 mimetype="application/pdf",
                 as_attachment=False,
             )
+            # AJ5-B: o PDF é entregado em linha com cabeçalhos que travam
+            # sniffing de conteúdo e cache intermediário (laudo é dado de
+            # saúde). Roles e escopo de unidade não mudam.
+            resposta.headers["X-Content-Type-Options"] = "nosniff"
+            resposta.headers["Cache-Control"] = "private, no-store"
+            resposta.headers["Content-Disposition"] = f'inline; filename="{doc_id}.pdf"'
+            return resposta
 
     abort(404)
 

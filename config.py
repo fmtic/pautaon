@@ -202,6 +202,15 @@ class Config:
 
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", str(INSTANCE_DIR / "uploads"))
 
+    # AJ5-B: teto global do corpo da requisição. O pior caso legítimo é o form
+    # de aluno: 7 documentos PDF (2 MB cada, validados por arquivo em
+    # `registros.shared.validar_pdf`) + foto (2 MB, S1-08) + campos ≈ 16 MB,
+    # com folga até 20 MB. As demais rotas de upload (modelo de certificado
+    # 5 MB, anexo de atendimento 2 MB, logos 3 MB) cabem nesse valor, então o
+    # limite é global — não há rota legítima que exija mais. Acima disso o
+    # Werkzeug corta o stream antes do parsing (413), sem esgotar a memória.
+    MAX_CONTENT_LENGTH = 20 * 1024 * 1024
+
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
     ADMIN_NAME = os.getenv("ADMIN_NAME", "Administrador")
     ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD")
