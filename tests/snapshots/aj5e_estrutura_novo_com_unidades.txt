@@ -1,0 +1,1309 @@
+[doctype html]
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <meta content="SCRUB" name="csrf-token">
+    <title>
+      pautaON - pautaON
+    </title>
+    <link href="/static/img/logo_resumida.png" rel="shortcut icon" type="image/png">
+    <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/bootstrap/icons/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+    <link href="/static/css/sidebar.css" rel="stylesheet">
+    <link href="/static/css/alunos/editar.css" rel="stylesheet">
+  </head>
+  <body>
+    <header>
+      <div>
+        <button id="toggleSidebar" type="button">
+          <i>
+          </i>
+        </button>
+        <img alt="Logo" src="/static/img/logo_textual.png">
+        <span>
+          v0.2.0 · beta
+        </span>
+      </div>
+      <div>
+        <span>
+          <i>
+          </i>
+          Admin Global Aj5c
+          <span>
+            Visão Global
+          </span>
+        </span>
+        <form action="/logout" method="post">
+          <button type="submit">
+            Sair
+          </button>
+        </form>
+      </div>
+    </header>
+    <aside id="appSidebar">
+      <nav>
+        <ul>
+          <li>
+            Unidade
+          </li>
+          <li>
+            <div>
+              <button data-bs-toggle="dropdown" type="button">
+                <i>
+                </i>
+                <span>
+                  Visão Global
+                </span>
+              </button>
+              <ul>
+                <li>
+                  <form action="/trocar-unidade/0" method="post">
+                    <button type="submit">
+                      Visão Global
+                    </button>
+                  </form>
+                </li>
+                <li>
+                  <hr>
+                </li>
+                <li>
+                  <form action="/trocar-unidade/1" method="post">
+                    <button type="submit">
+                      Unidade Aj5c A
+                    </button>
+                  </form>
+                </li>
+                <li>
+                  <form action="/trocar-unidade/2" method="post">
+                    <button type="submit">
+                      Unidade Aj5c B
+                    </button>
+                  </form>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li>
+            Geral
+          </li>
+          <li>
+            <a href="/painel" title="Painel Geral">
+              <i>
+              </i>
+              <span>
+                Painel Geral
+              </span>
+            </a>
+          </li>
+          <li>
+            Alunos
+          </li>
+          <li>
+            <a href="/alunos" title="Gerenciar Alunos">
+              <i>
+              </i>
+              <span>
+                Gerenciar Alunos
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/alunos/atendimentos/transicao" title="Atendimentos">
+              <i>
+              </i>
+              <span>
+                Atendimentos
+              </span>
+            </a>
+          </li>
+          <li>
+            Estrutura
+          </li>
+          <li>
+            <a href="/planejamento" title="Planejamento">
+              <i>
+              </i>
+              <span>
+                Planejamento
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/periodo-letivo" title="Períodos">
+              <i>
+              </i>
+              <span>
+                Períodos
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/turma" title="Turmas">
+              <i>
+              </i>
+              <span>
+                Turmas
+              </span>
+            </a>
+          </li>
+          <li>
+            Conselho
+          </li>
+          <li>
+            <a href="/informacoes" title="Data-Informações">
+              <i>
+              </i>
+              <span>
+                Data-Informações
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/conselho" title="Painel de Turmas">
+              <i>
+              </i>
+              <span>
+                Painel de Turmas
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/conselho/perguntas" title="Gerenciar Perguntas">
+              <i>
+              </i>
+              <span>
+                Gerenciar Perguntas
+              </span>
+            </a>
+          </li>
+          <li>
+            Relatórios
+          </li>
+          <li>
+            <a href="/relatorios/" title="Painel de Relatórios">
+              <i>
+              </i>
+              <span>
+                Resumo
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/relatorios/alunos" title="Exportar Alunos">
+              <i>
+              </i>
+              <span>
+                Exportar Alunos
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/relatorios/bi" title="Central de BI">
+              <i>
+              </i>
+              <span>
+                Central de BI
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/relatorios/painel" title="Painel Pedagógico">
+              <i>
+              </i>
+              <span>
+                Painel Pedagógico
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/relatorios/conselho" title="Resultado do Conselho">
+              <i>
+              </i>
+              <span>
+                Resultado do Conselho
+              </span>
+            </a>
+          </li>
+          <li>
+            Administração
+          </li>
+          <li>
+            <a href="/admin/painel" title="Gerir Usuários">
+              <i>
+              </i>
+              <span>
+                Gerir Usuários
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/admin/unidades" title="Gerir Unidades">
+              <i>
+              </i>
+              <span>
+                Gerir Unidades
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/admin/logs" title="Auditoria (Logs)">
+              <i>
+              </i>
+              <span>
+                Auditoria (Logs)
+              </span>
+            </a>
+          </li>
+          <li>
+            <a href="/admin/informacao-padrao" title="Informações Padrão">
+              <i>
+              </i>
+              <span>
+                Informações Padrão
+              </span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    <div id="sidebarBackdrop">
+    </div>
+    <main>
+      <div>
+        <div>
+          <div>
+            <div>
+              <div>
+                <h4>
+                  Novo Cadastro de Aluno
+                </h4>
+                <small>
+                  Gestão Escolar
+                </small>
+              </div>
+              <a href="/alunos">
+                <i>
+                </i>
+                CANCELAR
+              </a>
+            </div>
+            <div>
+              <div id="step-indicator-1" onclick="window.goToStep(1)">
+                1
+              </div>
+              <div id="step-indicator-2" onclick="window.goToStep(2)">
+                2
+              </div>
+              <div id="step-indicator-3" onclick="window.goToStep(3)">
+                3
+              </div>
+              <div id="step-indicator-4" onclick="window.goToStep(4)">
+                4
+              </div>
+              <div id="step-indicator-5" onclick="window.goToStep(5)">
+                5
+              </div>
+              <div id="step-indicator-6" onclick="window.goToStep(6)">
+                6
+              </div>
+            </div>
+            <form enctype="multipart/form-data" id="multiStepForm" method="POST">
+              <div>
+                <div>
+                  <label for="unidade_id">
+                    <i>
+                    </i>
+                    Unidade de cadastro
+                  </label>
+                  <select id="unidade_id" name="unidade_id" required>
+                    <option value>
+                      Selecione a unidade...
+                    </option>
+                    <option value="1">
+                      Unidade Aj5c A
+                    </option>
+                    <option value="2">
+                      Unidade Aj5c B
+                    </option>
+                  </select>
+                  <small>
+                    O aluno será vinculado à unidade selecionada e aparecerá apenas para ela.
+                  </small>
+                </div>
+                <div id="step-1">
+                  <h4>
+                    Etapa I: Identificação Principal
+                  </h4>
+                  <div>
+                    <div>
+                      <div id="preview-container">
+                        <i id="placeholder-icon">
+                        </i>
+                        <img id="img-preview" src="#">
+                      </div>
+                      <div>
+                        <span>
+                          #MATRICULA
+                        </span>
+                      </div>
+                      <div>
+                        <label>
+                          <i>
+                          </i>
+                          Carregar
+                          <input accept="image/*" id="inputFotoManual" name="foto" onchange="window.previewImage(this)" type="file">
+                        </label>
+                        <button onclick="window.abrirWebcam()" type="button">
+                          <i>
+                          </i>
+                          Tirar Foto
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <div>
+                        <div>
+                          <label>
+                            Nome de Registro
+                          </label>
+                          <input name="nome" placeholder="Nome Completo" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Nome Social
+                          </label>
+                          <input name="nome_social" placeholder="Como o aluno prefere ser chamado" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Nascimento
+                          </label>
+                          <input id="data_nascimento" name="data_nascimento" onchange="calcularIdade()" type="date">
+                        </div>
+                        <div>
+                          <label>
+                            Idade
+                          </label>
+                          <input id="idade" placeholder="-- anos" readonly type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Sexo / Gênero
+                          </label>
+                          <select name="genero">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Masculino">
+                              Masculino
+                            </option>
+                            <option value="Feminino">
+                              Feminino
+                            </option>
+                            <option value="Outro">
+                              Outro
+                            </option>
+                          </select>
+                        </div>
+                        <div>
+                          <label>
+                            Etnia / Cor
+                          </label>
+                          <select name="raca_cor">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Branca">
+                              Branca
+                            </option>
+                            <option value="Preta">
+                              Preta
+                            </option>
+                            <option value="Parda">
+                              Parda
+                            </option>
+                            <option value="Amarela">
+                              Amarela
+                            </option>
+                            <option value="Indígena">
+                              Indígena
+                            </option>
+                            <option value="Não declarada">
+                              Não declarada
+                            </option>
+                          </select>
+                        </div>
+                        <div>
+                          <label>
+                            CPF do Aluno
+                          </label>
+                          <input name="cpf" placeholder="000.000.000-00" type="text">
+                          <div>
+                            CPF inválido
+                          </div>
+                        </div>
+                        <div>
+                          <label>
+                            RG / Registro
+                          </label>
+                          <input name="rg" placeholder="Número do RG" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Órgão Emissor / UF
+                          </label>
+                          <input name="orgao_rg" placeholder="Ex: SSP/SP" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Nacionalidade
+                          </label>
+                          <input name="nacionalidade" type="text" value="Brasileira">
+                        </div>
+                        <div>
+                          <label>
+                            Natural (UF)
+                          </label>
+                          <select id="natural_uf" name="natural_uf">
+                            <option value>
+                              Selecione UF
+                            </option>
+                          </select>
+                        </div>
+                        <div>
+                          <label>
+                            Natural (Cidade)
+                          </label>
+                          <select id="natural_cidade" name="natural_cidade">
+                            <option value>
+                              Selecione a UF primeiro
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="step-2">
+                  <h4>
+                    Etapa II: Filiação e Responsável
+                  </h4>
+                  <div>
+                    <div>
+                      <p>
+                        Dados do Pai / Mãe
+                      </p>
+                      <div>
+                        <label>
+                          Nome da Mãe
+                        </label>
+                        <input id="nome_mae" name="nome_mae" type="text">
+                        <label>
+                          CPF da Mãe
+                        </label>
+                        <input id="cpf_mae" name="cpf_mae" type="text">
+                        <div>
+                          CPF inválido
+                        </div>
+                      </div>
+                      <div>
+                        <label>
+                          Nome do Pai
+                        </label>
+                        <input id="nome_pai" name="nome_pai" type="text">
+                        <label>
+                          CPF do Pai
+                        </label>
+                        <input id="cpf_pai" name="cpf_pai" type="text">
+                        <div>
+                          CPF inválido
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <p>
+                        Responsável Legal
+                      </p>
+                      <div>
+                        <label>
+                          Quem é o Responsável?
+                        </label>
+                        <select id="responsavel_tipo" name="responsavel_tipo">
+                          <option value>
+                            Selecione...
+                          </option>
+                          <option value="Mãe">
+                            Mãe
+                          </option>
+                          <option value="Pai">
+                            Pai
+                          </option>
+                          <option value="Avô/Avó">
+                            Avô/Avó
+                          </option>
+                          <option value="Irmão/Tio">
+                            Irmão/Tio
+                          </option>
+                          <option value="Outro">
+                            Outro
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>
+                          Nome Completo do Responsável
+                        </label>
+                        <input id="responsavel_nome" name="responsavel_nome" type="text">
+                      </div>
+                      <div>
+                        <label>
+                          CPF do Responsável
+                        </label>
+                        <input id="responsavel_cpf" name="responsavel_cpf" type="text">
+                        <div>
+                          CPF inválido
+                        </div>
+                      </div>
+                      <div>
+                        <input id="vai_acompanhado_aulas" name="vai_acompanhado_aulas" onchange="window.toggleAcompanhanteAulas(this)" type="checkbox">
+                        <label for="vai_acompanhado_aulas">
+                          Vai acompanhado para as aulas?
+                        </label>
+                      </div>
+                      <div id="acompanhante_aulas_div">
+                        <label>
+                          Quem acompanha?
+                        </label>
+                        <select id="acompanhante_aulas" name="acompanhante_aulas" onchange="window.toggleOutroAcompanhante(this)">
+                          <option value>
+                            Selecione...
+                          </option>
+                          <option value="Mãe">
+                            Mãe
+                          </option>
+                          <option value="Pai">
+                            Pai
+                          </option>
+                          <option value="Avô/Avó">
+                            Avô/Avó
+                          </option>
+                          <option value="Irmão/Tio">
+                            Irmão/Tio
+                          </option>
+                          <option value="Outro">
+                            Outro
+                          </option>
+                          <option value="Vai sozinho">
+                            Vai sozinho
+                          </option>
+                        </select>
+                        <div id="acompanhante_aulas_outro_div">
+                          <input id="acompanhante_aulas_outro" name="acompanhante_aulas_outro" placeholder="Informe quem acompanha" type="text">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="step-3">
+                  <h4>
+                    Etapa III: Endereço e Contato
+                  </h4>
+                  <div>
+                    <div>
+                      <label>
+                        CEP
+                      </label>
+                      <input id="cep" name="cep" type="text">
+                    </div>
+                    <div>
+                      <label>
+                        Rua / Logradouro
+                      </label>
+                      <input id="rua" name="rua" type="text">
+                    </div>
+                    <div>
+                      <label>
+                        Nº
+                      </label>
+                      <input name="numero" type="text">
+                    </div>
+                    <div>
+                      <label>
+                        Bairro
+                      </label>
+                      <input id="bairro" name="bairro" type="text">
+                    </div>
+                    <div>
+                      <label>
+                        Cidade
+                      </label>
+                      <input id="cidade" name="cidade" type="text">
+                    </div>
+                    <div>
+                      <label>
+                        UF
+                      </label>
+                      <input id="uf" maxlength="2" name="uf" type="text" value="SP">
+                    </div>
+                    <div>
+                      <label>
+                        Zona urbana ou rural
+                      </label>
+                      <select name="zona">
+                        <option selected value="Urbana">
+                          Urbana
+                        </option>
+                        <option value="Rural">
+                          Rural
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <div>
+                        <div>
+                          <label>
+                            WhatsApp Aluno
+                          </label>
+                          <input name="whatsapp" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Telefone Responsável
+                          </label>
+                          <input name="telefone_resp" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            E-mail Principal
+                          </label>
+                          <input name="email" type="email">
+                        </div>
+                        <div>
+                          <div>
+                            <input id="nao_possui_acesso_internet" name="nao_possui_acesso_internet" type="checkbox">
+                            <label for="nao_possui_acesso_internet">
+                              Não possui acesso a internet
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="step-4">
+                  <h4>
+                    Etapa IV: Situação Escolar
+                  </h4>
+                  <div>
+                    <div>
+                      <label>
+                        Escolaridade
+                      </label>
+                      <select id="escolaridade" name="escolaridade" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="Ensino fundamental">
+                          Ensino fundamental
+                        </option>
+                        <option value="Ensino médio">
+                          Ensino médio
+                        </option>
+                        <option value="Ensino médio técnico">
+                          Ensino médio técnico
+                        </option>
+                        <option value="Ensino superior">
+                          Ensino superior
+                        </option>
+                        <option value="EJA">
+                          EJA
+                        </option>
+                        <option value="Outros">
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>
+                        Status
+                      </label>
+                      <select id="status_escolar" name="status_escolar" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="Cursando">
+                          Cursando
+                        </option>
+                        <option value="Concluinte">
+                          Concluinte
+                        </option>
+                        <option value="Trancado">
+                          Trancado
+                        </option>
+                        <option value="Outros">
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div id="status-outro">
+                      <label>
+                        Descreva o status
+                      </label>
+                      <input name="status_escolar_outro">
+                    </div>
+                    <div id="periodo-superior">
+                      <label>
+                        Período (Ensino Superior)
+                      </label>
+                      <select name="ensino_superior_periodo">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="1">
+                          1
+                        </option>
+                        <option value="2">
+                          2
+                        </option>
+                        <option value="3">
+                          3
+                        </option>
+                        <option value="4">
+                          4
+                        </option>
+                        <option value="5">
+                          5
+                        </option>
+                        <option value="6">
+                          6
+                        </option>
+                        <option value="7">
+                          7
+                        </option>
+                        <option value="8">
+                          8
+                        </option>
+                        <option value="9">
+                          9
+                        </option>
+                        <option value="10">
+                          10
+                        </option>
+                      </select>
+                    </div>
+                    <div id="escolaridade-outro">
+                      <label>
+                        Outra escolaridade
+                      </label>
+                      <input name="escolaridade_outro">
+                    </div>
+                    <div>
+                      <label>
+                        Escola / Universidade
+                      </label>
+                      <input autocomplete="off" id="nome_instituicao" name="nome_instituicao" placeholder="Digite ao menos 2 letras">
+                      <div id="sugestoes-instituicao">
+                      </div>
+                    </div>
+                    <div>
+                      <label>
+                        Tipo de instituição
+                      </label>
+                      <select id="tipo_instituicao" name="tipo_instituicao" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="Pública">
+                          Pública
+                        </option>
+                        <option value="Privada">
+                          Privada
+                        </option>
+                        <option value="Outro">
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div id="bolsista-div">
+                      <div>
+                        <input id="bolsista" name="bolsista" type="checkbox">
+                        <label for="bolsista">
+                          É bolsista?
+                        </label>
+                      </div>
+                    </div>
+                    <div id="instituicao-outro">
+                      <label>
+                        Outro tipo de instituição
+                      </label>
+                      <input name="tipo_instituicao_outro">
+                    </div>
+                    <div>
+                      <label>
+                        Turno
+                      </label>
+                      <select id="turno_escolar" name="turno_escolar" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="Manhã">
+                          Manhã
+                        </option>
+                        <option value="Tarde">
+                          Tarde
+                        </option>
+                        <option value="Noite">
+                          Noite
+                        </option>
+                        <option value="EAD">
+                          EAD
+                        </option>
+                        <option value="Outros">
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div id="turno-outro">
+                      <label>
+                        Outro turno
+                      </label>
+                      <input name="turno_escolar_outro">
+                    </div>
+                  </div>
+                </div>
+                <div id="step-5">
+                  <h4>
+                    Etapa V: Documentação Digital
+                  </h4>
+                  <p>
+                    <i>
+                    </i>
+                    Somente arquivos PDF de no máximo 2MB.
+                  </p>
+                  <div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_aluno').click()">
+                        <i>
+                        </i>
+                        <span>
+                          RG/CPF Aluno
+                        </span>
+                        <span id="name_doc_aluno">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_aluno" name="doc_aluno" onchange="window.updateFileName('doc_aluno', this)" type="file">
+                      </div>
+                    </div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_residencia').click()">
+                        <i>
+                        </i>
+                        <span>
+                          Comprovante Residência
+                        </span>
+                        <span id="name_doc_residencia">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_residencia" name="doc_residencia" onchange="window.updateFileName('doc_residencia', this)" type="file">
+                      </div>
+                    </div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_declaracao').click()">
+                        <i>
+                        </i>
+                        <span>
+                          Declaração Escolar
+                        </span>
+                        <span id="name_doc_declaracao">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_declaracao" name="doc_declaracao" onchange="window.updateFileName('doc_declaracao', this)" type="file">
+                      </div>
+                    </div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_atestado').click()">
+                        <i>
+                        </i>
+                        <span>
+                          Atestado Médico
+                        </span>
+                        <span id="name_doc_atestado">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_atestado" name="doc_atestado" onchange="window.updateFileName('doc_atestado', this)" type="file">
+                      </div>
+                    </div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_termo').click()">
+                        <i>
+                        </i>
+                        <span>
+                          Termo Imagem/Som
+                        </span>
+                        <span id="name_doc_termo">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_termo" name="doc_termo" onchange="window.updateFileName('doc_termo', this)" type="file">
+                      </div>
+                    </div>
+                    <div>
+                      <div onclick="document.getElementById('input_doc_responsavel').click()">
+                        <i>
+                        </i>
+                        <span>
+                          RG/CPF Responsável
+                        </span>
+                        <span id="name_doc_responsavel">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" id="input_doc_responsavel" name="doc_responsavel" onchange="window.updateFileName('doc_responsavel', this)" type="file">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="step-6">
+                  <h4>
+                    Etapa VI: Perfil e Saúde
+                  </h4>
+                  <div>
+                    <div>
+                      <label>
+                        Renda Familiar Mensal
+                      </label>
+                      <div>
+                        <span>
+                          R$
+                        </span>
+                        <input inputmode="decimal" min="0" name="renda_familiar" placeholder="0,00" step="0.01" type="number">
+                      </div>
+                    </div>
+                    <div>
+                      <label>
+                        Renda per capita
+                      </label>
+                      <div>
+                        <span>
+                          R$
+                        </span>
+                        <input aria-readonly="true" id="renda_per_capita" readonly type="text">
+                      </div>
+                    </div>
+                    <div>
+                      <label>
+                        Residente de maior renda
+                      </label>
+                      <select name="residente_maior_renda">
+                        <option selected value="Aluno">
+                          Aluno
+                        </option>
+                        <option value="Pai">
+                          Pai
+                        </option>
+                        <option value="Mãe">
+                          Mãe
+                        </option>
+                        <option value="Irmão(ã)">
+                          Irmão(ã)
+                        </option>
+                        <option value="Avô/Avó">
+                          Avô/Avó
+                        </option>
+                        <option value="Outro">
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>
+                        Pessoas na Residência
+                      </label>
+                      <input name="pessoas_residencia" type="number" value="1">
+                    </div>
+                    <div>
+                      <label>
+                        Situação de Ocupação do Aluno
+                      </label>
+                      <select name="ocupacao">
+                        <option selected value="Estudante">
+                          Estudante
+                        </option>
+                        <option value="Desempregado">
+                          Desempregado
+                        </option>
+                        <option value="Autônomo">
+                          Autônomo
+                        </option>
+                        <option value="CLT">
+                          CLT
+                        </option>
+                        <option value="Jovem Aprendiz">
+                          Jovem Aprendiz
+                        </option>
+                        <option value="Estagiário">
+                          Estagiário
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>
+                        Beneficiário de Programa Social?
+                      </label>
+                      <select name="beneficio_social_status" onchange="window.toggleBeneficioSocial &amp;&amp; window.toggleBeneficioSocial(this)">
+                        <option selected value="Não">
+                          Não
+                        </option>
+                        <option value="Sim">
+                          Sim
+                        </option>
+                      </select>
+                    </div>
+                    <div id="beneficio_social_div">
+                      <label>
+                        Qual programa?
+                      </label>
+                      <div id="beneficio_social_tags">
+                      </div>
+                      <div>
+                        <input id="beneficio_social_input" list="programas_sociais" placeholder="Selecione ou digite um programa" type="text">
+                        <button onclick="window.adicionarBeneficioSocial()" type="button">
+                          <i aria-hidden="true">
+                          </i>
+                          Adicionar
+                        </button>
+                      </div>
+                      <datalist id="programas_sociais">
+                        <option value="Bolsa Família">
+                        </option>
+                        <option value="Cadastro Único">
+                        </option>
+                        <option value="Auxílio Gás">
+                        </option>
+                        <option value="BPC (Benefício de Prestação Continuada)">
+                        </option>
+                        <option value="Minha Casa Minha Vida">
+                        </option>
+                        <option value="Outros">
+                        </option>
+                      </datalist>
+                    </div>
+                    <div>
+                      <label>
+                        Meio de Transporte
+                      </label>
+                      <select name="meio_transporte">
+                        <option selected value="Ônibus">
+                          Ônibus
+                        </option>
+                        <option value="Carro/Moto">
+                          Carro/Moto
+                        </option>
+                        <option value="Bicicleta">
+                          Bicicleta
+                        </option>
+                        <option value="A pé">
+                          A pé
+                        </option>
+                        <option value="Outro">
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <div>
+                        <input id="vulnerabilidade_social" name="vulnerabilidade_social" type="checkbox">
+                        <label for="vulnerabilidade_social">
+                          Em vulnerabilidade social?
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <div>
+                        <div>
+                          <div>
+                            <input id="saude_laudo" name="saude_laudo" onchange="window.toggleLaudoUpload(this)" type="checkbox">
+                            <label for="saude_laudo">
+                              Aluno possui deficiência e/ou laudo médico?
+                            </label>
+                          </div>
+                        </div>
+                        <div id="tipo_deficiencia_container">
+                          <label>
+                            Tipo de deficiência
+                          </label>
+                          <select disabled id="tipo_deficiencia" name="tipo_deficiencia">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Não se aplica">
+                              Não se aplica
+                            </option>
+                            <option value="Motora/Física">
+                              Motora/Física
+                            </option>
+                            <option value="Auditiva">
+                              Auditiva
+                            </option>
+                            <option value="Psicossocial">
+                              Psicossocial
+                            </option>
+                            <option value="Intelectual/Mental">
+                              Intelectual/Mental
+                            </option>
+                            <option value="Visual">
+                              Visual
+                            </option>
+                            <option value="TEA">
+                              TEA
+                            </option>
+                            <option value="Outro">
+                              Outro
+                            </option>
+                          </select>
+                        </div>
+                        <div id="laudo_upload_container">
+                          <div onclick="document.getElementById('input_doc_laudo').click()">
+                            <i>
+                            </i>
+                            <span>
+                              Upload do Laudo Médico (PDF)
+                            </span>
+                            <span id="name_doc_laudo">
+                              Clique para selecionar
+                            </span>
+                            <input accept=".pdf" id="input_doc_laudo" name="doc_laudo" onchange="window.updateFileName('doc_laudo', this)" type="file">
+                          </div>
+                        </div>
+                        <div>
+                          <label>
+                            Faz uso de medicação regular?
+                          </label>
+                          <select name="saude_medicacao" onchange="window.toggleMedicacao &amp;&amp; window.toggleMedicacao(this)">
+                            <option selected value="Não">
+                              Não
+                            </option>
+                            <option value="Sim">
+                              Sim
+                            </option>
+                          </select>
+                        </div>
+                        <div id="medicacao_nome_div">
+                          <label>
+                            Qual medicação?
+                          </label>
+                          <input name="saude_medicamento_nome" placeholder="Nome do medicamento" type="text">
+                        </div>
+                        <div>
+                          <label>
+                            Observações de Saúde / Alimentar e Alergias
+                          </label>
+                          <textarea name="saude_observacoes" rows="2">
+                          </textarea>
+                        </div>
+                        <div>
+                          <label>
+                            Informações para o professor da turma
+                          </label>
+                          <textarea name="informacoes_para_professor" placeholder="Informações relevantes para o professor da turma" rows="3">
+                          </textarea>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <div>
+                        <div>
+                          <h6>
+                            <i>
+                            </i>
+                            AUTORIZAÇÃO DE USO DE IMAGEM E SOM
+                          </h6>
+                          <p>
+                            Autorizo o uso da imagem e som da voz do aluno acima identificado, para fins de divulgação de atividades pedagógicas, eventos e promoções da instituição, em redes sociais, site oficial e materiais impressos, sem fins lucrativos.
+                          </p>
+                          <div>
+                            <input id="autorizacao_imagem" name="autorizacao_imagem" type="checkbox">
+                            <label for="autorizacao_imagem">
+                              O responsável conscente com este termo?
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <button id="prevBtn" onclick="window.nextStep(-1)" type="button">
+                  ANTERIOR
+                </button>
+                <button id="nextBtn" onclick="window.nextStep(1)" type="button">
+                  PRÓXIMO
+                  <i>
+                  </i>
+                </button>
+                <button id="submitBtn" type="submit">
+                  FINALIZAR CADASTRO
+                  <i>
+                  </i>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div aria-hidden="true" data-bs-backdrop="static" id="webcamModal" tabindex="-1">
+        <div>
+          <div>
+            <div>
+              <h5>
+                Capturar Foto
+              </h5>
+              <button onclick="window.fecharWebcam &amp;&amp; window.fecharWebcam()" type="button">
+              </button>
+            </div>
+            <div>
+              <div>
+                <video autoplay id="webcamVideo" playsinline>
+                </video>
+                <div>
+                </div>
+                <canvas height="480" id="webcamCanvas" width="640">
+                </canvas>
+              </div>
+              <div>
+                <p>
+                  Posicione o rosto do aluno no centro do guia para garantir uma foto oficial de qualidade.
+                </p>
+              </div>
+            </div>
+            <div>
+              <button onclick="window.fecharWebcam &amp;&amp; window.fecharWebcam()" type="button">
+                Cancelar
+              </button>
+              <button onclick="window.capturarFoto &amp;&amp; window.capturarFoto()" type="button">
+                <i>
+                </i>
+                CAPTURAR
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script src="/static/js/alunos/aluno_utils.js">
+      </script>
+      <script src="/static/js/alunos/aluno.js">
+      </script>
+    </main>
+    <footer>
+      pautaON · pautaON v0.2.0 (beta) · © 2026
+    </footer>
+    <script src="/static/bootstrap/js/bootstrap.bundle.min.js">
+    </script>
+    <script src="/static/js/app.js">
+    </script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () { const body = document.body; const toggleBtn = document.getElementById("toggleSidebar"); const sidebar = document.getElementById("appSidebar"); const backdrop = document.getElementById("sidebarBackdrop"); const navLinks = document.querySelectorAll(".app-sidebar .nav-link"); // 1. Restaura estado no Desktop if (localStorage.getItem("sidebarState") === "collapsed") { body.classList.add("sidebar-collapsed"); } // Função para fechar no mobile function closeMobileSidebar() { sidebar.classList.remove("show"); backdrop.classList.remove("show"); body.style.overflow = ""; // Restaura scroll } // 2. Ação do botão toggleBtn.addEventListener("click", function () { if (window.innerWidth >= 992) { body.classList.toggle("sidebar-collapsed"); localStorage.setItem("sidebarState", body.classList.contains("sidebar-collapsed") ? "collapsed" : "expanded" ); } else { sidebar.classList.toggle("show"); backdrop.classList.toggle("show"); // Trava scroll do fundo if (sidebar.classList.contains("show")) { body.style.overflow = "hidden"; } else { body.style.overflow = ""; } } }); // 3. Clicar no fundo escuro fecha a gaveta backdrop.addEventListener("click", closeMobileSidebar); // 4. Clicar em um link no celular fecha a gaveta navLinks.forEach(link => { link.addEventListener("click", function () { if (window.innerWidth < 992) { closeMobileSidebar(); } }); }); // 5. Se redimensionar a tela, limpa os estados window.addEventListener("resize", function () { if (window.innerWidth >= 992) { closeMobileSidebar(); } }); });
+    </script>
+  </body>
+</html>

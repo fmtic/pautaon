@@ -1,0 +1,830 @@
+[
+  {
+    "step": null,
+    "tag": "button",
+    "name": "",
+    "id": "toggleSidebar"
+  },
+  {
+    "step": null,
+    "tag": "input",
+    "name": "csrf_token",
+    "id": ""
+  },
+  {
+    "step": null,
+    "tag": "input",
+    "name": "csrf_token",
+    "id": ""
+  },
+  {
+    "step": null,
+    "tag": "input",
+    "name": "csrf_token",
+    "id": ""
+  },
+  {
+    "step": null,
+    "tag": "input",
+    "name": "csrf_token",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Alterar"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "foto",
+    "id": "inputFotoManual"
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Nome de Registro"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "nome",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Nome Social"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "nome_social",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Nascimento"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "data_nascimento",
+    "id": "data_nascimento"
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Idade"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "",
+    "id": "idade"
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Sexo / Gênero"
+  },
+  {
+    "step": "step-1",
+    "tag": "select",
+    "name": "genero",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Etnia / Cor"
+  },
+  {
+    "step": "step-1",
+    "tag": "select",
+    "name": "raca_cor",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "CPF do Aluno"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "cpf",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "RG / Registro"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "rg",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Órgão Emissor / UF"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "orgao_rg",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Nacionalidade"
+  },
+  {
+    "step": "step-1",
+    "tag": "input",
+    "name": "nacionalidade",
+    "id": ""
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Natural (UF)"
+  },
+  {
+    "step": "step-1",
+    "tag": "select",
+    "name": "natural_uf",
+    "id": "natural_uf"
+  },
+  {
+    "step": "step-1",
+    "tag": "label",
+    "for": "",
+    "text": "Natural (Cidade)"
+  },
+  {
+    "step": "step-1",
+    "tag": "select",
+    "name": "natural_cidade",
+    "id": "natural_cidade"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "Nome da Mãe"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "nome_mae",
+    "id": "nome_mae"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "CPF da Mãe"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "cpf_mae",
+    "id": "cpf_mae"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "Nome do Pai"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "nome_pai",
+    "id": "nome_pai"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "CPF do Pai"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "cpf_pai",
+    "id": "cpf_pai"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "Quem é o Responsável?"
+  },
+  {
+    "step": "step-2",
+    "tag": "select",
+    "name": "responsavel_tipo",
+    "id": "responsavel_tipo"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "Nome Completo do Responsável"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "responsavel_nome",
+    "id": "responsavel_nome"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "CPF do Responsável"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "responsavel_cpf",
+    "id": "responsavel_cpf"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "vai_acompanhado_aulas",
+    "id": "vai_acompanhado_aulas"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "vai_acompanhado_aulas",
+    "text": "Vai acompanhado para as aulas?"
+  },
+  {
+    "step": "step-2",
+    "tag": "label",
+    "for": "",
+    "text": "Quem acompanha?"
+  },
+  {
+    "step": "step-2",
+    "tag": "select",
+    "name": "acompanhante_aulas",
+    "id": "acompanhante_aulas"
+  },
+  {
+    "step": "step-2",
+    "tag": "input",
+    "name": "acompanhante_aulas_outro",
+    "id": "acompanhante_aulas_outro"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "CEP"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "cep",
+    "id": "cep"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Rua / Logradouro"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "rua",
+    "id": "rua"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Nº"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "numero",
+    "id": ""
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Bairro"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "bairro",
+    "id": "bairro"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Cidade"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "cidade",
+    "id": "cidade"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "UF"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "uf",
+    "id": "uf"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Zona urbana ou rural"
+  },
+  {
+    "step": "step-3",
+    "tag": "select",
+    "name": "zona",
+    "id": ""
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Tel./WhatsApp Aluno"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "whatsapp",
+    "id": ""
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "Tel./WhatsApp Responsável"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "telefone_resp",
+    "id": ""
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "",
+    "text": "E-mail Principal"
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "email",
+    "id": ""
+  },
+  {
+    "step": "step-3",
+    "tag": "input",
+    "name": "nao_possui_acesso_internet",
+    "id": "nao_possui_acesso_internet"
+  },
+  {
+    "step": "step-3",
+    "tag": "label",
+    "for": "nao_possui_acesso_internet",
+    "text": "Não possui acesso a internet"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Escolaridade"
+  },
+  {
+    "step": "step-4",
+    "tag": "select",
+    "name": "escolaridade",
+    "id": "escolaridade"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Status"
+  },
+  {
+    "step": "step-4",
+    "tag": "select",
+    "name": "status_escolar",
+    "id": "status_escolar"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Descreva o status"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "status_escolar_outro",
+    "id": ""
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Período (Ensino Superior)"
+  },
+  {
+    "step": "step-4",
+    "tag": "select",
+    "name": "ensino_superior_periodo",
+    "id": ""
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Outra escolaridade"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "escolaridade_outro",
+    "id": ""
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Escola / Universidade"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "nome_instituicao",
+    "id": "nome_instituicao"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Tipo de instituição"
+  },
+  {
+    "step": "step-4",
+    "tag": "select",
+    "name": "tipo_instituicao",
+    "id": "tipo_instituicao"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "bolsista",
+    "id": "bolsista"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "bolsista",
+    "text": "É bolsista?"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Outro tipo de instituição"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "tipo_instituicao_outro",
+    "id": ""
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Turno"
+  },
+  {
+    "step": "step-4",
+    "tag": "select",
+    "name": "turno_escolar",
+    "id": "turno_escolar"
+  },
+  {
+    "step": "step-4",
+    "tag": "label",
+    "for": "",
+    "text": "Outro turno"
+  },
+  {
+    "step": "step-4",
+    "tag": "input",
+    "name": "turno_escolar_outro",
+    "id": ""
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_aluno",
+    "id": "input_doc_aluno"
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_residencia",
+    "id": "input_doc_residencia"
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_declaracao",
+    "id": "input_doc_declaracao"
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_atestado",
+    "id": "input_doc_atestado"
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_termo",
+    "id": "input_doc_termo"
+  },
+  {
+    "step": "step-5",
+    "tag": "input",
+    "name": "doc_responsavel",
+    "id": "input_doc_responsavel"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Renda Familiar Mensal"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "renda_familiar",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Renda per capita"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "",
+    "id": "renda_per_capita"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Residente de maior renda"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "residente_maior_renda",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Pessoas na Residência"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "pessoas_residencia",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Situação de Ocupação do Aluno"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "ocupacao",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Beneficiário de Programa Social?"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "beneficio_social_status",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Qual programa?"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "beneficio_social_nome",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "beneficio_social_nome",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "",
+    "id": "beneficio_social_input"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Meio de Transporte"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "meio_transporte",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "vulnerabilidade_social",
+    "id": "vulnerabilidade_social"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "vulnerabilidade_social",
+    "text": "Em vulnerabilidade social?"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "saude_laudo",
+    "id": "saude_laudo"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "saude_laudo",
+    "text": "Aluno possui deficiência e/ou laudo médico?"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Tipo de deficiência"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "tipo_deficiencia",
+    "id": "tipo_deficiencia"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "doc_laudo",
+    "id": "input_doc_laudo"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Faz uso de medicação regular?"
+  },
+  {
+    "step": "step-6",
+    "tag": "select",
+    "name": "saude_medicacao",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Qual medicação?"
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "saude_medicamento_nome",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Observações de Saúde / Alimentar e Alergias"
+  },
+  {
+    "step": "step-6",
+    "tag": "textarea",
+    "name": "saude_observacoes",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "",
+    "text": "Informações para o professor da turma"
+  },
+  {
+    "step": "step-6",
+    "tag": "textarea",
+    "name": "informacoes_para_professor",
+    "id": ""
+  },
+  {
+    "step": "step-6",
+    "tag": "input",
+    "name": "autorizacao_imagem",
+    "id": "autorizacao_imagem"
+  },
+  {
+    "step": "step-6",
+    "tag": "label",
+    "for": "autorizacao_imagem",
+    "text": "O responsável conscente com este termo?"
+  },
+  {
+    "step": null,
+    "tag": "button",
+    "name": "",
+    "id": "prevBtn"
+  },
+  {
+    "step": null,
+    "tag": "button",
+    "name": "",
+    "id": "nextBtn"
+  },
+  {
+    "step": null,
+    "tag": "button",
+    "name": "",
+    "id": "submitBtn"
+  }
+]

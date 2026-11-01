@@ -16,6 +16,10 @@ colapsado, tokens de CSRF removidos, matrícula anonimizada), de forma que
 formatação de template não conta — apenas estrutura, valores e textos.
 Snapshots em `tests/snapshots/`; regenerar com `AJ5C_ATUALIZAR_SNAPSHOTS=1`.
 
+Desde o AJ5-E há também a variante "sem `class`/`style`" (`aj5e_estrutura_*`):
+ela prova que uma mudança de layout não alterou estrutura, ordem, atributos
+ou textos — só a apresentação.
+
 Nenhum dado pessoal real: nomes/CPFs/telefones são fictícios.
 """
 
@@ -138,7 +142,7 @@ def _norm_attr(nome, valor):
     return valor
 
 
-def _serializar(no, nivel=0, linhas=None):
+def _serializar(no, nivel=0, linhas=None, sem_classes_estilo=False):
     if linhas is None:
         linhas = []
         if DOCTYPE in no.filhos:
@@ -150,11 +154,13 @@ def _serializar(no, nivel=0, linhas=None):
         return linhas
     if no.tag == "[doc]":
         for filho in no.filhos:
-            _serializar(filho, nivel, linhas)
+            _serializar(filho, nivel, linhas, sem_classes_estilo)
         return linhas
 
     attrs = []
     for nome in sorted(no.attrs):
+        if sem_classes_estilo and nome in ("class", "style"):
+            continue
         valor = no.attrs[nome]
         if _descartar_attr(no.tag, nome, valor):
             continue
@@ -171,7 +177,7 @@ def _serializar(no, nivel=0, linhas=None):
         return linhas
     linhas.append(f"{indent}{abre}")
     for filho in no.filhos:
-        _serializar(filho, nivel + 1, linhas)
+        _serializar(filho, nivel + 1, linhas, sem_classes_estilo)
     if no.tag not in VOID:
         linhas.append(f"{indent}</{no.tag}>")
     return linhas
@@ -181,11 +187,17 @@ def _escapa(texto):
     return texto.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
 
-def canonizar(html_texto):
-    """HTML cru -> texto canônico determinístico (linha a linha)."""
+def canonizar(html_texto, sem_classes_estilo=False):
+    """HTML cru -> texto canônico determinístico (linha a linha).
+
+    Com ``sem_classes_estilo=True`` os atributos ``class`` e ``style`` de
+    TODOS os elementos são descartados. Serve para provar que uma mudança
+    puramente visual (AJ5-E) não alterou estrutura, ordem, atributos ou
+    textos — só classes/estilo.
+    """
     construtor = _Construtor()
     construtor.feed(html_texto)
-    linhas = _serializar(construtor.raiz)
+    linhas = _serializar(construtor.raiz, sem_classes_estilo=sem_classes_estilo)
     # Remove inputs de CSRF por completo (linha do input e eventual wrapper não).
     linhas = [
         ln for ln in linhas
@@ -202,6 +214,13 @@ def canonizar(html_texto):
 SNAP_NOVO_COM_UNIDADES = "aj5c_novo_com_unidades.txt"
 SNAP_NOVO_SEM_UNIDADES = "aj5c_novo_sem_unidades.txt"
 SNAP_EDITAR_COMPLETO = "aj5c_editar_completo.txt"
+
+# AJ5-E: mesmas três variantes SEM `class`/`style` — prova de que o layout
+# mudou apenas a apresentação. Estes arquivos NÃO devem mudar ao aplicar o
+# layout do AJ5-E.
+SNAP_ESTRUTURA_NOVO_COM_UNIDADES = "aj5e_estrutura_novo_com_unidades.txt"
+SNAP_ESTRUTURA_NOVO_SEM_UNIDADES = "aj5e_estrutura_novo_sem_unidades.txt"
+SNAP_ESTRUTURA_EDITAR_COMPLETO = "aj5e_estrutura_editar_completo.txt"
 
 
 @pytest.fixture
@@ -299,10 +318,12 @@ def dados(app):
         }
 
 
-def _render_canonizado(client, url):
+def _render_canonizado(client, url, sem_classes_estilo=False):
     resposta = client.get(url)
     assert resposta.status_code == 200, f"GET {url} -> {resposta.status_code}"
-    return canonizar(resposta.get_data(as_text=True))
+    return canonizar(
+        resposta.get_data(as_text=True), sem_classes_estilo=sem_classes_estilo
+    )
 
 
 def _confrontar_snapshot(nome, atual):
@@ -349,3 +370,58 @@ def test_snapshot_editar_completo(app, client, dados):
         SNAP_EDITAR_COMPLETO,
         _render_canonizado(client, f"/aluno/editar/{dados['aluno']}"),
     )
+
+
+# =============================================================================
+# AJ5-E — ESTRUTURA SEM CLASS/STYLE (trava do layout)
+# =============================================================================
+
+
+def test_estrutura_novo_com_unidades(app, client, dados):
+    """Sem classes/estilo, o HTML do `novo` (global) não pode mudar no layout."""
+    login_as(client, dados["admin_global"])
+    _confrontar_snapshot(
+        SNAP_ESTRUTURA_NOVO_COM_UNIDADES,
+        _render_canonizado(client, "/aluno/novo", sem_classes_estilo=True),
+    )
+
+
+def test_estrutura_novo_sem_unidades(app, client, dados):
+    """Sem classes/estilo, o HTML do `novo` (unidade fixa) não pode mudar."""
+    login_as(client, dados["admin_local"], dados["unidade_a"])
+    _confrontar_snapshot(
+        SNAP_ESTRUTURA_NOVO_SEM_UNIDADES,
+        _render_canonizado(client, "/aluno/novo", sem_classes_estilo=True),
+    )
+
+
+def test_estrutura_editar_completo(app, client, dados):
+    """Sem classes/estilo, o HTML do `editar` completo não pode mudar."""
+    login_as(client, dados["admin_local"], dados["unidade_a"])
+    _confrontar_snapshot(
+        SNAP_ESTRUTURA_EDITAR_COMPLETO,
+        _render_canonizado(
+            client, f"/aluno/editar/{dados['aluno']}", sem_classes_estilo=True
+        ),
+    )
+
+
+def test_variante_sem_classes_remove_class_e_style():
+    """Sanidade do canonizador: a variante realmente tira `class`/`style`.
+
+    Garante que os snapshots `aj5e_estrutura_*` não passem por acidente (por
+    exemplo, se o filtro deixasse de funcionar e as classes continuassem no
+    texto — aí uma mudança de layout passaria despercebida).
+    """
+    html = (
+        '<div class="row g-3" style="color: red">'
+        '<label class="form-label small">Nome</label>'
+        '<input name="nome" class="form-control" style="width: 10px">'
+        "</div>"
+    )
+    com = canonizar(html)
+    sem = canonizar(html, sem_classes_estilo=True)
+    assert 'class="row g-3"' in com and 'style="color: red"' in com
+    assert "class=" not in sem and "style=" not in sem
+    assert "<label>" in sem and "Nome" in sem
+    assert '<input name="nome">' in sem
