@@ -1566,7 +1566,7 @@ Entregue: `tests/test_aj4_logs_drift.py` (57) — varredura AST de `app/**.py` (
 
 - **Prova de reversão em `git worktree`** (árvore de trabalho intocada, regras do AJ3): rótulo fictício novo derruba a asserção 1 (2 falhas: asserções 1 e 4); sumir com `TRANSFERENCIA` do código derruba exatamente a asserção 3; reverter `app/auth.py` a `1e39e23^` derruba a asserção 2 só em `Exclusão de Turma`. Evidências: `.tmp/aj4_reversao_a.txt`, `.tmp/aj4_reversao_b.txt`, `.tmp/aj4_reversao_c.txt`.
 - Nenhum defeito novo de app exposto, nenhuma migration, sem push. Suíte completa de 01/11/2026: **1365 coletados (1308 + 57), 1351 passed** — os 57 do AJ4-A passam; as 14 falhas restantes (`test_f1_autor_lancamento` ×10, `test_turma_curso_fase4_dash` ×3, `test_v3a_datas_lancadas` ×1) **já falham no HEAD limpo `ef98f7f` sem nenhuma mudança deste trabalho** (prova em worktree: `.tmp/aj4_falhas_head.txt`) — dependência de calendário na virada 31/10→01/11 (`gerar_datas` deriva `datas` da grade da oferta e corta em `hoje`). Pendência nova: **AJ4-B — flakiness de data** nos três arquivos; nada foi corrigido aqui, por regra.
-- **Documentação:** MER §7.29 (bloco "Drift de rótulos"), relatório `docs/Relatórios/AJ3_TestesFechamento.md` (regra de guarda Nextcloud e aritmética da E6 reescrita).
+- **Documentação:** MER §7.29 (bloco "Drift de rótulos"), relatório `docs/Relatórios/AJ3_TestesFechamento.md` (regra de guarda Nextcloud e aritmética da E6 reescrita) e relatório próprio `docs/Relatórios/AJ4_LogsDrift.md`.
 
 ## AJ3 - Fechamento do AJ1 e do AJ2 com testes reais
 
