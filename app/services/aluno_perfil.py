@@ -46,6 +46,9 @@ TIPOS_DEFICIENCIA = (
     'Visual',
     'Outro',
     'TEA',
+    # AJ5-A: `editar.html` já oferecia a opção com valor próprio e o POST
+    # quebrava no catálogo; `novo.html` passou a enviar o mesmo valor.
+    'Não se aplica',
 )
 
 

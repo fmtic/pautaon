@@ -237,6 +237,11 @@
                                 <div class="mb-3 {{ '' if vai_acompanhado else 'd-none' }}" id="acompanhante_aulas_div">
                                     <label class="form-label small">Quem acompanha?</label>
                                     {% set acompanhante = ident.get('acompanhante_aulas', '') %}
+                                                                        {# AJ5-A: o "Outro" salva o texto livre na coluna (ver
+                                                                        `_aplicar_campos_civis`); valor fora da lista fixa volta
+                                                                        como Outro selecionado + campo pré-preenchido. #}
+                                                                        {% set acomp_opcoes = ['Mãe', 'Pai', 'Avô/Avó', 'Irmão/Tio', 'Outro', 'Vai sozinho'] %}
+                                                                        {% set acomp_livre = acompanhante|trim and acompanhante not in acomp_opcoes %}
                                     <select name="acompanhante_aulas" id="acompanhante_aulas" class="form-select"
                                         onchange="window.toggleOutroAcompanhante(this)">
                                         <option value="">Selecione...</option>
@@ -246,13 +251,13 @@
                                         </option>
                                         <option value="Irmão/Tio" {{ 'selected' if acompanhante=='Irmão/Tio' }}>
                                             Irmão/Tio</option>
-                                        <option value="Outro" {{ 'selected' if acompanhante=='Outro' }}>Outro</option>
+                                        <option value="Outro" {{ 'selected' if acompanhante=='Outro' or acomp_livre }}>Outro</option>
                                         <option value="Vai sozinho" {{ 'selected' if acompanhante=='Vai sozinho' }}>Vai
                                             sozinho</option>
                                     </select>
-                                    <div class="mt-2 d-none" id="acompanhante_aulas_outro_div">
+                                    <div class="mt-2{{ ' d-none' if not (acompanhante=='Outro' or acomp_livre) }}" id="acompanhante_aulas_outro_div">
                                         <input type="text" name="acompanhante_aulas_outro" id="acompanhante_aulas_outro"
-                                            class="form-control" placeholder="Informe quem acompanha">
+                                            class="form-control" value="{{ acompanhante if acomp_livre else '' }}" placeholder="Informe quem acompanha">
                                     </div>
                                 </div>
                             </div>
@@ -621,7 +626,7 @@
                                             <option value="Visual" {{ 'selected' if tipo_def=='Visual' }}>Visual
                                             </option>
                                             <option value="TEA" {{ 'selected' if tipo_def=='TEA' }}>TEA</option>
-                                            <option value="Outro" {{ 'selected' if tipo_def=='Outra' }}>Outro</option>
+                                            <option value="Outro" {{ 'selected' if tipo_def=='Outro' }}>Outro</option>
                                         </select>
                                     </div>
                                     <div class="col-md-6 {{ 'd-none' if not has_laudo }}" id="laudo_upload_container">
