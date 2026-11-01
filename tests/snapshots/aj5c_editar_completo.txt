@@ -271,10 +271,10 @@
     <div class="sidebar-backdrop" id="sidebarBackdrop">
     </div>
     <main class="app-main flex-grow-1">
-      <div class="container py-4">
+      <div class="container py-3 py-lg-4 aluno-form-shell">
         <div class="row justify-content-center">
-          <div class="col-lg-10">
-            <div class="d-flex align-items-center justify-content-between mb-4">
+          <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between mb-3">
               <div>
                 <h4 class="fw-bold mb-0 text-primary">
                   Editar Cadastro
@@ -289,7 +289,7 @@
                 CANCELAR
               </a>
             </div>
-            <div class="stepper-container px-5 mb-5">
+            <div class="stepper-container px-3 px-md-5 mb-3 mb-md-4">
               <div class="step-item active" id="step-indicator-1" onclick="goToStep(1)">
                 1
               </div>
@@ -310,12 +310,12 @@
               </div>
             </div>
             <form enctype="multipart/form-data" id="multiStepForm" method="POST">
-              <div class="card shadow-lg card-modern p-4 mb-4">
+              <div class="card shadow-lg card-modern p-3 p-lg-4 mb-3 mb-lg-4">
                 <div class="form-step active" id="step-1">
-                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                  <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">
                     Etapa I: Identificação Principal
                   </h4>
-                  <div class="row g-3">
+                  <div class="row g-3 gx-lg-4">
                     <div class="col-md-3 text-center border-end">
                       <div class="bg-light border rounded-circle mx-auto overflow-hidden shadow-sm mb-2" id="preview-container" style="width: 140px; height: 140px; position: relative">
                         <img class="w-100 h-100 object-fit-cover" id="img-preview" src="/aluno/1/foto">
@@ -340,7 +340,7 @@
                       </div>
                     </div>
                     <div class="col-md-9">
-                      <div class="row g-3">
+                      <div class="row g-3 gx-lg-4">
                         <div class="col-md-6">
                           <label class="form-label fw-bold text-uppercase">
                             Nome de Registro
@@ -464,11 +464,11 @@
                   </div>
                 </div>
                 <div class="form-step" id="step-2">
-                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                  <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">
                     Etapa II: Filiação e Responsável
                   </h4>
-                  <div class="row g-3">
-                    <div class="col-md-6 border-end pe-4">
+                  <div class="row g-3 gx-lg-4">
+                    <div class="col-md-6 border-end pe-md-4 pe-0">
                       <p class="fw-bold small text-primary text-uppercase mb-2">
                         Dados do Pai / Mãe
                       </p>
@@ -499,7 +499,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="col-md-6 ps-4">
+                    <div class="col-md-6 ps-md-4 ps-0">
                       <p class="fw-bold small text-primary text-uppercase mb-2">
                         Responsável Legal
                       </p>
@@ -584,10 +584,10 @@
                   </div>
                 </div>
                 <div class="form-step" id="step-3">
-                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                  <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">
                     Etapa III: Endereço e Contato
                   </h4>
-                  <div class="row g-3">
+                  <div class="row g-3 gx-lg-4">
                     <div class="col-md-4">
                       <label class="form-label fw-bold small">
                         CEP
@@ -637,27 +637,27 @@
                         </option>
                       </select>
                     </div>
-                    <div class="col-md-12 border-top mt-4 pt-3">
-                      <div class="row g-3">
-                        <div class="col-md-4">
+                    <div class="col-md-12 border-top mt-3 mt-lg-4 pt-3">
+                      <div class="row g-3 gx-lg-4">
+                        <div class="col-md-4 col-xl-3">
                           <label class="form-label fw-bold small">
                             Tel./WhatsApp Aluno
                           </label>
                           <input class="form-control mask-phone" name="whatsapp" type="text" value="(11) 99999-0001">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 col-xl-3">
                           <label class="form-label fw-bold small">
                             Tel./WhatsApp Responsável
                           </label>
                           <input class="form-control mask-phone" name="telefone_resp" type="text" value="(11) 99999-0002">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 col-xl-3">
                           <label class="form-label fw-bold small">
                             E-mail Principal
                           </label>
                           <input class="form-control" name="email" type="email" value="aluno.aj5c@example.com">
                         </div>
-                        <div class="col-md-4 d-flex align-items-end">
+                        <div class="col-md-4 col-xl-3 d-flex align-items-end">
                           <div class="form-check form-switch mb-2">
                             <input checked class="form-check-input" id="nao_possui_acesso_internet" name="nao_possui_acesso_internet" type="checkbox">
                             <label class="form-check-label small fw-bold" for="nao_possui_acesso_internet">
@@ -670,10 +670,10 @@
                   </div>
                 </div>
                 <div class="form-step" id="step-4">
-                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                  <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">
                     Etapa IV: Situação Escolar
                   </h4>
-                  <div class="row g-3">
+                  <div class="row g-3 gx-lg-4">
                     <div class="col-md-6">
                       <label class="form-label fw-bold small">
                         Escolaridade
@@ -724,7 +724,7 @@
                         </option>
                       </select>
                     </div>
-                    <div class="col-md-6" id="status-outro">
+                    <div class="col-md-6 col-xl-3" id="status-outro">
                       <label class="form-label fw-bold small">
                         Descreva o status
                       </label>
@@ -811,13 +811,13 @@
                         </label>
                       </div>
                     </div>
-                    <div class="col-md-6 d-none" id="instituicao-outro">
+                    <div class="col-md-6 col-xl-5 d-none" id="instituicao-outro">
                       <label class="form-label fw-bold small">
                         Outro tipo de instituição
                       </label>
                       <input class="form-control" name="tipo_instituicao_outro">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4 col-xl-3">
                       <label class="form-label fw-bold small">
                         Turno
                       </label>
@@ -861,7 +861,7 @@
                   </p>
                   <div class="row g-4">
                     <div class="col-md-4">
-                      <div class="pdf-upload-box has-file" onclick="document.getElementById('input_doc_aluno').click()">
+                      <div class="pdf-upload-box h-100 has-file" onclick="document.getElementById('input_doc_aluno').click()">
                         <i class="bi bi-check-circle-fill text-success fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -882,7 +882,7 @@
                       </div>
                     </div>
                     <div class="col-md-4">
-                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_residencia').click()">
+                      <div class="pdf-upload-box h-100" onclick="document.getElementById('input_doc_residencia').click()">
                         <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -895,7 +895,7 @@
                       </div>
                     </div>
                     <div class="col-md-4">
-                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_declaracao').click()">
+                      <div class="pdf-upload-box h-100" onclick="document.getElementById('input_doc_declaracao').click()">
                         <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -908,7 +908,7 @@
                       </div>
                     </div>
                     <div class="col-md-4">
-                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_atestado').click()">
+                      <div class="pdf-upload-box h-100" onclick="document.getElementById('input_doc_atestado').click()">
                         <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -921,7 +921,7 @@
                       </div>
                     </div>
                     <div class="col-md-4">
-                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_termo').click()">
+                      <div class="pdf-upload-box h-100" onclick="document.getElementById('input_doc_termo').click()">
                         <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -934,7 +934,7 @@
                       </div>
                     </div>
                     <div class="col-md-4">
-                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_responsavel').click()">
+                      <div class="pdf-upload-box h-100" onclick="document.getElementById('input_doc_responsavel').click()">
                         <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
                         </i>
                         <span class="fw-bold small d-block">
@@ -949,10 +949,10 @@
                   </div>
                 </div>
                 <div class="form-step" id="step-6">
-                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                  <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">
                     Etapa VI: Perfil e Saúde
                   </h4>
-                  <div class="row g-3">
+                  <div class="row g-3 gx-lg-4">
                     <div class="col-md-4">
                       <label class="form-label small fw-bold">
                         Renda Familiar Mensal
@@ -1115,8 +1115,8 @@
                         </label>
                       </div>
                     </div>
-                    <div class="col-md-12 bg-light p-3 rounded mt-4 border">
-                      <div class="row g-3">
+                    <div class="col-md-12 bg-light p-3 rounded mt-3 mt-lg-4 border">
+                      <div class="row g-3 gx-lg-4">
                         <div class="col-md-12">
                           <div class="form-check form-switch">
                             <input checked class="form-check-input" id="saude_laudo" name="saude_laudo" onchange="window.toggleLaudoUpload(this)" type="checkbox">
@@ -1160,7 +1160,7 @@
                           </select>
                         </div>
                         <div class="col-md-6" id="laudo_upload_container">
-                          <div class="pdf-upload-box py-2 has-file" onclick="document.getElementById('input_doc_laudo').click()">
+                          <div class="pdf-upload-box h-100 py-2 has-file" onclick="document.getElementById('input_doc_laudo').click()">
                             <i class="bi bi-check-circle-fill text-success fs-4 d-block">
                             </i>
                             <span class="fw-bold small d-block">
@@ -1217,7 +1217,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="col-md-12 mt-4">
+                    <div class="col-md-12 mt-3 mt-lg-4">
                       <div class="card border-primary-subtle bg-light shadow-sm">
                         <div class="card-body">
                           <h6 class="fw-bold text-primary mb-2">

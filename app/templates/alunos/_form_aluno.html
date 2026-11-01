@@ -23,7 +23,7 @@ para quem pode usar a rota. #}
 {% set pode_doc = modo == 'editar' and current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
 
 <!-- Stepper -->
-<div class="stepper-container px-5 mb-5">
+<div class="stepper-container px-3 px-md-5 mb-3 mb-md-4">
   <div class="step-item active" id="step-indicator-1" onclick="{{ w }}goToStep(1)">1</div>
   <div class="step-item" id="step-indicator-2" onclick="{{ w }}goToStep(2)">2</div>
   <div class="step-item" id="step-indicator-3" onclick="{{ w }}goToStep(3)">3</div>
@@ -35,7 +35,7 @@ para quem pode usar a rota. #}
 <form method="POST" enctype="multipart/form-data" id="multiStepForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="card shadow-lg card-modern p-4 mb-4">
+  <div class="card shadow-lg card-modern p-3 p-lg-4 mb-3 mb-lg-4">
     {# Seletor de unidade — só no cadastro novo quando a view envia a lista
     (usuário global sem contexto de unidade) #}
     {% if modo == 'novo' and unidades %}
@@ -58,8 +58,8 @@ para quem pode usar a rota. #}
 
     <!-- STEP 1: IDENTIFICAÇÃO -->
     <div class="form-step active" id="step-1">
-      <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa I: Identificação Principal</h4>
-      <div class="row g-3">
+      <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">Etapa I: Identificação Principal</h4>
+      <div class="row g-3 gx-lg-4">
         <div class="col-md-3 text-center border-end">
           <div id="preview-container"
             class="bg-light border rounded-circle mx-auto overflow-hidden shadow-sm mb-2"
@@ -87,7 +87,7 @@ para quem pode usar a rota. #}
           </div>
         </div>
         <div class="col-md-9">
-          <div class="row g-3">
+          <div class="row g-3 gx-lg-4">
             <!-- Row 1: Nomes -->
             <div class="col-md-6">
               <label class="form-label fw-bold text-uppercase">Nome de Registro</label>
@@ -175,9 +175,9 @@ para quem pode usar a rota. #}
 
     <!-- STEP 2: FILIAÇÃO E RESPONSÁVEL -->
     <div class="form-step" id="step-2">
-      <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa II: Filiação e Responsável</h4>
-      <div class="row g-3">
-        <div class="col-md-6 border-end pe-4">
+      <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">Etapa II: Filiação e Responsável</h4>
+      <div class="row g-3 gx-lg-4">
+        <div class="col-md-6 border-end pe-md-4 pe-0">
           <p class="fw-bold small text-primary text-uppercase mb-2">Dados do Pai / Mãe</p>
           <div class="mb-3">
             <label class="form-label small">Nome da Mãe</label>
@@ -198,7 +198,7 @@ para quem pode usar a rota. #}
             <div class="invalid-feedback">CPF inválido</div>
           </div>
         </div>
-        <div class="col-md-6 ps-4">
+        <div class="col-md-6 ps-md-4 ps-0">
           <p class="fw-bold small text-primary text-uppercase mb-2">Responsável Legal</p>
           <div class="mb-3">
             <label class="form-label small">Quem é o Responsável?</label>
@@ -253,8 +253,8 @@ para quem pode usar a rota. #}
 
     <!-- STEP 3: LOCALIZAÇÃO -->
     <div class="form-step" id="step-3">
-      <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa III: Endereço e Contato</h4>
-      <div class="row g-3">
+      <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">Etapa III: Endereço e Contato</h4>
+      <div class="row g-3 gx-lg-4">
         <div class="col-md-4">
           <label class="form-label fw-bold small">CEP</label>
           <input type="text" name="cep" id="cep" class="form-control form-control-lg mask-cep"
@@ -291,23 +291,23 @@ para quem pode usar a rota. #}
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-12 border-top mt-4 pt-3">
-          <div class="row g-3">
-            <div class="col-md-4">
+        <div class="col-md-12 border-top mt-3 mt-lg-4 pt-3">
+          <div class="row g-3 gx-lg-4">
+            <div class="col-md-4 col-xl-3">
               <label class="form-label fw-bold small">{{ 'WhatsApp Aluno' if modo == 'novo' else 'Tel./WhatsApp Aluno' }}</label>
               <input type="text" name="whatsapp" class="form-control mask-phone"
                 value="{{ v.whatsapp }}">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4 col-xl-3">
               <label class="form-label fw-bold small">{{ 'Telefone Responsável' if modo == 'novo' else 'Tel./WhatsApp Responsável' }}</label>
               <input type="text" name="telefone_resp" class="form-control mask-phone"
                 value="{{ v.telefone_resp }}">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4 col-xl-3">
               <label class="form-label fw-bold small">E-mail Principal</label>
               <input type="email" name="email" class="form-control" value="{{ v.email }}">
             </div>
-            <div class="col-md-4 d-flex align-items-end">
+            <div class="col-md-4 col-xl-3 d-flex align-items-end">
               <div class="form-check form-switch mb-2">
                 <input class="form-check-input" type="checkbox" name="nao_possui_acesso_internet"
                   id="nao_possui_acesso_internet" {% if v.nao_possui_acesso_internet %}checked{% endif %}>
@@ -323,8 +323,8 @@ para quem pode usar a rota. #}
 
     <!-- STEP 4: SITUAÇÃO ESCOLAR -->
     <div class="form-step" id="step-4">
-      <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa IV: Situação Escolar</h4>
-      <div class="row g-3">
+      <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">Etapa IV: Situação Escolar</h4>
+      <div class="row g-3 gx-lg-4">
         <div class="col-md-6">
           <label class="form-label fw-bold small">Escolaridade</label>
           <select name="escolaridade" id="escolaridade" class="form-select"
@@ -345,7 +345,7 @@ para quem pode usar a rota. #}
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-6{{ ' d-none' if v.status_escolar != 'Outros' }}" id="status-outro">
+        <div class="col-md-6 col-xl-3{{ ' d-none' if v.status_escolar != 'Outros' }}" id="status-outro">
           <label class="form-label fw-bold small">Descreva o status</label>
           <input name="status_escolar_outro" class="form-control" value="{{ v.status_escolar_outro }}">
         </div>
@@ -386,11 +386,11 @@ para quem pode usar a rota. #}
             <label class="form-check-label" for="bolsista">É bolsista?</label>
           </div>
         </div>
-        <div class="col-md-6{{ ' d-none' if v.tipo_instituicao != 'Outro' }}" id="instituicao-outro">
+        <div class="col-md-6 col-xl-5{{ ' d-none' if v.tipo_instituicao != 'Outro' }}" id="instituicao-outro">
           <label class="form-label fw-bold small">Outro tipo de instituição</label>
           <input name="tipo_instituicao_outro" class="form-control" value="{{ v.tipo_instituicao_outro }}">
         </div>
-        <div class="col-md-4">
+        <div class="col-md-4 col-xl-3">
           <label class="form-label fw-bold small">Turno</label>
           <select name="turno_escolar" id="turno_escolar" class="form-select"
             onchange="toggleSituacaoEscolar()">
@@ -418,7 +418,7 @@ para quem pode usar a rota. #}
         {% for doc_id, label in v.uploads %}
         {% set has_file = v.doc_estado.get(doc_id) %}
         <div class="col-md-4">
-          <div class="pdf-upload-box{{ ' has-file' if has_file }}"
+          <div class="pdf-upload-box h-100{{ ' has-file' if has_file }}"
             onclick="document.getElementById('input_{{ doc_id }}').click()">
             <i class="bi {{ 'bi-check-circle-fill text-success' if has_file else 'bi-file-earmark-pdf text-danger' }} fs-3 mb-2 d-block"></i>
             <span class="fw-bold small d-block">{{ label }}</span>
@@ -445,8 +445,8 @@ para quem pode usar a rota. #}
 
     <!-- STEP 6: SAÚDE E SOCIOECONÔMICO -->
     <div class="form-step" id="step-6">
-      <h4 class="mb-4 text-secondary border-bottom pb-2">Etapa VI: Perfil e Saúde</h4>
-      <div class="row g-3">
+      <h4 class="mb-3 mb-lg-4 text-secondary border-bottom pb-2">Etapa VI: Perfil e Saúde</h4>
+      <div class="row g-3 gx-lg-4">
         <div class="col-md-4">
           <label class="form-label small fw-bold">Renda Familiar Mensal</label>
           <div class="input-group">
@@ -541,8 +541,8 @@ para quem pode usar a rota. #}
           </div>
         </div>
 
-        <div class="col-md-12 bg-light p-3 rounded mt-4 border">
-          <div class="row g-3">
+        <div class="col-md-12 bg-light p-3 rounded mt-3 mt-lg-4 border">
+          <div class="row g-3 gx-lg-4">
             <div class="col-md-12">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" name="saude_laudo" id="saude_laudo"
@@ -565,7 +565,7 @@ para quem pode usar a rota. #}
             <div class="col-md-6{{ ' d-none' if not v.saude_laudo }}" id="laudo_upload_container">
               {% set doc_id, label = v.upload_laudo %}
               {% set has_file = v.doc_estado.get(doc_id) %}
-              <div class="pdf-upload-box py-2{{ ' has-file' if has_file }}"
+              <div class="pdf-upload-box h-100 py-2{{ ' has-file' if has_file }}"
                 onclick="document.getElementById('input_doc_laudo').click()">
                 <i class="bi {{ 'bi-check-circle-fill text-success' if has_file else 'bi-file-earmark-medical text-danger' }} fs-4 d-block"></i>
                 <span class="fw-bold small d-block">Upload do Laudo Médico (PDF)</span>
@@ -613,7 +613,7 @@ para quem pode usar a rota. #}
         </div>
 
         <!-- Termo de Consentimento -->
-        <div class="col-md-12 mt-4">
+        <div class="col-md-12 mt-3 mt-lg-4">
           <div class="card border-primary-subtle bg-light shadow-sm">
             <div class="card-body">
               <h6 class="fw-bold text-primary mb-2">
