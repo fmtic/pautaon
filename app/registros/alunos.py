@@ -1310,6 +1310,80 @@ def ver_documento_aluno(aluno_id: int, doc_id: str):
     abort(404)
 
 
+@bp.route("/alunos/<int:aluno_id>/documentos/<doc_id>/excluir", methods=["POST"])
+@login_required
+def excluir_documento_aluno(aluno_id: int, doc_id: str):
+    """AJ5-A: exclui um documento entregue (arquivo + flag de volta a False).
+
+    Guardas idênticas às da edição de aluno (mesmas roles; mesmo escopo de
+    unidade via `assert_unidade_context`). Aluno de OUTRA unidade é 404 — a
+    existência não vaza para quem não é da unidade; o helper continua 403
+    para operador sem contexto e aluno sem unidade. O `doc_id` fora de
+    `DOC_IDS` é 404 antes de qualquer toque em banco ou disco.
+
+    Idempotência: arquivo ausente não é erro. A mutação do JSONB só é
+    detectada pelo SQLAlchemy porque se reatribui um dict NOVO em
+    `aluno.documentos_entregues` (linhas antigas com outras chaves são
+    preservadas). Excluir `doc_laudo` NÃO toca em `saude_laudo` — a flag de
+    saúde é decisão do formulário, não do arquivo.
+    """
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        abort(403)
+
+    if doc_id not in DOC_IDS:
+        abort(404)
+
+    aluno = db.get_or_404(Aluno, aluno_id)
+    contexto_id = get_unidade_id()
+    if contexto_id is not None and aluno.unidade_id != contexto_id:
+        abort(404)
+    assert_unidade_context(aluno.unidade_id, contexto_id)
+
+    # Mesma resolução de pasta do `ver_documento_aluno` (matrícula legada,
+    # aluno_<id> ou o fallback antigo) — remove onde o arquivo estiver.
+    upload_root = _get_upload_root()
+    candidate_folders = []
+    if aluno.matricula:
+        candidate_folders.append(aluno.matricula.replace(".", "_"))
+    candidate_folders.append(f"aluno_{aluno.id}")
+    candidate_folders.append("sem_matricula")
+    filename = secure_filename(f"{doc_id}.pdf")
+    for folder in candidate_folders:
+        alvo = upload_root / "documentos" / folder / filename
+        if alvo.is_file():
+            alvo.unlink()
+
+    docs = dict(aluno.documentos_entregues or {})
+    entregues = dict(docs.get("doc_entregue", {}))
+    entregues[doc_id] = False
+    docs["doc_entregue"] = entregues
+    aluno.documentos_entregues = docs
+
+    try:
+        db.session.commit()
+    except Exception as exc:
+        from app.utils.errors import flash_and_log
+
+        db.session.rollback()
+        flash_and_log(exc, location="registros.excluir_documento_aluno", hint="db")
+        return redirect(url_for("registros.editar_aluno", id=aluno.id))
+
+    # Auditoria sem dado pessoal: só ids (o rótulo é classificado como
+    # `exclusao` pelo prefixo "Excluir" em `_CATEGORIAS_ACAO`).
+    from app.services.auth_service import register_security_log
+
+    register_security_log(
+        "Excluir documento",
+        details=f"aluno_id={aluno.id} doc_id={doc_id} user_id={current_user.id}",
+    )
+    flash("Documento excluído.", "success")
+    return redirect(url_for("registros.editar_aluno", id=aluno.id))
+
+
 @bp.route("/aluno/<int:aluno_id>/foto")
 @login_required
 def foto_aluno(aluno_id: int):

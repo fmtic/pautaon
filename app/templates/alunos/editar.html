@@ -12,6 +12,9 @@
 {% set resp = perfil.responsavel %}
 {% set edu = aluno.documentos_dict() %}
 {% set docs = edu.get('doc_entregue', {}) %}
+{# AJ5-A: mesmas roles da rota `excluir_documento_aluno` — botão só aparece
+para quem pode usar a rota. #}
+{% set pode_doc = current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
 {% set sit = aluno.situacao_escolar %}
 
 <div class="container py-4">
@@ -467,6 +470,16 @@
                                     </span>
                                     <input type="file" name="{{id}}" id="input_{{id}}" class="d-none" accept=".pdf"
                                         onchange="updateFileName('{{id}}', this)">
+                                    {% if has_file and pode_doc %}
+                                    <div class="mt-2 d-flex gap-2 justify-content-center" onclick="event.stopPropagation()">
+                                        <a class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold"
+                                            href="{{ url_for('registros.ver_documento_aluno', aluno_id=aluno.id, doc_id=id) }}"
+                                            onclick="event.stopPropagation()">Ver</a>
+                                        <button type="submit" form="form-excluir-{{ id }}"
+                                            class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold"
+                                            onclick="event.stopPropagation()">Excluir</button>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                             {% endfor %}
@@ -641,6 +654,16 @@
                                             </span>
                                             <input type="file" name="doc_laudo" id="input_doc_laudo" class="d-none"
                                                 accept=".pdf" onchange="window.updateFileName('doc_laudo', this)">
+                                            {% if doc_saved and pode_doc %}
+                                            <div class="mt-2 d-flex gap-2 justify-content-center" onclick="event.stopPropagation()">
+                                                <a class="btn btn-sm btn-outline-primary py-0 px-2 fw-bold"
+                                                    href="{{ url_for('registros.ver_documento_aluno', aluno_id=aluno.id, doc_id='doc_laudo') }}"
+                                                    onclick="event.stopPropagation()">Ver</a>
+                                                <button type="submit" form="form-excluir-doc_laudo"
+                                                    class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold"
+                                                    onclick="event.stopPropagation()">Excluir</button>
+                                            </div>
+                                            {% endif %}
                                         </div>
                                     </div>
                                     <div class="col-md-6">
@@ -716,6 +739,21 @@
                     </button>
                 </div>
             </form>
+
+            {# AJ5-A: forms de exclusão FORA do multiStepForm (form aninhado é
+            inválido) — os botões dos boxes os referenciam pelo atributo `form`.
+            Um por documento entregue; a confirmação antecede o POST. #}
+            {% if pode_doc %}
+                {% for id, label in uploads + [('doc_laudo', 'Laudo Médico')] %}
+                    {% if docs.get(id) %}
+                    <form id="form-excluir-{{ id }}" method="POST" class="d-none"
+                        action="{{ url_for('registros.excluir_documento_aluno', aluno_id=aluno.id, doc_id=id) }}"
+                        onsubmit="return confirm('Excluir {{ label }}? O arquivo entregue será removido.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    </form>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
         </div>
     </div>
 </div>

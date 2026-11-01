@@ -96,6 +96,7 @@ ROTULOS_SEM_LINHA = frozenset(
         "Gestão de Unidade",
         "Reativação de Turma",
         "Trocar Professor da Oferta",
+        "Excluir documento",
         "Vínculo Google",
     }
 )
@@ -152,6 +153,7 @@ CATEGORIA_ESPERADA = {
     "Editar aluno": "edicao",
     "Erro E-mail": "outras",
     "Excluir aluno": "exclusao",
+    "Excluir documento": "exclusao",
     "Excluir turma (lógica)": "exclusao",
     "Exclusão de Turma": "exclusao",
     "Gestão de Unidade": "outras",
@@ -493,7 +495,7 @@ def test_listas_congeladas_sem_sobreposicao():
                 "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
                 f"{sorted(a & b)}."
             )
-    assert len(CENSO_REAL) == 30 and len(ROTULOS_SEM_LINHA) == 7
+    assert len(CENSO_REAL) == 30 and len(ROTULOS_SEM_LINHA) == 8
     assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 
