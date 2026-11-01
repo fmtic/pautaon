@@ -35,7 +35,9 @@ S1-06: desde a versão de sessão, o ``user_loader`` recusa cookie sem carimbo.
 ``iat`` (agora), como o login real faz — a semântica dos testes não muda.
 """
 
+import os
 import time
+from datetime import date, timedelta
 
 from flask import g, has_app_context
 
@@ -46,6 +48,35 @@ from app.utils.dias_semana import csv_para_weekdays
 
 #: Programa padrão usado pelas sementes quando o teste não exige um específico.
 PROGRAMA_PADRAO = "Programa de Teste"
+
+#: AJ4-B — dia de referência da suíte calendarizada (quinta-feira).
+HOJE_FIXO_PADRAO = "2026-10-29"
+
+
+def hoje_ref() -> date:
+    """AJ4-B: o "hoje" de referência dos testes (env ``AJ4B_HOJE``, ISO).
+
+    A suíte nunca usa o dia real do sistema: o fixture ``hoje_fixo``
+    (conftest) congela o relógio do app neste mesmo dia e as sementes
+    derivam dele — deterministicidade com qualquer data de execução.
+    """
+    return date.fromisoformat(os.environ.get("AJ4B_HOJE") or HOJE_FIXO_PADRAO)
+
+
+def dia_de_aula_ate(ref: date, *, permite_sabado: bool = False) -> date:
+    """Último dia ≤ ``ref`` que é dia de aula (seg–sex; ou seg–sábado).
+
+    Domingo nunca é dia de aula (grade aceita 0–5, ver ``itens_grade``);
+    uma referência caindo no fim de semana não tem "aula até hoje" — a
+    semente ancora neste dia rollbackado. A janela [início do mês de
+    ``ref`` .. ``ref``] sempre contém o dia devolvido, então listas de
+    datas de aula derivadas dele nunca ficam vazias.
+    """
+    limite = 5 if permite_sabado else 4
+    dia = ref
+    while dia.weekday() > limite:
+        dia -= timedelta(days=1)
+    return dia
 
 
 def _session_version(client, user_id: int) -> int:

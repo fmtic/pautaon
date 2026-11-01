@@ -7,8 +7,9 @@ agenda das ofertas (vigência + dias da semana). REGRA GERAL verificada: com 0
 ou 1 oferta o cálculo continua por turma, exatamente como antes.
 """
 
-from datetime import date, time, timedelta
+from datetime import time, timedelta
 
+import pytest
 
 from app import db
 from app.main.dashboard_professor import _aulas_pendentes
@@ -25,12 +26,27 @@ from app.models.enums import ConceitoFrequencia
 from app.utils.frequencia import contar_pendencias_frequencia
 from config import Config
 
-from _helpers import aplicar_grade, professor_semente
+from _helpers import (
+    aplicar_grade,
+    dia_de_aula_ate,
+    hoje_ref,
+    professor_semente,
+)
 
-HOJE = date.today()
+# AJ4-B: "hoje" da semente ≠ dia real do sistema — ancorado no dia de
+# referência (grade permite seg–sáb; domingo nunca é dia de aula) e o
+# relógio do app congelado no mesmo dia pelo fixture ``hoje_fixo``.
+pytestmark = pytest.mark.usefixtures("hoje_fixo")
+
+HOJE = dia_de_aula_ate(hoje_ref(), permite_sabado=True)
 _DIAS = ("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
 DIA_HOJE = _DIAS[HOJE.weekday()]
-DIA_OUTRO = _DIAS[(HOJE.weekday() + 1) % 7]
+# Outro dia da grade que não seja o da aula: pula o domingo (dia 6), que o
+# domínio da grade (0–5) não grava.
+_DIA_OUTRO_IDX = (HOJE.weekday() + 1) % 7
+if _DIA_OUTRO_IDX == 6:
+    _DIA_OUTRO_IDX = 0
+DIA_OUTRO = _DIAS[_DIA_OUTRO_IDX]
 
 
 class SQLiteTestConfig(Config):

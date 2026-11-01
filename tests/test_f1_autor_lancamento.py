@@ -14,8 +14,15 @@ Regras cobertas:
 
 from datetime import time, timedelta
 
+import pytest
 
-from _helpers import login_as, nova_inscricao, nova_oferta
+from _helpers import (
+    dia_de_aula_ate,
+    hoje_ref,
+    login_as,
+    nova_inscricao,
+    nova_oferta,
+)
 from sqlalchemy import event
 
 from app import db
@@ -36,6 +43,11 @@ from app.utils.autor import autor_do_lancamento
 from app.utils.datetime_parse import parse_date
 from app.utils.logica import carregar_contexto_turma, get_local_now
 
+# AJ4-B: semente e relógio do app ancorados no mesmo dia de referência
+# (``hoje_fixo`` congela ``get_local_now``/``gerar_datas``; a semente usa
+# ``dia_de_aula_ate`` para nunca cair num dia sem aula — domingo).
+pytestmark = pytest.mark.usefixtures("hoje_fixo")
+
 
 def _cenario(app, *, n_alunos=1):
     """Unidade + admin + pedagogico + professor + turma com 1 oferta + alunos.
@@ -43,7 +55,7 @@ def _cenario(app, *, n_alunos=1):
     A turma tem grade de segunda a sexta (8h–10h) e período vigente, então
     `carregar_contexto_turma` devolve datas de aula válidas para o POST.
     """
-    hoje = get_local_now().date()
+    hoje = dia_de_aula_ate(hoje_ref())
     with app.app_context():
         un = Unidade(nome="Unidade F1", ativo=True)
         db.session.add(un)

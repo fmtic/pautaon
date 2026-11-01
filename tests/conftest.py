@@ -20,6 +20,7 @@ Nada aqui muda o comportamento dos testes: banco SQLite em memória, schema via
 """
 
 from pathlib import Path
+from datetime import datetime
 import os
 import sys
 
@@ -28,6 +29,9 @@ import pytest
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
+_DIR_TESTES = Path(__file__).resolve().parent
+if str(_DIR_TESTES) not in sys.path:
+    sys.path.insert(0, str(_DIR_TESTES))
 
 # A suíte fala HTTP com o `test_client` (não há TLS): com o padrão seguro do
 # `SESSION_COOKIE_SECURE` (True, S1-09) o navegador de teste descartaria o
@@ -36,7 +40,9 @@ if str(RAIZ) not in sys.path:
 os.environ.setdefault("APP_ENV", "development")
 
 from app import create_app, db  # noqa: E402
+from app.utils import logica as _logica, timezone as _tz  # noqa: E402
 from config import Config  # noqa: E402
+from _helpers import hoje_ref  # noqa: E402
 
 
 class SQLiteTestConfig(Config):
@@ -96,3 +102,35 @@ def _limpar_login_controle(app):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def hoje_fixo(monkeypatch):
+    """AJ4-B: congela o relógio do app no dia de referência (``hoje_ref``).
+
+    Patcheia só os dois globais ``datetime`` por onde o "hoje" entra nos
+    fluxos de calendário: ``app.utils.timezone`` (fonte de todo
+    ``get_local_now``, inclusive os alias já importados alhures — o corpo
+    consulta o global no momento da chamada) e ``app.utils.logica``
+    (corte ``min(fim, datetime.now())`` de ``gerar_datas``). Não toca em
+    ``app/**`` nem no runtime real: vale durante o teste, revertido pelo
+    ``monkeypatch``.
+
+    Use com as constantes ``hoje_ref()``/``dia_de_aula_ate()`` de
+    ``_helpers``: a semente ancora no mesmo dia do relógio congelado.
+    """
+    ref = hoje_ref()
+
+    class _DateTimeCongelado(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = cls(ref.year, ref.month, ref.day, 12, 0, 0)
+            return base.replace(tzinfo=tz) if tz else base
+
+        @classmethod
+        def today(cls):
+            return cls.now()
+
+    monkeypatch.setattr(_tz, "datetime", _DateTimeCongelado)
+    monkeypatch.setattr(_logica, "datetime", _DateTimeCongelado)
+    return ref

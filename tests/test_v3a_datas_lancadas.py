@@ -12,9 +12,16 @@ alunos da pauta da oferta têm conceito registrado na data.
 import re
 from datetime import time, timedelta
 
+import pytest
 from sqlalchemy import event
 
-from _helpers import login_as, nova_inscricao, nova_oferta
+from _helpers import (
+    dia_de_aula_ate,
+    hoje_ref,
+    login_as,
+    nova_inscricao,
+    nova_oferta,
+)
 
 from app import db
 from app.models import (
@@ -40,10 +47,14 @@ from app.utils.frequencia import (
     frequencias_lancadas,
     situacao_datas_oferta,
 )
-from app.utils.timezone import get_local_now
 from config import Config
 
-HOJE = get_local_now().date()
+# AJ4-B: ``HOJE`` não é mais o dia real do sistema — é o último dia de
+# aula (seg–sex, como as grades "Segunda, Quarta"/"Terça, Quinta") até o
+# dia de referência, e ``hoje_fixo`` congela o relógio do app nesse dia.
+pytestmark = pytest.mark.usefixtures("hoje_fixo")
+
+HOJE = dia_de_aula_ate(hoje_ref())
 DIAS_GRADE_1 = "Segunda, Quarta"
 DIAS_GRADE_2 = "Terça, Quinta"
 
