@@ -106,6 +106,45 @@ def _sanitizar_cpf(cpf: str) -> str:
     return limpo if limpo else None
 
 
+def _render_form_aluno_com_dados(aluno=None, template="alunos/novo.html",
+                                 unidades=None, passo_erro=1):
+    """AJ5-C (achado 0.4): re-render do formulário NA FALHA de validação.
+
+    Em vez do `redirect` (que jogava fora tudo o que foi digitado), devolve
+    o próprio formulário (status 200) com `v` construído a partir de
+    `request.form` — precedência form > banco > padrões. O flash do erro já
+    foi posto pela rota; aqui só hidrata. Se o POST trazia arquivos (foto ou
+    PDFs), avisa que o navegador não reanexa nada.
+
+    `passo_erro`: passo a abrir (1 = identificação, onde estão nome/CPF);
+    as cascas tratam o salto via `goToStep` quando != 1.
+    """
+    anexos = ["foto"] + [campo for campo in request.files
+                         if campo.startswith("doc_")]
+    if any(request.files.get(campo) and request.files[campo].filename
+           for campo in anexos):
+        flash("Reanexe a foto/os documentos: o navegador não guarda arquivos "
+              "de um envio que falhou.", "warning")
+
+    perfil = get_perfil_completo(aluno) if aluno is not None else None
+    v = valores_form_aluno(
+        aluno=aluno,
+        perfil=perfil,
+        form=request.form,
+        foto_url=(
+            url_for("registros.foto_aluno", aluno_id=aluno.id)
+            if aluno is not None and aluno.foto_path else None
+        ),
+    )
+    return render_template(
+        template,
+        unidades=unidades,
+        v=v,
+        cat=catalogos_formulario(),
+        passo_erro=passo_erro,
+    )
+
+
 def _salvar_situacao_escolar(aluno: Aluno) -> None:
     """Faz upsert da SituacaoEscolar do aluno com base no form da requisição."""
     nome = (request.form.get("nome_instituicao") or "").strip() or None
@@ -484,13 +523,23 @@ def novo_aluno():
 
     from app.utils.logica import formatar_nome_proprio
 
+    # Lista de unidades para o re-render na falha: vazia para usuário com
+    # unidade fixa (sem seletor), completa para o global sem contexto — a
+    # mesma regra do GET.
+    unidades_postra = [] if get_unidade_id() is not None else \
+        Unidade.query.order_by(Unidade.nome).all()
+
     nome = request.form.get("nome")
     if not nome:
         flash(
             "O Campo 'Nome' não deve ser vazio no momento do Cadastro.",
             "warning",
         )
-        return redirect(url_for("registros.gerenciar_alunos"))
+        # AJ5-C: re-render com os dados digitados (achado 0.4) — antes era
+        # redirect para a gerenciar e o usuário perdia tudo.
+        return _render_form_aluno_com_dados(
+            template="alunos/novo.html", unidades=unidades_postra
+        )
 
     cpf_raw = request.form.get("cpf", "")
     if not _validar_cpf(cpf_raw):
@@ -498,7 +547,9 @@ def novo_aluno():
             "CPF inválido. Informe somente os 11 dígitos numéricos do CPF.",
             "danger",
         )
-        return redirect(url_for("registros.novo_aluno"))
+        return _render_form_aluno_com_dados(
+            template="alunos/novo.html", unidades=unidades_postra
+        )
 
     # -------------------------------------------------------------------------
     # Resolve a unidade de cadastro:
@@ -513,10 +564,16 @@ def novo_aluno():
                 "Selecione a unidade em que o aluno será cadastrado.",
                 "warning",
             )
-            return redirect(url_for("registros.novo_aluno"))
+            # Re-render com o seletor de unidade de volta (lista já
+            # calculada em `unidades_postra` no topo do POST).
+            return _render_form_aluno_com_dados(
+                template="alunos/novo.html", unidades=unidades_postra
+            )
         if not db.session.get(Unidade, unidade_id):
             flash("Unidade inválida.", "danger")
-            return redirect(url_for("registros.novo_aluno"))
+            return _render_form_aluno_com_dados(
+                template="alunos/novo.html", unidades=unidades_postra
+            )
 
     try:
         # ---------------------------------------------------------------------
@@ -634,23 +691,40 @@ def editar_aluno(id):
     if request.method == "POST":
         from app.utils.logica import formatar_nome_proprio
 
+        # AJ5-C: validações ANTES de tocar no objeto — mesma regra de antes,
+        # só movida para cá para o re-render na falha não depender de
+        # rollback (e o CPF deixar de ser gravado antes da checagem — o
+        # redirect antigo já descartava as atribuições, agora com flash).
+        nome_form = request.form.get("nome")
+        if not nome_form:
+            flash(
+                "O Campo 'Nome' não deve ser vazio no momento do Cadastro.",
+                "warning",
+            )
+            return _render_form_aluno_com_dados(
+                aluno=aluno, template="alunos/editar.html"
+            )
+
+        cpf_raw = request.form.get("cpf", "")
+        if not _validar_cpf(cpf_raw):
+            flash(
+                "CPF inválido. Informe somente os 11 dígitos numéricos " "do CPF.",
+                "danger",
+            )
+            return _render_form_aluno_com_dados(
+                aluno=aluno, template="alunos/editar.html"
+            )
+
         try:
             # -----------------------------------------------------------------
             # 1. Colunas diretas em Aluno
             # -----------------------------------------------------------------
-            aluno.nome = formatar_nome_proprio(request.form.get("nome"))
+            aluno.nome = formatar_nome_proprio(nome_form)
             aluno.nome_social = formatar_nome_proprio(request.form.get("nome_social"))
             nivel = request.form.get("nivel")
             if nivel is not None:
                 aluno.nivel = nivel
 
-            cpf_raw = request.form.get("cpf", "")
-            if not _validar_cpf(cpf_raw):
-                flash(
-                    "CPF inválido. Informe somente os 11 dígitos numéricos " "do CPF.",
-                    "danger",
-                )
-                return redirect(url_for("registros.editar_aluno", id=aluno.id))
             aluno.cpf = _sanitizar_cpf(cpf_raw)
 
             aluno.rg = request.form.get("rg") or None
