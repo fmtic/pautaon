@@ -84,23 +84,37 @@ CENSO_REAL = frozenset(
     }
 )
 
-#: Rótulos que o código emite mas que ainda não têm nenhuma linha nos bancos
-#: (mesma lista congelada no AJ3-E2; parametrizada para não serem esquecidos
-#: quando a primeira linha for gravada).
+#: Rótulos que o código EMITE por helper mas que ainda não têm nenhuma linha
+#: nos bancos (mesma lista congelada no AJ3-E2; parametrizada para não serem
+#: esquecidos quando a primeira linha for gravada). Desde o AJ4-B a asserção 3
+#: exige emissor via helper — literatura solta não basta.
 ROTULOS_SEM_LINHA = frozenset(
     {
         "Acesso via Google",
         "Cadastro Período Letivo",
-        "DESENTURMADO",
         "Desbloqueio de login",
-        "Excluir aluno",
         "Gestão de Unidade",
         "Reativação de Turma",
         "Trocar Professor da Oferta",
-        "TRANSFERENCIA",
         "Vínculo Google",
     }
 )
+
+#: Literais congelados que vivem no código SEM ser rótulo de emissor:
+#: `DESENTURMADO`/`TRANSFERENCIA` são valores de `motivo_desativacao` e
+#: `Excluir aluno` é exemplo da docstring do modelo. Não têm asserção 3
+#: (nenhum emissor para guardar); só a classificação congelada (asserção 2)
+#: os cobre — separação consciente do AJ4-B.
+LITERAIS_NAO_EMITIDOS = frozenset(
+    {
+        "DESENTURMADO",
+        "Excluir aluno",
+        "TRANSFERENCIA",
+    }
+)
+
+#: Universo congelado inteiro (asserções 1, 2 e 4 trabalham sobre ele).
+CONGELADOS = CENSO_REAL | ROTULOS_SEM_LINHA | LITERAIS_NAO_EMITIDOS
 
 #: Rótulos do censo que só existem no banco — nenhum emissor no código hoje
 #: (herança de versões antigas). Conferidos apenas na classificação congelada;
@@ -357,7 +371,7 @@ def test_rotulo_novo_do_codigo_falha():
     `CATEGORIA_ESPERADA` (ver asserção 4).
     """
     esc = _escaneamento()
-    congelados = CENSO_REAL | ROTULOS_SEM_LINHA
+    congelados = CONGELADOS
     novos = sorted(set(esc.resolvidos) - congelados)
     assert not novos, (
         f"[AJ4-A] rótulo(s) novo(s) de `log_acao` sem classificação "
@@ -392,13 +406,14 @@ def test_dinamico_novo_fora_da_lista_falha():
     )
 
 
-@pytest.mark.parametrize("rotulo", sorted(CENSO_REAL | ROTULOS_SEM_LINHA))
+@pytest.mark.parametrize("rotulo", sorted(CONGELADOS))
 def test_classificacao_congelada(rotulo):
     """Asserção 2: a categoria decidida por humano é a que `categoria_acao` devolve.
 
-    Vale para todo o censo (inclusive o `SO_NO_BANCO`) e para os rótulos sem
-    linha — é a guarda contra reclassificação silenciosa do dicionário
-    `_CATEGORIAS_ACAO` (o defeito do `1e39e23`, em forma de teste).
+    Vale para todo o censo (inclusive o `SO_NO_BANCO`), os rótulos emitidos
+    sem linha e os `LITERAIS_NAO_EMITIDOS` — é a guarda contra
+    reclassificação silenciosa do dicionário `_CATEGORIAS_ACAO` (o defeito
+    do `1e39e23`, em forma de teste).
     """
     assert categoria_acao(rotulo) == CATEGORIA_ESPERADA[rotulo], (
         f"[AJ4-A] `{rotulo}` agora é classificada como "
@@ -411,19 +426,19 @@ def test_classificacao_congelada(rotulo):
 def test_rotulo_sem_linha_ainda_existe_no_codigo(rotulo):
     """Asserção 3: o que foi congelado como "emite, mas sem linha" não pode sumir.
 
-    Se o emissor deixou de existir (ou o texto mudou), a entrada envelheceu:
-    remova de `ROTULOS_SEM_LINHA`/`CATEGORIA_ESPERADA` numa decisão consciente.
-    A existência é medida no AST: ou o rótulo está resolvido como rótulo de
-    helper, ou aparece como substring de alguma constante string de
-    `app/**.py` — a maioria é chamada de helper, mas `DESENTURMADO`/
-    `TRANSFERENCIA` vivem como motivo de desativação e `Excluir aluno` como
-    exemplo da docstring do modelo (congelados assim no AJ3-E2).
+    Desde a separação do AJ4-B a existência exigida é a de **emissor**: o
+    rótulo tem de estar resolvido como rótulo de helper
+    (`register_security_log`/`LogAcao`/`_gravar_log_background`) — string
+    solta em qualquer lugar do arquivo não basta mais (os literais puros
+    moram em `LITERAIS_NAO_EMITIDOS` e só passam pela asserção 2). Se o
+    emissor deixou de existir (ou o texto mudou), a entrada envelheceu:
+    remova de `ROTULOS_SEM_LINHA`/`CATEGORIA_ESPERADA` numa decisão
+    consciente.
     """
     esc = _escaneamento()
-    presente = rotulo in esc.resolvidos or any(rotulo in s for s in esc.strings)
-    assert presente, (
-        f"[AJ4-A] `{rotulo}` não aparece mais em nenhuma string de app/**.py — "
-        f"o emissor sumiu; remova da lista (com decisão humana)."
+    assert rotulo in esc.resolvidos, (
+        f"[AJ4-A] `{rotulo}` não é mais resolvido como rótulo de emissor em "
+        f"app/**.py — o emissor sumiu; remova da lista (com decisão humana)."
     )
 
 
@@ -436,7 +451,7 @@ def test_outras_exige_decisao_explicita():
     `outras` precisa de linha explícita no dicionário antes de qualquer teste
     passar.
     """
-    congelados = CENSO_REAL | ROTULOS_SEM_LINHA
+    congelados = CONGELADOS
     assert set(CATEGORIA_ESPERADA) == congelados, (
         "[AJ4-A] CATEGORIA_ESPERADA e o universo congelado divergem: "
         f"só no dicionário: {sorted(set(CATEGORIA_ESPERADA) - congelados)}; "
@@ -471,10 +486,15 @@ def test_so_no_banco_nao_ganhou_emissor_sem_querer():
 
 def test_listas_congeladas_sem_sobreposicao():
     """Invariantes das listas congeladas (anti-ioiô no próprio teste)."""
-    assert not (CENSO_REAL & ROTULOS_SEM_LINHA), (
-        "[AJ4-A] um rótulo está no censo e sem linha ao mesmo tempo."
-    )
-    assert len(CENSO_REAL) == 30 and len(ROTULOS_SEM_LINHA) == 10
+    conjuntos = (CENSO_REAL, ROTULOS_SEM_LINHA, LITERAIS_NAO_EMITIDOS)
+    for i, a in enumerate(conjuntos):
+        for b in conjuntos[i + 1:]:
+            assert not (a & b), (
+                "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
+                f"{sorted(a & b)}."
+            )
+    assert len(CENSO_REAL) == 30 and len(ROTULOS_SEM_LINHA) == 7
+    assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 
 def test_somente_criar_alterar_sao_do_listener():
@@ -496,7 +516,7 @@ def test_somente_criar_alterar_sao_do_listener():
         f"{[r for r in sem_emissor_literal if not r.startswith(('Criar ', 'Alterar '))]}"
     )
     do_listener = sorted(
-        r for r in CENSO_REAL | ROTULOS_SEM_LINHA
+        r for r in CONGELADOS
         if r.startswith(("Criar ", "Alterar "))
     )
     assert do_listener == sem_emissor_literal, (
