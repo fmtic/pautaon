@@ -1101,12 +1101,12 @@ def avaliar_turma(turma_id):
             setattr(oferta, ETAPA_PARA_CAMPO_AVALIACAO[etapa_selecionada], payload)
             db.session.add(oferta)
             db.session.commit()
-            flash(f"Avaliação da oferta {oferta.curso.nome} (turma {turma.nome}) salva!", "success")
+            flash(f"Avaliação do curso {oferta.curso.nome} (turma {turma.nome}) salva!", "success")
             return redirect(url_for('main.painel'))
         except Exception:
             db.session.rollback()
-            logger.exception("Falha ao salvar avaliação coletiva da oferta da turma %s", turma_id)
-            flash("Não foi possível salvar a avaliação da oferta. Tente novamente.", "danger")
+            logger.exception("Falha ao salvar avaliação coletiva do curso da turma %s", turma_id)
+            flash("Não foi possível salvar a avaliação do curso. Tente novamente.", "danger")
 
     return render_template('conselho/turma_aval.html',
                            turma=turma,
