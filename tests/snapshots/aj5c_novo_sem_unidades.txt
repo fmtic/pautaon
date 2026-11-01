@@ -1,0 +1,1288 @@
+[doctype html]
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <meta content="SCRUB" name="csrf-token">
+    <title>
+      pautaON - pautaON
+    </title>
+    <link href="/static/img/logo_resumida.png" rel="shortcut icon" type="image/png">
+    <link href="/static/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/bootstrap/icons/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+    <link href="/static/css/sidebar.css" rel="stylesheet">
+    <link href="/static/css/alunos/editar.css" rel="stylesheet">
+  </head>
+  <body>
+    <header class="app-topbar">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn btn-sm btn-outline-light" id="toggleSidebar" type="button">
+          <i class="bi bi-list fs-5">
+          </i>
+        </button>
+        <img alt="Logo" src="/static/img/logo_textual.png" style="height: 30px">
+        <span class="text-white-50 d-none d-sm-inline" style="font-size: 0.65rem">
+          v0.2.0 · beta
+        </span>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-light small d-none d-md-inline">
+          <i class="bi bi-person-circle me-1">
+          </i>
+          Admin Local Aj5c
+          <span class="badge bg-secondary ms-1">
+            Unidade Aj5c A
+          </span>
+        </span>
+        <form action="/logout" class="d-inline m-0" method="post">
+          <button class="btn btn-danger btn-sm" type="submit">
+            Sair
+          </button>
+        </form>
+      </div>
+    </header>
+    <aside class="app-sidebar" id="appSidebar">
+      <nav class="navbar navbar-dark flex-column align-items-stretch p-0 h-100">
+        <ul class="navbar-nav flex-column w-100">
+          <li class="sidebar-heading">
+            Unidade
+          </li>
+          <li class="nav-item px-2 pb-2">
+            <div class="dropdown w-100">
+              <button class="btn btn-sm sidebar-dropdown-btn dropdown-toggle w-100" data-bs-toggle="dropdown" type="button">
+                <i class="bi bi-buildings me-2">
+                </i>
+                <span>
+                  Unidade Aj5c A
+                </span>
+              </button>
+              <ul class="dropdown-menu shadow w-100">
+                <li>
+                  <form action="/trocar-unidade/0" class="m-0" method="post">
+                    <button class="dropdown-item" type="submit">
+                      Visão Global
+                    </button>
+                  </form>
+                </li>
+                <li>
+                  <hr class="dropdown-divider">
+                </li>
+                <li>
+                  <form action="/trocar-unidade/1" class="m-0" method="post">
+                    <button class="dropdown-item active" type="submit">
+                      Unidade Aj5c A
+                    </button>
+                  </form>
+                </li>
+                <li>
+                  <form action="/trocar-unidade/2" class="m-0" method="post">
+                    <button class="dropdown-item" type="submit">
+                      Unidade Aj5c B
+                    </button>
+                  </form>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="sidebar-heading">
+            Geral
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/painel" title="Painel Geral">
+              <i class="bi bi-speedometer2">
+              </i>
+              <span>
+                Painel Geral
+              </span>
+            </a>
+          </li>
+          <li class="sidebar-heading">
+            Alunos
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/alunos" title="Gerenciar Alunos">
+              <i class="bi bi-person-lines-fill">
+              </i>
+              <span>
+                Gerenciar Alunos
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/alunos/atendimentos/transicao" title="Atendimentos">
+              <i class="bi bi-clipboard2-pulse">
+              </i>
+              <span>
+                Atendimentos
+              </span>
+            </a>
+          </li>
+          <li class="sidebar-heading">
+            Estrutura
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/planejamento" title="Planejamento">
+              <i class="bi bi-people-fill">
+              </i>
+              <span>
+                Planejamento
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/periodo-letivo" title="Períodos">
+              <i class="bi bi-calendar3">
+              </i>
+              <span>
+                Períodos
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/turma" title="Turmas">
+              <i class="bi bi-people-fill">
+              </i>
+              <span>
+                Turmas
+              </span>
+            </a>
+          </li>
+          <li class="sidebar-heading">
+            Conselho
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/informacoes" title="Data-Informações">
+              <i class="bi bi-info-circle">
+              </i>
+              <span>
+                Data-Informações
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/conselho" title="Painel de Turmas">
+              <i class="bi bi-grid-3x3-gap">
+              </i>
+              <span>
+                Painel de Turmas
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/conselho/perguntas" title="Gerenciar Perguntas">
+              <i class="bi bi-gear-fill">
+              </i>
+              <span>
+                Gerenciar Perguntas
+              </span>
+            </a>
+          </li>
+          <li class="sidebar-heading">
+            Relatórios
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/relatorios/" title="Painel de Relatórios">
+              <i class="bi bi-speedometer2">
+              </i>
+              <span>
+                Resumo
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/relatorios/alunos" title="Exportar Alunos">
+              <i class="bi bi-people">
+              </i>
+              <span>
+                Exportar Alunos
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/relatorios/bi" title="Central de BI">
+              <i class="bi bi-bar-chart-line">
+              </i>
+              <span>
+                Central de BI
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/relatorios/painel" title="Painel Pedagógico">
+              <i class="bi bi-diagram-3">
+              </i>
+              <span>
+                Painel Pedagógico
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/relatorios/conselho" title="Resultado do Conselho">
+              <i class="bi bi-bar-chart-line">
+              </i>
+              <span>
+                Resultado do Conselho
+              </span>
+            </a>
+          </li>
+          <li class="sidebar-heading">
+            Administração
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/painel" title="Gerir Usuários">
+              <i class="bi bi-person-gear">
+              </i>
+              <span>
+                Gerir Usuários
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/unidades" title="Gerir Unidades">
+              <i class="bi bi-buildings">
+              </i>
+              <span>
+                Gerir Unidades
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/logs" title="Auditoria (Logs)">
+              <i class="bi bi-clipboard-data">
+              </i>
+              <span>
+                Auditoria (Logs)
+              </span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/informacao-padrao" title="Informações Padrão">
+              <i class="bi bi-building-gear">
+              </i>
+              <span>
+                Informações Padrão
+              </span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop">
+    </div>
+    <main class="app-main flex-grow-1">
+      <div class="container py-4">
+        <div class="row justify-content-center">
+          <div class="col-lg-10">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+              <div>
+                <h4 class="fw-bold mb-0 text-primary">
+                  Novo Cadastro de Aluno
+                </h4>
+                <small class="text-muted">
+                  Gestão Escolar
+                </small>
+              </div>
+              <a class="btn btn-outline-secondary btn-sm fw-bold" href="/alunos">
+                <i class="bi bi-x-lg">
+                </i>
+                CANCELAR
+              </a>
+            </div>
+            <div class="stepper-container px-5 mb-5">
+              <div class="step-item active" id="step-indicator-1" onclick="window.goToStep(1)">
+                1
+              </div>
+              <div class="step-item" id="step-indicator-2" onclick="window.goToStep(2)">
+                2
+              </div>
+              <div class="step-item" id="step-indicator-3" onclick="window.goToStep(3)">
+                3
+              </div>
+              <div class="step-item" id="step-indicator-4" onclick="window.goToStep(4)">
+                4
+              </div>
+              <div class="step-item" id="step-indicator-5" onclick="window.goToStep(5)">
+                5
+              </div>
+              <div class="step-item" id="step-indicator-6" onclick="window.goToStep(6)">
+                6
+              </div>
+            </div>
+            <form enctype="multipart/form-data" id="multiStepForm" method="POST">
+              <div class="card shadow-lg card-modern p-4 mb-4">
+                <div class="form-step active" id="step-1">
+                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                    Etapa I: Identificação Principal
+                  </h4>
+                  <div class="row g-3">
+                    <div class="col-md-3 text-center border-end">
+                      <div class="bg-light border rounded-circle mx-auto overflow-hidden shadow-sm mb-2" id="preview-container" style="width: 140px; height: 140px; position: relative">
+                        <i class="bi bi-person-fill text-muted display-1" id="placeholder-icon">
+                        </i>
+                        <img class="d-none w-100 h-100 object-fit-cover" id="img-preview" src="#">
+                      </div>
+                      <div class="mb-3">
+                        <span class="badge bg-light text-primary border mb-2">
+                          #MATRICULA
+                        </span>
+                      </div>
+                      <div class="d-flex flex-column gap-1 align-items-center">
+                        <label class="btn btn-xs btn-primary shadow-sm w-100" style="font-size: 0.75rem">
+                          <i class="bi bi-upload me-1">
+                          </i>
+                          Carregar
+                          <input accept="image/*" class="d-none" id="inputFotoManual" name="foto" onchange="window.previewImage(this)" type="file">
+                        </label>
+                        <button class="btn btn-xs btn-secondary shadow-sm w-100" onclick="window.abrirWebcam()" style="font-size: 0.75rem" type="button">
+                          <i class="bi bi-camera me-1">
+                          </i>
+                          Tirar Foto
+                        </button>
+                      </div>
+                    </div>
+                    <div class="col-md-9">
+                      <div class="row g-3">
+                        <div class="col-md-6">
+                          <label class="form-label fw-bold text-uppercase">
+                            Nome de Registro
+                          </label>
+                          <input class="form-control" name="nome" placeholder="Nome Completo" type="text">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label fw-bold text-uppercase">
+                            Nome Social
+                          </label>
+                          <input class="form-control" name="nome_social" placeholder="Como o aluno prefere ser chamado" type="text">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label fw-bold text-uppercase">
+                            Nascimento
+                          </label>
+                          <input class="form-control" id="data_nascimento" name="data_nascimento" onchange="calcularIdade()" type="date">
+                        </div>
+                        <div class="col-md-2 text-center">
+                          <label class="form-label fw-bold text-uppercase">
+                            Idade
+                          </label>
+                          <input class="form-control fw-bold text-center bg-light px-0" id="idade" placeholder="-- anos" readonly type="text">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label fw-bold text-uppercase">
+                            Sexo / Gênero
+                          </label>
+                          <select class="form-select" name="genero">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Masculino">
+                              Masculino
+                            </option>
+                            <option value="Feminino">
+                              Feminino
+                            </option>
+                            <option value="Outro">
+                              Outro
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            Etnia / Cor
+                          </label>
+                          <select class="form-select" name="raca_cor">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Branca">
+                              Branca
+                            </option>
+                            <option value="Preta">
+                              Preta
+                            </option>
+                            <option value="Parda">
+                              Parda
+                            </option>
+                            <option value="Amarela">
+                              Amarela
+                            </option>
+                            <option value="Indígena">
+                              Indígena
+                            </option>
+                            <option value="Não declarada">
+                              Não declarada
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            CPF do Aluno
+                          </label>
+                          <input class="form-control mask-cpf validate-cpf" name="cpf" placeholder="000.000.000-00" type="text">
+                          <div class="invalid-feedback">
+                            CPF inválido
+                          </div>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            RG / Registro
+                          </label>
+                          <input class="form-control" name="rg" placeholder="Número do RG" type="text">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            Órgão Emissor / UF
+                          </label>
+                          <input class="form-control" name="orgao_rg" placeholder="Ex: SSP/SP" type="text">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            Nacionalidade
+                          </label>
+                          <input class="form-control" name="nacionalidade" type="text" value="Brasileira">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            Natural (UF)
+                          </label>
+                          <select class="form-select select-uf" id="natural_uf" name="natural_uf">
+                            <option value>
+                              Selecione UF
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold text-uppercase">
+                            Natural (Cidade)
+                          </label>
+                          <select class="form-select select-cidade" id="natural_cidade" name="natural_cidade">
+                            <option value>
+                              Selecione a UF primeiro
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-step" id="step-2">
+                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                    Etapa II: Filiação e Responsável
+                  </h4>
+                  <div class="row g-3">
+                    <div class="col-md-6 border-end pe-4">
+                      <p class="fw-bold small text-primary text-uppercase mb-2">
+                        Dados do Pai / Mãe
+                      </p>
+                      <div class="mb-3">
+                        <label class="form-label small">
+                          Nome da Mãe
+                        </label>
+                        <input class="form-control" id="nome_mae" name="nome_mae" type="text">
+                        <label class="form-label small mt-2">
+                          CPF da Mãe
+                        </label>
+                        <input class="form-control mask-cpf validate-cpf" id="cpf_mae" name="cpf_mae" type="text">
+                        <div class="invalid-feedback">
+                          CPF inválido
+                        </div>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label small border-top pt-2">
+                          Nome do Pai
+                        </label>
+                        <input class="form-control" id="nome_pai" name="nome_pai" type="text">
+                        <label class="form-label small mt-2">
+                          CPF do Pai
+                        </label>
+                        <input class="form-control mask-cpf validate-cpf" id="cpf_pai" name="cpf_pai" type="text">
+                        <div class="invalid-feedback">
+                          CPF inválido
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-6 ps-4">
+                      <p class="fw-bold small text-primary text-uppercase mb-2">
+                        Responsável Legal
+                      </p>
+                      <div class="mb-3">
+                        <label class="form-label small">
+                          Quem é o Responsável?
+                        </label>
+                        <select class="form-select" id="responsavel_tipo" name="responsavel_tipo">
+                          <option value>
+                            Selecione...
+                          </option>
+                          <option value="Mãe">
+                            Mãe
+                          </option>
+                          <option value="Pai">
+                            Pai
+                          </option>
+                          <option value="Avô/Avó">
+                            Avô/Avó
+                          </option>
+                          <option value="Irmão/Tio">
+                            Irmão/Tio
+                          </option>
+                          <option value="Outro">
+                            Outro
+                          </option>
+                        </select>
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label small">
+                          Nome Completo do Responsável
+                        </label>
+                        <input class="form-control" id="responsavel_nome" name="responsavel_nome" type="text">
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label small">
+                          CPF do Responsável
+                        </label>
+                        <input class="form-control mask-cpf validate-cpf" id="responsavel_cpf" name="responsavel_cpf" type="text">
+                        <div class="invalid-feedback">
+                          CPF inválido
+                        </div>
+                      </div>
+                      <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" id="vai_acompanhado_aulas" name="vai_acompanhado_aulas" onchange="window.toggleAcompanhanteAulas(this)" type="checkbox">
+                        <label class="form-check-label small" for="vai_acompanhado_aulas">
+                          Vai acompanhado para as aulas?
+                        </label>
+                      </div>
+                      <div class="mb-3 d-none" id="acompanhante_aulas_div">
+                        <label class="form-label small">
+                          Quem acompanha?
+                        </label>
+                        <select class="form-select" id="acompanhante_aulas" name="acompanhante_aulas" onchange="window.toggleOutroAcompanhante(this)">
+                          <option value>
+                            Selecione...
+                          </option>
+                          <option value="Mãe">
+                            Mãe
+                          </option>
+                          <option value="Pai">
+                            Pai
+                          </option>
+                          <option value="Avô/Avó">
+                            Avô/Avó
+                          </option>
+                          <option value="Irmão/Tio">
+                            Irmão/Tio
+                          </option>
+                          <option value="Outro">
+                            Outro
+                          </option>
+                          <option value="Vai sozinho">
+                            Vai sozinho
+                          </option>
+                        </select>
+                        <div class="mt-2 d-none" id="acompanhante_aulas_outro_div">
+                          <input class="form-control" id="acompanhante_aulas_outro" name="acompanhante_aulas_outro" placeholder="Informe quem acompanha" type="text">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-step" id="step-3">
+                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                    Etapa III: Endereço e Contato
+                  </h4>
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label fw-bold small">
+                        CEP
+                      </label>
+                      <input class="form-control form-control-lg mask-cep" id="cep" name="cep" type="text">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold small">
+                        Rua / Logradouro
+                      </label>
+                      <input class="form-control form-control-lg" id="rua" name="rua" type="text">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label fw-bold small">
+                        Nº
+                      </label>
+                      <input class="form-control form-control-lg" name="numero" type="text">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label fw-bold small">
+                        Bairro
+                      </label>
+                      <input class="form-control" id="bairro" name="bairro" type="text">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold small">
+                        Cidade
+                      </label>
+                      <input class="form-control" id="cidade" name="cidade" type="text">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label fw-bold small">
+                        UF
+                      </label>
+                      <input class="form-control" id="uf" maxlength="2" name="uf" type="text" value="SP">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label fw-bold small">
+                        Zona urbana ou rural
+                      </label>
+                      <select class="form-select" name="zona">
+                        <option value="Urbana">
+                          Urbana
+                        </option>
+                        <option value="Rural">
+                          Rural
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-12 border-top mt-4 pt-3">
+                      <div class="row g-3">
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold small">
+                            WhatsApp Aluno
+                          </label>
+                          <input class="form-control mask-phone" name="whatsapp" type="text">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold small">
+                            Telefone Responsável
+                          </label>
+                          <input class="form-control mask-phone" name="telefone_resp" type="text">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label fw-bold small">
+                            E-mail Principal
+                          </label>
+                          <input class="form-control" name="email" type="email">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                          <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" id="nao_possui_acesso_internet" name="nao_possui_acesso_internet" type="checkbox">
+                            <label class="form-check-label small fw-bold" for="nao_possui_acesso_internet">
+                              Não possui acesso a internet
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-step" id="step-4">
+                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                    Etapa IV: Situação Escolar
+                  </h4>
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold small">
+                        Escolaridade
+                      </label>
+                      <select class="form-select" id="escolaridade" name="escolaridade" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option>
+                          Ensino fundamental
+                        </option>
+                        <option>
+                          Ensino médio
+                        </option>
+                        <option>
+                          Ensino médio técnico
+                        </option>
+                        <option>
+                          Ensino superior
+                        </option>
+                        <option>
+                          EJA
+                        </option>
+                        <option>
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label fw-bold small">
+                        Status
+                      </label>
+                      <select class="form-select" id="status_escolar" name="status_escolar" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option>
+                          Cursando
+                        </option>
+                        <option>
+                          Concluinte
+                        </option>
+                        <option>
+                          Trancado
+                        </option>
+                        <option>
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-6 d-none" id="status-outro">
+                      <label class="form-label fw-bold small">
+                        Descreva o status
+                      </label>
+                      <input class="form-control" name="status_escolar_outro">
+                    </div>
+                    <div class="col-md-3 d-none" id="periodo-superior">
+                      <label class="form-label fw-bold small">
+                        Período (Ensino Superior)
+                      </label>
+                      <select class="form-select" name="ensino_superior_periodo">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option value="1">
+                          1
+                        </option>
+                        <option value="2">
+                          2
+                        </option>
+                        <option value="3">
+                          3
+                        </option>
+                        <option value="4">
+                          4
+                        </option>
+                        <option value="5">
+                          5
+                        </option>
+                        <option value="6">
+                          6
+                        </option>
+                        <option value="7">
+                          7
+                        </option>
+                        <option value="8">
+                          8
+                        </option>
+                        <option value="9">
+                          9
+                        </option>
+                        <option value="10">
+                          10
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-6 d-none" id="escolaridade-outro">
+                      <label class="form-label fw-bold small">
+                        Outra escolaridade
+                      </label>
+                      <input class="form-control" name="escolaridade_outro">
+                    </div>
+                    <div class="col-md-8 position-relative">
+                      <label class="form-label fw-bold small">
+                        Escola / Universidade
+                      </label>
+                      <input autocomplete="off" class="form-control" id="nome_instituicao" name="nome_instituicao" placeholder="Digite ao menos 2 letras">
+                      <div class="list-group position-absolute w-100 shadow d-none" id="sugestoes-instituicao" style="z-index: 1050">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label fw-bold small">
+                        Tipo de instituição
+                      </label>
+                      <select class="form-select" id="tipo_instituicao" name="tipo_instituicao" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option>
+                          Pública
+                        </option>
+                        <option>
+                          Privada
+                        </option>
+                        <option>
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-4 d-none" id="bolsista-div">
+                      <div class="form-check mt-4 pt-2">
+                        <input class="form-check-input" id="bolsista" name="bolsista" type="checkbox">
+                        <label class="form-check-label" for="bolsista">
+                          É bolsista?
+                        </label>
+                      </div>
+                    </div>
+                    <div class="col-md-6 d-none" id="instituicao-outro">
+                      <label class="form-label fw-bold small">
+                        Outro tipo de instituição
+                      </label>
+                      <input class="form-control" name="tipo_instituicao_outro">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label fw-bold small">
+                        Turno
+                      </label>
+                      <select class="form-select" id="turno_escolar" name="turno_escolar" onchange="toggleSituacaoEscolar()">
+                        <option value>
+                          Selecione...
+                        </option>
+                        <option>
+                          Manhã
+                        </option>
+                        <option>
+                          Tarde
+                        </option>
+                        <option>
+                          Noite
+                        </option>
+                        <option>
+                          EAD
+                        </option>
+                        <option>
+                          Outros
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-6 d-none" id="turno-outro">
+                      <label class="form-label fw-bold small">
+                        Outro turno
+                      </label>
+                      <input class="form-control" name="turno_escolar_outro">
+                    </div>
+                  </div>
+                </div>
+                <div class="form-step" id="step-5">
+                  <h4 class="mb-2 text-secondary border-bottom pb-2">
+                    Etapa V: Documentação Digital
+                  </h4>
+                  <p class="text-muted small mb-4">
+                    <i class="bi bi-info-circle me-1">
+                    </i>
+                    Somente arquivos PDF de no máximo 2MB.
+                  </p>
+                  <div class="row g-4">
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_aluno').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          RG/CPF Aluno
+                        </span>
+                        <span class="text-muted" id="name_doc_aluno" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_aluno" name="doc_aluno" onchange="window.updateFileName('doc_aluno', this)" type="file">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_residencia').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          Comprovante Residência
+                        </span>
+                        <span class="text-muted" id="name_doc_residencia" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_residencia" name="doc_residencia" onchange="window.updateFileName('doc_residencia', this)" type="file">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_declaracao').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          Declaração Escolar
+                        </span>
+                        <span class="text-muted" id="name_doc_declaracao" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_declaracao" name="doc_declaracao" onchange="window.updateFileName('doc_declaracao', this)" type="file">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_atestado').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          Atestado Médico
+                        </span>
+                        <span class="text-muted" id="name_doc_atestado" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_atestado" name="doc_atestado" onchange="window.updateFileName('doc_atestado', this)" type="file">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_termo').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          Termo Imagem/Som
+                        </span>
+                        <span class="text-muted" id="name_doc_termo" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_termo" name="doc_termo" onchange="window.updateFileName('doc_termo', this)" type="file">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="pdf-upload-box" onclick="document.getElementById('input_doc_responsavel').click()">
+                        <i class="bi bi-file-earmark-pdf text-danger fs-3 mb-2 d-block">
+                        </i>
+                        <span class="fw-bold small d-block">
+                          RG/CPF Responsável
+                        </span>
+                        <span class="text-muted" id="name_doc_responsavel" style="font-size: 0.7rem">
+                          Clique para selecionar
+                        </span>
+                        <input accept=".pdf" class="d-none" id="input_doc_responsavel" name="doc_responsavel" onchange="window.updateFileName('doc_responsavel', this)" type="file">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-step" id="step-6">
+                  <h4 class="mb-4 text-secondary border-bottom pb-2">
+                    Etapa VI: Perfil e Saúde
+                  </h4>
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Renda Familiar Mensal
+                      </label>
+                      <div class="input-group">
+                        <span class="input-group-text">
+                          R$
+                        </span>
+                        <input class="form-control" inputmode="decimal" min="0" name="renda_familiar" placeholder="0,00" step="0.01" type="number">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Renda per capita
+                      </label>
+                      <div class="input-group">
+                        <span class="input-group-text">
+                          R$
+                        </span>
+                        <input aria-readonly="true" class="form-control" id="renda_per_capita" readonly type="text">
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Residente de maior renda
+                      </label>
+                      <select class="form-select" name="residente_maior_renda">
+                        <option value="Aluno">
+                          Aluno
+                        </option>
+                        <option value="Pai">
+                          Pai
+                        </option>
+                        <option value="Mãe">
+                          Mãe
+                        </option>
+                        <option value="Irmão(ã)">
+                          Irmão(ã)
+                        </option>
+                        <option value="Avô/Avó">
+                          Avô/Avó
+                        </option>
+                        <option value="Outro">
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Pessoas na Residência
+                      </label>
+                      <input class="form-control" name="pessoas_residencia" type="number" value="1">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Situação de Ocupação do Aluno
+                      </label>
+                      <select class="form-select" name="ocupacao">
+                        <option value="Estudante">
+                          Estudante
+                        </option>
+                        <option value="Desempregado">
+                          Desempregado
+                        </option>
+                        <option value="Autônomo">
+                          Autônomo
+                        </option>
+                        <option value="CLT">
+                          CLT
+                        </option>
+                        <option value="Jovem Aprendiz">
+                          Jovem Aprendiz
+                        </option>
+                        <option value="Estagiário">
+                          Estagiário
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Beneficiário de Programa Social?
+                      </label>
+                      <select class="form-select" name="beneficio_social_status" onchange="window.toggleBeneficioSocial &amp;&amp; window.toggleBeneficioSocial(this)">
+                        <option value="Não">
+                          Não
+                        </option>
+                        <option value="Sim">
+                          Sim
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-4 d-none" id="beneficio_social_div">
+                      <label class="form-label small fw-bold">
+                        Qual programa?
+                      </label>
+                      <div class="d-flex flex-wrap gap-2 mb-2" id="beneficio_social_tags">
+                      </div>
+                      <div class="input-group">
+                        <input class="form-control" id="beneficio_social_input" list="programas_sociais" placeholder="Selecione ou digite um programa" type="text">
+                        <button class="btn btn-outline-primary" onclick="window.adicionarBeneficioSocial()" type="button">
+                          <i aria-hidden="true" class="bi bi-plus-lg">
+                          </i>
+                          Adicionar
+                        </button>
+                      </div>
+                      <datalist id="programas_sociais">
+                        <option value="Bolsa Família">
+                        </option>
+                        <option value="Cadastro Único">
+                        </option>
+                        <option value="Auxílio Gás">
+                        </option>
+                        <option value="BPC (Benefício de Prestação Continuada)">
+                        </option>
+                        <option value="Minha Casa Minha Vida">
+                        </option>
+                        <option value="Outros">
+                        </option>
+                      </datalist>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label small fw-bold">
+                        Meio de Transporte
+                      </label>
+                      <select class="form-select" name="meio_transporte">
+                        <option value="Ônibus">
+                          Ônibus
+                        </option>
+                        <option value="Carro/Moto">
+                          Carro/Moto
+                        </option>
+                        <option value="Bicicleta">
+                          Bicicleta
+                        </option>
+                        <option value="A pé">
+                          A pé
+                        </option>
+                        <option value="Outro">
+                          Outro
+                        </option>
+                      </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                      <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" id="vulnerabilidade_social" name="vulnerabilidade_social" type="checkbox">
+                        <label class="form-check-label small fw-bold" for="vulnerabilidade_social">
+                          Em vulnerabilidade social?
+                        </label>
+                      </div>
+                    </div>
+                    <div class="col-md-12 bg-light p-3 rounded mt-4 border">
+                      <div class="row g-3">
+                        <div class="col-md-12">
+                          <div class="form-check form-switch">
+                            <input class="form-check-input" id="saude_laudo" name="saude_laudo" onchange="window.toggleLaudoUpload(this)" type="checkbox">
+                            <label class="form-check-label fw-bold text-danger" for="saude_laudo">
+                              Aluno possui deficiência e/ou laudo médico?
+                            </label>
+                          </div>
+                        </div>
+                        <div class="col-md-6 d-none" id="tipo_deficiencia_container">
+                          <label class="form-label small fw-bold">
+                            Tipo de deficiência
+                          </label>
+                          <select class="form-select" disabled id="tipo_deficiencia" name="tipo_deficiencia">
+                            <option value>
+                              Selecione
+                            </option>
+                            <option value="Não se aplica">
+                              Não se aplica
+                            </option>
+                            <option value="Motora/Física">
+                              Motora/Física
+                            </option>
+                            <option value="Auditiva">
+                              Auditiva
+                            </option>
+                            <option value="Psicossocial">
+                              Psicossocial
+                            </option>
+                            <option value="Intelectual/Mental">
+                              Intelectual/Mental
+                            </option>
+                            <option value="Visual">
+                              Visual
+                            </option>
+                            <option value="TEA">
+                              TEA
+                            </option>
+                            <option value="Outro">
+                              Outro
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-6 d-none" id="laudo_upload_container">
+                          <div class="pdf-upload-box py-2" onclick="document.getElementById('input_doc_laudo').click()">
+                            <i class="bi bi-file-earmark-medical text-danger fs-4 d-block">
+                            </i>
+                            <span class="fw-bold small d-block">
+                              Upload do Laudo Médico (PDF)
+                            </span>
+                            <span class="text-muted" id="name_doc_laudo" style="font-size: 0.7rem">
+                              Clique para selecionar
+                            </span>
+                            <input accept=".pdf" class="d-none" id="input_doc_laudo" name="doc_laudo" onchange="window.updateFileName('doc_laudo', this)" type="file">
+                          </div>
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label small fw-bold">
+                            Faz uso de medicação regular?
+                          </label>
+                          <select class="form-select" name="saude_medicacao" onchange="window.toggleMedicacao &amp;&amp; window.toggleMedicacao(this)">
+                            <option value="Não">
+                              Não
+                            </option>
+                            <option value="Sim">
+                              Sim
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-6 d-none" id="medicacao_nome_div">
+                          <label class="form-label small fw-bold">
+                            Qual medicação?
+                          </label>
+                          <input class="form-control" name="saude_medicamento_nome" placeholder="Nome do medicamento" type="text">
+                        </div>
+                        <div class="col-md-12">
+                          <label class="form-label small fw-bold">
+                            Observações de Saúde / Alimentar e Alergias
+                          </label>
+                          <textarea class="form-control" name="saude_observacoes" rows="2">
+                          </textarea>
+                        </div>
+                        <div class="col-md-12">
+                          <label class="form-label small fw-bold">
+                            Informações para o professor da turma
+                          </label>
+                          <textarea class="form-control" name="informacoes_para_professor" placeholder="Informações relevantes para o professor da turma" rows="3">
+                          </textarea>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-12 mt-4">
+                      <div class="card border-primary-subtle bg-light shadow-sm">
+                        <div class="card-body">
+                          <h6 class="fw-bold text-primary mb-2">
+                            <i class="bi bi-shield-check me-2">
+                            </i>
+                            AUTORIZAÇÃO DE USO DE IMAGEM E SOM
+                          </h6>
+                          <p class="text-muted mb-3" style="font-size: 0.85rem; line-height: 1.4">
+                            Autorizo o uso da imagem e som da voz do aluno acima identificado, para fins de divulgação de atividades pedagógicas, eventos e promoções da instituição, em redes sociais, site oficial e materiais impressos, sem fins lucrativos.
+                          </p>
+                          <div class="form-check form-switch custom-switch-lg">
+                            <input class="form-check-input" id="autorizacao_imagem" name="autorizacao_imagem" type="checkbox">
+                            <label class="form-check-label fw-bold text-secondary" for="autorizacao_imagem">
+                              O responsável conscente com este termo?
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex justify-content-between align-items-center">
+                <button class="btn btn-secondary fw-bold px-4 d-none" id="prevBtn" onclick="window.nextStep(-1)" type="button">
+                  ANTERIOR
+                </button>
+                <button class="btn btn-primary fw-bold px-5 ms-auto" id="nextBtn" onclick="window.nextStep(1)" type="button">
+                  PRÓXIMO
+                  <i class="bi bi-arrow-right ms-2">
+                  </i>
+                </button>
+                <button class="btn btn-success fw-bold px-5 d-none ms-auto" id="submitBtn" type="submit">
+                  FINALIZAR CADASTRO
+                  <i class="bi bi-person-check-fill ms-2">
+                  </i>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div aria-hidden="true" class="modal fade" data-bs-backdrop="static" id="webcamModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border-0 shadow-lg" style="border-radius: 15px">
+            <div class="modal-header border-0 pb-0">
+              <h5 class="modal-title fw-bold text-primary">
+                Capturar Foto
+              </h5>
+              <button class="btn-close" onclick="window.fecharWebcam &amp;&amp; window.fecharWebcam()" type="button">
+              </button>
+            </div>
+            <div class="modal-body p-0 border-0">
+              <div class="webcam-container shadow-sm mt-3">
+                <video autoplay id="webcamVideo" playsinline>
+                </video>
+                <div class="webcam-guide">
+                </div>
+                <canvas class="d-none" height="480" id="webcamCanvas" width="640">
+                </canvas>
+              </div>
+              <div class="px-4 py-3 text-center">
+                <p class="text-muted small mb-0 px-3">
+                  Posicione o rosto do aluno no centro do guia para garantir uma foto oficial de qualidade.
+                </p>
+              </div>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center">
+              <button class="btn btn-secondary px-4" onclick="window.fecharWebcam &amp;&amp; window.fecharWebcam()" type="button">
+                Cancelar
+              </button>
+              <button class="btn btn-primary px-4 fw-bold" onclick="window.capturarFoto &amp;&amp; window.capturarFoto()" type="button">
+                <i class="bi bi-camera-fill me-2">
+                </i>
+                CAPTURAR
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script src="/static/js/alunos/aluno_utils.js">
+      </script>
+      <script src="/static/js/alunos/aluno.js">
+      </script>
+    </main>
+    <footer class="app-footer text-center text-muted small py-3 mt-4 border-top bg-white">
+      pautaON · pautaON v0.2.0 (beta) · © 2026
+    </footer>
+    <script src="/static/bootstrap/js/bootstrap.bundle.min.js">
+    </script>
+    <script src="/static/js/app.js">
+    </script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () { const body = document.body; const toggleBtn = document.getElementById("toggleSidebar"); const sidebar = document.getElementById("appSidebar"); const backdrop = document.getElementById("sidebarBackdrop"); const navLinks = document.querySelectorAll(".app-sidebar .nav-link"); // 1. Restaura estado no Desktop if (localStorage.getItem("sidebarState") === "collapsed") { body.classList.add("sidebar-collapsed"); } // Função para fechar no mobile function closeMobileSidebar() { sidebar.classList.remove("show"); backdrop.classList.remove("show"); body.style.overflow = ""; // Restaura scroll } // 2. Ação do botão toggleBtn.addEventListener("click", function () { if (window.innerWidth >= 992) { body.classList.toggle("sidebar-collapsed"); localStorage.setItem("sidebarState", body.classList.contains("sidebar-collapsed") ? "collapsed" : "expanded" ); } else { sidebar.classList.toggle("show"); backdrop.classList.toggle("show"); // Trava scroll do fundo if (sidebar.classList.contains("show")) { body.style.overflow = "hidden"; } else { body.style.overflow = ""; } } }); // 3. Clicar no fundo escuro fecha a gaveta backdrop.addEventListener("click", closeMobileSidebar); // 4. Clicar em um link no celular fecha a gaveta navLinks.forEach(link => { link.addEventListener("click", function () { if (window.innerWidth < 992) { closeMobileSidebar(); } }); }); // 5. Se redimensionar a tela, limpa os estados window.addEventListener("resize", function () { if (window.innerWidth >= 992) { closeMobileSidebar(); } }); });
+    </script>
+  </body>
+</html>
