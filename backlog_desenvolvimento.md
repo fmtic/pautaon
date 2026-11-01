@@ -1560,6 +1560,14 @@ Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2,
 
 Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, requirements-dev.txt). Pendentes: cryptography 46.0.7 (7 vulns, exige 48+) e oauthlib 3.3.1 (3 vulns, exige 4.0.0). wfastcgi 3.0.0 sem evidencia de suporte a Python 3.14 (metadata ate 3.6).
 
+## AJ4-A - Teste de drift dos rótulos de `log_acao`
+
+Entregue: `tests/test_aj4_logs_drift.py` (57) — varredura AST de `app/**.py` (nunca regex, sem ler Postgres) sobre os emissores de `log_acao` (`register_security_log`, `LogAcao(acao=...)`, `_gravar_log_background`), com censo de 30 rótulos + 10 sem linha + classificação congelada por decisão humana (`CATEGORIA_ESPERADA`). **Procedimento quando o teste pegar: rótulo novo de log → atualizar `CATEGORIA_ESPERADA`** (e a lista de congelados); dinâmico novo → `ROTULOS_DINAMICOS_CONHECIDOS` com `arquivo:linha`.
+
+- **Prova de reversão em `git worktree`** (árvore de trabalho intocada, regras do AJ3): rótulo fictício novo derruba a asserção 1 (2 falhas: asserções 1 e 4); sumir com `TRANSFERENCIA` do código derruba exatamente a asserção 3; reverter `app/auth.py` a `1e39e23^` derruba a asserção 2 só em `Exclusão de Turma`. Evidências: `.tmp/aj4_reversao_a.txt`, `.tmp/aj4_reversao_b.txt`, `.tmp/aj4_reversao_c.txt`.
+- Nenhum defeito novo de app exposto, nenhuma migration, sem push. Suíte completa de 01/11/2026: **1365 coletados (1308 + 57), 1351 passed** — os 57 do AJ4-A passam; as 14 falhas restantes (`test_f1_autor_lancamento` ×10, `test_turma_curso_fase4_dash` ×3, `test_v3a_datas_lancadas` ×1) **já falham no HEAD limpo `ef98f7f` sem nenhuma mudança deste trabalho** (prova em worktree: `.tmp/aj4_falhas_head.txt`) — dependência de calendário na virada 31/10→01/11 (`gerar_datas` deriva `datas` da grade da oferta e corta em `hoje`). Pendência nova: **AJ4-B — flakiness de data** nos três arquivos; nada foi corrigido aqui, por regra.
+- **Documentação:** MER §7.29 (bloco "Drift de rótulos"), relatório `docs/Relatórios/AJ3_TestesFechamento.md` (regra de guarda Nextcloud e aritmética da E6 reescrita).
+
 ## AJ3 - Fechamento do AJ1 e do AJ2 com testes reais
 
 Entregue: os quatro arquivos que só tinham `assert True` viraram testes reais — `tests/test_aj1_servico_social_relatorios.py` (13: paridade Serviço Social × pedagógico nas 13 rotas GET do blueprint `relatorios`), `tests/test_aj1_logs_filtro.py` (58: filtro por categoria com censo congelado de 30 ações distintas de `pautaon` e `pautaon_ensaio`), `tests/test_aj2_conselho_lancamento.py` (12: alternativa vai para o `hidden resp_<aluno>_<pergunta>` e texto livre para o `textarea obs_<aluno>_<pergunta>`, cor `#0a3d62` com contraste 11,31:1, handler real da página executado em Node) e `tests/test_aj2_painel_periodo_select.py` (7: rótulo `nome_exibicao`, seleção por id, escape do nome da unidade e `joinedload` medido com listener `before_cursor_execute`).

@@ -135,7 +135,7 @@ Reforços feitos **a partir** dessa prova: o T2/T1 do conselho trocaram uma chec
 
 ## E6 - Verificação final
 
-- Suíte completa, uma corrida: **`1308 passed, 704 warnings in 369.78s (0:06:09)`** (`.tmp/aj3_suite_final.txt`). Linha de base 1222 → **1308** = +86 testes novos (13 + 58 + 12 + 7 = 90 no total dos arquivos; os 4 placeholders já contabilizados na base contribuíam 4, daí o acréscimo líquido de 86). Zero falha, sem rodadas de correção.
+- Suíte completa, uma corrida: **`1308 passed, 704 warnings in 369.78s (0:06:09)`** (`.tmp/aj3_suite_final.txt`). Linha de base 1222 → **1308** = **+86 líquidos**: os quatro arquivos somam 90 testes (13+58+12+7), menos os 4 placeholders `assert True` que já estavam na base. Zero falha, sem rodadas de correção.
 - `ruff check --select F821,F811,F841 app tests scripts migrations`: **All checks passed!** (`.tmp/aj3_ruff_final.txt`).
 
 ## Alterações externas (guarda Nextcloud)
@@ -144,6 +144,12 @@ Duas edições que não eram deste trabalho apareceram na árvore durante a exec
 
 1. `app/templates/alunos/transferir.html` (2 linhas de rótulo, "oferta" → "curso"), mtime 23:03:53 — mantido como estava, por decisão do usuário.
 2. `app/conselho.py`, `app/templates/turmas/detalhe.html`, `backlog_desenvolvimento.md` (varredura da mesma troca de vocabulário), mtimes 23:05–23:06 — a E5 ia apagar essa edição não commitada com `git checkout HEAD -- app/conselho.py`; o trabalho parou, o usuário commitou como `2fc5b46 "Alterado de oferta para curso"` e só então a E4/E5 seguiram.
+
+**Regra daqui em diante (guarda contra edição externa):**
+
+- O diretório do repositório (incluindo `.git`) fica **fora** da sincronização do Nextcloud. Se precisar sincronizar, só via `git push/pull`.
+- Antes de qualquer `git checkout <rev> -- <arquivo>` (prova de reversão, por exemplo), rodar `git status --porcelain`; se houver alteração não commitada em arquivo de app, parar e commitar ou guardar com `git stash` antes.
+- Provas de reversão devem preferir `git worktree add` em diretório temporário, sem tocar na árvore de trabalho.
 
 Nenhum push foi feito por este trabalho. (O ref `origin/nova_feature` avançou por conta do usuário.)
 
