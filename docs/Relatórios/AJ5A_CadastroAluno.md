@@ -87,6 +87,8 @@ Evidências: `.tmp/aj5_probe_a.txt`, `_d.txt`, `_bc.txt`, `_rota.txt`, `_dict.tx
 
 Observação honesta: entre `81826ed` e `7de48d9` a árvore tem o teste de drift vermelho (o enunciado pediu o registro em commit separado, após mostrar a falha).
 
+> **Adendo (AJ5-B, mesmo dia):** nada havia sido enviado, então o registro de drift `7de48d9` foi juntado em `81826ed` com rebase interativo (fixup) para eliminar o commit com drift vermelho. Na história atual: `81826ed`+`7de48d9` → **`7391b90`** e o commit de docs `1077ca3` → **`263369f`**; a tabela acima permanece como registro do que foi feito na época. Ver `docs/Relatórios/AJ5B_UploadDocumento.md`.
+
 ## Pendências
 
 - **AJ5-B (validação de upload de documento):** magic bytes `%PDF` + mimetype + limite de 2 MB no servidor em `salvar_documento` (padrão S1-08 da foto); hoje só a extensão é checada.

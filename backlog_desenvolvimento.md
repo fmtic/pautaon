@@ -1560,6 +1560,18 @@ Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2,
 
 Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, requirements-dev.txt). Pendentes: cryptography 46.0.7 (7 vulns, exige 48+) e oauthlib 3.3.1 (3 vulns, exige 4.0.0). wfastcgi 3.0.0 sem evidencia de suporte a Python 3.14 (metadata ate 3.6).
 
+## AJ5-B - Validação de upload de documento no servidor
+
+Entregue (01/11/2026): fecha o Achado 0.1 do AJ5-A (`salvar_documento` só checava extensão). Relatório: `docs/Relatórios/AJ5B_UploadDocumento.md`.
+
+- **Validador:** `registros.shared.validar_pdf` roda antes de gravar qualquer byte — `.pdf` exigido, vazio rejeitado, tamanho por seek/tell com teto de **2 MB por documento** (exatamente 2 MB passa), assinatura `%PDF-` nos primeiros 1024 bytes (estilo S1-08 da foto). `salvar_documento` agora devolve motivo/`None` (contrato do `salvar_foto`).
+- **Falha não silenciosa:** flash por documento com nome amigável (`DOC_LABELS`) e motivo, sem o nome do arquivo do cliente; recusado não grava nem vira flag `true`; válido do mesmo POST salva normalmente; cadastro não é desfeito.
+- **Limite global:** `MAX_CONTENT_LENGTH = 20 MB` (decisão: global, não por rota — todas as rotas de upload cabem: pior caso aluno ≈ 16 MB; certificado 5 MB; logos 3 MB; anexo 2 MB). Handler 413 com flash amigável + redirect ao `Referer` só se do mesmo host (anti open-redirect). Achado corrigido no caminho: o `except Exception` de `novo_aluno`/`editar_aluno` engolia o 413 como falha de banco → `except HTTPException: raise` nos dois.
+- **Headers de entrega:** `ver_documento_aluno` serve com `nosniff`, `Cache-Control: private, no-store` e `Content-Disposition: inline; filename="<doc_id>.pdf"`; roles/escopo intactos. Pastas, nome gravado e fluxo de exclusão do AJ5-A não mudaram.
+- **Higiene de história:** sem push ainda (`ahead 10`), fixup de `7de48d9` em `81826ed` (→ `7391b90`; docs → `263369f`) — nenhum commit da série AJ5-A fica com o drift vermelho.
+- **Verificação:** `tests/test_aj5b_upload_documento.py` (13); suíte completa **1395 passed, 0 failed** (1382 + 13; `.tmp/aj5b_suite.txt`); ruff F821,F811,F841 limpo. Sondas em worktree (`263369f`): sem validador falham exatamente os 6 de recusa; sem headers falha só o de headers; sem `config`/handler caem teto-20MB e 413 (`.tmp/aj5b_p1/p2/p3.txt`). Sem push, worktree removido.
+- **Pendências:** AJ5-C (re-render do form com `request.form` na falha — Achado 0.4); `informacao_padrao` tem `except Exception` amplo que engoliria o 413 (mesma receita não aplicada lá); anexo/modelo de certificado ainda sem assinatura de conteúdo; Achado 0.2 (professor/laudo) aguarda decisão de produto.
+
 ## AJ5-A - Cadastro de aluno: correções de dados + exclusão de documento entregue
 
 Entregue (01/11/2026): auditoria do fluxo de documentos (Etapa 0 no relatório `docs/Relatórios/AJ5A_CadastroAluno.md`) + três correções de dados do formulário + rota de exclusão de documento entregue. Commits: `48f8199` (fix), `81826ed` (feat), `7de48d9` (test drift), docs.
