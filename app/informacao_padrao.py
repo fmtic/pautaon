@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from werkzeug.exceptions import HTTPException
 
 from app.database import db
 from app.services.informacao_padrao import get_informacao_padrao_values, upsert_informacao_padrao
@@ -33,6 +34,12 @@ def salvar_informacao_padrao():
         db.session.commit()
         register_security_log("Informacao Padrao", "Administrador atualizou dados institucionais padrão.")
         flash("Informações padrão atualizadas com sucesso.", "success")
+    except HTTPException:
+        # AJ5-C (E3b): o acesso a `request.form` dentro de
+        # `upsert_informacao_padrao` pode levantar 413 (MAX_CONTENT_LENGTH) —
+        # erro HTTP legítimo vai ao handler global (flash amigável com o
+        # teto, AJ5-B) em vez de virar a mensagem genérica do except abaixo.
+        raise
     except ValueError:
         db.session.rollback()
         current_app.logger.warning("Dados inválidos ao atualizar informações padrão.")
