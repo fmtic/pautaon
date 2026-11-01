@@ -659,7 +659,7 @@
                         </div>
                         <div class="col-md-4 d-flex align-items-end">
                           <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" id="nao_possui_acesso_internet" name="nao_possui_acesso_internet" type="checkbox">
+                            <input checked class="form-check-input" id="nao_possui_acesso_internet" name="nao_possui_acesso_internet" type="checkbox">
                             <label class="form-check-label small fw-bold" for="nao_possui_acesso_internet">
                               Não possui acesso a internet
                             </label>
@@ -781,7 +781,7 @@
                         Escola / Universidade
                       </label>
                       <input autocomplete="off" class="form-control" id="nome_instituicao" name="nome_instituicao" placeholder="Digite ao menos 2 letras" value="Escola Exemplo Aj5c">
-                      <div class="list-group position-absolute w-100 shadow d-none" id="sugestoes-instituicao" style="z-index:1050">
+                      <div class="list-group position-absolute w-100 shadow d-none" id="sugestoes-instituicao" style="z-index: 1050">
                       </div>
                     </div>
                     <div class="col-md-4">
@@ -1072,16 +1072,16 @@
                       </div>
                       <datalist id="programas_sociais">
                         <option value="Bolsa Família">
-                          <option value="Cadastro Único">
-                            <option value="Auxílio Gás">
-                              <option value="BPC (Benefício de Prestação Continuada)">
-                                <option value="Minha Casa Minha Vida">
-                                  <option value="Outros">
-                                  </option>
-                                </option>
-                              </option>
-                            </option>
-                          </option>
+                        </option>
+                        <option value="Cadastro Único">
+                        </option>
+                        <option value="Auxílio Gás">
+                        </option>
+                        <option value="BPC (Benefício de Prestação Continuada)">
+                        </option>
+                        <option value="Minha Casa Minha Vida">
+                        </option>
+                        <option value="Outros">
                         </option>
                       </datalist>
                     </div>

@@ -44,6 +44,10 @@ from app.models import (
 )
 from app.models.base import get_local_now
 from app.models.enums import UserRole
+from app.services.aluno_formulario import (
+    catalogos_formulario,
+    valores_form_aluno,
+)
 from app.services.aluno_perfil import (
     get_perfil_completo,
     upsert_endereco,
@@ -470,7 +474,13 @@ def novo_aluno():
         unidades = []
         if get_unidade_id() is None:
             unidades = Unidade.query.order_by(Unidade.nome).all()
-        return render_template("alunos/novo.html", unidades=unidades)
+        # AJ5-C: o template só lê o contrato `v` + os catálogos `cat`.
+        return render_template(
+            "alunos/novo.html",
+            unidades=unidades,
+            v=valores_form_aluno(),
+            cat=catalogos_formulario(),
+        )
 
     from app.utils.logica import formatar_nome_proprio
 
@@ -719,10 +729,21 @@ def editar_aluno(id):
             db.session.rollback()
             flash_and_log(exc, location="registros.editar_aluno", hint="db")
 
+    # AJ5-C: `v` é o contrato único do formulário (form > banco > padrões);
+    # hoje só há caminho de banco (GET) — o re-render com `form` chega no
+    # fix de falha. O template não toca em `aluno`/`perfil` diretamente.
+    perfil = get_perfil_completo(aluno)
+    v = valores_form_aluno(
+        aluno=aluno,
+        perfil=perfil,
+        foto_url=(
+            url_for("registros.foto_aluno", aluno_id=aluno.id) if aluno.foto_path else ""
+        ),
+    )
     return render_template(
         "alunos/editar.html",
-        aluno=aluno,
-        perfil=get_perfil_completo(aluno),
+        v=v,
+        cat=catalogos_formulario(),
     )
 
 

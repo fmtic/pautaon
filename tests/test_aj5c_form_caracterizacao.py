@@ -125,13 +125,15 @@ def _descartar_attr(tag, nome, valor):
 
 
 def _norm_attr(nome, valor):
-    """Valor canônico de atributo: `style` é re-joinado (`a: b; c: d`), os
-    demais só colapsam whitespace — `z-index:1050` == `z-index: 1050;`."""
+    """Valor canônico de atributo: `style` é re-joinado e tem o espaço após
+    o dois-pontos normalizado (`a: b` == `a:b` — CSS é agnóstico); os demais
+    só colapsam whitespace."""
     if valor is None:
         return ""
     valor = re.sub(r"\s+", " ", valor).strip()
     if nome == "style":
         partes = [p.strip() for p in valor.split(";") if p.strip()]
+        partes = [re.sub(r"\s*:\s*", ": ", p, count=1) for p in partes]
         return "; ".join(partes)
     return valor
 

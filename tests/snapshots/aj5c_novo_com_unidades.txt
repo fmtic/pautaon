@@ -652,7 +652,7 @@
                         Zona urbana ou rural
                       </label>
                       <select class="form-select" name="zona">
-                        <option value="Urbana">
+                        <option selected value="Urbana">
                           Urbana
                         </option>
                         <option value="Rural">
@@ -705,22 +705,22 @@
                         <option value>
                           Selecione...
                         </option>
-                        <option>
+                        <option value="Ensino fundamental">
                           Ensino fundamental
                         </option>
-                        <option>
+                        <option value="Ensino médio">
                           Ensino médio
                         </option>
-                        <option>
+                        <option value="Ensino médio técnico">
                           Ensino médio técnico
                         </option>
-                        <option>
+                        <option value="Ensino superior">
                           Ensino superior
                         </option>
-                        <option>
+                        <option value="EJA">
                           EJA
                         </option>
-                        <option>
+                        <option value="Outros">
                           Outros
                         </option>
                       </select>
@@ -733,16 +733,16 @@
                         <option value>
                           Selecione...
                         </option>
-                        <option>
+                        <option value="Cursando">
                           Cursando
                         </option>
-                        <option>
+                        <option value="Concluinte">
                           Concluinte
                         </option>
-                        <option>
+                        <option value="Trancado">
                           Trancado
                         </option>
-                        <option>
+                        <option value="Outros">
                           Outros
                         </option>
                       </select>
@@ -815,13 +815,13 @@
                         <option value>
                           Selecione...
                         </option>
-                        <option>
+                        <option value="Pública">
                           Pública
                         </option>
-                        <option>
+                        <option value="Privada">
                           Privada
                         </option>
-                        <option>
+                        <option value="Outro">
                           Outro
                         </option>
                       </select>
@@ -848,19 +848,19 @@
                         <option value>
                           Selecione...
                         </option>
-                        <option>
+                        <option value="Manhã">
                           Manhã
                         </option>
-                        <option>
+                        <option value="Tarde">
                           Tarde
                         </option>
-                        <option>
+                        <option value="Noite">
                           Noite
                         </option>
-                        <option>
+                        <option value="EAD">
                           EAD
                         </option>
-                        <option>
+                        <option value="Outros">
                           Outros
                         </option>
                       </select>
@@ -995,7 +995,7 @@
                         Residente de maior renda
                       </label>
                       <select class="form-select" name="residente_maior_renda">
-                        <option value="Aluno">
+                        <option selected value="Aluno">
                           Aluno
                         </option>
                         <option value="Pai">
@@ -1026,7 +1026,7 @@
                         Situação de Ocupação do Aluno
                       </label>
                       <select class="form-select" name="ocupacao">
-                        <option value="Estudante">
+                        <option selected value="Estudante">
                           Estudante
                         </option>
                         <option value="Desempregado">
@@ -1051,7 +1051,7 @@
                         Beneficiário de Programa Social?
                       </label>
                       <select class="form-select" name="beneficio_social_status" onchange="window.toggleBeneficioSocial &amp;&amp; window.toggleBeneficioSocial(this)">
-                        <option value="Não">
+                        <option selected value="Não">
                           Não
                         </option>
                         <option value="Sim">
@@ -1093,7 +1093,7 @@
                         Meio de Transporte
                       </label>
                       <select class="form-select" name="meio_transporte">
-                        <option value="Ônibus">
+                        <option selected value="Ônibus">
                           Ônibus
                         </option>
                         <option value="Carro/Moto">
@@ -1180,7 +1180,7 @@
                             Faz uso de medicação regular?
                           </label>
                           <select class="form-select" name="saude_medicacao" onchange="window.toggleMedicacao &amp;&amp; window.toggleMedicacao(this)">
-                            <option value="Não">
+                            <option selected value="Não">
                               Não
                             </option>
                             <option value="Sim">
