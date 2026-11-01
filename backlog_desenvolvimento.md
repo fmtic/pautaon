@@ -1560,6 +1560,19 @@ Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2,
 
 Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, requirements-dev.txt). Pendentes: cryptography 46.0.7 (7 vulns, exige 48+) e oauthlib 3.3.1 (3 vulns, exige 4.0.0). wfastcgi 3.0.0 sem evidencia de suporte a Python 3.14 (metadata ate 3.6).
 
+## AJ5-C - Formulário de aluno unificado + re-render na falha
+
+Entregue (01/11/2026): fecha o Achado 0.4 do AJ5-A (validação fazia flash + redirect e descartava o digitado). Relatório: `docs/Relatórios/AJ5C_FormularioAluno.md`.
+
+- **Trava de caracterização (antes da refatoração):** `tests/test_aj5c_form_caracterizacao.py` + 3 snapshots canonizados em `tests/snapshots/aj5c_*.txt` (novo com/sem unidades; editar completo — todos os blocos). Refatoração **sem mudança visual**: diferença final = 4 famílias aprováveis e listadas (41 `value=` explícitos + 12 `selected` explícitos no novo; `</option>` do datalist no editar; checkbox de internet no editar passa a ler `endereco` — bug real do old). Snapshots regenerados no código novo; daqui em diante a diferença tem que ser vazia.
+- **Unificação:** `app/templates/alunos/_form_aluno.html` (6 passos, `modo` `'novo'|'editar'`; cascas `novo.html` 1113→71 e `editar.html` 775→70); contrato único `valores_form_aluno(aluno, perfil, form, foto_url)` com precedência **form > banco > padrões** (`app/services/aluno_formulario.py`, 357 linhas); **todos** os selects leem catálogos Python (`catalogos_formulario()`) — nenhum `<option>` digitado à mão (causa raiz dos bugs do AJ5-A). Preservados `data-selected` UF/cidade, acompanhante "Outro" reidratado, tags de benefício (agora também server-side no re-render), Ver/Excluir só no editar, seletor de unidade só no novo.
+- **Re-render na falha:** `novo_aluno` (nome vazio, CPF inválido, unidade ausente/inválida) e `editar_aluno` (nome/CPF, validações movidas para antes do `try`) re-renderizam status 200 com `v` de `request.form` + flash + passo do erro (`goToStep` só quando `passo_erro != 1`); sucesso continua PRG; POST com arquivo ganha flash "Reanexe a foto/os documentos". Nenhuma permissão/escopo/regra de validação mudou; falha não grava aluno nem disco (testado).
+- **E3b (commit separado):** `salvar_informacao_padrao` ganhou `except HTTPException: raise` — o 413 chega ao handler global (flash com o teto) em vez da genérica; teste `tests/test_aj5c_informacao_413.py`.
+- **Testes:** `test_aj5c_form_rerender.py` 10 (inclui escape `"><script>x</script>` e **paridade de `name=`** novo×editar com lista permitida vazia) + 413 (1) + caracterização (3). Sondas em worktree: **P1** sem o fix das rotas → caem exatamente os 6 de re-render (PRG/paridade passam); **P2** sem o contrato `v` → caem os 3 snapshots (`.tmp/aj5c_p1_sonda.txt`, `.tmp/aj5c_p2_sonda.txt`).
+- **Verificação:** suíte completa **1409 passed, 0 failed** (1395 + 3 + 10 + 1; `.tmp/aj5c_suite_final.txt`); ruff F821,F811,F841 limpo; worktrees removidos; `git status` limpo; sem push, sem migration, nenhum dado real em teste/relatório.
+- **Commits:** `1708112` (test E1), `032f261` (refactor E2), `1754cd2` (fix E3), `43c1af1` (fix E3b), docs.
+- **Pendências:** AJ5-D (assinatura/headers nos uploads de atendimento e modelo de certificado); decisão de layout (a)/(b)/(c); Achado 0.2 (professor/laudo) aguarda produto.
+
 ## AJ5-B - Validação de upload de documento no servidor
 
 Entregue (01/11/2026): fecha o Achado 0.1 do AJ5-A (`salvar_documento` só checava extensão). Relatório: `docs/Relatórios/AJ5B_UploadDocumento.md`.
