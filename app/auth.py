@@ -1021,6 +1021,25 @@ def alternar_unidade_status(id):
 from unidecode import unidecode
 
 
+#: Prefixos (em minúsculo) que definem cada categoria de ação de auditoria.
+#: Fonte ÚNICA do `categoria_acao` e do filtro por categoria de `ver_logs`: as
+#: duas leituras têm de concordar, senão a tela põe em "Outras" uma linha que
+#: ela mesma pinta com o selo de Exclusão (foi assim com 'Exclusão de Turma',
+#: gravada por `registros/turmas.py`, que ficava fora de `exclusao`).
+_CATEGORIAS_ACAO = {
+    "login": (
+        "login", "logoff", "logout", "cadastro local", "reset de senha",
+        "desbloqueio de login", "acesso aprovado", "aviso de invas",
+    ),
+    "criacao": ("criar",),
+    "edicao": ("alterar", "alteração", "editar", "trocar", "troca"),
+    "exclusao": ("excluir", "exclusao", "exclusão", "remover", "remoção"),
+}
+
+#: Ação que não casa com nenhum prefixo acima (e nenhuma ação vazia).
+_CATEGORIA_OUTRAS = "outras"
+
+
 def categoria_acao(acao: str | None) -> str:
     """Classifica uma ação de auditoria em uma categoria estável.
 
@@ -1028,27 +1047,13 @@ def categoria_acao(acao: str | None) -> str:
     """
     texto = (acao or "").strip().lower()
     if not texto:
-        return "outras"
-    if texto.startswith((
-        "login", "logoff", "logout", "cadastro local", "reset de senha",
-        "desbloqueio de login", "acesso aprovado", "aviso de invas",
-    )):
-        return "login"
-    if texto.startswith("criar"):
-        return "criacao"
-    if texto.startswith(("alterar", "alteração", "editar", "trocar", "troca")):
-        return "edicao"
-    if texto.startswith(("excluir", "remover", "remoção")):
-        return "exclusao"
-    return "outras"
+        return _CATEGORIA_OUTRAS
+    for categoria, prefixos in _CATEGORIAS_ACAO.items():
+        if texto.startswith(prefixos):
+            return categoria
+    return _CATEGORIA_OUTRAS
 
 
-_CATEGORIAS_ACAO = {
-    "login": ["Login", "Logoff", "Logout", "Cadastro Local", "Reset de Senha", "Desbloqueio de login", "Acesso Aprovado", "Aviso de Invasão"],
-    "criacao": ["Criar"],
-    "edicao": ["Alterar", "Alteração", "Editar", "Trocar", "Troca"],
-    "exclusao": ["Excluir", "Remover", "Remoção"],
-}
 @bp.route('/admin/logs')
 @login_required
 def ver_logs():
@@ -1074,28 +1079,23 @@ def ver_logs():
             pass
 
     # Filtro por categoria de ação (no banco, com parâmetro; nunca f-string SQL).
+    # Os prefixos vêm de `_CATEGORIAS_ACAO` — o mesmo dicionário que
+    # `categoria_acao` usa, para a listagem e a classificação não divergirem.
     categoria = acao_busca.lower() if acao_busca else ''
-    categorias_validas = {'login', 'criacao', 'edicao', 'exclusao', 'outras'}
-    if categoria not in categorias_validas:
+    if categoria not in set(_CATEGORIAS_ACAO) | {_CATEGORIA_OUTRAS}:
         categoria = ''
 
-    prefixos = {
-        'login': ['Login', 'Logoff', 'Logout', 'Cadastro Local', 'Reset de Senha', 'Desbloqueio de login', 'Acesso Aprovado', 'Aviso de Invasão'],
-        'criacao': ['Criar'],
-        'edicao': ['Alterar', 'Alteração', 'Editar', 'Trocar', 'Troca'],
-        'exclusao': ['Excluir', 'Remover', 'Remoção'],
-    }
-
-    if categoria and categoria != 'outras':
+    if categoria and categoria != _CATEGORIA_OUTRAS:
         from sqlalchemy import or_ as _or
-        condicoes = [LogAcao.acao.ilike(f'{p}%') for p in prefixos[categoria]]
+        condicoes = [LogAcao.acao.ilike(f'{p}%') for p in _CATEGORIAS_ACAO[categoria]]
         query = query.filter(_or(*condicoes))
-    elif categoria == 'outras':
+    elif categoria == _CATEGORIA_OUTRAS:
         from sqlalchemy import or_ as _or
-        condicoes = []
-        for lista in prefixos.values():
-            for p in lista:
-                condicoes.append(LogAcao.acao.ilike(f'{p}%'))
+        condicoes = [
+            LogAcao.acao.ilike(f'{p}%')
+            for prefixos in _CATEGORIAS_ACAO.values()
+            for p in prefixos
+        ]
         query = query.filter(~_or(*condicoes))
 
     # Paginação
