@@ -107,7 +107,7 @@ def _sanitizar_cpf(cpf: str) -> str:
 
 
 def _render_form_aluno_com_dados(aluno=None, template="alunos/novo.html",
-                                 unidades=None, passo_erro=1):
+                                 unidades=None):
     """AJ5-C (achado 0.4): re-render do formulário NA FALHA de validação.
 
     Em vez do `redirect` (que jogava fora tudo o que foi digitado), devolve
@@ -116,8 +116,8 @@ def _render_form_aluno_com_dados(aluno=None, template="alunos/novo.html",
     foi posto pela rota; aqui só hidrata. Se o POST trazia arquivos (foto ou
     PDFs), avisa que o navegador não reanexa nada.
 
-    `passo_erro`: passo a abrir (1 = identificação, onde estão nome/CPF);
-    as cascas tratam o salto via `goToStep` quando != 1.
+    O formulário abre sempre no passo 1 (identificação, onde estão nome/CPF),
+    que é o passo ativo na carga — nenhuma falha atual usa outro passo.
     """
     anexos = ["foto"] + [campo for campo in request.files
                          if campo.startswith("doc_")]
@@ -141,7 +141,6 @@ def _render_form_aluno_com_dados(aluno=None, template="alunos/novo.html",
         unidades=unidades,
         v=v,
         cat=catalogos_formulario(),
-        passo_erro=passo_erro,
     )
 
 
@@ -526,7 +525,7 @@ def novo_aluno():
     # Lista de unidades para o re-render na falha: vazia para usuário com
     # unidade fixa (sem seletor), completa para o global sem contexto — a
     # mesma regra do GET.
-    unidades_postra = [] if get_unidade_id() is not None else \
+    unidades_disponiveis = [] if get_unidade_id() is not None else \
         Unidade.query.order_by(Unidade.nome).all()
 
     nome = request.form.get("nome")
@@ -538,7 +537,7 @@ def novo_aluno():
         # AJ5-C: re-render com os dados digitados (achado 0.4) — antes era
         # redirect para a gerenciar e o usuário perdia tudo.
         return _render_form_aluno_com_dados(
-            template="alunos/novo.html", unidades=unidades_postra
+            template="alunos/novo.html", unidades=unidades_disponiveis
         )
 
     cpf_raw = request.form.get("cpf", "")
@@ -548,7 +547,7 @@ def novo_aluno():
             "danger",
         )
         return _render_form_aluno_com_dados(
-            template="alunos/novo.html", unidades=unidades_postra
+            template="alunos/novo.html", unidades=unidades_disponiveis
         )
 
     # -------------------------------------------------------------------------
@@ -565,14 +564,14 @@ def novo_aluno():
                 "warning",
             )
             # Re-render com o seletor de unidade de volta (lista já
-            # calculada em `unidades_postra` no topo do POST).
+            # calculada em `unidades_disponiveis` no topo do POST).
             return _render_form_aluno_com_dados(
-                template="alunos/novo.html", unidades=unidades_postra
+                template="alunos/novo.html", unidades=unidades_disponiveis
             )
         if not db.session.get(Unidade, unidade_id):
             flash("Unidade inválida.", "danger")
             return _render_form_aluno_com_dados(
-                template="alunos/novo.html", unidades=unidades_postra
+                template="alunos/novo.html", unidades=unidades_disponiveis
             )
 
     try:

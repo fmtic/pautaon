@@ -62,9 +62,4 @@ formulário em si vive no parcial único `alunos/_form_aluno.html` (modo
 
 <script src="{{ url_for('static', filename='js/alunos/aluno_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/alunos/aluno.js') }}"></script>
-{# AJ5-C: mesmo salto do novo.html — abre no passo do erro na falha (o passo 1
-já é o passo aberto na carga). #}
-{% if passo_erro is defined and passo_erro and passo_erro != 1 %}
-<script>window.addEventListener('DOMContentLoaded', function () { window.goToStep({{ passo_erro }}); });</script>
-{% endif %}
 {% endblock %}

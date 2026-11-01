@@ -3,8 +3,9 @@
 Achado 0.4 do AJ5-A: nas falhas (nome vazio, CPF inválido, unidade ausente/
 inválida) a rota fazia `redirect` e o navegador descartava tudo o que foi
 digitado. Agora a rota re-renderiza o próprio formulário (status 200) com `v`
-construído a partir de `request.form`, flash com o erro, e abre direto no passo
-do erro (nome/CPF = passo 1). Sucesso continua com redirect (PRG).
+construído a partir de `request.form`, flash com o erro, e o formulário abre no
+passo 1 (identificação, onde estão nome/CPF), que é o passo ativo padrão da
+carga. Sucesso continua com redirect (PRG).
 
 Regras provadas aqui:
 - nada é gravado no banco nem no disco quando a validação falha;
@@ -101,8 +102,8 @@ def test_falha_nome_vazio_reRenderiza_passo1_com_valores(app, client, dados):
     assert "Bolsa Família" in texto and "BPC" in texto
     # flash do erro presente
     assert "Nome" in texto and "vazio" in texto
-    # abre no passo 1 (nome/CPF)
-    assert "goToStep(1)" in texto
+    # abre no passo 1 (nome/CPF), o passo ativo padrão da carga
+    assert 'class="form-step active" id="step-1"' in texto
     # nada foi criado
     with app.app_context():
         assert Aluno.query.filter(Aluno.nome.ilike("%ReRender%")).count() == 0
@@ -119,7 +120,7 @@ def test_falha_cpf_invalido_reRenderiza_mantendo_nome(app, client, dados):
     texto = _texto(resp)
     assert "CPF inválido" in texto
     assert 'value="Alvo ReRender Aj5c"' in texto
-    assert "goToStep(1)" in texto
+    assert 'class="form-step active" id="step-1"' in texto
     with app.app_context():
         assert Aluno.query.count() == 1  # só o da fixture
 
@@ -203,7 +204,7 @@ def test_editar_falha_cpf_reRenderiza_sem_tocar_banco(app, client, dados):
     assert "CPF inválido" in texto
     # os valores DIGITADOS voltam (não os do banco)
     assert 'value="Outro Nome Aj5c R"' in texto
-    assert "goToStep(1)" in texto
+    assert 'class="form-step active" id="step-1"' in texto
     with app.app_context():
         assert db.session.get(Aluno, dados["aluno"]).nome == antes
 

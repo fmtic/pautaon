@@ -62,10 +62,4 @@ o formulário em si vive no parcial único `alunos/_form_aluno.html` (modo
 
 <script src="{{ url_for('static', filename='js/alunos/aluno_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/alunos/aluno.js') }}"></script>
-{# AJ5-C: na falha com erro de passo != 1, abre o formulário no passo do erro
-(via goToStep exportado por aluno.js). O padrão do `passo_erro` é 1, que é o
-passo aberto na carga — daí o `if != 1`. #}
-{% if passo_erro is defined and passo_erro and passo_erro != 1 %}
-<script>window.addEventListener('DOMContentLoaded', function () { window.goToStep({{ passo_erro }}); });</script>
-{% endif %}
 {% endblock %}
