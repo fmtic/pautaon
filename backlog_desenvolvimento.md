@@ -1560,10 +1560,19 @@ Entregue: grupos 1, 3 e 4 atualizados (certifi, idna, urllib3, pyasn1, httplib2,
 
 Entregue: Pillow 13.0.0 (commit fff264a) e pytest 9.2.0 (commit 7b85950, requirements-dev.txt). Pendentes: cryptography 46.0.7 (7 vulns, exige 48+) e oauthlib 3.3.1 (3 vulns, exige 4.0.0). wfastcgi 3.0.0 sem evidencia de suporte a Python 3.14 (metadata ate 3.6).
 
+## AJ3 - Fechamento do AJ1 e do AJ2 com testes reais
+
+Entregue: os quatro arquivos que só tinham `assert True` viraram testes reais — `tests/test_aj1_servico_social_relatorios.py` (13: paridade Serviço Social × pedagógico nas 13 rotas GET do blueprint `relatorios`), `tests/test_aj1_logs_filtro.py` (58: filtro por categoria com censo congelado de 30 ações distintas de `pautaon` e `pautaon_ensaio`), `tests/test_aj2_conselho_lancamento.py` (12: alternativa vai para o `hidden resp_<aluno>_<pergunta>` e texto livre para o `textarea obs_<aluno>_<pergunta>`, cor `#0a3d62` com contraste 11,31:1, handler real da página executado em Node) e `tests/test_aj2_painel_periodo_select.py` (7: rótulo `nome_exibicao`, seleção por id, escape do nome da unidade e `joinedload` medido com listener `before_cursor_execute`).
+
+- **Defeito encontrado e corrigido:** `Exclusão de Turma` caía em "Outras" no filtro de auditoria — fix `1e39e23` em `app/auth.py`, categoria `exclusao` e fonte única entre o SQL e o selo da listagem.
+- **Prova de reversão** (só os arquivos de app do ajuste revertidos, restaurados em seguida): falham 8 de 13 (relatórios), 58 nem coletam sem `f79c964` e 9 falham sem `1e39e23` (logs), 8 de 12 (conselho), 6 de 7 (painel). O que passa na reversão é asserção de não regressão.
+- Commits: `d2934e5`, `1e39e23`, `410d5bc`, `a4a6049`, `9d935e6` + commit de docs. Suíte: **1222 → 1308 passed** (`1308 passed, 704 warnings in 369.78s`). Nenhuma migration, nenhum dado de produção escrito (bancos reais só `SELECT`), sem push.
+- **Documentação:** MER §7.6 (rótulo do painel), §7.20 (`ROLES_RELATORIOS`), §7.25 (`conselho_resposta`), §7.29 (`log_acao`) e seção AJ3; relatório `docs/Relatórios/AJ3_TestesFechamento.md`.
+
 ## AJ2 - Ajustes pontuais 3 e 5
 
-Entregue: conselho de classe lancamento com resposta e observacao separadas (commit f3d2b15); painel pedagogico com nome_exibicao no select de periodos (commit 9794165). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
+Entregue: conselho de classe lancamento com resposta e observacao separadas (commit f3d2b15); painel pedagogico com nome_exibicao no select de periodos (commit 9794165). Testes reais no AJ3: `tests/test_aj2_conselho_lancamento.py` (12) e `tests/test_aj2_painel_periodo_select.py` (7). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
 
 ## AJ1 - Ajustes pontuais 1 e 2
 
-Entregue: servico_social acessa Relatorios (commit 8598145); filtro de logs por categoria (commit f79c964). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.
+Entregue: servico_social acessa Relatorios (commit 8598145); filtro de logs por categoria (commit f79c964). Testes reais no AJ3: `tests/test_aj1_servico_social_relatorios.py` (13) e `tests/test_aj1_logs_filtro.py` (58), com a correção `1e39e23` (Exclusão de Turma na categoria `exclusao`). Pendencias: ajuste 4 (Resumo), Central de BI, cadastro do aluno.

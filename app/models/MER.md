@@ -454,7 +454,7 @@ Catálogo do planejamento pedagógico — o "Valor / Postura do Esportista" esco
 | created_at        | timestamp    | sim  | now      | Auditoria                     |
 | updated_at        | timestamp    | sim  | onupdate | Auditoria                     |
 
-**Derivados (não persistidos):** `nome_exibicao` (property: `"<unidade> <nome>"`) e `alunos_enturmados()` (alunos únicos com alguma turma do período via `Aluno.turmas`; **não** filtra `Inscricao.ativo` nem `Aluno.ativo` — para as categorias oficiais de enturmação, ver §8.3).
+**Derivados (não persistidos):** `nome_exibicao` (property: `"<unidade> <nome>"`) e `alunos_enturmados()` (alunos únicos com alguma turma do período via `Aluno.turmas`; **não** filtra `Inscricao.ativo` nem `Aluno.ativo` — para as categorias oficiais de enturmação, ver §8.3). **Rótulo do painel pedagógico (AJ2, 31/10/2026):** o `<select>` de período de `GET /relatorios/painel` usa `p.nome_exibicao` (e não `p.nome`), porque dois períodos homônimos em unidades diferentes são opções distintas e precisam ser distinguíveis; a consulta da rota traz `joinedload(PeriodoLetivo.unidade)` — sem o join o template pagaria um SELECT por período. O `value` e a seleção por `?periodo_letivo_id=` continuam o id, e o nome da unidade entra escapado. Ancorado em `tests/test_aj2_painel_periodo_select.py` (7).
 
 ### 7.7 `turma`
 
@@ -796,7 +796,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 **Atividades da aula (A1, migration `c8d9e0f1a2b3`):** coluna `atividades` TEXT nullable, **sem backfill** (registros antigos ficam NULL). Campo de texto adicional ao lado de `observacoes`: `salvar_frequencia` grava os dois de forma independente (`form.get(...).strip() or None`) e `carregar_frequencias_e_valores` devolve `(conceitos, valores, temas, observacoes, atividades)` — `carregar_frequencias` continua com 3 valores e descarta as atividades. **Não** participa de frequência, estatísticas, pauta impressa, BI, relatórios ou exportações. O Diário de Bordo (`/turma/<id>/observacoes`) passou a listar aulas com **qualquer um** dos dois textos e exibe as duas seções.
 
-**Acesso ao Diário de Bordo (28/10/2026):** `ver_observacoes` aplica `assert_unidade_context(turma.unidade_id, get_unidade_id())` e, para `UserRole.PROFESSOR`, exige `turma.professor_id == current_user.id` — mesma guarda de `ver_turma`/`imprimir_pauta`. A tela é alcançável pelo painel (`/painel`, botão por turma) e pelo detalhe da turma (`/turma/<id>`). **Visão global (28/10/2026):** `GET /relatorios/observacoes` (`relatorios.observacoes`, `app/relatorios/observacoes.py`) lista o diário de todas as turmas do período para `ROLES_RELATORIOS`, com filtros por período letivo, turma, curso (oferta) e professor; `turmas/observacoes.html` é compartilhado via `modo_global` (filtros, badge da turma, teto de 500 linhas) e o fluxo por turma continua sem filtros.
+**Acesso ao Diário de Bordo (28/10/2026):** `ver_observacoes` aplica `assert_unidade_context(turma.unidade_id, get_unidade_id())` e, para `UserRole.PROFESSOR`, exige `turma.professor_id == current_user.id` — mesma guarda de `ver_turma`/`imprimir_pauta`. A tela é alcançável pelo painel (`/painel`, botão por turma) e pelo detalhe da turma (`/turma/<id>`). **Visão global (28/10/2026):** `GET /relatorios/observacoes` (`relatorios.observacoes`, `app/relatorios/observacoes.py`) lista o diário de todas as turmas do período para `ROLES_RELATORIOS`, com filtros por período letivo, turma, curso (oferta) e professor; `turmas/observacoes.html` é compartilhado via `modo_global` (filtros, badge da turma, teto de 500 linhas) e o fluxo por turma continua sem filtros. **Quem está em `ROLES_RELATORIOS` (31/10/2026):** `admin`, `pedagogico`, `secretaria`, `gerencia` e `servico_social` (`app/relatorios/shared.py:24`) — o Serviço Social entrou no AJ1 (commit `8598145`) e passou a alcançar as 13 rotas GET do blueprint nas mesmas condições do perfil pedagógico; como **não** é perfil global, `get_unidade_id()` segue forçando a unidade do usuário, então a paridade é de tela, não de alcance. Paridade medida rota a rota em `tests/test_aj1_servico_social_relatorios.py` (13).
 
 **Temas múltiplos (migration `a8b9c0d1e2f3`):** o vínculo normalizado fica em `registro_aula_tema` (`registro_aula_id`, `tema_aula_id`), com PK composta e FKs para `registro_aula` (CASCADE) e `tema_aula` (RESTRICT). O backfill copia os valores não nulos de `registro_aula.tema_id`. A coluna antiga permanece temporariamente como espelho do primeiro tema; leituras novas usam a relação `RegistroAula.temas`. **Contrato de leitura da pauta (`carregar_frequencias`, `app/utils/logica.py`):** o segundo elemento devolvido é **sempre a lista** de `tema_aula.id` marcados no dia — `RegistroAula.temas`, com fallback no espelho `tema_id` quando a relação estiver vazia, e **lista vazia** (nunca `None`) quando não há diário ainda ou quando `turma_id`/`data` são inválidos; o template testa a expressão `tema.id in tema_selecionado` e `None` derrubava o GET `/frequencia` de um dia ainda não lançado (`TypeError: argument of type 'NoneType' is not a container or iterable`; corrigido em 27/10/2026).
 
@@ -885,13 +885,15 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | conselho_id | int  | não  | —       | FK → conselho_classe   |
 | aluno_id    | int  | não  | —       | FK → aluno             |
 | pergunta_id | int  | não  | —       | FK → conselho_pergunta |
-| resposta    | text | sim  | —       | —                      |
-| observacao  | text | sim  | —       | —                      |
+| resposta    | text | sim  | —       | Alternativa escolhida (`resp_<aluno>_<pergunta>`) |
+| observacao  | text | sim  | —       | Texto livre do observador (`obs_<aluno>_<pergunta>`) |
 | **autor_id** | **int** | sim | —    | FK → `user`, `ON DELETE SET NULL` (F1, §8.24); último que salvou |
 | **autor_nome** | **varchar(100)** | sim | — | Snapshot do nome do autor (F1) |
 | unidade_id  | int  | sim  | —       | FK → unidade           |
 
 **Autor (F1, 30/10/2026):** `salvar_conselho` grava `autor_id`/`autor_nome` ao criar a resposta e só troca o autor quando o **texto** muda; regravar o mesmo texto mantém quem gravou antes. As demais rotas de escrita do conselho (`avaliar_turma`, fechamento) não escrevem nesta tabela. Regra completa em §8.24.
+
+**Resposta e observação em campos separados (AJ2, 31/10/2026):** antes, `conselho/lancamento.html` tinha um único `<textarea>` por célula e o clique na alternativa escrevia o texto da opção ali — a resposta atropelava a observação do professor. Cada célula passou a ter um `hidden` `resp_<aluno>_<pergunta>` (marcado pela alternativa, com destaque `active` + negrito e foco visível por teclado) e um `textarea` `obs_<aluno>_<pergunta>` (texto livre), e `static/js/conselho/conselho.js` **não toca mais** no campo de observação. `salvar_conselho` lê os dois com independência: chave `obs_` **ausente** do POST preserva o texto existente, chave `obs_` presente e vazia **limpa**. O enunciado das perguntas saiu do `text-muted` para `--conselho-pergunta-cor: #0a3d62` — razão de contraste **11,31:1** sobre o branco, acima do AA de 4,5:1 — em regra escopada `.conselho-pergunta`. As demais telas (`turma_aval.html`, `fechamento.html`, `imprimir_formulario.html`, `informacoes.html`) ficaram como estavam. Ancorado em `tests/test_aj2_conselho_lancamento.py` (12, inclusive o handler real da página executado em Node).
 
 ### 7.26 `atendimento`
 
@@ -949,6 +951,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | detalhes     | text         | sim  | —       | Contexto      |
 | ip           | varchar(50)  | sim  | —       | IP de origem  |
 | unidade_id   | int          | sim  | —       | FK → unidade  |
+
+**Categoria da ação (AJ1, 31/10/2026):** `acao` é texto livre, e `/admin/logs` ganhou filtro por categoria calculado por `categoria_acao` (`app/auth.py`) a partir de `acao.strip().lower()`, comparado com `startswith` na ordem do dicionário `_CATEGORIAS_ACAO`: `login` (`login`, `logoff`, `logout`, `cadastro local`, `reset de senha`, `desbloqueio de login`, `acesso aprovado`, `aviso de invas`), `criacao` (`criar`), `edicao` (`alterar`, `alteração`, `editar`, `trocar`, `troca`), `exclusao` (`excluir`, `exclusao`, `exclusão`, `remover`, `remoção`) e `outras` para o resto — ação vazia incluída. O mesmo dicionário gera os `ilike '<prefixo>%'` aplicados **no SQL** da consulta (antes o filtro rodava em memória, só sobre a página exibida, por isso "não filtrava") e o selo da listagem: fonte única, senão a tela põe em "Outras" uma linha que ela mesma marca como Exclusão — era o caso de `Exclusão de Turma`, gravada por `registros/turmas.py` (fix `1e39e23`). Censo congelado nos testes: 30 ações distintas entre `pautaon` e `pautaon_ensaio`. Ancorado em `tests/test_aj1_logs_filtro.py` (58).
 
 ### 7.30 `registro` (LEGADO)
 
@@ -2063,3 +2067,14 @@ class MinhaEntidade(SoftDeleteMixin, TenantMixin, AuditoriaMixin, db.Model):
 ### Desbloqueio de login pelo admin (Prompt D3)
 
 Rotas (blueprint auth, POST, CSRF, @login_required, UserRole.ADMIN): `/admin/login-controle/desbloquear-conta` (campo email) e `/admin/login-controle/desbloquear-ip` (campo ip). Validação com `ipaddress`. Ação zera falhas/bloqueio/nível. LogAcao acao="Desbloqueio de login" com detalhes `escopo=... chave=<8> por_usuario_id=<id> encontrado=sim|nao`. Painel lista bloqueios ativos (max 50). S1-21 resolvido: seed sem senha fixa (resolver_senha).
+
+### AJ3 — fechamento do AJ1 e do AJ2 com testes reais (31/10/2026)
+
+Execução do prompt AJ3 sobre os ajustes pontuais AJ1/AJ2. **Nenhuma migration** (head inalterada), nenhuma escrita nos bancos reais (`SELECT` somente leitura), **sem push**.
+
+- **Código de app:** nenhum comportamento novo nesta entrega. As mudanças envolvidas já vinham do AJ1 (`8598145`, `f79c964`) e do AJ2 (`f3d2b15`, `9794165`). Um defeito real apareceu ao escrever os testes — `Exclusão de Turma` fora da categoria `exclusao` — e foi corrigido em commit próprio (`1e39e23`).
+- **Testes:** os quatro arquivos que só continham `assert True` viraram testes reais — `tests/test_aj1_servico_social_relatorios.py` (13), `tests/test_aj1_logs_filtro.py` (58), `tests/test_aj2_conselho_lancamento.py` (12) e `tests/test_aj2_painel_periodo_select.py` (7). **86 testes novos**.
+- **Prova de reversão:** cada arquivo foi corrido com os arquivos de app do commit correspondente revertidos (`git checkout <hash>^ -- <arquivos>`) e restaurado em seguida (`git checkout HEAD -- <arquivos>`). O que sobrevive à reversão são apenas as asserções de **não regressão** (o que o ajuste não tocava) — tabela completa em `docs/Relatórios/AJ3_TestesFechamento.md`.
+- **Suíte:** linha de base `1222 passed, 693 warnings in 373.85s` → ao final **`1308 passed, 704 warnings in 369.78s (0:06:09)`**. `ruff check --select F821,F811,F841 app tests scripts migrations` sem achados.
+- **Docs:** este MER (§7.6 rótulo do painel, §7.20 `ROLES_RELATORIOS`, §7.25 `conselho_resposta`, §7.29 `log_acao`), `backlog_desenvolvimento.md` (AJ1/AJ2/AJ3) e o relatório `docs/Relatórios/AJ3_TestesFechamento.md`.
+- **Commits:** `d2934e5` (E1), `1e39e23` (fix E2), `410d5bc` (E2), `a4a6049` (E3), `9d935e6` (E4).
