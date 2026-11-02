@@ -314,6 +314,33 @@ def calcular_idades(alunos: List[Aluno]) -> None:
         )
 
 
+#: Nome extenso de cada mês, por chave 'MM' (seletor de pauta mensal).
+_NOMES_MESES = {
+    '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
+    '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
+    '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro',
+}
+
+
+def meses_de_datas(datas_iso) -> list:
+    """Meses (numero, nome) presentes em datas 'YYYY-MM-DD', em ordem.
+
+    Único caminho de cálculo dos meses de calendário; usado por
+    `carregar_contexto_turma` e por quem precisa recompor o seletor depois de
+    filtrar as datas por oferta (ficha da turma no escopo do professor).
+    """
+    meses, vistos = [], set()
+    for d in datas_iso:
+        mes_num = d[5:7]
+        if mes_num not in vistos:
+            meses.append({
+                'numero': mes_num,
+                'nome': _NOMES_MESES.get(mes_num, 'Mês Desconhecido'),
+            })
+            vistos.add(mes_num)
+    return meses
+
+
 def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict[str, Any]:
     """
     Retorna um dicionário de contexto para renderização da pauta de uma turma.
@@ -341,21 +368,7 @@ def carregar_contexto_turma(turma_id: int, pauta_impressa: bool = False) -> Dict
         turma, incluir_futuro=pauta_impressa, blocked_dates=blocked_dates
     )
 
-    meses_disponiveis = []
-    vistos = set()
-    nomes_meses = {
-        '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
-        '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
-        '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro',
-    }
-    for d in datas:
-        mes_num = d[5:7]
-        if mes_num not in vistos:
-            meses_disponiveis.append({
-                'numero': mes_num,
-                'nome': nomes_meses.get(mes_num, 'Mês Desconhecido'),
-            })
-            vistos.add(mes_num)
+    meses_disponiveis = meses_de_datas(datas)
 
     if turma.curso_id:
         temas = TemaAula.query.filter_by(curso_id=turma.curso_id, ativo=True).all()

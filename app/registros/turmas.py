@@ -17,6 +17,7 @@ from app.models import (
     PerfilDiversidade,
     PeriodoLetivo,
     RegistroAula,
+    TemaAula,
     Turma,
     TurmaCurso,
     User,
@@ -56,7 +57,13 @@ from app.utils.dias_semana import (
     weekday_para_nome,
 )
 from app.utils.formatters import formatar_ch
-from app.utils.logica import _blocked_dates_str, carregar_contexto_turma, get_unidade_id
+from app.utils.logica import (
+    _blocked_dates_str,
+    calcular_idades,
+    carregar_contexto_turma,
+    get_unidade_id,
+    meses_de_datas,
+)
 from app.utils.timezone import get_local_now
 from app.services.auth_service import register_security_log
 
@@ -1496,6 +1503,75 @@ def ver_turma(id):
         .all()
     ):
         alunos_por_oferta.setdefault(inscricao.turma_curso_id, []).append(inscricao)
+
+    # AJ6-B3 (decisão 1): para o professor a ficha é a da SUA oferta. A régua de
+    # entrada acima (adesão: leciona alguma oferta ativa da turma) fica
+    # inalterada; o que sai do payload/HTML passa a ser restrito às ofertas que
+    # ele pode acessar — pela REGRA ÚNICA `ofertas_do_professor` (que envolve
+    # `professor_pode_acessar_oferta`), sem duplicar a checagem aqui. Demais
+    # perfis seguem vendo a turma inteira (guarda de papel + unidade).
+    if current_user.role == UserRole.PROFESSOR:
+        from app.services.aluno_info_professor import ofertas_do_professor
+
+        ids_do_professor = [o.id for o in ofertas_do_professor(current_user, ofertas_todas)]
+        ativos_do_professor = {o.id for o in ofertas_do_professor(current_user, ofertas_lista)}
+        grade_oferta_map = {
+            chave: valor for chave, valor in grade_oferta_map.items()
+            if chave in ids_do_professor
+        }
+        alunos_disponiveis = []
+        alunos_ativos_count = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id == id,
+                Inscricao.ativo.is_(True),
+                Aluno.ativo.is_(True),
+                Inscricao.turma_curso_id.in_(ids_do_professor or [-1]),
+            )
+            .distinct()
+            .count()
+        )
+        ctx["alunos"] = (
+            Aluno.query.join(Inscricao)
+            .filter(
+                Inscricao.turma_id == id,
+                Inscricao.ativo.is_(True),
+                Aluno.ativo.is_(True),
+                Inscricao.turma_curso_id.in_(ids_do_professor or [-1]),
+            )
+            .order_by(Aluno.nome)
+            .all()
+        )
+        calcular_idades(ctx["alunos"])
+        # Agenda e seletor de mês só das ofertas dele (vigência e dias próprios).
+        datas_professor = sorted({
+            data_aula.strftime("%Y-%m-%d")
+            for oferta in ofertas_lista
+            if oferta.id in ativos_do_professor
+            for data_aula in datas_aula_oferta(
+                oferta, blocked=_blocked_dates_str(turma_obj),
+            )
+        })
+        ctx["datas"] = datas_professor
+        ctx["meses"] = meses_de_datas(datas_professor)
+        cursos_do_professor = {
+            o.curso_id for o in ofertas_todas if o.id in ids_do_professor
+        }
+        ctx["temas"] = (
+            TemaAula.query.filter(
+                TemaAula.curso_id.in_(cursos_do_professor or [-1]),
+                TemaAula.ativo.is_(True),
+            ).all()
+        )
+        ofertas_todas = [o for o in ofertas_todas if o.id in ids_do_professor]
+        ofertas_lista = [o for o in ofertas_lista if o.id in ativos_do_professor]
+        if oferta_sel is not None and oferta_sel.id not in ativos_do_professor:
+            oferta_sel = None
+        alunos_por_oferta = {
+            chave: valor for chave, valor in alunos_por_oferta.items()
+            if chave in ids_do_professor
+        }
+
     return render_template(
         "turmas/detalhe.html",
         alunos_sem_turma=alunos_disponiveis,

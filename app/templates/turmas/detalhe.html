@@ -106,7 +106,7 @@
   {% if ofertas_todas %}
   <div class="row row-cols-1 row-cols-lg-2 g-3">
     {% for oferta in ofertas_todas %}
-    {% set professor_oferta = oferta.professor or turma.professor %}
+    {% set professor_oferta = oferta.professor %}
     {% set turno_oferta = oferta.turno or turma.turno %}
     {# H3d: dias e horários vêm da GRADE da oferta (uniforme ou por dia). #}
     {% set grade_oferta = grade_oferta_map.get(oferta.id) %}
@@ -387,7 +387,14 @@
      parâmetro (a rota usa direto); com 2+ aproveita a oferta já selecionada
      na página (?oferta_sel=) e sem seleção a própria página de lançamento
      pede a escolha. #}
-  {% set conselho_oferta = oferta_sel or (ofertas[0] if ofertas and ofertas|length == 1 else none) %}
+  {# AJ6-B3: para o professor a oferta do link sai das ofertas DELE (não da
+     lista da turma), para nunca apontar ?oferta_sel= para oferta alheia. #}
+  {% if current_user.role == 'professor' %}
+  {% set conselho_base = ofertas_do_professor %}
+  {% else %}
+  {% set conselho_base = ofertas %}
+  {% endif %}
+  {% set conselho_oferta = oferta_sel or (conselho_base[0] if conselho_base|length == 1 else none) %}
   {% set conselho_sufixo = '&oferta_sel=' ~ conselho_oferta.id if conselho_oferta else '' %}
   <div class="dropdown">
     <button class="btn btn-info dropdown-toggle fw-bold" type="button" data-bs-toggle="dropdown">
