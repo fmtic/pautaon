@@ -1,13 +1,18 @@
-# AJ6-B3 — snapshot comparável do HTML de /turma/<id> para perfis NÃO-professor.
-# Roda como teste (usa o fixture hoje_fixo para determinístico) e só escreve os
-# arquivos quando AJ6B3_SNAP=antes|depois. A normalização derruba `class="..."`,
-# csrf e ruído de whitespace: compara a ESTRUTURA/CONTEÚDO, não a maquete.
+# AJ6-B3 (conversão AJ6-B4) — snapshot golden do HTML de /turma/<id> para
+# perfis NÃO-professor. Antes era um script manual com `skipif` (só escrevia
+# arquivos sob AJ6B3_SNAP e nunca asseria): agora é um teste que RODA sempre e
+# compara a estrutura normalizada contra o snapshot canônico em
+# `tests/snapshots/`. A normalização derruba `class="..."`, csrf e whitespace,
+# então compara ESTRUTURA/CONTEÚDO (não a maquete). Se o HTML de um perfil
+# não-professor mudar, o teste falha — que é exatamente o que se quer de um
+# snapshot de não-regressão.
 #
-#   $env:AJ6B3_SNAP="antes";  pytest tests/test_aj6b3_snapshot_nao_professor.py -q
-#   $env:AJ6B3_SNAP="depois"; pytest tests/test_aj6b3_snapshot_nao_professor.py -q
-#   fc /l .tmp\aj6b3_snap_antes\admin_t1.html .tmp\aj6b3_snap_depois\admin_t1.html
+#   pytest tests/test_aj6b3_snapshot_nao_professor.py -q            # confere
+#   $env:AJ6B4_ATUALIZAR_SNAPSHOTS="1"; pytest tests/test_aj6b3_snapshot_nao_professor.py -q
+#       (regenera os snapshots; usar só quando a mudança de saída for intencional)
 import os
 import re
+from pathlib import Path
 
 import pytest
 from _helpers import login_as
@@ -16,6 +21,9 @@ from test_aj6b2_auditoria_ofertas import _setup
 from app import db
 from app.models import Unidade, User
 
+PASTA_SNAPSHOTS = Path(__file__).resolve().parent / "snapshots"
+ATUALIZAR_SNAPSHOTS = os.environ.get("AJ6B4_ATUALIZAR_SNAPSHOTS") == "1"
+
 PERFIS = ("admin", "pedagogico", "secretaria", "gerencia", "servico_social")
 
 
@@ -23,8 +31,8 @@ def _normaliza(html: str) -> str:
     """Estrutura sem classes: remove class=, csrf/tokens e colapsa espaço.
 
     Os tokens (campo oculto csrf_token e a meta de mesmo nome) nascem por
-    sessio e variam entre execucoes; sem derruba-los os snapshots nunca
-    seriam iguais. Nada mais do HTML e tocado.
+    sessão e variam entre execuções; sem derrubá-los os snapshots nunca seriam
+    iguais. Nada mais do HTML é tocado.
     """
     sem_classes = re.sub(r'\s+class="[^"]*"', "", html)
     sem_csrf = re.sub(
@@ -62,16 +70,39 @@ def _perfis_nao_professor(app, ids):
     return novos
 
 
-@pytest.mark.skipif(
-    os.environ.get("AJ6B3_SNAP") not in ("antes", "depois"),
-    reason="snapshot manual: exigir AJ6B3_SNAP=antes|depois",
-)
+def _confrontar(nome, atual):
+    caminho = PASTA_SNAPSHOTS / nome
+    if ATUALIZAR_SNAPSHOTS:
+        PASTA_SNAPSHOTS.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(atual, encoding="utf-8")
+        return
+    assert caminho.exists(), (
+        f"snapshot {nome} ausente — gere com AJ6B4_ATUALIZAR_SNAPSHOTS=1"
+    )
+    esperado = caminho.read_text(encoding="utf-8")
+    if atual != esperado:
+        for i, (ln_a, ln_b) in enumerate(
+            zip(atual.splitlines(), esperado.splitlines())
+        ):
+            if ln_a != ln_b:
+                pytest.fail(
+                    f"{nome}: primeira diferença na linha {i + 1}:\n"
+                    f"  atual:    {ln_a[:200]!r}\n"
+                    f"  snapshot: {ln_b[:200]!r}"
+                )
+        pytest.fail(
+            f"{nome}: comprimento diferente "
+            f"(atual {len(atual)} vs snapshot {len(esperado)} chars)"
+        )
+
+
 def test_snapshot_ver_turma_nao_professor(app, client, hoje_fixo):
-    rotulo = os.environ["AJ6B3_SNAP"]
+    """Roda SEMPRE: para cada perfil não-professor e cada turma da semente, o
+    HTML normalizado de /turma/<id> deve bater com o snapshot canônico. Prova
+    que a saída não-professor é idêntica antes/depois das correções AJ6-B4
+    (item 4: /turma intocado; demais perfis inalterados em 1/2/3)."""
     ids = _setup(app)
     perfis = _perfis_nao_professor(app, ids)
-    pasta = os.path.join(".tmp", f"aj6b3_snap_{rotulo}")
-    os.makedirs(pasta, exist_ok=True)
     marcadores = []
     for role, user_id in perfis.items():
         login_as(client, user_id, ids["un"])
@@ -81,6 +112,4 @@ def test_snapshot_ver_turma_nao_professor(app, client, hoje_fixo):
             marcadores.append(f"{role}/{turma}={r.status_code}@{destino}")
             assert r.status_code == 200, " | ".join(marcadores)
             corpo = _normaliza(r.get_data(as_text=True))
-            with open(os.path.join(pasta, f"{role}_{turma}.html"), "w",
-                      encoding="utf-8") as f:
-                f.write(corpo)
+            _confrontar(f"aj6b3_{role}_{turma}.txt", corpo)
