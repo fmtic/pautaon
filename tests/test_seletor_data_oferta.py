@@ -21,6 +21,7 @@ Reaproveita a semente e os helpers de `test_v3a_datas_lancadas`.
 import re
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import event
 
 from _helpers import login_as
@@ -28,6 +29,15 @@ from _helpers import login_as
 from app import db
 from app.models import TurmaCurso
 from test_v3a_datas_lancadas import HOJE, _abrev, _br, _datas_ate_hoje, _get, _iso, _lancar_direto, _seed
+
+# AJ6-A: o seletor "Data da Aula" usa `get_local_now().date()` como limite
+# (`app/registros/core.py`), então estas provas só são determinísticas com o
+# relógio do app congelado no dia de referência (`hoje_fixo`) — sem ele, num
+# dia de aula real dentro da vigência, o seletor ganha uma data a mais e as
+# comparações com `_datas_ate_hoje` (ancorado em `hoje_ref()`) divergem. A
+# suíte `test_v3a_datas_lancadas`, da qual os helpers são importados, já usa
+# este fixture; o arquivo do seletor tinha ficado sem.
+pytestmark = pytest.mark.usefixtures("hoje_fixo")
 
 
 def _opcoes_seletor(html):
