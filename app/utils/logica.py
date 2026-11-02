@@ -49,12 +49,11 @@ from app.models import (
 from app.models.enums import (
     ConceitoFrequencia,
     CONCEITOS_PRESENCA,
-    CONCEITOS_CONTABEIS,
     UserRole,
 )
 from app.utils.autor import autor_do_lancamento
 from app.utils.datetime_parse import parse_date
-from app.utils.timezone import get_local_now
+from app.utils.timezone import get_local_now  # noqa: F401
 from app.services.turma_curso import resolver_oferta_lancamento
 
 
@@ -743,6 +742,8 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 turma_id=turma_id, data=data_alvo, turma_curso_id=None
             ).first()
         if registro:
+            if registro.unidade_id is None and valor_unidade_id is not None:
+                registro.unidade_id = valor_unidade_id
             registro.observacoes = texto_observacoes
             registro.atividades = texto_atividades
             registro.tema_id = tema_id  # compatibilidade com leitores legados
@@ -757,6 +758,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                 observacoes=texto_observacoes,
                 atividades=texto_atividades,
                 instrutor_id=current_user.id,
+                unidade_id=valor_unidade_id,
             )
             registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             db.session.add(registro)
@@ -772,13 +774,17 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                     data=data_alvo,
                     autor_id=autor_id,
                     autor_nome=autor_nome,
+                    unidade_id=valor_unidade_id,
                 )
                 db.session.add(freq)
-            elif freq.conceito != conceito:
-                # F1: o autor é o último que MUDOU o conceito; regravar o
-                # mesmo valor não troca o autor.
-                freq.autor_id = autor_id
-                freq.autor_nome = autor_nome
+            else:
+                if freq.unidade_id is None and valor_unidade_id is not None:
+                    freq.unidade_id = valor_unidade_id
+                if freq.conceito != conceito:
+                    # F1: o autor é o último que MUDOU o conceito; regravar o
+                    # mesmo valor não troca o autor.
+                    freq.autor_id = autor_id
+                    freq.autor_nome = autor_nome
             freq.conceito = conceito
             # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
             # sem tocar em nenhuma outra coluna.
@@ -975,7 +981,7 @@ def calcular_frequencias_relatorio(
         # D3b.4a: UMA consulta agregada para todas as turmas (sem N+1);
         # turmas sem frequência ficam com 0.0 (como antes).
         agregado_turmas = agregar_por_turma(
-            [t.id for t in todas_as_turmas], unidade_id=unidade_id
+            [t.id for t in todas_as_turmas]
         )
         for t in todas_as_turmas:
             info = agregado_turmas.get(t.id)
@@ -1003,7 +1009,7 @@ def calcular_frequencias_relatorio(
         ofertas_por_prof.setdefault(prof_rel, []).append(oferta_id)
 
     for prof_rel, ids in ofertas_por_prof.items():
-        agregado = agregar_por_oferta(ids, unidade_id=unidade_id)
+        agregado = agregar_por_oferta(ids)
         presentes = sum(info.presentes for info in agregado.values())
         faltas = sum(info.faltas for info in agregado.values())
         if presentes + faltas > 0:
