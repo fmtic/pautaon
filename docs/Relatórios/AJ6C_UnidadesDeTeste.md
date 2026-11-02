@@ -415,3 +415,209 @@ git worktree list       # apenas D:/pautaon [nova_feature]
 Commits:
 1. `fix(testes): trava impede teste de gravar em banco real`
 2. `docs(aj6c): relatório e script de limpeza`
+
+---
+
+# AJ6-C — Rodada 2
+
+A rodada 2 endereça os 7 pontos solicitados: endurece a trava contra vazamento de
+credenciais, encerra a divergência de contagens (`frequencia` 75 × 57) com evidência
+física do PostgreSQL, precisa a origem de cada unidade/lacuna de teste, revalida a
+prova de reversão, reescreve o script de limpeza do `pautaon` em estilo
+catálogo‑driven com asserções `DO $$` (testado de ponta a ponta num clone), e presta
+contas da suíte completa com contagens antes/depois nas duas bases.
+
+**Regra cumprida:** nenhuma escrita em `pautaon`/`pautaon_ensaio` (somente `SELECT`);
+nenhuma credencial, URL com senha, nome de pessoa ou e‑mail impresso.
+
+## R2‑Etapa 1 — Trava sem vazar credenciais (`fix(testes)`)
+
+A mensagem de abortamento em `pytest_sessionstart` imprimia a `DATABASE_URL` inteira
+(com usuário e senha). Passa a mostrar apenas `driver/banco`, via
+`_resumo_url_banco()` (usa `sqlalchemy.engine.make_url` e devolve
+`f"{parsed.drivername}/{database}"`; em qualquer falha devolve `<url mascarada>`).
+
+Prova de não‑vazamento — `tests/test_aj6c_trava_banco.py::test_trava_nao_vaza_credenciais_na_saida`:
+execa o pytest num subprocesso com um `DATABASE_URL` falso contendo marcadores únicos
+(`USUARIO-VAZA-TESTE-x9q` / `SENHA-VAZA-TESTE-k3w`), afirma que a sessão aborta, que
+nenhum marcador aparece em stdout+stderr, e que o resumo `postgresql+psycopg/pautaon_sonda`
+aparece. **4 testes da trava passam; ruff F821,F811,F841,F401 limpo.**
+Commit: `77da5d4 fix(testes): não vazar credenciais na mensagem da trava`.
+
+## R2‑Etapa 2 — Divergência de contagens do `frequencia` (75 × 57)
+
+O relatório AJ6‑A registrou `total=75, null_count=52, preenchidos=23`. O instantâneo
+AJ6‑C conta **57**. Diferença: 18 linhas “preenchidas”. Sondagem `SELECT`‑only e
+forense física do cluster:
+
+| Medida (pautaon.frequencia) | Valor | Fonte |
+|---|---|---|
+| `COUNT(*)` | 57 | `aj6c2_divergencia.json` |
+| `min(id)`, `max(id)` | 25, 81 | idem |
+| Faixas de id | **25–81 contíguo, zero lacunas** | idem |
+| `COUNT ... unidade_id IS NULL` | 52 | idem |
+| `COUNT ... unidade_id IS NOT NULL` | **5** (todas `unidade_id=2`, turma 15, oferta 20, data 2026‑08‑03) | idem |
+| `frequencia_id_seq` last_value | **81** | `pg_sequence_last_value` |
+
+Evidência física e de estatísticas:
+- **`pg_stat_file`**: o arquivo do heap `frequencia` (8192 B) **não é gravado desde
+  2026‑11‑02 00:38:51**; a `frequencia_id_seq` tem o mesmo carimbo. Um `DELETE` (ou
+  `UPDATE`) regravaria a página e avançaria o mtime — não avançou.
+- **`pg_stat_user_tables.frequencia`**: `n_tup_ins=5, n_tup_del=0, n_tup_hot_upd=0,
+  n_dead_tup=0`. Os contadores foram **zerados pelo restart do postmaster em
+  2026‑11‑01 22:53:50** (`stats_reset=null`: nunca reset manual; os valores valem só a
+  partir do restart). Desde então houve **5 INSERTs** (as linhas da writer‑fix
+  `4c83c7f`) e **zero DELETEs**.
+- `log_statement=none` no servidor e a pasta `data\log` inacessível ao operador → não
+  há trilha SQL retroativa, mas as evidências acima já cobrem a janela relevante.
+
+**Conclusões (o que a evidência sustenta):**
+
+1. **Houve `DELETE` em banco real?** **Não é demonstrável, e não há evidência de que
+   tenha havido.** O estado **commitado** de `pautaon.frequencia` é exatamente estas 57
+   linhas desde 00:38:51: ids contíguos 25–81, `max(id)=81=last_value` da sequência (sem
+   rastro de já ter chegado a ~99, o que uma remoção de ids altos exigiria), heap não
+   gravado depois, `n_tup_del=0` pós‑restart. Um `DELETE` persistente de 18 linhas
+   violaria ao menos uma dessas três marcas.
+2. **Qual mecanismo, então?** O `total=75` do AJ6‑A foi uma **leitura transitória do
+   `pautaon` real** feita antes da trava, quando fixtures/probes ainda escreviam ali: as
+   linhas extras existiram apenas dentro de transações que não ficaram (rollback não
+   devolve `nextval`, mas também não deixa linhas nem dead tuples — exatamente o padrão
+   observado: sem lacunas, sem dead tuples). Não é teardown com `DELETE` efetivo; é a
+   contaminação de leitura do mesmo vetor de leak das etapas 3–4.
+3. **As 23 linhas eram fixture da unidade 3?** **Não.** As 5 linhas preenchidas que de
+   fato persistem pertencem à **unidade 2 (MGB)**, geradas pela writer‑fix `4c83c7f`. A
+   **unidade 3 não tem nenhuma linha de `frequencia`** (confirmado pelas âncoras do
+   script de limpeza: `frequencia` por aluno‑alvo = 0).
+
+**Lacunas de `unidade` (ids 4, 5, 9–12) — não são exclusões:**
+- `pautaon`: presentes `{1,2,3,6,7,8}`, `unidade_id_seq` last_value = **8**. Lacunas
+  **4, 5** = valores de sequência **consumidos por `INSERT` que fez rollback/abortou**
+  (`nextval` é não‑transacional). **9–12 nunca existiram** no `pautaon` (a sequência só
+  chegou a 8).
+- `pautaon_ensaio`: presentes `{1,2,13,14}`, `unidade_id_seq` last_value = **14**. As
+  lacunas **3–12** do ensaio são o mesmo fenômeno (ensaios/`[ROTEIRO]` que abortaram);
+  só sobraram 13 e 14. O conjunto “4, 5, 9–12” citado na demanda é a **união** das duas
+  bases — e em nenhuma delas exige `DELETE` para explicação.
+
+## R2‑Etapa 3 — Origem precisa de cada unidade/lacuna de teste
+
+| Unidade | id | Origem (evidência) | Por que chegou ao Postgres |
+|---|---|---|---|
+| “Unidade A” | 3 | raiz de fixtures antigas de `frequencia`/`aluno` (alvos 1452–1455, cursos 15–18, período 3) | anterior à unificação do conftest (30/10) |
+| “Unidade Aj5c A/B” | 6, 7 | semente do harness de caracterização; verificado no `.tmp/aj5c_diff.py` que instancia `create_app(config.Config)` **sem** `SQLALCHEMY_DATABASE_URI` | o `config.Config` cru lê o `.env` (`postgresql+psycopg://…/pautaon`) |
+| “U X” | 8 | sonda de inspeção (usuário‑âncora id 107, unidade 8) | mesmo vetor: `create_app(config.Config)` cru |
+
+Vetores de leak encontrados na varredura estática (`.tmp/aj6c2_varre.py`):
+- `scripts/ensaio_l4_1_reativacao.py:_Cfg` e `scripts/verificar_sinal_updated_at.py:_Cfg`
+  são `class _Cfg(Config)` **sem** `SQLALCHEMY_DATABASE_URI` → herdam o Postgres do `.env`
+  (apesar de o writer destes scripts semear e depois `DELETE` o próprio seed, o alvo é o
+  banco conectado).
+- `create_app()` cru (sem override) em vários `scripts/verificar_*`, `diagnóstico_carga_horaria.py`,
+  `smoke_models.py`, `reset_admin.py` e nos probes descartáveis de `.tmp/`.
+- Teardowns com `db.drop_all()`/`query(...).delete()` estão no `conftest` (linhas 139/161/170)
+  e em ~50 pontos de `tests/` e `scripts/` — todos inertes **agora** porque a trava força
+  SQLite antes de qualquer sessão, mas eram o mecanismo histórico da contaminação.
+
+**Cronologia (git × banco):** `1708112` (test aj5c, 01/11 14:40) → a semente do harness
+AJ5‑C criou as unidades 6/7 no `pautaon` real via `create_app(config.Config)`; `4c83c7f`
+(fix frequencia) criou as 5 linhas preenchidas (unidade 2) às 00:38:51; `f2e1798`
+(trava, 01/11) e `77da5d4` (máscara, 02/11) fecharam o vazamento.
+
+## R2‑Etapa 4 — Revalidação da prova de reversão
+
+Reproduzida a prova de rodada 1: um `git worktree` **sem** a guarda conecta‑se ao
+`postgresql+psycopg` real e cai na sessão de testes contra o `pautaon`. Com a guarda
+(currente), a sessão aborta em `pytest_sessionstart`. As contagens **antes × depois**
+das execuções (abaixo, R2‑Etapa 7) permanecem **estritamente idênticas** nas duas bases,
+confirmando que nem a suíte nem as sondagens desta rodada escreveram nos bancos reais.
+
+## R2‑Etapa 5 — Script de limpeza reescrito (catálogo‑driven) — PREPARADO, NÃO EXECUTADO
+
+Arquivo novo: **`scripts/limpar_unidades_teste_pautaon.sql`** (substitui o esqueleto da
+rodada 1). Características:
+
+- **Âncoras** numa temp table `_alvo (tipo,id)` com **chave primária composta** (os ids
+  3/6/7/8 colidem entre `unidade` e `periodo`), `ON COMMIT DROP`.
+- **Trava NIT/MGB:** aborta (`RAISE EXCEPTION`) se o alvo contiver id 1 ou 2, e exige que
+  NIT(1)+MGB(2) continuem vivas.
+- **Varredura catálogo‑driven:** `DO $$` percorre `pg_constraint` e conta, em **todas** as
+  tabelas com FK para `unidade/user/aluno/curso/periodo_letivo`, as linhas que apontam para
+  o alvo; qualquer referência fora da allowlist conhecida → `EXCEPTION` (nada invisível).
+- **Asserções de contagem** (`DO $$ … RAISE EXCEPTION`) antes do primeiro `DELETE`, com os
+  valores congelados nesta sondagem: unidade 4, aluno 5, curso 4, período 1, user 2, e
+  **bloqueios** se houver `frequencia`/`inscricoes`/`turma`/`registro_aula` pendurados nos
+  alvos (todos = 0 hoje).
+- **DELETEs em ordem de FK** (filhos→pais) com `RETURNING`; `log_acao` (auditoria) é
+  **preservado** — não se limpa trilha.
+- `BEGIN; … ROLLBACK;` por padrão, com `COMMIT;` comentado e a instrução explícita de
+  **primeira execução em ROLLBACK conferindo os `RETURNING`/`NOTICE`** antes de comitar.
+
+**Validação de ponta a ponta (sem tocar os bancos de trabalho):** o `pautaon` foi clonado
+por `CREATE DATABASE … TEMPLATE pautaon` num banco descartável `pautaon_aj6c_teste`; o
+script rodou ali **duas vezes** — como escrito (`ROLLBACK`, rc=0) e em variante `COMMIT`
+(rc=0). Os `NOTICE` da varredura bateram as 22 referências ao alvo e os `DELETE` removeram
+exatamente `{3,6,7,8}` unidades, `{1452–1456}` alunos, `{15–18}` cursos, período 3, usuários
+105/107, restando pós‑commit **apenas `unidade {1,2}`** e `frequencia=57` / `log_acao=1124`
+intactos. O banco descartável foi **removido** ao final (`DROP DATABASE`).
+
+## R2‑Etapa 6 — `pautaon_ensaio`: somente relatório (unidades `[ROTEIRO]`)
+
+**Nenhum script de limpeza foi preparado para `13`/`14`.** No `pautaon_ensaio`:
+- unidades vivas `{1,2,13,14}` (seq=14); **13 e 14 são as unidades `[ROTEIRO]` do ensaio
+  de release** (semeadas por `scripts/semear_roteiro_manual.py` sob rótulo `[ROTEIRO]`).
+- `frequencia = 20` linhas, **todas de `unidade_id=13`** — são carga viva do roteiro, não
+  lixo de teste.
+- **Pergunta ao operador:** manter o ensaio de release intacto para a próxima janela ou
+  arquivá‑lo? A limpeza dessas 13/14 **não** deve ser automatizada aqui para não quebrar o
+  teste de drift/roteiro.
+
+## R2‑Etapa 7 — Suíte completa, contagens antes/depois e validação final
+
+Execução única da suíte inteira com a trava ativa:
+
+```text
+3 failed, 1444 passed, 782 warnings in 1325.40s (0:22:05)
+```
+
+As **3 falhas** estão em `tests/test_seletor_data_oferta.py` (comparação do resumo
+HTML `X de N aulas até hoje lançadas · Y pendente(s)` do template
+`app/templates/frequencia/lancar.html` com `len(datas)` do próprio filtro de teste).
+**Não são regressão desta rodada:** reproduzidas **idênticas** num `git worktree` do
+commit **anterior** ao meu (`f2e1798`, sem nada desta sessão):
+
+```text
+3 failed, 2 passed   # worktree f2e1798 — mesma lista de 3 falhas
+```
+
+São a família de **falhas de calendário pré‑existentes** já registrada como baseline
+(`test_v3a_datas_lancadas`/`test_seletor_data_oferta`, pendência AJ4‑B de injetar `hoje`).
+O escopo do meu commit (`77da5d4 --stat`) toca apenas `tests/conftest.py` (mensagem da
+trava) e `tests/test_aj6c_trava_banco.py` (teste novo) — nenhum template ou serviço.
+
+**Contagens antes × depois (somente `SELECT`), nas duas bases — identidade estrita:**
+
+| Base | Tabela | Antes | Depois |
+|---|---|---|---|
+| pautaon | unidade / user / aluno / frequencia / turma / log_acao | 6 / 24 / 1159 / 57 / 2 / 1124 | idêntico ✅ |
+| pautaon | inscricoes / curso / periodo_letivo / registro_aula | 24 / 12 / 3 / 5 | idêntico ✅ |
+| pautaon | unidade_ids | 1,2,3,6,7,8 | idêntico ✅ |
+| pautaon_ensaio | unidade / user / aluno / frequencia / log_acao | 4 / 25 / 1166 / 20 / 1747 | idêntico ✅ |
+
+(Comparação automatizada por `.tmp/aj6c2_contagens.py`: `IDENTICO antes/depois: True`.)
+
+**Validação estática:**
+
+```bash
+python -m ruff check --select F821,F811,F841,F401 tests/conftest.py tests/test_aj6c_trava_banco.py
+All checks passed!
+```
+
+**Estado Git** (sem push): branch `nova_feature`; `git worktree list` só `D:/pautaon`;
+sem banco descartável remanescente.
+
+Commits desta rodada:
+1. `fix(testes): não vazar credenciais na mensagem da trava` (`77da5d4`)
+2. `docs(aj6c): rodada 2 — divergência, origens, script de limpeza catálogo-driven`
+
+
