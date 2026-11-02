@@ -203,10 +203,8 @@ def montar(periodo: PeriodoLetivo, unidade_id: int | None) -> dict:
         Turma.query.filter_by(periodo_letivo_id=periodo.id, ativo=True)
         .options(joinedload(Turma.professor))
         .order_by(Turma.nome)
+        .all()
     )
-    if unidade_id is not None:
-        turmas = turmas.filter_by(unidade_id=unidade_id)
-    turmas = turmas.all()
     turmas_ids = [t.id for t in turmas]
     semanas = semanas_do_periodo(periodo)
 
