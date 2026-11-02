@@ -185,7 +185,7 @@ subitem AJ6-A "migrar as 3 falhas de `test_seletor_data_oferta.py` para
   e `test_v3a_imprimir_coerente.py`).
 - `160ab51` — `fix(autorizacao): professor so acessa suas ofertas`
   (`aluno_info_professor.py`, `core.py`, `turmas.py`).
-- `4af87c7` — `docs(aj6b): relatorio de autorizacao do professor por oferta`.
+- `797c5ce` — `docs(aj6b): relatorio de autorizacao do professor por oferta`.
 
 Branch `nova_feature`, sem push. Suíte completa pós-fix: **3 failed / 1465
 passed**; as 3 falhas são as pré-existentes de `test_seletor_data_oferta.py`
