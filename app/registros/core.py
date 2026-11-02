@@ -517,6 +517,16 @@ def frequencia():
         if exigir_escolha:
             ctx['alunos'] = []
             ctx['temas'] = []
+            # AJ6-B4: só para o PROFESSOR. Sem curso escolhido, o calendário da
+            # turma é a união de TODAS as ofertas (inclusive as que ele não
+            # leciona) e poderia nascer link de pauta sem turma_curso (403).
+            # Zerar datas/meses fecha isso; o seletor de oferta continua e
+            # escolher o curso reabre o calendário da oferta. Admin/pedagógico
+            # etc. mantêm a união da turma (a rota deles não vaza oferta alheia;
+            # comportamento V3a inalterado).
+            if current_user.role == UserRole.PROFESSOR:
+                ctx['datas'] = []
+                ctx['meses'] = []
         elif oferta_atual is not None:
             # Pauta da oferta: inscrição sempre apontada para a oferta
             # (Inscricao.turma_curso_id NOT NULL desde a Onda 4). Temas são os

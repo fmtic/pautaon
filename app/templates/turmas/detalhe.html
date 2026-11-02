@@ -10,8 +10,14 @@
     <div class="col-md-6">
       <p class="mb-1"><strong>Curso principal:</strong> {{ turma.programa or 'Não definido' }}</p>
     </div>
-    <div class="col-md-6">
+   <div class="col-md-6">
+      {# AJ6-B4: o centro de custo compartilhado vem da oferta principal. Para o
+      professor, quando essa oferta não é dele, o campo é ocultado por completo
+      (nem "Não definido", que revelaria que existe uma oferta de outro com CC).
+      Demais perfis: `oferta_principal_do_professor` é True → saída inalterada. #}
+      {% if oferta_principal_do_professor %}
       <p class="mb-1"><strong>Centro de custo compartilhado:</strong> {{ oferta_principal.centro_custo if oferta_principal and oferta_principal.centro_custo else 'Não definido' }}</p>
+      {% endif %}
     </div>
   </div>
 </div>

@@ -1390,6 +1390,7 @@ def ver_turma(id):
     from app.services.aluno_info_professor import (
         professor_da_oferta,
         professor_de_alguma_oferta_ativa,
+        professor_pode_acessar_oferta,
     )
 
     unidade_id = get_unidade_id()
@@ -1425,6 +1426,14 @@ def ver_turma(id):
     oferta_principal = next(
         (oferta for oferta in ofertas_lista if oferta.principal),
         ofertas_lista[0] if len(ofertas_lista) == 1 else None,
+    )
+    # AJ6-B4: "centro de custo compartilhado" do topo da ficha vem da oferta
+    # PRINCIPAL. Para o professor, se essa oferta não é dele (é de outro), o
+    # campo não pode ser mostrado nem como "Não definido" — revela que há uma
+    # oferta com centro de custo que ele não leciona. REGRA ÚNICA
+    # `professor_pode_acessar_oferta` (demais perfis sempre True: inalterado).
+    oferta_principal_do_professor = professor_pode_acessar_oferta(
+        current_user, oferta_principal
     )
     ofertas_todas.sort(
         key=lambda oferta: (
@@ -1580,6 +1589,7 @@ def ver_turma(id):
         ofertas=ofertas_lista,
         ofertas_todas=ofertas_todas,
         oferta_principal=oferta_principal,
+        oferta_principal_do_professor=oferta_principal_do_professor,
         oferta_sel=oferta_sel,
         alunos_por_oferta=alunos_por_oferta,
         grade_oferta_map=grade_oferta_map,

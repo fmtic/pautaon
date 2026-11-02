@@ -1049,6 +1049,25 @@ def historico_aluno(aluno_id):
         .filter_by(aluno_id=aluno_id)
         .all()
     )
+    # AJ6-B4: o professor só vê, no histórico, as inscrições em OFERTAS dele —
+    # REGRA ÚNICA `ofertas_do_professor` (envolve `professor_pode_acessar_oferta`),
+    # sem nova predicação. A adesão acima (qualquer oferta ativa dele) continua;
+    # o que sai da lista são as inscrições em ofertas alheias (outra turma,
+    # outro professor). Demais perfis: lista inteira, guarda de role + unidade.
+    if current_user.role == UserRole.PROFESSOR:
+        from app.services.aluno_info_professor import ofertas_do_professor
+
+        ofertas_dele = {
+            o.id
+            for o in ofertas_do_professor(
+                current_user,
+                {insc.turma_curso for insc in inscricoes if insc.turma_curso is not None},
+            )
+        }
+        inscricoes = [
+            insc for insc in inscricoes
+            if insc.turma_curso_id is not None and insc.turma_curso_id in ofertas_dele
+        ]
     conselhos = conselhos_por_oferta(
         (insc.aluno_id, insc.turma_curso_id) for insc in inscricoes
     )
