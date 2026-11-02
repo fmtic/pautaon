@@ -388,7 +388,13 @@
   {% endif %}</script>
 
 <div class="mt-4 d-flex gap-2">
+  {# AJ6-B5: o professor não acessa a lista /turma (403), então o "Voltar" da ficha
+gera para o painel (origem do professor). Demais perfis voltam à lista. #}
+  {% if current_user.role == 'professor' %}
+  <a href="{{ url_for('main.painel') }}" class="btn btn-secondary">Voltar</a>
+  {% else %}
   <a href="/turma" class="btn btn-secondary">Voltar</a>
+  {% endif %}
   {# D5.2: conselho é por OFERTA — com 1 oferta ativa o link dispensa o
      parâmetro (a rota usa direto); com 2+ aproveita a oferta já selecionada
      na página (?oferta_sel=) e sem seleção a própria página de lançamento

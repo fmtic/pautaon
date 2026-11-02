@@ -718,8 +718,13 @@ def pos_filtrar_turmas(turmas, args):
 @bp.route("/turma")
 @login_required
 def turma():
+    # AJ6-B5 (REGRA DO RESPONSÁVEL): a LISTA de turmas é exclusiva dos perfis
+    # gestores. O professor NUNCA acessa a lista — ele entra nas ofertas dele pelo
+    # painel/ficha, via REGRA ÚNICA de autorização por oferta (AJ6-B3/B4), sem
+    # predicação nova. `servico_social` já não estava aqui (inalterado); só o
+    # professor perde acesso em relação ao estado anterior. Ver docs/Relatórios.
     if current_user.role not in [
-        "admin", "pedagogico", "secretaria", "gerencia", "professor",
+        "admin", "pedagogico", "secretaria", "gerencia",
     ]:
         abort(403)
 
@@ -932,7 +937,7 @@ def turma():
 def imprimir_centros_custo_turmas():
     """Imprime centros, turmas e ofertas ativas, respeitando os filtros recebidos."""
     if current_user.role not in [
-        "admin", "pedagogico", "secretaria", "gerencia", "professor",
+        "admin", "pedagogico", "secretaria", "gerencia",
     ]:
         abort(403)
 
@@ -1450,6 +1455,10 @@ def ver_turma(id):
             "O contexto da turma contém erros e não pode ser gerado. Reporte ao Suporte.",
             "danger",
         )
+        # AJ6-B5: o professor não acessa a lista /turma (403); na falha de contexto
+        # devolva-o ao painel. Demais perfis seguem para a lista.
+        if current_user.role == UserRole.PROFESSOR:
+            return redirect(url_for("main.painel"))
         return redirect(url_for("registros.turma"))
 
     # O join da pauta pode repetir o aluno quando ele está em mais de uma
