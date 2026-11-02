@@ -383,8 +383,13 @@ def test_html_mostra_marks_resumo_e_botao(app, client):
 
 
 def test_html_sem_oferta_escolhida_nao_mostra_marcas(app, client):
+    """AJ6-B: com 2 ofertas na turma e nenhuma escolha, o seletor pede o curso
+    e a pauta fica sem marcas. Para o professor isso só vale quando ele
+    leciona MAIS DE UMA oferta própria (com uma única ele é autoescopo — ver
+    `test_professor_com_oferta_unica_propria_e_autoescopo`); aqui usa `admin`,
+    que não filtra por oferta e sempre precisa escolher com 2+ ofertas."""
     ids = _seed(app)
-    login_as(client, ids["prof"], ids["un"])
+    login_as(client, ids["admin"], ids["un"])
 
     status, html = _get(client, ids)
 
@@ -393,6 +398,24 @@ def test_html_sem_oferta_escolhida_nao_mostra_marcas(app, client):
     assert "— pendente" not in html
     assert "✔" not in html
     assert "aulas até hoje lançadas" not in html
+
+
+def test_professor_com_oferta_unica_propria_e_autoescopo(app, client):
+    """AJ6-B: numa turma de 2 ofertas onde o professor leciona só uma (O1),
+    a dele é autoescolhida e as ofertas alheias nem aparecem na pauta."""
+    ids = _seed(app)
+    datas = _datas_ate_hoje(app, ids, ids["o1"])
+    assert datas
+    _lancar_direto(app, ids, ids["o1"], datas[0])
+
+    login_as(client, ids["prof"], ids["un"])
+    status, html = _get(client, ids)
+
+    assert status == 200
+    assert "Selecione o curso" not in html
+    # A pauta da oferta dele carrega com as marcas; a oferta alheia (O2) não.
+    assert f"✔ {_br(datas[0])} ({_abrev(datas[0])})" in html
+    assert "Aluno Um" in html
 
 
 def test_html_apos_salvar_a_data_aparece_lancada(app, client):

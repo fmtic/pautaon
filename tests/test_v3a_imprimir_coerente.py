@@ -25,23 +25,39 @@ def test_imprimir_visivel_para_o_professor_da_oferta(app, client):
 
 
 def test_imprimir_oculto_para_professor_que_nao_e_o_da_oferta(app, client):
+    """AJ6-B: o professor não acessa a oferta de outro professor nem para ver a
+    pauta (antes abria em 200 com o botão Imprimir oculto; era o leak de
+    leitura por turma). Agora o GET de uma oferta alheia é negado com 403, sem
+    exibir nada. A visibilidade do botão para quem tem acesso legítimo segue
+    coberta em `test_imprimir_visivel_para_o_professor_da_oferta` e nos
+    demais perfis."""
     ids = _seed(app)
     login_as(client, ids["prof"], ids["un"])
 
-    status, html = _get(client, ids, turma_curso=ids["o2"])
+    status, _html = _get(client, ids, turma_curso=ids["o2"])
 
-    assert status == 200
-    assert "Imprimir Pauta" not in html
+    assert status == 403
 
 
 def test_imprimir_oculto_sem_oferta_escolhida_com_2_ofertas(app, client):
+    """AJ6-B: sem escolha, o botão Imprimir só aparece quando a pauta abre.
+    Com 2 ofertas, admin/secretaria/pedagógico não filtram por oferta e caem
+    no 'Selecione o curso' (botão oculto). O professor que leciona uma única
+    oferta é autoescopo nela, então a pauta abre e o botão aparece."""
     ids = _seed(app)
 
-    for perfil in ("prof", "admin", "secretaria"):
+    for perfil in ("admin", "secretaria", "pedagogico"):
         login_as(client, ids[perfil], ids["un"])
         status, html = _get(client, ids)
         assert status == 200
         assert "Imprimir Pauta" not in html, perfil
+
+    # AJ6-B: professor com uma única oferta própria é autoescopo → botão visível.
+    login_as(client, ids["prof"], ids["un"])
+    status, html = _get(client, ids)
+    assert status == 200
+    assert "Imprimir Pauta" in html
+    assert f"turma_curso={ids['o1']}" in html
 
 
 def test_imprimir_visivel_para_admin_secretaria_pedagogico(app, client):
