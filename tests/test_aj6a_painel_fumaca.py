@@ -350,7 +350,7 @@ def test_numeros_consistentes_entre_perfis(app, seed_fumaca, usuarios):
     """Teste de fumaça: perfis não-professor veem os mesmos números-chave."""
     with app.app_context():
         periodo_mgb = seed_fumaca["periodo_mgb"]
-        turma_info = seed_fumaca["turma_info"]
+        # turma_info acessado via seed_fumaca quando necessário
 
         # Coleta números de cada perfil (exceto professor e admin global)
         numeros_por_perfil = {}
