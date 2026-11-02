@@ -13,7 +13,7 @@ from datetime import date
 from typing import Iterable
 
 from app.models.enums import CONCEITOS_CONTABEIS, CONCEITOS_PRESENCA
-from app.services.frequencia_oferta import TurmaFrequencia, agregar_por_turma as _agregar
+from app.services.frequencia_oferta import TurmaFrequencia, agregar_por_turma as _agregar_turma
 
 from .helpers import semana_de, pct
 
@@ -31,7 +31,7 @@ def agregar_por_turma(
     (visão por período); sem ele, soma todas as linhas da turma (ofertas +
     legado), exatamente como antes do serviço.
     """
-    return _agregar(turmas_ids, unidade_id=unidade_id)
+    return _agregar_turma(turmas_ids, unidade_id=unidade_id)
 
 
 def semanal(

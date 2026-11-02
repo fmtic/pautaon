@@ -82,8 +82,10 @@ def painel_pedagogico():
     turmas_periodo = (
         Turma.query.filter_by(periodo_letivo_id=periodo.id, ativo=True)
         .order_by(Turma.nome)
-        .all()
     )
+    if unidade_id is not None:
+        turmas_periodo = turmas_periodo.filter_by(unidade_id=unidade_id)
+    turmas_periodo = turmas_periodo.all()
 
     turma = None
     visao_turma = None
