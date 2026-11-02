@@ -45,6 +45,7 @@ from app.models import (
     Turma,
     TurmaCurso,
 )
+from app.models.enums import UserRole
 from app.utils.timezone import get_local_now
 
 #: Chaves dos blocos devolvidos para a tela/endpoint.
@@ -77,6 +78,40 @@ def professor_da_oferta(oferta, usuario) -> bool:
         return False
     usuario_id = getattr(usuario, "id", usuario)
     return oferta.professor_id is not None and oferta.professor_id == usuario_id
+
+
+def professor_pode_acessar_oferta(usuario, oferta) -> bool:
+    """AJ6-B — REGRA ÚNICA de acesso do professor a UMA oferta (leitura e escrita).
+
+    Nega por padrão. É o ponto por onde TODAS as rotas do mapeamento (pauta,
+    CRUD de frequência, diário, impressão) decidem se o usuário pode tocar a
+    oferta dada — sem duplicar a regra em cada rota.
+
+    - Perfil PROFESSOR: só acessa a oferta em que é o professor efetivo
+      (``TurmaCurso.professor_id == usuário``, sem herança de
+      ``turma.professor_id`` — a turma é agregador de ofertas). ``oferta``
+      ``None`` (nenhuma resolvida) nunca libera.
+    - Demais perfis (admin/pedagógico/secretaria/gerência/serviço social):
+      devolve ``True`` — quem decide o acesso deles é a guarda de ``role`` +
+      ``assert_unidade_context`` da própria rota, inalterada. Não relaxa nada:
+      o que já era permitido por role continua permitido.
+    - Usuário anônimo/nulo: ``False``.
+    """
+    if usuario is None or not getattr(usuario, "is_authenticated", False):
+        return False
+    if usuario.role != UserRole.PROFESSOR:
+        return True
+    return professor_da_oferta(oferta, usuario)
+
+
+def ofertas_do_professor(usuario, ofertas: Iterable) -> list:
+    """Subconjunto das ofertas que ``usuario`` pode acessar (visões agregadas).
+
+    Para o professor devolve só as ofertas dele; para os demais perfis devolve a
+    lista inteira (a guarda de role/unidade da rota decide). Uso único para que
+    a regra de escopo por oferta não se repita rota a rota.
+    """
+    return [o for o in ofertas if professor_pode_acessar_oferta(usuario, o)]
 
 
 def professor_de_alguma_oferta_ativa(turma_id, usuario) -> bool:

@@ -300,20 +300,58 @@ def frequencia():
             redirect_back['turma_curso'] = oferta_id_post
 
         oferta_post = None
-        ativas_post = (
+        ativas_todas_post = (
             ofertas_ativas(int(turma_post_id)) if turma_post_id.isdigit() else []
         )
+        # AJ6-B: só o professor da OFERTA escreve nela (sem "professor da
+        # turma"). A exigência de escolha e a autoescolha consideram apenas as
+        # ofertas dele; numa turma com outras ofertas, a dele é amarrada ao
+        # resolver. A guarda final abaixo confirma a oferta resolvida.
+        from app.services.aluno_info_professor import (
+            ofertas_do_professor,
+            professor_pode_acessar_oferta,
+        )
+
+        if current_user.role == UserRole.PROFESSOR:
+            ativas_post = ofertas_do_professor(current_user, ativas_todas_post)
+            if len(ativas_post) == 1 and oferta_id_post is None:
+                oferta_id_post = ativas_post[0].id
+        else:
+            ativas_post = ativas_todas_post
         exigir_validacao_oferta = len(ativas_post) >= 2
         if turma_post_id.isdigit() and data_alvo_post:
             try:
+                if current_user.role == UserRole.PROFESSOR:
+                    # Sempre amarra a oferta (a dele, já resolvida acima) para
+                    # que o auto-resolver não escolha uma oferta de outro
+                    # professor numa turma com 2+ ofertas.
+                    resolver_curso_id = oferta_id_post
+                else:
+                    resolver_curso_id = (
+                        oferta_id_post if exigir_validacao_oferta else None
+                    )
                 oferta_post = resolver_oferta_lancamento(
                     int(turma_post_id), data_alvo_post,
-                    turma_curso_id=oferta_id_post if exigir_validacao_oferta else None,
+                    turma_curso_id=resolver_curso_id,
                     tema_ids=tema_ids_post,
                 )
             except ValueError as exc:
                 flash(str(exc), 'warning')
                 return redirect(url_for('registros.frequencia', **redirect_back))
+
+        # AJ6-B: guarda FINAL por OFERTA — mesmo que o resolver tenha
+        # devolvido uma oferta, o professor só escreve na dele. Nega 403 sem
+        # gravar. Demais perfis: `professor_pode_acessar_oferta` devolve True.
+        # Quando `oferta_post` é None (sem data no form, caminho que ainda vai
+        # cair na validação de data de `salvar_frequencia`), não há oferta para
+        # negar: a guarda de adesão acima já garantiu que ele leciona alguma
+        # oferta ativa da turma, e nada é gravado sem data.
+        if (
+            current_user.role == UserRole.PROFESSOR
+            and oferta_post is not None
+            and not professor_pode_acessar_oferta(current_user, oferta_post)
+        ):
+            abort(403)
 
         form_data = request.form
         if oferta_post is not None:
@@ -329,7 +367,12 @@ def frequencia():
             # Mantém os campos repetidos (`tema_ids`) ao fazer a cópia mutável
             # usada para remover alunos que não pertencem à pauta da oferta.
             form_data = request.form.copy()
-            if not exigir_validacao_oferta:
+            if current_user.role == UserRole.PROFESSOR:
+                # AJ6-B: amarra a oferta dele (já conferida pela guarda final)
+                # para que o resolver interno de `salvar_frequencia` grave
+                # exatamente nela — nunca numa oferta de outro professor.
+                form_data['turma_curso'] = str(oferta_post.id)
+            elif not exigir_validacao_oferta:
                 # Oferta única: retira o id do form para que o resolver
                 # interno de salvar_frequencia reautoescolha a mesma oferta
                 # sem validação extra (decisão D2 — sem dupla checagem de
@@ -429,7 +472,28 @@ def frequencia():
         # Onda 4 (Fase 4, D2): 0 ofertas ativas = legado (pauta por turma);
         # exatamente 1 = uso automático sem seletor; 2+ = exige escolha do
         # curso antes de carregar a pauta (sem escolha, não lista alunos).
-        ofertas = ofertas_ativas(turma_id)
+        #
+        # AJ6-B: não existe mais "professor da turma" — só o professor da
+        # OFERTA (TurmaCurso.professor_id). O seletor e a autoescolha usam
+        # apenas as ofertas dele; as demais nem aparecem. Pedir oferta alheia
+        # de forma explícita é negado (403), sem revelar se ela existe.
+        # A estatística por oferta (abaixo) continua decidida pelo TOTAL de
+        # ofertas ativas da turma, para não misturar linhas de outra oferta.
+        from app.services.aluno_info_professor import (
+            ofertas_do_professor,
+        )
+
+        ofertas_todas = ofertas_ativas(turma_id)
+        ofertas = ofertas_do_professor(current_user, ofertas_todas)
+        # AJ6-B: o professor que pede explicitamente uma oferta fora das dele
+        # recebe 403, com quantas ofertas próprias ele tenha (a oferta alheia
+        # não é autoescolhida nem considerada). Demais perfis: inalterados.
+        if (
+            current_user.role == UserRole.PROFESSOR
+            and oferta_id_param is not None
+            and oferta_id_param not in {o.id for o in ofertas}
+        ):
+            abort(403)
         if len(ofertas) == 1:
             oferta_atual = ofertas[0]
         elif len(ofertas) >= 2:
@@ -438,6 +502,9 @@ def frequencia():
                     (o for o in ofertas if o.id == oferta_id_param), None
                 )
                 if oferta_atual is None:
+                    if current_user.role == UserRole.PROFESSOR:
+                        # Oferta que não é dele → nega (403) sem vazar.
+                        abort(403)
                     flash('Curso selecionado inválido para esta turma.', 'warning')
                     return redirect(url_for('registros.frequencia', turma_id=turma_id))
             else:
@@ -501,8 +568,10 @@ def frequencia():
         aluno_ids = [a.id for a in alunos_ctx]
         # ETAPA D3b-2.4: estatísticas por oferta em turma com 2+ ofertas.
         # 0 ou 1 oferta: inalterado (todas as linhas, inclui legado NULL).
+        # AJ6-B: usa o TOTAL de ofertas ativas (não as visíveis ao professor),
+        # para que a pauta de uma oferta nunca traga linhas de outra oferta.
         somente_oferta = (
-            len(ofertas) >= 2 and oferta_atual is not None
+            len(ofertas_todas) >= 2 and oferta_atual is not None
         )
         conceitos_por_aluno: dict = {}
         if aluno_ids:

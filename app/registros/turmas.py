@@ -2721,7 +2721,10 @@ def ver_observacoes(turma_id):
     # Mesma guarda de `ver_turma`/`imprimir_pauta`: isolamento por unidade e,
     # para professor, apenas as turmas em que ele leciona alguma oferta ativa
     # (E3/I1: regra por OFERTA, sem herdar `turma.professor_id`).
-    from app.services.aluno_info_professor import professor_de_alguma_oferta_ativa
+    from app.services.aluno_info_professor import (
+        ofertas_do_professor,
+        professor_de_alguma_oferta_ativa,
+    )
 
     turma_obj = Turma.query.get_or_404(turma_id)
     assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
@@ -2735,7 +2738,14 @@ def ver_observacoes(turma_id):
     # `turma_curso`). Com 2+ ofertas ativas cada observação ganha o rótulo
     # do curso; registros com turma_curso_id NULL aparecem sem rótulo.
     # Com 0/1 oferta a tela é exatamente como hoje.
-    ofertas = ofertas_ativas(turma_id)
+    #
+    # AJ6-B: não existe "professor da turma" — o professor vê só o diário das
+    # OFERTAS em que é o professor. O seletor e a consulta usam apenas as
+    # ofertas dele; pedir oferta alheia explicitamente é negado (403). O
+    # registro legado (turma_curso_id NULL) só entra quando a turma tem
+    # exatamente 1 oferta ativa e ela é dele (mesma atribuição D2 da pauta).
+    ofertas_todas = ofertas_ativas(turma_id)
+    ofertas = ofertas_do_professor(current_user, ofertas_todas)
     mostrar_curso = len(ofertas) >= 2
     turma_curso_id = _parse_int_arg(request.args.get("turma_curso"))
 
@@ -2751,8 +2761,24 @@ def ver_observacoes(turma_id):
     if turma_curso_id is not None:
         if any(o.id == turma_curso_id for o in ofertas):
             filtros.append(RegistroAula.turma_curso_id == turma_curso_id)
+        elif current_user.role == UserRole.PROFESSOR:
+            # Oferta que não é dele → nega (403) sem revelar se existe.
+            abort(403)
         else:
             flash("Curso selecionado inválido para esta turma.", "warning")
+    elif current_user.role == UserRole.PROFESSOR:
+        # Sem escolha: o diário é restrito às ofertas dele (nunca as de outro
+        # professor na mesma turma). NULL só no caso de oferta única.
+        ids_dele = [o.id for o in ofertas]
+        if len(ofertas_todas) == 1 and len(ofertas) == 1:
+            filtros.append(
+                or_(
+                    RegistroAula.turma_curso_id.in_(ids_dele),
+                    RegistroAula.turma_curso_id.is_(None),
+                )
+            )
+        else:
+            filtros.append(RegistroAula.turma_curso_id.in_(ids_dele))
 
     observacoes = (
         RegistroAula.query.filter(*filtros)
