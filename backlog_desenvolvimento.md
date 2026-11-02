@@ -1,3 +1,36 @@
+### Alterações do dia — 02/11/2026 (AJ3–AJ6 — fechamento do ciclo: concluídos e pendências)
+
+Fechamento documental do ciclo **AJ3–AJ6** na branch `nova_feature`: **nenhuma migration** (head `c9d0e1f2a3b4`), **nenhuma escrita em banco real** (só `SELECT`), **sem push**, histórico intacto, commits atômicos com **suíte verde** e ruff `F821/F811/F841/F401` limpo. Notas de semântica resultantes em MER §8.26.
+
+**Concluídos (marcar com o commit):**
+
+- **AJ3 — fechamento do AJ1/AJ2 com testes reais:** `d2934e5`, `410d5bc`, `a4a6049`, `9d935e6` (os 4 arquivos que só tinham `assert True` viram 86 testes reais — paridade do Serviço Social, filtro de logs por categoria, lançamento do conselho, select de período do painel); fix `1e39e23` (`Exclusão de Turma` fora da categoria `exclusao`); docs `ef98f7f` (MER/backlog/relatório), `468c4d6` (aritmética da E6 + guarda contra edição externa). Relatório `docs/Relatórios/AJ3_TestesFechamento.md`. Suíte **1222 → 1308 passed**.
+- **AJ4 — teste de drift de rótulos do `log_acao`:** `9482c95` (detecta rótulo novo sem linha no censo congelado), `c3fa523` (separa literais não emitidos dos rótulos sem linha); docs `f0ce610`. Relatório `docs/Relatórios/AJ4_LogsDrift.md`.
+- **AJ4-B — calendário determinístico da suíte:** `85bebdc` (datas determinísticas via `hoje_fixo`), docs `ea7d0e2`. Relatório `docs/Relatórios/AJ4B_CalendarioSuite.md`.
+- **AJ5-A — cadastro de aluno (auditoria + exclusão de documento):** `263369f`; `POST /alunos/<id>/documentos/<doc_id>/excluir` reverte a flag para `false` **reatribuindo o dict** do JSONB (mutação in-place não é detectada) e remove o arquivo (idempotente); `doc_laudo` excluído não toca `perfil_diversidade.saude_laudo`; log `Excluir documento` só com ids. Relatório `docs/Relatórios/AJ5A_CadastroAluno.md`.
+- **AJ5-B — validação de upload de documento (PDF):** `cb97554`; `validar_pdf` antes de gravar byte (assinatura `%PDF-`, teto 2 MB/doc, teto global 20 MB, 413 amigável). Relatório `docs/Relatórios/AJ5B_UploadDocumento.md`.
+- **AJ5-C — formulário unificado do aluno:** `1708112` (caracterização), `64362f1` (docs); fonte única `app/services/aluno_formulario.py::valores_form_aluno` com precedência form > banco > padrões (`_PADROES`); catálogo de opções centralizado; re-render na falha de validação (PRG no sucesso); paridade visual travada por snapshots em `tests/snapshots/aj5c_*.txt`. Relatório `docs/Relatórios/AJ5C_FormularioAluno.md`.
+- **AJ5-C1 — round-trip do checkbox de internet:** `215e026`, docs `5a0f38c`. Relatório `docs/Relatórios/AJ5C1_Ajustes.md`.
+- **AJ5-E — layout do formulário:** `d229704` (trava AST da ordem dos campos), docs `f861089`. Relatório `docs/Relatórios/AJ5E_LayoutFormulario.md`.
+- **AJ6-A — painel de turmas e escopo de `unidade_id`:** smoke do painel pedagógico por perfil `a632b35`; filtro de unidade no painel `060fca3`; diagnóstico/causa real (matriz de perfis, evidência SQL) `7583e02`/`ea7d489`/`6d4e412`; remoção do filtro **morto** de unidade em `Turma.query` após retratação de H3 `fb6b83f`; escritor grava `unidade_id` (`4c83c7f`, fixture NULL + isolamento `9d661ad`); docs `961307c`; seletor de data migra para `hoje_fixo` `f21375a`/`16ad47f`. Relatório `docs/Relatórios/AJ6A_PainelTurmas.md`.
+- **AJ6-B / B2 — autorização por oferta:** matriz de autorização do professor por oferta `9b018c1`/`797c5ce`; pendência do seletor resolvida pela AJ6-A R4 `0d4383b`; auditoria pós-AJ6B das ofertas nos bancos reais (SELECT-only) `6696bd9`/`f763ba6`. Relatórios `docs/Relatórios/AJ6B_AutorizacaoOferta.md` e `AJ6B2_AuditoriaOfertas.md`.
+- **AJ6-B3 — escopo de `ver_turma` e dashboard:** payload/HTML restringidos às ofertas do professor pela **regra única** `ofertas_do_professor`/`professor_pode_acessar_oferta`, **sem alterar a régua de entrada** por adesão (decisão 1); removido o fallback `Turma.professor_id` do dashboard (decisão 2). Testes `4fde802` (9 de escopo + 2 de dashboard + snapshot não-professor; `test_item5_ver_turma...` invertido); commits de fix `75aa849`/`be7349b`; docs `18f576e`. Prova de reversão em worktree (10 falhas/3 passes), snapshot não-professor 10/10 idêntico, prova SELECT-only do dashboard 0 impacto. Relatório `docs/Relatórios/AJ6B3_EscopoVerTurma.md`. Suíte **1495 passed, 1 skipped**.
+- **AJ6-C — trava de testes e limpeza de unidades de teste:** conftest neutraliza `create_app()` cru contra Postgres (aborta a suíte se `DATABASE_URL` aponta banco real); script de limpeza **catalog-driven** das unidades de teste + rodada 2 (divergência e origens) `060343c`/`dff6746`. Relatório `docs/Relatórios/AJ6C_UnidadesDeTeste.md`.
+
+**Pendências registradas (para o próximo ciclo):**
+
+- **AJ5-D — assinatura e headers dos anexos de atendimento e certificado** (pausada no AJ5; seguiu direto para C/C1/E). Aplicar a mesma validação da AJ5-B (assinatura/tipo/tamanho) e servir com `Content-Disposition` correto nos anexos de atendimento e do certificado.
+- **Varredura de código morto:** `ruff F401` **pré-existentes** (~87 — re-exports de `app/models/__init__.py` e scripts); `vulture` (funções/atributos sem uso); templates/JS órfãos; helper `Aluno.documento_entregue()` (`app/models/pessoas.py`) **sem chamadores** no código de aplicação — decidir se mantém como API pública ou sai junto dos docs (Apêndice B, §7.9).
+- **Guarda de scripts que usam `create_app()` cru** (`scripts/verificar_*`, `diagnóstico_carga_horaria.py`): herdam o `DATABASE_URL` do `.env` (Postgres real). Exigir `PAUTAON_ALLOW_REAL_DB=1` explícito para apontar a banco real, sob pena de escrita acidental.
+- **Backfill opcional** das linhas de `frequencia` com `unidade_id` NULL (anteriores à AJ6-A/`4c83c7f`). Plano de deploy: **contar antes** em produção; o escopo já vem de `Turma.unidade_id`, então o backfill é cosmético/para consistência (MER §8.26).
+- **Banco de ensaio com unidades `[ROTEIRO]`** (decisão do operador): popular o `pautaon_ensaio` com as unidades usadas nas sondagens de login real, se o operador autorizar.
+- **`/turma` (listagem) sem filtro por professor** — **decisão tomada: manter**. Todo professor vê as turmas ativas da unidade na listagem (não é guarda por adesão); registrado em MER §8.26.
+- **Cards do “Ajuste 4” (Primeira vista):** `Painel do Conselho`, `Desempenho por Professor`, `Frequência por Turma` parecem não trazer a informação esperada (`docs/prompts/Ajustes_Pontuais.md`).
+- **Central de BI:** indicadores repetidos/redundantes; falta uma página que explique cada indicador e como é calculado (auditoria e guia do usuário), acessível a quem tem acesso à Central de BI (`/relatorios/bi`).
+- **Achado 0.2 — visibilidade de laudo** (`perfil_diversidade.saude_laudo`): quem pode ver/se sabe que o aluno possui laudo; alinhar com a exclusão de `doc_laudo` (que **não** toca `saude_laudo`).
+- **`cryptography`/`oauthlib` (MER §12.29):** dependências a avaliar (endurecimento de sessão/revogação e o fluxo OAuth) — sem decisão tomada.
+
+---
 ### Alterações do dia — 30/10/2026 (Geração de senhas temporárias aleatórias e opção de senha inicial)
 
 - **Contexto:** reset administrativo usava `ADMIN_DEFAULT_PASSWORD` (estática, compartilhada, falhava se não definida) e o cadastro manual exigia senha digitada sem validação de complexidade. Ambos enviavam a senha em texto claro por e-mail.
