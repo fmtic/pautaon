@@ -1,0 +1,417 @@
+# AJ6-C — Diagnóstico de Unidades de Teste, Trava de Segurança e Script de Limpeza
+
+## Resumo Executivo
+
+O seletor de unidade da aplicação em desenvolvimento apresentava unidades que não pertenciam à operação real (MGB e NIT), nomeadamente: **"Unidade A"**, **"Unidade Aj5c A"**, **"Unidade Aj5c B"** e **"U X"**.
+
+Esta auditoria identificou que execuções de testes automatizados e fixtures anteriores ao endurecimento do harness vazaram escritas para o banco de desenvolvimento PostgreSQL (`pautaon`), porque `config.py` carregava o `.env` via `load_dotenv()` sem que houvesse uma neutralização prévia da variável `DATABASE_URL` no ambiente do executor de testes.
+
+**Ações realizadas (AJ6-C):**
+1. **Inventário cirúrgico (SELECT-only)**: Mapeamento de todas as unidades, tabelas e registros dependentes nos bancos `pautaon` e `pautaon_ensaio` via catálogo `information_schema` e `pg_constraint`.
+2. **Identificação da origem**: Localizados os testes exatos (`test_frequencia_oferta.py`, `test_aj5c_form_caracterizacao.py`, etc.) cujas fixtures geraram essas entidades no banco persistente.
+3. **Trava de segurança implementada (`fix(testes)`)**:
+   - `tests/conftest.py`: neutralização imediata de `DATABASE_URL` no nível de módulo para `sqlite:///:memory:`.
+   - Hook `pytest_sessionstart` aborta a suíte imediatamente se `DATABASE_URL` no ambiente apontar para PostgreSQL ou se o driver do engine não for SQLite.
+   - Guarda de dialeto SQLite na fixture `app`.
+   - Teste automatizado da trava em `tests/test_aj6c_trava_banco.py`.
+   - **Prova de reversão em worktree**: comprovado que sem o fix a suíte não abortava e caía em `postgresql+psycopg`.
+4. **Scripts de limpeza preparados (sem execução)**: Scripts SQL transacionais com verificação de contagens antes/depois, ordem correta de FKs e `ROLLBACK` por padrão para execução controlada pelo operador.
+5. **Nenhuma escrita em banco real**: Bancos consultados exclusivamente via `SELECT`. Contagens antes e depois da suíte permaneceram estritamente idênticas.
+
+---
+
+## Etapa 0 — Inventário Cirúrgico (SELECT-only)
+
+### 1. Unidades Cadastradas nos Bancos
+
+#### Banco `pautaon` (desenvolvimento)
+```sql
+SELECT id, nome FROM unidade ORDER BY id;
+```
+| ID | Nome | Classificação | Observação |
+|:---:|:---|:---:|:---|
+| **1** | `NIT` | **Real** | Unidade real de Niterói |
+| **2** | `MGB` | **Real** | Unidade real de Manguinhos |
+| **3** | `Unidade A` | **Teste** | Fixture de `test_frequencia_oferta.py` |
+| **6** | `Unidade Aj5c A` | **Teste** | Fixture de `test_aj5c_form_caracterizacao.py` |
+| **7** | `Unidade Aj5c B` | **Teste** | Fixture de `test_aj5c_form_caracterizacao.py` |
+| **8** | `U X` | **Teste** | Registro residual de teste exploratório |
+
+#### Banco `pautaon_ensaio` (ensaio)
+```sql
+SELECT id, nome FROM unidade ORDER BY id;
+```
+| ID | Nome | Classificação | Observação |
+|:---:|:---|:---:|:---|
+| **1** | `NIT` | **Real** | Unidade real |
+| **2** | `MGB` | **Real** | Unidade real |
+| **13** | `[ROTEIRO] Unidade Central` | **Teste/Roteiro** | Gerado por script de ensaio de roteiro |
+| **14** | `[ROTEIRO] Unidade Vizinha` | **Teste/Roteiro** | Gerado por script de ensaio de roteiro |
+
+---
+
+### 2. Registros Dependentes por Tabela (Mapeamento via Catálogo)
+
+Tabelas com Foreign Key direta para `unidade` descobertas via `information_schema.table_constraints` e `referential_constraints`:
+`aluno`, `atendimento`, `centro_custo`, `configuracao_sistema`, `conselho_classe`, `conselho_resposta`, `curso`, `dia_bloqueado`, `dia_bloqueado_turma`, `endereco_aluno`, `frequencia`, `log_acao`, `nivel`, `perfil_diversidade`, `perfil_socioeconomico`, `periodo_conselho`, `periodo_letivo`, `registro`, `registro_aula`, `responsavel_aluno`, `situacao_escolar`, `tema_aula`, `transferencia`, `turma`, `turma_curso`, `user`, `valor_esportista`.
+
+#### No banco `pautaon` (Unidades 3, 6, 7, 8):
+- **`aluno` (5 linhas)**:
+  - IDs `1452`, `1453`, `1454`, `1455` (unidade 3 — gerados por fixture de frequência)
+  - ID `1456` (unidade 6 — gerado por `test_aj5c_form_caracterizacao.py`)
+- **Tabelas filhas dos alunos de teste**:
+  - `endereco_aluno`: 1 linha (ID `113`, do aluno 1456)
+  - `perfil_diversidade`: 1 linha (ID `112`, do aluno 1456)
+  - `perfil_socioeconomico`: 1 linha (ID `113`, do aluno 1456)
+  - `responsavel_aluno`: 1 linha (ID `85`, do aluno 1456)
+  - `situacao_escolar`: 1 linha (ID `106`, do aluno 1456)
+  - `inscricoes`: 0 linhas
+  - `frequencia`: 0 linhas
+- **`curso` (4 linhas)**:
+  - IDs `15` ('Curso Alfa 1'), `16` ('Curso Alfa 2'), `17` ('Curso Gema'), `18` ('Curso Zeta') — todos da unidade 3.
+  - Vínculos com turmas/ofertas: 0 linhas.
+- **`periodo_letivo` (1 linha)**:
+  - ID `3` ('Periodo Freq', unidade 3).
+  - Vínculos com turmas/dias bloqueados: 0 linhas.
+- **`user` (2 linhas)**:
+  - ID `105` (role `admin`, unidade 6)
+  - ID `107` (role `admin`, unidade 8)
+  - Vínculos em `log_acao`, `registro_aula` ou `turma_curso`: 0 linhas.
+- **`turma` e `turma_curso`**: 0 linhas.
+- **`frequencia` e `registro_aula`**: 0 linhas.
+- **`log_acao`**: 0 linhas com `unidade_id IN (3,6,7,8)` e 0 linhas com `usuario_id IN (105, 107)`.
+
+#### No banco `pautaon_ensaio` (Unidades 13, 14):
+- **`turma`**: 5 linhas (IDs: 30, 31, 32, 33, 36)
+- **`turma_curso`**: 7 linhas
+- **`inscricoes`**: 15 linhas
+- **`frequencia`**: 20 linhas
+- **`registro_aula`**: 4 linhas
+- **`aluno`**: 12 linhas (IDs: 1482 a 1493)
+- **`endereco_aluno`**: 1 linha
+- **`perfil_socioeconomico`**: 1 linha
+- **`curso`**: 4 linhas (IDs: 39 a 42)
+- **`periodo_letivo`**: 3 linhas (IDs: 22, 23, 24)
+- **`user`**: 3 linhas (IDs: 118, 119, 120)
+- **`log_acao`**: 34 linhas (auditorias do roteiro do ensaio)
+
+---
+
+### 3. Banco de Dados Utilizado pelo Ambiente de Desenvolvimento
+
+- **Fonte**: Arquivo `.env` na raiz do projeto.
+- **Configuração**: `DATABASE_URL=postgresql+psycopg://***:***@localhost:5432/pautaon`
+- **Nome do Banco**: `pautaon` (PostgreSQL local).
+- **Banco de Ensaio**: `pautaon_ensaio` (PostgreSQL local, porta 5432).
+
+---
+
+## Etapa 1 — Origem das Unidades de Teste
+
+### 1. Mapeamento dos Nomes em Código de Testes e Scripts
+
+| Nome no Banco | Arquivo de Origem | Trecho de Código |
+|---|---|---|
+| **`Unidade A`** | `tests/test_frequencia_oferta.py` (e outros) | `un = Unidade(nome="Unidade A", ativo=True)` acompanhada de `Curso Alfa 1`, `Curso Alfa 2`, `Curso Gema`, `Curso Zeta` e `Periodo Freq`. A assinatura de dados bate 100% com o seed do teste. |
+| **`Unidade Aj5c A`** e **`Unidade Aj5c B`** | `tests/test_aj5c_form_caracterizacao.py` | Linhas 230-231: `ua = Unidade(nome="Unidade Aj5c A", ativo=True)` e `ub = Unidade(nome="Unidade Aj5c B", ativo=True)`. Gera usuário `Admin Local Aj5c` (ID 105) e aluno com endereço/perfil (ID 1456). |
+| **`U X`** | Teste exploratório manual / script residual | Inserção exploratória pontual prévia à trava. |
+| **`[ROTEIRO] Unidade Central / Vizinha`** | `scripts/ensaio_*.py` / `scripts/roteiro_*.py` | Criadas deliberadamente no banco de ensaio durante os ensaios de release da Onda 4. |
+
+### 2. Como a Brecha Ocorria
+
+1. O módulo `config.py` possui a seguinte instrução no topo:
+   ```python
+   from dotenv import load_dotenv
+   load_dotenv()
+   ```
+2. Por padrão, `load_dotenv()` carrega as variáveis de `.env` caso não existam no ambiente do processo.
+3. Antes do commit `715fe57` (unificação do conftest), muitos arquivos de testes criavam seu próprio `create_app()` sem passar pelo conftest único.
+4. Quando qualquer script, teste isolado ou subprocesso executava `create_app()` sem especificar `SQLALCHEMY_DATABASE_URI="sqlite:///:memory:"`, a aplicação lia `os.getenv("DATABASE_URL")` que recebia o valor do `.env` (`pautaon` PostgreSQL).
+5. Durante a execução, o teste chamava `db.create_all()` e executava transações reais com `db.session.commit()`, deixando entidades persistidas no banco PostgreSQL de desenvolvimento.
+
+---
+
+## Etapa 2 — Trava de Segurança Implementada (`fix(testes)`)
+
+### 1. Modificações em `tests/conftest.py`
+
+1. **Neutralização Preventiva no Topo**:
+   Antes de qualquer import de `app` ou `config` (que chamaria `load_dotenv()`), capturamos a variável original e forçamos o ambiente para SQLite:
+   ```python
+   _DB_URL_ORIGINAL = os.environ.get("DATABASE_URL", "")
+   os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+   ```
+   Como a variável já existe no `os.environ`, o `load_dotenv()` de `config.py` não sobrescreve o valor.
+2. **Hook `pytest_sessionstart` (Aborto Imediato)**:
+   ```python
+   def pytest_sessionstart(session):
+       """AJ6-C: Aborta a suíte se DATABASE_URL no ambiente apontava para Postgres
+       ou se o driver do engine não for sqlite.
+       """
+       if "postgresql" in _DB_URL_ORIGINAL.lower() or "postgres" in _DB_URL_ORIGINAL.lower():
+           pytest.exit(
+               "ABORTAR — trava de banco de teste disparada (AJ6-C)!\n"
+               f"DATABASE_URL no ambiente ({_DB_URL_ORIGINAL}) aponta para PostgreSQL.\n"
+               "A suíte de testes exige SQLite. Remova DATABASE_URL do ambiente antes de rodar pytest.",
+               returncode=1,
+           )
+
+       test_app = create_app(SQLiteTestConfig)
+       with test_app.app_context():
+           driver = db.engine.url.drivername
+           if not driver.startswith("sqlite"):
+               pytest.exit(
+                   "ABORTAR — trava de banco de teste disparada (AJ6-C)!\n"
+                   f"Engine configurado com driver '{driver}' (esperado 'sqlite').\n"
+                   "Execução de testes contra banco não-SQLite é estritamente proibida.",
+                   returncode=1,
+               )
+   ```
+3. **Asserção de Dialeto na Fixture `app`**:
+   ```python
+   assert db.engine.url.drivername.startswith("sqlite"), (
+       f"Trava AJ6-C: driver '{db.engine.url.drivername}' não permitido. Exigido 'sqlite'."
+   )
+   ```
+
+### 2. Teste da Trava (`tests/test_aj6c_trava_banco.py`)
+
+- `test_trava_aborta_suite_quando_database_url_aponta_para_postgres`: Simula via subprocesso `DATABASE_URL=postgresql://...` e comprova que a execução é abortada imediatamente com código de erro e mensagem clara.
+- `test_app_fixture_garante_driver_sqlite`: Comprova que a fixture `app` está atrelada ao driver SQLite.
+- `test_create_app_sem_override_recebe_sqlite_em_teste`: Comprova que chamadas soltas a `create_app()` sem configuração explícita herdam `sqlite:///:memory:` e nunca o Postgres do `.env`.
+
+### 3. Prova de Reversão em Worktree (`.wt_aj6c`)
+
+Para provar a eficácia da trava, foi criado um git worktree temporário no commit anterior (sem o fix):
+```text
+cd .wt_aj6c
+python -m pytest tests/test_aj6c_trava_banco.py
+
+FAILED tests/test_aj6c_trava_banco.py::test_trava_aborta_suite_quando_database_url_aponta_para_postgres
+FAILED tests/test_aj6c_trava_banco.py::test_create_app_sem_override_recebe_sqlite_em_teste
+======================== 2 failed, 1 passed in 10.82s =========================
+```
+- **Falha 1**: Sem a trava, o pytest aceitava rodar com URL de PostgreSQL (retornou 0 em vez de abortar).
+- **Falha 2**: Sem a neutralização, `create_app()` conectava em `postgresql+psycopg` (lendo o `.env`).
+
+Com o fix aplicado, os 3 testes passam com sucesso (`3 passed in 5.57s`). O worktree foi removido após a prova.
+
+### 4. Regra para Sondas em `.tmp/` e Scripts
+
+1. **Proibição de Schema DDL**: Scripts ou sondas exploratórias nunca devem chamar `db.create_all()` ou `db.drop_all()` contra bancos reais.
+2. **Sessão Injetada / Somente Leitura**: Sondas contra banco persistente devem utilizar conexões somente-leitura (`SELECT`), transações com rollback explícito e verificação de contagens antes e depois.
+3. **Execução de Testes**: Todo teste automatizado deve rodar via `pytest`, beneficiando-se da trava do `conftest.py`.
+
+---
+
+## Etapa 3 — Scripts de Limpeza (PREPARADOS — NÃO EXECUTADOS)
+
+> [!IMPORTANT]
+> **NENHUMA exclusão foi executada**. Os scripts abaixo são cirúrgicos por ID, executam em bloco transacional (`BEGIN ... ROLLBACK`) e contêm cláusulas explícitas de proteção para **nunca afetar MGB (ID 2) nem NIT (ID 1)**.
+> O operador deve revisar os `COUNT` esperados antes de alterar o comando final para `COMMIT`.
+
+### Procedimento de Backup e Restauração Recomendado
+
+Antes de executar qualquer limpeza manual em produção/desenvolvimento:
+
+```bash
+# 1. Backup completo dos bancos (formato custom compactado com blobs)
+pg_dump -U postgres -h localhost -p 5432 -Fc -b -v -f backup_pautaon_antes_aj6c.dump pautaon
+pg_dump -U postgres -h localhost -p 5432 -Fc -b -v -f backup_pautaon_ensaio_antes_aj6c.dump pautaon_ensaio
+
+# Como restaurar em caso de divergência:
+# dropdb -U postgres -h localhost -p 5432 pautaon
+# createdb -U postgres -h localhost -p 5432 pautaon
+# pg_restore -U postgres -h localhost -p 5432 -d pautaon -v backup_pautaon_antes_aj6c.dump
+```
+
+---
+
+### Script de Limpeza: Banco `pautaon`
+
+```sql
+BEGIN;
+
+-- ============================================================================
+-- 1. CONFERÊNCIA ANTES DA LIMPEZA
+-- ============================================================================
+-- Unidades alvo: 3, 6, 7, 8 (MGB=2 e NIT=1 NUNCA são tocadas)
+SELECT id, nome FROM unidade WHERE id IN (3, 6, 7, 8);
+-- Esperado: 4 linhas
+
+-- Contagens esperadas de registros filhos:
+SELECT 'aluno' AS tabela, count(*) FROM aluno WHERE unidade_id IN (3, 6, 7, 8); -- Esperado: 5
+SELECT 'endereco_aluno' AS tabela, count(*) FROM endereco_aluno WHERE aluno_id IN (1452,1453,1454,1455,1456); -- Esperado: 1
+SELECT 'perfil_diversidade' AS tabela, count(*) FROM perfil_diversidade WHERE aluno_id IN (1452,1453,1454,1455,1456); -- Esperado: 1
+SELECT 'perfil_socioeconomico' AS tabela, count(*) FROM perfil_socioeconomico WHERE aluno_id IN (1452,1453,1454,1455,1456); -- Esperado: 1
+SELECT 'responsavel_aluno' AS tabela, count(*) FROM responsavel_aluno WHERE aluno_id IN (1452,1453,1454,1455,1456); -- Esperado: 1
+SELECT 'situacao_escolar' AS tabela, count(*) FROM situacao_escolar WHERE aluno_id IN (1452,1453,1454,1455,1456); -- Esperado: 1
+SELECT 'curso' AS tabela, count(*) FROM curso WHERE unidade_id IN (3, 6, 7, 8); -- Esperado: 4
+SELECT 'periodo_letivo' AS tabela, count(*) FROM periodo_letivo WHERE unidade_id IN (3, 6, 7, 8); -- Esperado: 1
+SELECT 'user' AS tabela, count(*) FROM "user" WHERE unidade_id IN (3, 6, 7, 8); -- Esperado: 2
+
+-- ============================================================================
+-- 2. EXCLUSÃO CIRÚRGICA (Filhos antes dos pais)
+-- ============================================================================
+
+-- 2.1 Filhos de aluno
+DELETE FROM endereco_aluno WHERE aluno_id IN (1452, 1453, 1454, 1455, 1456) RETURNING id, aluno_id;
+DELETE FROM perfil_diversidade WHERE aluno_id IN (1452, 1453, 1454, 1455, 1456) RETURNING id, aluno_id;
+DELETE FROM perfil_socioeconomico WHERE aluno_id IN (1452, 1453, 1454, 1455, 1456) RETURNING id, aluno_id;
+DELETE FROM responsavel_aluno WHERE aluno_id IN (1452, 1453, 1454, 1455, 1456) RETURNING id, aluno_id;
+DELETE FROM situacao_escolar WHERE aluno_id IN (1452, 1453, 1454, 1455, 1456) RETURNING id, aluno_id;
+
+-- 2.2 Alunos das unidades de teste (proteção: NOT IN (1, 2))
+DELETE FROM aluno
+WHERE id IN (1452, 1453, 1454, 1455, 1456)
+  AND unidade_id IN (3, 6, 7, 8)
+  AND unidade_id NOT IN (1, 2)
+RETURNING id, nome, unidade_id;
+
+-- 2.3 Cursos das unidades de teste
+DELETE FROM curso
+WHERE id IN (15, 16, 17, 18)
+  AND unidade_id IN (3, 6, 7, 8)
+  AND unidade_id NOT IN (1, 2)
+RETURNING id, nome;
+
+-- 2.4 Período letivo das unidades de teste
+DELETE FROM periodo_letivo
+WHERE id = 3
+  AND unidade_id IN (3, 6, 7, 8)
+  AND unidade_id NOT IN (1, 2)
+RETURNING id, nome;
+
+-- 2.5 Usuários das unidades de teste
+DELETE FROM "user"
+WHERE id IN (105, 107)
+  AND unidade_id IN (3, 6, 7, 8)
+  AND unidade_id NOT IN (1, 2)
+RETURNING id, role, unidade_id;
+
+-- 2.6 Unidades de teste (proteção explícita de nomes e IDs reais)
+DELETE FROM unidade
+WHERE id IN (3, 6, 7, 8)
+  AND id NOT IN (1, 2)
+  AND nome NOT IN ('MGB', 'NIT')
+RETURNING id, nome;
+
+-- ============================================================================
+-- 3. CONFERÊNCIA PÓS-LIMPEZA
+-- ============================================================================
+SELECT id, nome FROM unidade ORDER BY id;
+-- Esperado: Apenas ID 1 ('NIT') e ID 2 ('MGB')
+
+-- ============================================================================
+-- 4. FINALIZAÇÃO (Mudar para COMMIT somente se as contagens baterem)
+-- ============================================================================
+ROLLBACK;
+```
+
+---
+
+### Script de Limpeza: Banco `pautaon_ensaio`
+
+```sql
+BEGIN;
+
+-- ============================================================================
+-- 1. CONFERÊNCIA ANTES DA LIMPEZA (Unidades 13 e 14)
+-- ============================================================================
+SELECT id, nome FROM unidade WHERE id IN (13, 14);
+
+-- ============================================================================
+-- 2. EXCLUSÃO CIRÚRGICA (Filhos antes dos pais)
+-- ============================================================================
+DELETE FROM frequencia WHERE turma_id IN (30, 31, 32, 33, 36) RETURNING id;
+DELETE FROM registro_aula WHERE turma_id IN (30, 31, 32, 33, 36) RETURNING id;
+DELETE FROM inscricoes WHERE turma_id IN (30, 31, 32, 33, 36) RETURNING id;
+DELETE FROM turma_curso WHERE turma_id IN (30, 31, 32, 33, 36) RETURNING id;
+DELETE FROM turma WHERE id IN (30, 31, 32, 33, 36) AND unidade_id IN (13, 14) RETURNING id;
+
+DELETE FROM endereco_aluno WHERE aluno_id IN (1482,1483,1484,1485,1486,1487,1488,1489,1490,1491,1492,1493) RETURNING id;
+DELETE FROM perfil_socioeconomico WHERE aluno_id IN (1482,1483,1484,1485,1486,1487,1488,1489,1490,1491,1492,1493) RETURNING id;
+DELETE FROM aluno WHERE id IN (1482,1483,1484,1485,1486,1487,1488,1489,1490,1491,1492,1493) AND unidade_id IN (13, 14) RETURNING id;
+
+DELETE FROM curso WHERE id IN (39, 40, 41, 42) AND unidade_id IN (13, 14) RETURNING id;
+DELETE FROM periodo_letivo WHERE id IN (22, 23, 24) AND unidade_id IN (13, 14) RETURNING id;
+
+DELETE FROM log_acao WHERE unidade_id IN (13, 14) OR usuario_id IN (118, 119, 120) RETURNING id;
+DELETE FROM "user" WHERE id IN (118, 119, 120) AND unidade_id IN (13, 14) RETURNING id;
+
+DELETE FROM unidade WHERE id IN (13, 14) AND id NOT IN (1, 2) RETURNING id, nome;
+
+-- Conferência final:
+SELECT id, nome FROM unidade ORDER BY id;
+-- Esperado: Apenas ID 1 ('NIT') e ID 2 ('MGB')
+
+ROLLBACK;
+```
+
+---
+
+### Análise de `log_acao` e Testes de Drift
+
+1. **No banco `pautaon`**:
+   - `SELECT COUNT(*) FROM log_acao WHERE unidade_id IN (3,6,7,8);` → **0 linhas**.
+   - `SELECT COUNT(*) FROM log_acao WHERE usuario_id IN (105, 107);` → **0 linhas**.
+   - Não há logs gerados pelas unidades de teste em `pautaon`.
+2. **Impacto nos Testes de Drift (`test_aj4_logs_drift.py` e `test_aj1_logs_filtro.py`)**:
+   - O teste de drift analisa a coerência dos rótulos e emissores do código `app/**/*.py` comparando contra listas congeladas em memória (`CENSO_REAL` no arquivo de teste, derivado de um censo estático). Ele **não consulta o banco de dados PostgreSQL em tempo de execução**.
+   - Portanto, a limpeza de unidades de teste **não afeta nem quebra nenhum teste de drift**.
+
+---
+
+### Análise da Tela "Gestão de Unidade" (`/admin/unidades`)
+
+A rota de gestão de unidades foi inspecionada em `app/auth.py`:
+- Linhas 937-945: `admin_unidades` (lista unidades com `all()`)
+- Linhas 948-968: `cadastrar_unidade` (cria nova unidade)
+- Linhas 971-993: `editar_unidade` (renomeia a unidade)
+- Linhas 996-1016: `alternar_unidade_status` (faz apenas **exclusão lógica**: `unidade.ativo = not unidade.ativo`)
+
+**Conclusão**:
+A interface administrativa **NÃO possui exclusão física (`DELETE`)**. O botão de alternar status apenas desativa a unidade logicamente, mantendo o registro na tabela `unidade` e todas as dependências intactas no banco de dados. Portanto, a tela **não pode ser utilizada para limpeza física** das unidades residuais.
+
+---
+
+## Etapa 4 — Verificação e Prova de Inviolabilidade dos Bancos Reais
+
+### 1. Snapshot Comparativo Antes vs Depois da Execução de Testes
+
+Para garantir que a suíte de testes nunca mais escreve no banco real, foram coletadas as contagens antes de rodar os testes e imediatamente após:
+
+| Banco | Tabela | Antes dos Testes | Depois dos Testes | Delta | Status |
+|---|---|:---:|:---:|:---:|:---:|
+| `pautaon` | `unidade` | 6 | 6 | 0 | Inalterado ✅ |
+| `pautaon` | `user` | 24 | 24 | 0 | Inalterado ✅ |
+| `pautaon` | `log_acao` | 1124 | 1124 | 0 | Inalterado ✅ |
+| `pautaon` | `frequencia` | 57 | 57 | 0 | Inalterado ✅ |
+| `pautaon` | `aluno` | 1159 | 1159 | 0 | Inalterado ✅ |
+| `pautaon` | `turma` | 2 | 2 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `unidade` | 4 | 4 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `user` | 25 | 25 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `log_acao` | 1747 | 1747 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `frequencia` | 20 | 20 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `aluno` | 1166 | 1166 | 0 | Inalterado ✅ |
+| `pautaon_ensaio` | `turma` | 8 | 8 | 0 | Inalterado ✅ |
+
+Nenhum registro foi criado, modificado ou removido nos bancos de dados reais.
+
+### 2. Validação Estática (Ruff)
+
+```bash
+python -m ruff check tests/conftest.py tests/test_aj6c_trava_banco.py --select F821,F811,F841,F401
+All checks passed!
+```
+
+### 3. Estado Git
+
+```bash
+git status --porcelain  # limpo
+git worktree list       # apenas D:/pautaon [nova_feature]
+```
+
+Commits:
+1. `fix(testes): trava impede teste de gravar em banco real`
+2. `docs(aj6c): relatório e script de limpeza`
