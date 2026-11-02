@@ -1,5 +1,36 @@
 # AJ6-A — Painel Pedagógico: Contagens de Frequência e Diagnóstico de Acesso
 
+## Resumo Executivo (Rodada 4 — migração dos 3 testes do seletor)
+
+A Rodada 3 deixou como pendência 3 falhas *pré-existentes* e não corrigidas em
+`tests/test_seletor_data_oferta.py` (subitem AJ6-A: "provar que são anteriores
+ao AJ6 e migrá-las para `hoje_fixo`"). Esta rodada fecha esse item:
+
+- **Prova de anterioridade** (worktree em `git worktree add --detach
+  .tmp/aj6a_rev b6d337a` — base **pré-AJ6**, antes do primeiro commit da série
+  `060fca3`): rodando `tests/test_seletor_data_oferta.py` como está, o resultado
+  é **3 failed / 2 passed**, exatamente `test_seletor_lista_so_datas_da_oferta_
+escolhida`, `test_troca_de_oferta_com_data_invalida_cai_na_mais_recente` e
+  `test_marcas_e_resumo_preservados_com_filtro`. Confirma que as falhas são do
+  próprio arquivo, alheias a qualquer mudança AJ6. Worktree removido depois
+  (`git worktree list` só o principal).
+- **Causa**: o seletor "Data da Aula" usa `get_local_now().date()` como limite
+  (`app/registros/core.py`), mas `test_seletor_data_oferta.py` **não aplicava** o
+  fixture `hoje_fixo`. Sem ele, num dia de aula real dentro da vigência, o
+  relógio do app corre livre enquanto `HOJE`/`_datas_ate_hoje` derivam de
+  `hoje_ref()` (data fixa) — e as comparações divergem por uma data.
+- **Migração** (`test(test_aj6a)`): adicionado
+  `pytestmark = pytest.mark.usefixtures("hoje_fixo")` ao arquivo, alinhando-o à
+  suíte-irmã `test_v3a_datas_lancadas` (da qual os helpers já vêm com o
+  fixture). Nenhum código de aplicação foi tocado — o limite `get_local_now()` é
+  correto em produção; só faltava congelar o relógio no teste.
+- **Resultado**: `tests/test_seletor_data_oferta.py` → **5 passed**. Suíte
+  completa pós-migração: **1468 passed, 0 failed** (`EXIT=0`) — a série AJ6-A e
+  AJ6-B fecha com todo o repositório verde pela primeira vez (as 3 falhas
+  data-sensitive que vinham desde a Rodada 3 foram eliminadas).
+
+---
+
 ## Resumo Executivo (Rodada 3 — versão final)
 
 - **Causa raiz confirmada**: As linhas de frequência criadas por `salvar_frequencia` (em `app/utils/logica.py`) não gravavam `unidade_id`, deixando a coluna `NULL`. O painel filtrava `Frequencia.unidade_id == unidade_id`, zerando todos os totais para perfis não-professor com contexto de unidade.
