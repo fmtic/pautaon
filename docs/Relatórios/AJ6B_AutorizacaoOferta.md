@@ -171,6 +171,11 @@ inclui uma data além de `hoje_ref()` (off-by-one de "hoje"). Coincide com o
 subitem AJ6-A "migrar as 3 falhas de `test_seletor_data_oferta.py` para
 `hoje_fixo`". Não tratado aqui.
 
+> **Resolvido adiante (AJ6-A Rodada 4, commit `f21375a`)**: os 3 testes foram
+> migrados para `hoje_fixo` (aplicando o fixture que faltava ao arquivo); a
+> suíte completa passou a **1468 passed / 0 failed**. Estas linhas descrevem o
+> estado no momento da AJ6-B (as 3 falhas ainda pré-existentes).
+
 ---
 
 ## Validação
