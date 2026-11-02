@@ -17,6 +17,19 @@ migrations) — a lista está em `docs/Relatórios/L5_LimpezaTurmasHarness.md`.
 
 Nada aqui muda o comportamento dos testes: banco SQLite em memória, schema via
 `db.create_all()`, teardown com `db.session.remove()` + `db.drop_all()`.
+
+AJ6-C — Trava de banco de teste
+---------------------------------
+`config.py` chama `load_dotenv()` em nível de módulo, o que injetaria o
+``DATABASE_URL`` do ``.env`` (PostgreSQL real) no ambiente antes de qualquer
+``create_app()``. Para neutralizar:
+
+1. Capturamos ``DATABASE_URL`` do OS **antes** de qualquer import.
+2. Sobrescrevemos com SQLite — ``load_dotenv(override=False)`` não reverte.
+3. ``pytest_configure`` aborta a suíte se o valor original era PostgreSQL.
+
+Assim, qualquer ``create_app()`` sem override explícito de URI recebe SQLite
+e **não** pode gravar no banco real.
 """
 
 from pathlib import Path
@@ -24,7 +37,14 @@ from datetime import datetime
 import os
 import sys
 
-import pytest
+# ── AJ6-C: captura e neutraliza DATABASE_URL ANTES de qualquer import ─────
+# Deve ocorrer antes de `import pytest` e de `from app import ...`, pois o
+# import de `app` dispara config.py → load_dotenv() que injetaria a URL real.
+_DB_URL_ORIGINAL = os.environ.get("DATABASE_URL", "")
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# ──────────────────────────────────────────────────────────────────────────
+
+import pytest  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
@@ -50,6 +70,32 @@ class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
+def pytest_sessionstart(session):
+    """AJ6-C: Aborta a suíte se DATABASE_URL no ambiente apontava para Postgres
+
+    ou se o driver do engine não for sqlite.
+    """
+    if "postgresql" in _DB_URL_ORIGINAL.lower() or "postgres" in _DB_URL_ORIGINAL.lower():
+        pytest.exit(
+            "ABORTAR — trava de banco de teste disparada (AJ6-C)!\n"
+            f"DATABASE_URL no ambiente ({_DB_URL_ORIGINAL}) aponta para PostgreSQL.\n"
+            "A suíte de testes exige SQLite. Remova DATABASE_URL do ambiente antes de rodar pytest.",
+            returncode=1,
+        )
+
+    # Valida que o app de teste instancia estritamente em SQLite
+    test_app = create_app(SQLiteTestConfig)
+    with test_app.app_context():
+        driver = db.engine.url.drivername
+        if not driver.startswith("sqlite"):
+            pytest.exit(
+                "ABORTAR — trava de banco de teste disparada (AJ6-C)!\n"
+                f"Engine configurado com driver '{driver}' (esperado 'sqlite').\n"
+                "Execução de testes contra banco não-SQLite é estritamente proibida.",
+                returncode=1,
+            )
+
+
 @pytest.fixture
 def app():
     test_app = create_app(SQLiteTestConfig)
@@ -59,6 +105,9 @@ def app():
         SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
     )
     with test_app.app_context():
+        assert db.engine.url.drivername.startswith("sqlite"), (
+            f"Trava AJ6-C: driver '{db.engine.url.drivername}' não permitido. Exigido 'sqlite'."
+        )
         db.create_all()
         yield test_app
         db.session.remove()
