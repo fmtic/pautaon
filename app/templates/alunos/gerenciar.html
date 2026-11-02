@@ -167,7 +167,7 @@
                 <tr>
                     <td class="text-center fw-medium">
                         <a href="{{ url_for('registros.historico_aluno', aluno_id=aluno.id) }}" target="_blank"
-                            class="text-decoration-none text-primary fw-bold">
+                            class="text-decoration-none text-primary fw-bold" title="Histórico do Aluno">
                             {{ aluno.matricula or '-' }}
                         </a>
                     </td>
@@ -185,7 +185,7 @@
                     <td>
                         <a href="{{ url_for('registros.imprimir_aluno', id=aluno.id) }}" target="_blank"
                             class="text-decoration-none text-dark d-block">
-                            <div class="fw-bold">{{ aluno.nome }}</div>
+                            <div class="fw-bold"  title="Ficha do Aluno">{{ aluno.nome }}</div>
                             {% if aluno.nome_social and aluno.nome_social != '-' %}
                             <small class="text-muted">Social: {{ aluno.nome_social }}</small>
                             {% endif %}
