@@ -208,7 +208,7 @@ def montar(periodo: PeriodoLetivo, unidade_id: int | None) -> dict:
     turmas_ids = [t.id for t in turmas]
     semanas = semanas_do_periodo(periodo)
 
-    freq = frequencia.agregar_por_turma(turmas_ids, unidade_id=unidade_id)
+    freq = frequencia.agregar_por_turma(turmas_ids)
     cons = conselho.por_turma(turmas_ids)
 
     status_map = coorte.status(unidade_id, periodo.id)

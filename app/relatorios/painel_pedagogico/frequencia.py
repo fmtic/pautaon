@@ -23,15 +23,13 @@ FrequenciaTurma = TurmaFrequencia
 
 def agregar_por_turma(
     turmas_ids: Iterable[int],
-    unidade_id: int | None = None,
 ) -> dict[int, FrequenciaTurma]:
     """Delegação ao serviço único (UMA consulta de frequência em lote).
 
-    `unidade_id` estreita o escopo quando o chamador já filtra por unidade
-    (visão por período); sem ele, soma todas as linhas da turma (ofertas +
-    legado), exatamente como antes do serviço.
+    O escopo de unidade é garantido pelas próprias turmas fornecidas pelo
+    chamador (Turma pertence a uma única unidade), sem depender de Frequencia.unidade_id.
     """
-    return _agregar_turma(turmas_ids, unidade_id=unidade_id)
+    return _agregar_turma(turmas_ids)
 
 
 def semanal(

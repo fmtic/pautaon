@@ -771,10 +771,10 @@ def turma():
     )
 
     freq_turma_map = freq_geral_turmas_em_lote(
-        [t.id for t in turmas], unidade_id=unidade_id
+        [t.id for t in turmas]
     )
     freq_oferta_map = freq_geral_ofertas_em_lote(
-        [o.id for o in ofertas_carga], unidade_id=unidade_id
+        [o.id for o in ofertas_carga]
     )
 
     # Centros disponíveis para o filtro do formulário.

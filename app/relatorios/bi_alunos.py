@@ -36,7 +36,7 @@ from app.services.frequencia_oferta import (
     ofertas_unicas_ativas,
     percentual,
 )
-from sqlalchemy import func, case, cast, Integer, and_, or_, select
+from sqlalchemy import func, and_, or_, select
 from sqlalchemy.orm import selectinload
 from datetime import date
 
@@ -67,7 +67,7 @@ def _base_frequencia(filtros, conceitos=None):
     ).filter(Turma.ativo.is_(True))
 
     if filtros.get("unidade_id"):
-        query = query.filter(Frequencia.unidade_id == filtros["unidade_id"])
+        query = query.filter(Turma.unidade_id == filtros["unidade_id"])
 
     if filtros.get("turma_id"):
         query = query.filter(Frequencia.turma_id == filtros["turma_id"])
@@ -1330,7 +1330,7 @@ def frequencia_por_turma(
             Frequencia.conceito.in_(_CONCEITOS_CONTABEIS),
         )
         if unidade_id:
-            fq = fq.filter(Frequencia.unidade_id == unidade_id)
+            fq = fq.filter(Turma.unidade_id == unidade_id)
         if data_inicio:
             fq = fq.filter(Frequencia.data >= data_inicio)
         if data_fim:
@@ -1348,7 +1348,7 @@ def frequencia_por_turma(
     else:
         # Agregação em lote pelo serviço único (1 consulta para todas as
         # turmas; turmas sem frequência ficam ausentes do dict).
-        agregado = agregar_por_turma(turmas_ids, unidade_id=unidade_id)
+        agregado = agregar_por_turma(turmas_ids)
         percentuais = {tid: info.pct_turma for tid, info in agregado.items()}
 
     return [
@@ -1457,7 +1457,7 @@ def frequencia_por_curso(
             Frequencia.conceito.in_(_CONCEITOS_CONTABEIS),
         )
         if unidade_id:
-            fq = fq.filter(Frequencia.unidade_id == unidade_id)
+            fq = fq.filter(Turma.unidade_id == unidade_id)
         if data_inicio:
             fq = fq.filter(Frequencia.data >= data_inicio)
         if data_fim:
@@ -1485,7 +1485,7 @@ def frequencia_por_curso(
     else:
         # Serviço único: 1 consulta de frequência para todas as ofertas, com
         # a regra D2 do legado embutida.
-        agregado = agregar_por_oferta(list(curso_por_oferta), unidade_id=unidade_id)
+        agregado = agregar_por_oferta(list(curso_por_oferta))
         for oferta_id, info in agregado.items():
             _acumula(oferta_id, info.presentes, info.faltas)
 

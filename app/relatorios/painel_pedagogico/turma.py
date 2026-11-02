@@ -23,7 +23,7 @@ from .helpers import (
     semanas_do_periodo,
     tendencia,
 )
-from .regras import FALTAS_SEGUIDAS_SINAL, LIMIAR_CRITICO, ContextoSinaisTurma
+from .regras import FALTAS_SEGUIDAS_SINAL, ContextoSinaisTurma
 from .sinais import sinais_turma
 
 
@@ -64,7 +64,7 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
         }
 
     semanas = semanas_do_periodo(periodo)
-    freq = frequencia.agregar_por_turma([turma.id], unidade_id=unidade_id).get(
+    freq = frequencia.agregar_por_turma([turma.id]).get(
         turma.id, FrequenciaTurma()
     )
     cons = conselho.por_turma([turma.id]).get(turma.id, {})
@@ -193,7 +193,7 @@ def _media_periodo(periodo, unidade_id: int | None = None) -> float | None:
     if not turmas_periodo:
         return None
     agg = frequencia.agregar_por_turma(
-        [t.id for t in turmas_periodo], unidade_id=unidade_id
+        [t.id for t in turmas_periodo]
     )
     pres = sum(v.presentes for v in agg.values())
     tot = sum(v.total for v in agg.values())

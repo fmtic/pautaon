@@ -180,7 +180,6 @@ def oferta_unica_com_legado(oferta_id: int) -> bool:
 
 def agregar_por_oferta(
     oferta_ids: Iterable[int],
-    unidade_id: int | None = None,
     por_turma: int | None = None,
 ) -> dict[int, OfertaFrequencia]:
     """Agregado por oferta em UMA consulta na tabela `frequencia`.
@@ -234,8 +233,6 @@ def agregar_por_oferta(
         )
     else:
         q = q.filter(Frequencia.turma_curso_id.in_(oferta_ids))
-    if unidade_id is not None:
-        q = q.filter(Frequencia.unidade_id == unidade_id)
     if por_turma is not None:
         q = q.filter(Frequencia.turma_id == por_turma)
     rows = q.group_by(
@@ -311,7 +308,6 @@ def agregar_por_oferta(
 
 def agregar_por_turma(
     turmas_ids: Iterable[int],
-    unidade_id: int | None = None,
 ) -> dict[int, TurmaFrequencia]:
     """Soma de TODAS as linhas da turma (ofertas + legado), exatamente como
     fazia o agregador do painel antes do serviço — UMA consulta bruta
@@ -334,8 +330,6 @@ def agregar_por_turma(
         Frequencia.data,
         Frequencia.conceito,
     ).filter(Frequencia.turma_id.in_(turmas_ids))
-    if unidade_id is not None:
-        q = q.filter(Frequencia.unidade_id == unidade_id)
     rows = q.order_by(
         Frequencia.turma_id, Frequencia.aluno_id, Frequencia.data
     ).all()
@@ -376,7 +370,6 @@ def agregar_por_turma(
 
 def freq_geral_turmas_em_lote(
     turmas_ids: Iterable[int],
-    unidade_id: int | None = None,
 ) -> dict[int, float]:
     """`{turma_id: pct}` para uma lista de turmas — UMA consulta.
 
@@ -387,7 +380,7 @@ def freq_geral_turmas_em_lote(
     turmas_ids = list(turmas_ids)
     if not turmas_ids:
         return {}
-    agregado = agregar_por_turma(turmas_ids, unidade_id=unidade_id)
+    agregado = agregar_por_turma(turmas_ids)
     return {
         tid: (agregado.get(tid).pct_turma if agregado.get(tid) is not None else 0.0)
         for tid in turmas_ids
@@ -396,7 +389,6 @@ def freq_geral_turmas_em_lote(
 
 def freq_geral_ofertas_em_lote(
     oferta_ids: Iterable[int],
-    unidade_id: int | None = None,
     por_turma: int | None = None,
 ) -> dict[int, float]:
     """`{oferta_id: pct}` para uma lista de ofertas — UMA consulta.
@@ -410,7 +402,7 @@ def freq_geral_ofertas_em_lote(
     if not oferta_ids:
         return {}
     agregado = agregar_por_oferta(
-        oferta_ids, unidade_id=unidade_id, por_turma=por_turma
+        oferta_ids, por_turma=por_turma
     )
     return {
         oid: (agregado.get(oid).pct if agregado.get(oid) is not None else 0.0)
