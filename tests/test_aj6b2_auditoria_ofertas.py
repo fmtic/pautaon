@@ -315,7 +315,12 @@ def test_item4_conselho_imprimir_export_professor_403(app, client):
 def test_item5_ver_turma_corpo_markes_oferta_alheia(app, client):
     """pA passa na adesão (tem A em T1) e abre /turma/T1. O corpo é checado
     quanto aos alunos das ofertas ALHEIAS (B de pB, C de pC). Ajustado ao
-    comportamento real observado; NÃO corrige nada — só documenta."""
+    comportamento real observado; NÃO corrige nada — só documenta.
+
+    AJ6-B3 (decisão 1) sanou a fuga: a ficha continua entrando por adesão, mas
+    payload/HTML saem só das ofertas do professor. As asserções foram
+    **invertidas** aqui — este arquivo fica como registro histórico do leak e
+    como prova de que ele não volta."""
     ids = _setup(app)
     login_as(client, ids["pa"], ids["un"])
     r = client.get(f"/turma/{ids['t1']}")
@@ -325,11 +330,8 @@ def test_item5_ver_turma_corpo_markes_oferta_alheia(app, client):
     estrangeiro_b = "Aluno B" in html
     estrangeiro_c = "Aluno C" in html
     print(f"[AJ6B2 ver_turma] proprio(A)={proprio} alheio_B={estrangeiro_b} alheio_C={estrangeiro_c}")
-    # O professor da oferta A abre a ficha da TURMA (adesao por turma, nao por
-    # oferta) e o corpo elenca os alunos das OUTRAS ofertas (B, C). Este teste
-    # CARACTERIZA o estado atual (SIM, vaza) para o operador decidir; nao
-    # corrige. Se a fuga for sanada, a assercao abaixo passa a falhar e deve
-    # ser invertida junto com a decisao.
-    assert proprio is True
-    assert estrangeiro_b is True
-    assert estrangeiro_c is True
+    # AJ6-B3: o corpo não pode mais enumerar as outras ofertas (B, C). Era o
+    # leak caracterizado acima; a correção veio no escopo de ver_turma.
+    assert proprio is True, "a oferta dele continua na ficha"
+    assert estrangeiro_b is False, "vaza Aluno B (oferta de pB)"
+    assert estrangeiro_c is False, "vaza Aluno C (oferta de pC)"
