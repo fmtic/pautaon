@@ -54,6 +54,57 @@ def test_app_fixture_garante_driver_sqlite(app):
         assert db.engine.dialect.name == "sqlite"
 
 
+def test_trava_nao_vaza_credenciais_na_saida():
+    """AJ6-C rodada 2: a mensagem de aborto jamais imprime a DATABASE_URL.
+
+    Roda a suíte em subprocesso com ``DATABASE_URL`` apontando para um
+    PostgreSQL fictício cujo usuário e senha são marcadores únicos. Prova que:
+
+    1. a suíte aborta (retorno não-zero, mensagem da trava presente);
+    2. o usuário e a senha fictícios não aparecem em stdout nem stderr;
+    3. o resumo exibido traz apenas driver e nome do banco.
+    """
+    usuario_ficticio = "USUARIO-VAZA-TESTE-x9q"
+    senha_ficticia = "SENHA-VAZA-TESTE-k3w"
+    env = os.environ.copy()
+    env["DATABASE_URL"] = (
+        f"postgresql+psycopg://{usuario_ficticio}:{senha_ficticia}"
+        "@db.example.invalid:5432/pautaon_sonda"
+    )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "tests/test_aj6a_painel_fumaca.py",
+        "-k",
+        "test_painel_sem_periodo_200",
+    ]
+
+    proc = subprocess.run(
+        cmd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    saida = proc.stdout + proc.stderr
+    assert proc.returncode != 0, "A suíte deveria abortar com DATABASE_URL PostgreSQL."
+    assert "ABORTAR" in saida, f"Mensagem da trava não encontrada na saída:\n{saida}"
+    # A regra anti-leak vale para toda a saída do processo, não só a linha:
+    assert usuario_ficticio not in saida, (
+        " vazamento: usuário da DATABASE_URL apareceu na saída do pytest!"
+    )
+    assert senha_ficticia not in saida, (
+        " vazamento: senha da DATABASE_URL apareceu na saída do pytest!"
+    )
+    # O resumo seguro deve aparecer: driver + nome do banco, sem credenciais.
+    assert "postgresql+psycopg/pautaon_sonda" in saida, (
+        "Mensagem deveria mostrar apenas driver e nome do banco."
+    )
+
+
 def test_create_app_sem_override_recebe_sqlite_em_teste():
     """Garante que create_app() padrão em ambiente de testes herda SQLite."""
     # Como conftest.py neutralizou DATABASE_URL no os.environ para sqlite:///:memory:

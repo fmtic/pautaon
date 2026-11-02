@@ -70,15 +70,40 @@ class SQLiteTestConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
+#: Sentinela usada quando não é possível extrair driver/nome com segurança.
+_URL_MASCARADA = "<url mascarada>"
+
+
+def _resumo_url_banco(url: str) -> str:
+    """AJ6-C rodada 2: resumo seguro de uma ``DATABASE_URL`` para logs.
+
+    Devolve apenas ``driver + nome do banco`` (ex.: ``postgresql+psycopg/pautaon``)
+    ou a sentinela ``<url mascarada>`` quando o parsing falha. Usuário, senha,
+    host e porta jamais saem aqui — a mensagem de aborto da trava é impressa
+    pelo pytest e não pode vazar credenciais.
+    """
+    if not url:
+        return _URL_MASCARADA
+    try:
+        from sqlalchemy.engine import make_url
+
+        parsed = make_url(url)
+        banco = parsed.database or "<sem banco>"
+        return f"{parsed.drivername}/{banco}"
+    except Exception:
+        return _URL_MASCARADA
+
+
 def pytest_sessionstart(session):
     """AJ6-C: Aborta a suíte se DATABASE_URL no ambiente apontava para Postgres
 
-    ou se o driver do engine não for sqlite.
+    ou se o driver do engine não for sqlite. A mensagem mostra apenas o resumo
+    mascarado (driver/banco) — nunca a URL completa com credenciais.
     """
     if "postgresql" in _DB_URL_ORIGINAL.lower() or "postgres" in _DB_URL_ORIGINAL.lower():
         pytest.exit(
             "ABORTAR — trava de banco de teste disparada (AJ6-C)!\n"
-            f"DATABASE_URL no ambiente ({_DB_URL_ORIGINAL}) aponta para PostgreSQL.\n"
+            f"DATABASE_URL no ambiente ({_resumo_url_banco(_DB_URL_ORIGINAL)}) aponta para PostgreSQL.\n"
             "A suíte de testes exige SQLite. Remova DATABASE_URL do ambiente antes de rodar pytest.",
             returncode=1,
         )
