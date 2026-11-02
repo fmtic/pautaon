@@ -29,10 +29,10 @@ from app.models import (
     Aluno,
     Curso,
     Frequencia,
-    Inscricao,
     PeriodoLetivo,
     Turma,
-    TurmaCurso,
+    TurmaCursoHorario,
+    RegistroAula,
     Unidade,
     User,
 )
@@ -98,6 +98,7 @@ def seed_causa_real(app, hoje_fixo):
             nome="Informática", unidade_id=u2.id,
             periodo_letivo_id=p2.id, curso_id=c_info.id,
             professor_id=prof_info.id, ativo=True, turno="Manhã",
+            data_inicio=_INICIO, data_fim=_FIM,
         )
         db.session.add(turma_info); db.session.flush()
 
@@ -105,6 +106,17 @@ def seed_causa_real(app, hoje_fixo):
             turma_info.id, c_info.id, u2.id,
             principal=True, professor_id=prof_info.id,
         )
+
+        # Grade horaria da oferta (Segundas e Quartas, 08:00 as 11:00)
+        db.session.add(TurmaCursoHorario(
+            turma_curso_id=oferta_info.id, dia_semana=0,
+            hora_inicio=time(8, 0), hora_fim=time(11, 0),
+        ))
+        db.session.add(TurmaCursoHorario(
+            turma_curso_id=oferta_info.id, dia_semana=2,
+            hora_inicio=time(8, 0), hora_fim=time(11, 0),
+        ))
+        db.session.flush()
 
         # --- 13 Alunos Informática, inscritos na oferta_info ---
         alunos_info: list[Aluno] = []
@@ -118,7 +130,7 @@ def seed_causa_real(app, hoje_fixo):
             nova_inscricao(a.id, turma_info.id, oferta_info.id)
             alunos_info.append(a)
 
-        # --- Frequência: 13 alunos × 4 dias = 52 linhas (todas "A" = presença) ---
+        # --- Frequência: 13 alunos × 4 dias = 52 linhas com unidade_id NULL (forma real do pautaon) ---
         for aluno in alunos_info:
             for d in _DATAS_AULA:
                 db.session.add(Frequencia(
@@ -126,7 +138,7 @@ def seed_causa_real(app, hoje_fixo):
                     turma_id=turma_info.id,
                     turma_curso_id=oferta_info.id,
                     data=d, conceito="A",
-                    unidade_id=u2.id,
+                    unidade_id=None,  # Realidade comprovada do pautaon
                 ))
 
         # --- Turma Natação: 2 ofertas ativas ---
@@ -134,8 +146,9 @@ def seed_causa_real(app, hoje_fixo):
         # principal=False → Natação (oferta secundária)
         turma_nat = Turma(
             nome="Natação", unidade_id=u2.id,
-            periodo_letivo_id=p2.id, curso_id=c_nat.id,  # curso_id=Natação na turma
+            periodo_letivo_id=p2.id, curso_id=c_nat.id,
             professor_id=prof_nat.id, ativo=True, turno="Manhã",
+            data_inicio=_INICIO, data_fim=_FIM,
         )
         db.session.add(turma_nat); db.session.flush()
 
@@ -175,29 +188,20 @@ class TestH3FiltroUnidade:
     quando NÃO há turma com unidade diferente do período."""
 
     def test_h3_sem_filtro_igual_com_filtro(self, app, seed_causa_real):
-        """Sem turma cross-unidade, filtrar por unidade_id não muda nada."""
+        """Com escopo pelas turmas da unidade, agregar_por_turma encontra as 52 linhas
+        mesmo quando Frequencia.unidade_id é NULL (forma real do pautaon)."""
         with app.app_context():
             s = seed_causa_real
             turmas = [s["turma_info_id"], s["turma_nat_id"]]
 
-            sem_filtro = agregar_por_turma(turmas, unidade_id=None)
-            com_filtro = agregar_por_turma(turmas, unidade_id=s["u2_id"])
+            resultado = agregar_por_turma(turmas)
 
-            # Informática deve aparecer em ambos (tem frequência)
-            assert s["turma_info_id"] in sem_filtro
-            assert s["turma_info_id"] in com_filtro
-
-            info_sem = sem_filtro[s["turma_info_id"]]
-            info_com = com_filtro[s["turma_info_id"]]
-
-            # Sem turma cross-unidade: os totais são idênticos
-            assert info_sem.total == info_com.total, (
-                f"H3 FALHOU: sem_filtro.total={info_sem.total} != "
-                f"com_filtro.total={info_com.total} — "
-                f"filtro unidade TEM efeito mesmo sem dados cross-unidade"
-            )
-            assert info_sem.presentes == info_com.presentes
-            assert info_sem.pct_turma == info_com.pct_turma
+            # Informática deve aparecer (tem frequência lançada com unidade_id NULL)
+            assert s["turma_info_id"] in resultado
+            info = resultado[s["turma_info_id"]]
+            assert info.total == s["n_linhas_esperadas"]
+            assert info.presentes == s["n_linhas_esperadas"]
+            assert info.pct_turma == 100.0
 
     def test_h3_nenhuma_turma_cross_unidade_na_fixture(self, app, seed_causa_real):
         """Confirma que a fixture não tem turma com unidade != periodo.unidade."""
@@ -452,23 +456,32 @@ class TestMatrizPerfisPainel:
                 )
 
     def test_painel_mesmos_totais_entre_perfis(self, app, seed_causa_real, usuarios_causa_real, client):
-        """Todos os perfis veem os mesmos totais (H8: sem duplicação)."""
+        """Todos os perfis veem os mesmos totais e espelham a visão do professor (13 alunos, 100% freq)."""
         with app.app_context():
             from app.relatorios.painel_pedagogico import periodo as periodo_view
             s = seed_causa_real
-            periodo = PeriodoLetivo.query.get(s["p2_id"])
+            periodo = db.session.get(PeriodoLetivo, s["p2_id"])
 
             vp = periodo_view.montar(periodo, unidade_id=s["u2_id"])
             total_esperado_alunos = vp["totais"]["alunos"]
             pct_esperado = vp["totais"]["pct_geral"]
 
+            # Com Frequencia.unidade_id NULL (forma real do pautaon),
+            # o painel deve enxergar os 13 alunos e 100% de presença, igual ao professor.
+            assert total_esperado_alunos == s["n_alunos_info"], (
+                f"Painel zerado: total_alunos={total_esperado_alunos} (esperado {s['n_alunos_info']})"
+            )
+            assert pct_esperado == 100.0, (
+                f"Painel com freq errada: pct_geral={pct_esperado} (esperado 100.0)"
+            )
+
             # Todos os perfis com unidade MGB devem ver o mesmo painel
             for role in ROLES_RELATORIOS:
                 vp2 = periodo_view.montar(periodo, unidade_id=s["u2_id"])
-                assert vp2["totais"]["alunos"] == total_esperado_alunos, (
+                assert vp2["totais"]["alunos"] == s["n_alunos_info"], (
                     f"Perfil {role}: total_alunos difere entre chamadas"
                 )
-                assert vp2["totais"]["pct_geral"] == pct_esperado, (
+                assert vp2["totais"]["pct_geral"] == 100.0, (
                     f"Perfil {role}: pct_geral difere entre chamadas"
                 )
 
@@ -482,3 +495,124 @@ class TestMatrizPerfisPainel:
                 assert resp.status_code == 200, (
                     f"Perfil {role}: visão turma retornou {resp.status_code}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Teste do escritor: salvar_frequencia via rota real grava unidade_id
+# ---------------------------------------------------------------------------
+def test_escritor_salvar_frequencia_grava_unidade_id(app, seed_causa_real, client):
+    """Testa que o escritor (salvar_frequencia via rota real) preenche unidade_id tanto
+    na criação de nova linha quanto na atualização de linha legada com unidade_id NULL."""
+    with app.app_context():
+        s = seed_causa_real
+        turma = db.session.get(Turma, s["turma_info_id"])
+        prof = db.session.get(User, turma.professor_id)
+        aluno_id = s["alunos_info_ids"][0]
+        nova_data = date(2026, 10, 19)  # Segunda-feira, dentro do periodo, na grade
+
+    login_as(client, prof, unidade_id=s["u2_id"])
+
+    # 1. Criação de nova frequência via POST na rota real
+    resp = client.post("/frequencia", data={
+        "turma": str(s["turma_info_id"]),
+        "turma_curso": str(s["oferta_info_id"]),
+        "data": nova_data.isoformat(),
+        f"aluno_{aluno_id}": "A",
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        freq_nova = Frequencia.query.filter_by(
+            turma_id=s["turma_info_id"],
+            aluno_id=aluno_id,
+            data=nova_data,
+        ).first()
+        assert freq_nova is not None
+        assert freq_nova.unidade_id == s["u2_id"], (
+            f"Escritor não gravou unidade_id na criação: {freq_nova.unidade_id} (esperado {s['u2_id']})"
+        )
+
+        reg_novo = RegistroAula.query.filter_by(
+            turma_id=s["turma_info_id"],
+            data=nova_data,
+        ).first()
+        assert reg_novo is not None
+        assert reg_novo.unidade_id == s["u2_id"], (
+            f"Escritor não gravou unidade_id no RegistroAula: {reg_novo.unidade_id} (esperado {s['u2_id']})"
+        )
+
+    # 2. Atualização de frequência existente que estava com unidade_id NULL
+    data_semente = s["datas_aula"][0]
+    resp2 = client.post("/frequencia", data={
+        "turma": str(s["turma_info_id"]),
+        "turma_curso": str(s["oferta_info_id"]),
+        "data": data_semente.isoformat(),
+        f"aluno_{aluno_id}": "B",
+    }, follow_redirects=True)
+    assert resp2.status_code == 200
+
+    with app.app_context():
+        freq_atualizada = Frequencia.query.filter_by(
+            turma_id=s["turma_info_id"],
+            aluno_id=aluno_id,
+            data=data_semente,
+        ).first()
+        assert freq_atualizada is not None
+        assert freq_atualizada.conceito == "B"
+        assert freq_atualizada.unidade_id == s["u2_id"], (
+            f"Escritor não preencheu unidade_id na atualização: {freq_atualizada.unidade_id} (esperado {s['u2_id']})"
+        )
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Teste de isolamento de duas unidades com unidade_id NULL
+# ---------------------------------------------------------------------------
+def test_isolamento_duas_unidades_com_unidade_id_null(app):
+    """Usuário da unidade A não enxerga frequência da unidade B nem com unidade_id NULL."""
+    with app.app_context():
+        u1 = Unidade(nome="Unidade A", ativo=True)
+        u2 = Unidade(nome="Unidade B", ativo=True)
+        db.session.add_all([u1, u2])
+        db.session.flush()
+
+        p1 = PeriodoLetivo(nome="2026.2", data_inicio=_INICIO, data_fim=_FIM, unidade_id=u1.id, ativo=True)
+        p2 = PeriodoLetivo(nome="2026.2", data_inicio=_INICIO, data_fim=_FIM, unidade_id=u2.id, ativo=True)
+        db.session.add_all([p1, p2])
+        db.session.flush()
+
+        c1 = Curso(nome="Curso A", unidade_id=u1.id, ativo=True)
+        c2 = Curso(nome="Curso B", unidade_id=u2.id, ativo=True)
+        db.session.add_all([c1, c2])
+        db.session.flush()
+
+        prof1 = professor_semente(u1.id, email="prof.u1@test.com", nome="Prof U1")
+        prof2 = professor_semente(u2.id, email="prof.u2@test.com", nome="Prof U2")
+
+        t1 = Turma(nome="Turma U1", unidade_id=u1.id, periodo_letivo_id=p1.id, curso_id=c1.id, professor_id=prof1.id, ativo=True)
+        t2 = Turma(nome="Turma U2", unidade_id=u2.id, periodo_letivo_id=p2.id, curso_id=c2.id, professor_id=prof2.id, ativo=True)
+        db.session.add_all([t1, t2])
+        db.session.flush()
+
+        a1 = Aluno(nome="Aluno A", unidade_id=u1.id, ativo=True, data_nascimento=date(2010, 1, 1))
+        a2 = Aluno(nome="Aluno B", unidade_id=u2.id, ativo=True, data_nascimento=date(2010, 1, 1))
+        db.session.add_all([a1, a2])
+        db.session.flush()
+
+        f1 = Frequencia(turma_id=t1.id, aluno_id=a1.id, data=date(2026, 8, 3), conceito="A", unidade_id=None)
+        f2 = Frequencia(turma_id=t2.id, aluno_id=a2.id, data=date(2026, 8, 3), conceito="A", unidade_id=None)
+        db.session.add_all([f1, f2])
+        db.session.commit()
+
+        # O painel/agregação para unidade A consulta as turmas de U1
+        turmas_u1 = Turma.query.filter_by(periodo_letivo_id=p1.id, ativo=True).all()
+        turmas_u1_ids = [t.id for t in turmas_u1]
+
+        agg_u1 = agregar_por_turma(turmas_u1_ids)
+        assert t1.id in agg_u1
+        assert t2.id not in agg_u1
+        assert agg_u1[t1.id].total == 1
+        assert agg_u1[t1.id].presentes == 1
+
