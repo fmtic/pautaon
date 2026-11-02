@@ -112,7 +112,10 @@ def test_dashboard_filtra_periodos_ativos_pela_unidade_selecionada(app, client):
     assert _periodos_ativos_exibidos(response) == 1
 
 
-def test_dashboard_professor_exibe_turma_com_responsavel_direto(app, client):
+def test_dashboard_professor_nao_exibe_turma_sem_oferta(app, client):
+    """AJ6-B3 (decisão 2): "professor da turma" não existe — só professor da
+    OFERTA. Turma ativa com `Turma.professor_id` preenchido e NENHUMA oferta
+    ativa não entra mais no dashboard (o fallback legado foi removido)."""
     with app.app_context():
         unidade = Unidade(nome="Unidade da Natação", ativo=True)
         db.session.add(unidade)
@@ -139,4 +142,4 @@ def test_dashboard_professor_exibe_turma_com_responsavel_direto(app, client):
     response = client.get("/dashboard")
 
     assert response.status_code == 200
-    assert "1 - Natação" in response.get_data(as_text=True)
+    assert "1 - Natação" not in response.get_data(as_text=True)

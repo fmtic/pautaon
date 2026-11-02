@@ -153,7 +153,12 @@ def _aulas_pendentes(minhas_turmas, professor_id=None, prazo_dias=0):
 def _entradas_professor(user_id):
     """Lista de cursos (ofertas) que o professor leciona, como dicts unificados.
 
-    Cada entrada contém: turma, oferta (TurmaCurso ou None), turma_curso_id,
+    AJ6-B3 (decisão 2): a única fonte de entrada são as **ofertas** cujo
+    responsável é o professor (`TurmaCurso.professor_id`). O antigo ramo legado
+    — turma sem oferta ativa em que ele era o `Turma.professor_id` — foi
+    removido: "professor da turma" não existe; só professor da oferta.
+
+    Cada entrada contém: turma, oferta (TurmaCurso), turma_curso_id,
     curso_nome, label, dias, hora_inicio, hora_fim, alunos_count, pendentes_count.
     """
     entradas = []
@@ -196,76 +201,29 @@ def _entradas_professor(user_id):
             'pendentes_count': 0,
         })
 
-    # 2) Turmas legadas onde o professor é responsável e não tem oferta atribuída.
-    turmas_legado = Turma.query.filter_by(professor_id=user_id, ativo=True).all()
-    for turma in turmas_legado:
-        ativas = ofertas_ativas(turma.id)
-        if any(o.professor_id == user_id for o in ativas):
-            continue
-        if ativas:
-            continue
-        chave = (turma.id, None)
-        if chave in vistas:
-            continue
-        vistas.add(chave)
-        aluno_ids = alunos_ativos_da_turma(turma.id)
-        curso_nome = turma.curso.nome if getattr(turma, 'curso', None) else turma.nome
-        entradas.append({
-            'turma': turma,
-            'oferta': None,
-            'turma_curso_id': None,
-            'curso_nome': curso_nome,
-            'label': f"{turma.nome} — {curso_nome}",
-            # H5a: turma sem oferta não tem agenda (nasce com a oferta).
-            'dias': None,
-            'dias_badges': _dias_badges(),
-            'grade': None,
-            'horario': None,
-            'alunos_count': len(aluno_ids),
-            'pendentes_count': 0,
-        })
-
-    # Preenche pendentes_count por entrada (prazo de 3 dias).
+    # 2) Preenche pendentes_count por entrada (prazo de 3 dias). Toda entrada
+    # tem oferta própria (decisão 2), então a pendência é sempre por oferta.
     hoje = get_local_now().date()
     for e in entradas:
         turma = e['turma']
         blocked = datas_bloqueadas_str(turma.periodo_letivo_id)
         oferta = e['oferta']
-        if oferta is not None:
-            pauta = _alunos_da_oferta(
-                turma.id, oferta.id,
+        aluno_ids = [a.id for a in _alunos_da_oferta(
+            turma.id, oferta.id,
+        )]
+        if not aluno_ids:
+            e['pendentes_count'] = 0
+            continue
+        count = 0
+        for data_alvo in datas_esperadas_oferta(oferta, hoje, blocked):
+            if (hoje - data_alvo).days <= 3:
+                continue
+            lancados = frequencias_lancadas(
+                turma.id, data_alvo, aluno_ids, turma_curso_id=oferta.id,
             )
-            aluno_ids = [a.id for a in pauta]
-            if not aluno_ids:
-                e['pendentes_count'] = 0
-                continue
-            count = 0
-            for data_alvo in datas_esperadas_oferta(oferta, hoje, blocked):
-                if (hoje - data_alvo).days <= 3:
-                    continue
-                lancados = frequencias_lancadas(
-                    turma.id, data_alvo, aluno_ids, turma_curso_id=oferta.id,
-                )
-                if lancados < len(aluno_ids):
-                    count += 1
-            e['pendentes_count'] = count
-        else:
-            aluno_ids = alunos_ativos_da_turma(turma.id)
-            if not aluno_ids:
-                e['pendentes_count'] = 0
-                continue
-            datas_aula = gerar_datas(turma, incluir_futuro=False, blocked_dates=blocked)
-            count = 0
-            for data_item in datas_aula:
-                data_alvo = parse_date(data_item)
-                if data_alvo is None:
-                    continue
-                if (hoje - data_alvo).days <= 3:
-                    continue
-                lancados = frequencias_lancadas(turma.id, data_alvo, aluno_ids)
-                if lancados < len(aluno_ids):
-                    count += 1
-            e['pendentes_count'] = count
+            if lancados < len(aluno_ids):
+                count += 1
+        e['pendentes_count'] = count
 
     return entradas
 
@@ -302,17 +260,10 @@ def render_dashboard_professor():
         # Alunos sob gestão (sem repetir).
         aluno_ids = set()
         for e in entradas:
-            turma = e['turma']
-            oferta = e['oferta']
-            if oferta is not None:
-                pauta = _alunos_da_oferta(
-                    turma.id, oferta.id,
-                )
-                for a in pauta:
-                    aluno_ids.add(a.id)
-            else:
-                for aid in alunos_ativos_da_turma(turma.id):
-                    aluno_ids.add(aid)
+            for a in _alunos_da_oferta(
+                e['turma'].id, e['oferta'].id,
+            ):
+                aluno_ids.add(a.id)
         total_meus_alunos = len(aluno_ids)
 
         hoje = get_local_now().date()
