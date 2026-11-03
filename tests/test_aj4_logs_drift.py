@@ -48,7 +48,9 @@ PASTA_APP = RAIZ / "app"
 # ---------------------------------------------------------------------------
 
 #: Os 30 rótulos distintos da união `pautaon ∪ pautaon_ensaio` no censo de
-#: 31/10/2026 (tabela E2 do relatório AJ3; `.tmp/acoes_reais.json`).
+#: 31/10/2026 (tabela E2 do relatório AJ3; `.tmp/acoes_reais.json`), mais o
+#: rótulo novo do AJ7-A (`Alteração de conselho (gestor)`), que entra com
+#: decisão humana explícita antes de existir linha nos bancos reais.
 CENSO_REAL = frozenset(
     {
         "Acesso Aprovado",
@@ -60,6 +62,7 @@ CENSO_REAL = frozenset(
         "Alterar Turma",
         "Alterar TurmaCurso",
         "Alteração de Cadastros",
+        "Alteração de conselho (gestor)",
         "Aviso de Invasão/Falha",
         "Cadastro Local",
         "Criar Aluno",
@@ -137,6 +140,7 @@ CATEGORIA_ESPERADA = {
     "Alterar Turma": "edicao",
     "Alterar TurmaCurso": "edicao",
     "Alteração de Cadastros": "edicao",
+    "Alteração de conselho (gestor)": "edicao",
     "Aviso de Invasão/Falha": "login",
     "Cadastro Local": "login",
     "Cadastro Período Letivo": "outras",
@@ -178,7 +182,7 @@ ROTULOS_DINAMICOS_CONHECIDOS = {
         "acao=acao de `before_flush` — f-strings `Criar <Modelo>` (linha 61) "
         "e `Alterar <Modelo>` (linha 63), resolvidas apenas em runtime"
     ),
-    "app/services/auth_service.py:87": (
+    "app/services/auth_service.py:99": (
         "acao=action dentro do corpo de `register_security_log` — repasse do "
         "parâmetro; as 19 chamadas pelo nome do helper passam literais, já "
         "cobertos pela asserção 1"
@@ -495,7 +499,7 @@ def test_listas_congeladas_sem_sobreposicao():
                 "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
                 f"{sorted(a & b)}."
             )
-    assert len(CENSO_REAL) == 30 and len(ROTULOS_SEM_LINHA) == 8
+    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 8
     assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 
