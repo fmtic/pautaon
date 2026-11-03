@@ -44,7 +44,7 @@ Outros fatos da leitura:
 |---|---|
 | `app/conselho.py` (+39/-9) | `index_conselho`: lista por **oferta** (`ofertas_do_painel_conselho`), passa `ofertas` + `turmas_sem_oferta` (aviso discreto, não conta como pendência). `informacoes`: `ofertas_pendentes`/`ofertas_total` via `contar_ofertas_conselho`. |
 | `app/templates/conselho/painel.html` (+60/-21) | Um card por **oferta**: turma + curso, badge **Concluído/Pendente vindo da oferta**, programa/turno/professor/dias/horário/alunos da oferta; links de lançamento com `?oferta_sel=<id>` e fechamento com `?oferta_sel=<id>`; **botão de alternar encerramento por oferta** (form POST `planejamento.alternar_conselho` com `turma_curso_id`); aviso discreto para turmas sem oferta ativa; estado vazio "Nenhuma oferta ativa...". |
-| `app/templates/conselho/informacoes.html` (+5/-3) | "Ofertas Pendentes (Conselho Final)" + total de ofertas ativas; rótulo e variável migrados. |
+| `app/templates/conselho/informacoes.html` (+5/-3) | "Cursos Pendentes (Conselho Final)" + total de ofertas ativas; rótulo e variável migrados. |
 | `app/utils/logica.py` (+8/-7) | `calcular_metricas_conselho` conta **ofertas** (`contar_ofertas_conselho`), mantendo as chaves `turmas_concluidas`/`total_turmas` do dict (compatibilidade do template). Import **local** do serviço para não criar ciclo `app.services → app.utils`. |
 | `app/templates/relatorios/geral.html` (+2/-2) | Apenas rótulos: "Ofertas Avaliadas" e "X de Y ofertas finalizadas" — layout intacto. `relatorios/geral.py` **não** precisou mudar (já usa `calcular_metricas_conselho`). |
 | `app/registros/periodos.py` (+4/-1) | Import do helper e `"concluido": turma_conselho_concluido(turma)` na montagem do certificado. A busca do `ConselhoClasse` FINAL (L551-555) **não** foi tocada. |

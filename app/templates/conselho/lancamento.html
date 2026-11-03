@@ -16,16 +16,16 @@
             <form method="GET" action="{{ url_for('conselho.lancamento_conselho') }}" class="row g-3 align-items-end">
                 {# D5.2: etapa e oferta sobrevivem ao reenvio dos filtros #}
                 <input type="hidden" name="etapa" value="{{ etapa }}">
-                <div class="col-md-4">
+                <!-- <div class="col-md-3">
                     <label class="form-label small fw-bold text-secondary">Programa</label>
                     <select name="programa" class="form-select" onchange="this.form.submit()">
                         <option value="Todos">Todos os Programas</option>
                         {% for p in lista_programas %}
                         <option value="{{ p }}" {% if programa_ativo==p %}selected{% endif %}>{{ p }}</option>
                         {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-4">
+                    </select> 
+                </div> -->
+                <div class="col-md-2">
                     <label class="form-label small fw-bold text-secondary">Turno</label>
                     <select name="turno" class="form-select" onchange="this.form.submit()">
                         <option value="Todos">Todos os Turnos</option>
@@ -34,8 +34,8 @@
                         <option value="Noite" {% if turno_ativo=='Noite' %}selected{% endif %}>Noite</option>
                     </select>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-bold text-secondary">Selecionar Turma</label>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-secondary">Selecionar Curso</label>
                     <select name="turma" class="form-select" onchange="this.form.submit()">
                         <option value="">Escolha a turma...</option>
                         {% for t in turmas %}
@@ -47,7 +47,7 @@
                 {# D5.2 (M1): com 2+ ofertas ativas a escolha do curso é obrigatória;
                    com 0/1 o seletor não aparece (uso direto ou recusa). #}
                 {% if turma and ofertas and ofertas|length >= 2 %}
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <label class="form-label small fw-bold text-secondary">Curso (oferta)</label>
                     <select name="oferta_sel" class="form-select" onchange="this.form.submit()">
                         <option value="">Selecione o curso...</option>
@@ -121,16 +121,16 @@
             {% for aluno in alunos %}
             <div class="col-12 mb-4">
                 <div class="card shadow-sm border-0">
-                    <div class="card-header bg-white py-2">
+                    <div class="card-header bg-light py-2">
                         <h6 class="mb-0 fw-bold text-primary">
-                            <i class="bi bi-person-circle me-2"></i>{{ aluno.nome_social or aluno.nome }}
+                            <img src="{{ url_for('registros.foto_aluno', aluno_id=aluno.id) }}" class="object-fit-cover rounded-circle me-2" style="width: 80px; height: 80px;" alt="{{ aluno.nome_social or aluno.nome }}" title="{{ aluno.nome_social or aluno.nome }}">{{ aluno.nome_social or aluno.nome }}
                         </h6>
                     </div>
                     <div class="card-body">
                         <div class="row">
                             {% for pergunta in perguntas_aluno %}
                             <div class="col-md-6 mb-3">
-                                <label class="fw-bold mb-2 small conselho-pergunta text-uppercase"
+                                <label class="fw-bold mb-2 conselho-pergunta text-uppercase"
                                     for="resp_{{ aluno.id }}_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
 
                                 {% if pergunta.opcoes %}
@@ -141,7 +141,7 @@
                                     {% for opcao in pergunta.opcoes.split(' | ') %}
                                     <button type="button"
                                         class="btn btn-xs btn-outline-primary me-1 mb-1 conselho-opcao {% if respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') == opcao %}active fw-bold{% endif %}"
-                                        style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
+                                        style="font-size: 1rem; padding: 0.375rem 0.75rem; text-align: justify;"
                                         data-valor="{{ opcao }}"
                                         onclick="document.getElementById('resp_{{ aluno.id }}_{{ pergunta.id }}').value = this.getAttribute('data-valor'); this.parentElement.querySelectorAll('.conselho-opcao').forEach(b=>b.classList.remove('active','fw-bold')); this.classList.add('active','fw-bold');">
                                         {{ letras[loop.index0] }}) {{ opcao }}
