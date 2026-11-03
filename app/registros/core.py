@@ -124,6 +124,12 @@ def _valor_esportista_duplicado(
 @login_required
 def form():
     """Salva dados legados em estrutura JSON na tabela Registro."""
+    # AJ6-B6: guarda por role já existente (irmãs `editar`/`excluir`). O
+    # professor não tem cadastro legados; sem isto, GET caía em 500 (o
+    # `form.html` raiz não existe) e POST escrevia um `Registro` alheio.
+    if current_user.role != UserRole.PEDAGOGICO:
+        abort(403)
+
     if request.method == 'POST':
         try:
             novo = Registro(

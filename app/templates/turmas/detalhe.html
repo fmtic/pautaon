@@ -197,6 +197,10 @@
                   </td>
                   <td class="fw-bold small">{{ aluno.nome }}</td>
                   <td>
+                    {# AJ6-B6: `nivel` é campo da FICHA do aluno. Guarda mínima: esconder
+                       SÓ do professor (fora da sua allowlist); demais perfis, incl.
+                       servico_social, permanecem inalterados. #}
+                    {% if current_user.role != 'professor' %}
                     <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
                       style="width: 150px">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -208,8 +212,13 @@
                         {% endfor %}
                       </select>
                     </form>
+                    {% endif %}
                   </td>
                   <td class="text-end">
+                    {# AJ6-B6: editar/transferir mexem na FICHA do aluno e não estão na
+                       allowlist do professor. Guarda mínima: esconder SÓ do professor;
+                       demais perfis inalterados (desenturmar mantém a sua guarda). #}
+                    {% if current_user.role != 'professor' %}
                     <a href="/aluno/editar/{{ aluno.id }}" class="btn btn-sm btn-outline-primary" title="Editar">
                       <i class="bi bi-pencil"></i>
                     </a>
@@ -217,6 +226,7 @@
                       class="btn btn-sm btn-outline-warning" title="Transferir {{ oferta.curso.nome }}">
                       <i class="bi bi-arrow-left-right"></i> Transferir
                     </a>
+                    {% endif %}
                     {% if current_user.role in ['admin', 'pedagogico', 'secretaria', 'gerencia'] %}
                     {# ETAPA M2 (Passo 4): desenturmar POR oferta — o aluno em 2+ ofertas
                        aparece em cada card com seu próprio botão, identificado pelo nome

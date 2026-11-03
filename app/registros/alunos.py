@@ -298,6 +298,17 @@ def _aplicar_campos_civis(aluno: Aluno, form) -> None:
 @bp.route("/alunos/instituicoes")
 @login_required
 def buscar_instituicoes():
+    # AJ6-B6: autocomplete do cadastro de aluno (alimenta `aluno.js`). Guarda
+    # por role já existente (irmã `atualizar_nivel_aluno`): só quem edita ficha
+    # de aluno consulta instituições. O professor não acessa a ficha, então é
+    # barrado — sem nova regra de oferta.
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        abort(403)
+
     termo = (request.args.get("q") or "").strip()
     if len(termo) < 2:
         return jsonify([])
