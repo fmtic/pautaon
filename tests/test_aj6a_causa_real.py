@@ -670,7 +670,40 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_re
         assert aluno_ambiguo.id not in ids_filtrados
 
 
+def test_metricas_conselho_incluem_diario_com_unidade_nula(app, seed_causa_real):
+    from app.models import ConfiguracaoSistema, TemaAula
+    from app.utils.logica import calcular_metricas_conselho
 
+    with app.app_context():
+        s = seed_causa_real
+        data_aula = date(2026, 10, 19)
+        db.session.add_all([
+            ConfiguracaoSistema(
+                chave="inicio_conselho",
+                valor="2026-10-01",
+                unidade_id=s["u2_id"],
+            ),
+            ConfiguracaoSistema(
+                chave="fim_conselho",
+                valor="2026-10-31",
+                unidade_id=s["u2_id"],
+            ),
+            TemaAula(
+                curso_id=db.session.get(Turma, s["turma_info_id"]).curso_id,
+                data=data_aula,
+                titulo="AJ10 tema",
+                unidade_id=s["u2_id"],
+            ),
+            RegistroAula(
+                turma_id=s["turma_info_id"],
+                turma_curso_id=s["oferta_info_id"],
+                data=data_aula,
+                unidade_id=None,
+            ),
+        ])
+        db.session.commit()
+
+        assert calcular_metricas_conselho(s["u2_id"])["progresso_aulas"] == 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +742,13 @@ def test_isolamento_duas_unidades_com_unidade_id_null(app):
 
         f1 = Frequencia(turma_id=t1.id, aluno_id=a1.id, data=date(2026, 8, 3), conceito="A", unidade_id=None)
         f2 = Frequencia(turma_id=t2.id, aluno_id=a2.id, data=date(2026, 8, 3), conceito="A", unidade_id=None)
-        db.session.add_all([f1, f2])
+        r1 = RegistroAula(
+            turma_id=t1.id, data=date(2026, 8, 3), unidade_id=None,
+        )
+        r2 = RegistroAula(
+            turma_id=t2.id, data=date(2026, 8, 3), unidade_id=None,
+        )
+        db.session.add_all([f1, f2, r1, r2])
         db.session.commit()
 
         # O painel/agregação para unidade A consulta as turmas de U1
@@ -721,3 +760,13 @@ def test_isolamento_duas_unidades_com_unidade_id_null(app):
         assert t2.id not in agg_u1
         assert agg_u1[t1.id].total == 1
         assert agg_u1[t1.id].presentes == 1
+
+        from app.relatorios.bi_alunos import _base_registro_aula
+        registro_ids_u1 = {
+            registro.id
+            for registro in _base_registro_aula(
+                {"unidade_id": u1.id}
+            ).all()
+        }
+        assert r1.id in registro_ids_u1
+        assert r2.id not in registro_ids_u1
