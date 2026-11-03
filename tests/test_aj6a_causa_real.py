@@ -595,6 +595,7 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_re
     from app.services.aluno_status import status_alunos
     from app.services.enturmado import ids_alunos_enturmados
     from app.relatorios.bi_filtros import aplicar_filtros_aluno
+    from app.relatorios.bi_alunos import alunos_por_unidade
 
     with app.app_context():
         s = seed_causa_real
@@ -668,6 +669,12 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_re
         ids_filtrados = {aluno.id for aluno in query.all()}
         assert aluno_u2.id in ids_filtrados
         assert aluno_ambiguo.id not in ids_filtrados
+
+        contagens_por_unidade = {
+            item["id"]: item["valor"] for item in alunos_por_unidade()
+        }
+        assert contagens_por_unidade[s["u2_id"]] == 14
+        assert s["u1_id"] not in contagens_por_unidade
 
 
 def test_metricas_conselho_incluem_diario_com_unidade_nula(app, seed_causa_real):
