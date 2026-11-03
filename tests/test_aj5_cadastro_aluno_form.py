@@ -117,6 +117,7 @@ def test_tipo_nao_se_aplica_persiste_pelo_catalogo(app, client, dados):
         # `formatar_nome_proprio` pode ajustar caixa — busca por substring.
         aluno = Aluno.query.filter(Aluno.nome.ilike("%Novo%")).first()
         assert aluno is not None, "[AJ5-A] cadastro com 'Não se aplica' foi perdido"
+        assert aluno.unidade_id == dados["unidade"]
         perfil = PerfilDiversidade.query.filter_by(aluno_id=aluno.id).first()
         assert perfil is not None
         assert perfil.tipo_deficiencia == "Não se aplica"
