@@ -333,6 +333,30 @@ def test_t2_post_grava_resposta_e_observacao_sem_misturar(client, app):
     assert texto_livre not in _resp_hidden(corpo)[chave]
 
 
+def test_salvar_conselho_grava_e_completa_unidade_sem_trocar_autor(client, app):
+    ids = _setup(app)
+    login_as(client, ids["p1"], ids["un"])
+    chave = f"{ids['aluno_x']}_{ids['p_opcoes']}"
+    campos = {
+        f"resp_{chave}": TEXTO_OPCAO_MARCADA,
+        f"obs_{chave}": "",
+    }
+
+    assert _post_salvar(client, ids, campos).status_code == 302
+    with app.app_context():
+        resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
+        autor_id = resposta.autor_id
+        assert resposta.unidade_id == ids["un"]
+        resposta.unidade_id = None
+        db.session.commit()
+
+    assert _post_salvar(client, ids, campos).status_code == 302
+    with app.app_context():
+        resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
+        assert resposta.unidade_id == ids["un"]
+        assert resposta.autor_id == autor_id
+
+
 # ---------------------------------------------------------------------------
 # T3 — obs_ enviado vazio: campo fica vazio, nunca recebe a alternativa
 # ---------------------------------------------------------------------------

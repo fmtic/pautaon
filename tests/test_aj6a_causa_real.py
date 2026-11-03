@@ -563,6 +563,112 @@ def test_escritor_salvar_frequencia_grava_unidade_id(app, seed_causa_real, clien
             f"Escritor não preencheu unidade_id na atualização: {freq_atualizada.unidade_id} (esperado {s['u2_id']})"
         )
 
+        reg_novo = RegistroAula.query.filter_by(
+            turma_id=s["turma_info_id"],
+            turma_curso_id=s["oferta_info_id"],
+            data=nova_data,
+        ).one()
+        reg_novo.unidade_id = None
+        db.session.commit()
+
+    resp3 = client.post("/frequencia", data={
+        "turma": str(s["turma_info_id"]),
+        "turma_curso": str(s["oferta_info_id"]),
+        "data": nova_data.isoformat(),
+        f"aluno_{aluno_id}": "B",
+        "atividades": "Atividade atualizada",
+    }, follow_redirects=True)
+    assert resp3.status_code == 200
+
+    with app.app_context():
+        reg_atualizado = RegistroAula.query.filter_by(
+            turma_id=s["turma_info_id"],
+            turma_curso_id=s["oferta_info_id"],
+            data=nova_data,
+        ).one()
+        assert reg_atualizado.unidade_id == s["u2_id"]
+        assert reg_atualizado.atividades == "Atividade atualizada"
+
+
+def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_real):
+    from app.models import Aluno, Curso, Turma
+    from app.services.aluno_status import status_alunos
+    from app.services.enturmado import ids_alunos_enturmados
+    from app.relatorios.bi_filtros import aplicar_filtros_aluno
+
+    with app.app_context():
+        s = seed_causa_real
+        aluno_u2 = Aluno(
+            nome="AJ10 aluno nulo U2",
+            unidade_id=None,
+            ativo=True,
+            data_nascimento=date(2000, 1, 1),
+        )
+        aluno_ambiguo = Aluno(
+            nome="AJ10 aluno ambiguo",
+            unidade_id=None,
+            ativo=True,
+            data_nascimento=date(2000, 1, 1),
+        )
+        curso_u1 = Curso(nome="AJ10 curso U1", unidade_id=s["u1_id"], ativo=True)
+        db.session.add_all([aluno_u2, aluno_ambiguo, curso_u1])
+        db.session.flush()
+
+        turma_u1 = Turma(
+            nome="AJ10 turma U1",
+            unidade_id=s["u1_id"],
+            periodo_letivo_id=s["p1_id"],
+            curso_id=curso_u1.id,
+            ativo=True,
+            turno="Manhã",
+            data_inicio=_INICIO,
+            data_fim=_FIM,
+        )
+        db.session.add(turma_u1)
+        db.session.flush()
+        oferta_u1 = nova_oferta(
+            turma_u1.id,
+            curso_u1.id,
+            s["u1_id"],
+            principal=True,
+        )
+
+        nova_inscricao(
+            aluno_u2.id,
+            s["turma_info_id"],
+            s["oferta_info_id"],
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
+            aluno_ambiguo.id,
+            s["turma_info_id"],
+            s["oferta_info_id"],
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
+            aluno_ambiguo.id,
+            turma_u1.id,
+            oferta_u1.id,
+            data_inicio=_INICIO,
+        )
+        db.session.commit()
+
+        enturmados = ids_alunos_enturmados(s["u2_id"], s["p2_id"])
+        assert aluno_u2.id in enturmados
+        assert aluno_ambiguo.id not in enturmados
+
+        status = status_alunos(s["p2_id"], data_ref=_INICIO)
+        assert aluno_u2.id in status
+        assert aluno_ambiguo.id not in status
+
+        query = aplicar_filtros_aluno(
+            Aluno.query,
+            {"unidade_id": s["u2_id"], "periodo_letivo_id": s["p2_id"]},
+        )
+        ids_filtrados = {aluno.id for aluno in query.all()}
+        assert aluno_u2.id in ids_filtrados
+        assert aluno_ambiguo.id not in ids_filtrados
+
 
 
 
@@ -615,4 +721,3 @@ def test_isolamento_duas_unidades_com_unidade_id_null(app):
         assert t2.id not in agg_u1
         assert agg_u1[t1.id].total == 1
         assert agg_u1[t1.id].presentes == 1
-
