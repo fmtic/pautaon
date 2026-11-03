@@ -210,7 +210,7 @@ class TestLeitoresSemErroComGradeVariavel:
 
         cursos = cli.get(f"/turma/{ids['turma']}/ofertas").get_data(as_text=True)
         assert POR_DIA in _norm(cursos)
-        assert ">variavel<" in cursos
+        assert ">variável<" in cursos
         assert re.search(r'name="horario_por_dia"[^>]*checked', cursos)
 
     def test_carga_horaria_da_oferta_e_da_turma_sem_erro(self):

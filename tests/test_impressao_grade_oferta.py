@@ -304,7 +304,7 @@ class TestTextoGradeNaoUniforme:
         html = _listar(app, ids)
         trecho = _sublinha(html, ids["t_var"])
         assert "Terça 08:00–10:00; Quinta 14:00–16:00" in trecho
-        assert "variavel" in trecho
+        assert "variável" in trecho
         assert "Sexta 09:00 - 10:00" in trecho
         assert 'title="Ter 2h; Qui 2h"' in html
 
@@ -314,7 +314,7 @@ class TestTextoGradeNaoUniforme:
             f"/turmas/centros-custo/imprimir?periodo_letivo_id={ids['periodo']}"
         )
         texto = _norm(corpo.get_data(as_text=True))
-        assert "variavel" not in texto
+        assert "variável" not in texto
         assert "Segunda, Quarta 08:00–09:30 1h30min" in texto
 
 

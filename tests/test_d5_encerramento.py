@@ -204,7 +204,7 @@ def test_informacoes_conta_ofertas_pendentes(app, client):
     assert resposta.status_code == 200
     body = resposta.data.decode("utf-8")
 
-    assert "Ofertas Pendentes" in body
+    assert "Cursos Pendentes (Conselho Final)" in body
     pendentes = re.search(r'display-4 fw-bold">\s*(\d+)', body)
     assert pendentes and pendentes.group(1) == "1"
 
