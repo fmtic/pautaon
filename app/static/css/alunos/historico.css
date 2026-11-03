@@ -2,7 +2,7 @@ body {
   background: #f3f4f6;
   color: #212529;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 9pt;
+  font-size: 10pt;
 }
 
 .print-page {
@@ -62,7 +62,7 @@ body {
 
   body {
     background: #fff;
-    font-size: 9pt;
+    font-size: 10pt;
   }
 
   .print-page {
@@ -80,7 +80,7 @@ body {
   }
 
   .history-table {
-    font-size: 8pt;
+    font-size: 9pt;
   }
 
   .history-table thead th,
