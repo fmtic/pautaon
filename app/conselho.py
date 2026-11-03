@@ -51,6 +51,7 @@ from app.models.enums import (
 from app.database import db
 from app.registros.shared import assert_unidade_context
 from app.services.aluno_info_professor import professor_da_oferta
+from app.services.auth_service import register_security_log
 from app.services.turma_curso import (
     contar_ofertas_conselho,
     ofertas_ativas,
@@ -74,6 +75,12 @@ _ROLES_PERIODOS_CONSELHO = (
     UserRole.GERENCIA,
     UserRole.SECRETARIA,
 )
+
+# AJ7-A: rótulo próprio da edição do conselho INDIVIDUAL feita por quem não é
+# o professor da oferta (admin, pedagógico, secretaria, gerência). Fica em
+# `edicao` pelo prefixo "alteração" de `_CATEGORIAS_ACAO` e é registrado em
+# `tests/test_aj4_logs_drift.py`.
+ACAO_EDICAO_CONSELHO_GESTOR = "Alteração de conselho (gestor)"
 
 
 def _exigir_gestao_periodos_conselho() -> None:
@@ -182,6 +189,53 @@ def _normalizar_situacao_final(valor):
         return SituacaoFinal[codigo].value
     except KeyError:
         raise ValueError(f"Situação final inválida: {valor}") from None
+
+
+def _valor_conselho_mudou(anterior, novo) -> bool:
+    """AJ7-A: NULL e '' contam como o mesmo "sem valor" para a auditoria.
+
+    A comparação de conteúdo continua sendo a do F1 (valor cru); esta função
+    só decide se vale a pena registrar a edição do gestor — regravar um campo
+    que já estava vazio não é alteração humana.
+    """
+    return (anterior or "") != (novo or "")
+
+
+def _rotulo_valor_conselho(valor) -> str:
+    """Valor de campo enumerado no log; vazio vira `(vazio)`, nunca "None"."""
+    return repr(valor) if (valor or "").strip() else "(vazio)"
+
+
+def _registrar_log_conselho_gestor(
+    oferta, unidade_id, aluno_id, nomes_campos, detalhes_campos,
+    primeiro_preenchimento,
+):
+    """AJ7-A: UM log por aluno quando o editor NÃO é o professor da oferta.
+
+    Chamado apenas quando algum valor do conselho individual mudou em relação
+    ao gravado (o chamador faz a comparação). O professor da oferta nunca gera
+    esta linha. `detalhes_campos` só traz valor anterior → novo para campos de
+    escolha; texto livre entra apenas como "texto alterado", sem conteúdo.
+    """
+    if not nomes_campos:
+        return
+    if oferta.professor_id is not None and current_user.id == oferta.professor_id:
+        return
+    papel = getattr(current_user.role, "value", current_user.role)
+    tipo = "preenchimento" if primeiro_preenchimento else "alteracao"
+    detalhes = (
+        f"aluno_id={aluno_id} turma_curso_id={oferta.id} "
+        f"professor_id={oferta.professor_id} usuario_id={current_user.id} "
+        f"papel={papel} tipo={tipo} campos={','.join(nomes_campos)}"
+    )
+    if detalhes_campos:
+        detalhes += "; " + "; ".join(detalhes_campos)
+    register_security_log(
+        ACAO_EDICAO_CONSELHO_GESTOR,
+        detalhes,
+        unidade_id=unidade_id,
+        commit=False,
+    )
 
 
 def _build_turma_avaliacao_payload(form_data, perguntas) -> str:
@@ -789,7 +843,39 @@ def salvar_conselho():
     # F1: autor do lançamento (None/None em contexto sem usuário).
     autor_id, autor_nome = autor_do_lancamento()
 
-    for key in set(normalized["respostas"]) | set(normalized["observacoes"]):
+    # AJ7-A: estado anterior em lote. É a base da auditoria do gestor e da
+    # decisão "preenchimento" (aluno ainda sem conteúdo) × "alteração".
+    # NULL e '' contam como o mesmo vazio.
+    chaves = set(normalized["respostas"]) | set(normalized["observacoes"])
+    respostas_existentes = (
+        ConselhoResposta.query.filter(
+            ConselhoResposta.conselho_id.in_([c.id for c in conselhos_turma])
+        ).all()
+        if conselhos_turma else []
+    )
+    respostas_por_chave = {
+        (r.aluno_id, r.pergunta_id): r for r in respostas_existentes
+    }
+    havia_conteudo = {}
+    for r in respostas_existentes:
+        if (r.resposta or "").strip() or (r.observacao or "").strip():
+            havia_conteudo[r.aluno_id] = True
+
+    perguntas_ids = set()
+    for key in chaves:
+        parts = key.split('_')
+        if len(parts) >= 2:
+            perguntas_ids.add(int(parts[1]))
+    perguntas_por_id = {
+        p.id: p for p in PerguntaConselho.query.filter(
+            PerguntaConselho.id.in_(perguntas_ids)
+        ).all()
+    } if perguntas_ids else {}
+
+    # aluno_id -> {"nomes": set(...), "detalhes": [...], "novo_conteudo": bool}
+    alteracoes = {}
+
+    for key in chaves:
         parts = key.split('_')
         if len(parts) < 2:
             continue
@@ -819,27 +905,55 @@ def salvar_conselho():
             db.session.flush()
             conselho_map[aluno_id] = conselho
 
-        resposta = ConselhoResposta.query.filter_by(
-            conselho_id=conselho.id,
-            aluno_id=aluno_id,
-            pergunta_id=pergunta_id
-        ).first()
+        resposta = respostas_por_chave.get((aluno_id, pergunta_id))
 
         if resposta:
             # F1: só a mudança de CONTEÚDO troca o autor; regravar o mesmo
             # texto mantém quem gravou antes.
             changed = False
             if has_resposta and resposta.resposta != value_resposta:
+                if _valor_conselho_mudou(resposta.resposta, value_resposta):
+                    registro = alteracoes.setdefault(
+                        aluno_id,
+                        {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+                    )
+                    registro["nomes"].add("resposta")
+                    pergunta = perguntas_por_id.get(pergunta_id)
+                    if pergunta is not None and pergunta.opcoes:
+                        registro["detalhes"].append(
+                            f"resposta[p{pergunta_id}]: "
+                            f"{_rotulo_valor_conselho(resposta.resposta)} -> "
+                            f"{_rotulo_valor_conselho(value_resposta)}"
+                        )
+                    else:
+                        # Texto livre: conteúdo NUNCA vai para o log.
+                        registro["detalhes"].append(
+                            f"resposta[p{pergunta_id}]: texto alterado"
+                        )
+                    if (value_resposta or "").strip():
+                        registro["novo_conteudo"] = True
                 resposta.resposta = value_resposta
                 changed = True
             if has_obs and resposta.observacao != value_obs:
+                if _valor_conselho_mudou(resposta.observacao, value_obs):
+                    registro = alteracoes.setdefault(
+                        aluno_id,
+                        {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+                    )
+                    registro["nomes"].add("observacao")
+                    # Observação é sempre texto livre.
+                    registro["detalhes"].append(
+                        f"observacao[p{pergunta_id}]: texto alterado"
+                    )
+                    if (value_obs or "").strip():
+                        registro["novo_conteudo"] = True
                 resposta.observacao = value_obs
                 changed = True
             if changed:
                 resposta.autor_id = autor_id
                 resposta.autor_nome = autor_nome
         else:
-            db.session.add(ConselhoResposta(
+            novo = ConselhoResposta(
                 conselho_id=conselho.id,
                 aluno_id=aluno_id,
                 pergunta_id=pergunta_id,
@@ -847,7 +961,57 @@ def salvar_conselho():
                 observacao=value_obs if has_obs else None,
                 autor_id=autor_id,
                 autor_nome=autor_nome
-            ))
+            )
+            db.session.add(novo)
+            respostas_por_chave[(aluno_id, pergunta_id)] = novo
+
+            # Primeiro preenchimento: não havia linha, então o "anterior" é
+            # vazio. Só entra no log se o valor enviado tem conteúdo.
+            if has_resposta and _valor_conselho_mudou(None, value_resposta):
+                registro = alteracoes.setdefault(
+                    aluno_id,
+                    {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+                )
+                registro["nomes"].add("resposta")
+                pergunta = perguntas_por_id.get(pergunta_id)
+                if pergunta is not None and pergunta.opcoes:
+                    registro["detalhes"].append(
+                        f"resposta[p{pergunta_id}]: (vazio) -> "
+                        f"{_rotulo_valor_conselho(value_resposta)}"
+                    )
+                else:
+                    registro["detalhes"].append(
+                        f"resposta[p{pergunta_id}]: texto alterado"
+                    )
+                if (value_resposta or "").strip():
+                    registro["novo_conteudo"] = True
+            if has_obs and _valor_conselho_mudou(None, value_obs):
+                registro = alteracoes.setdefault(
+                    aluno_id,
+                    {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+                )
+                registro["nomes"].add("observacao")
+                registro["detalhes"].append(
+                    f"observacao[p{pergunta_id}]: texto alterado"
+                )
+                if (value_obs or "").strip():
+                    registro["novo_conteudo"] = True
+
+    # AJ7-A: UM log por aluno, na MESMA transação do salvamento. O helper
+    # ignora o professor da oferta e não loga quando nada mudou.
+    for aluno_id in sorted(alteracoes):
+        registro = alteracoes[aluno_id]
+        _registrar_log_conselho_gestor(
+            oferta=oferta,
+            unidade_id=unidade_id,
+            aluno_id=aluno_id,
+            nomes_campos=sorted(registro["nomes"]),
+            detalhes_campos=registro["detalhes"],
+            primeiro_preenchimento=(
+                not havia_conteudo.get(aluno_id, False)
+                and registro["novo_conteudo"]
+            ),
+        )
 
     db.session.commit()
     flash("Conselho atualizado com sucesso!", "success")

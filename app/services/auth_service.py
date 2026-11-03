@@ -76,8 +76,20 @@ def authenticate_against_ldap(email: str, password: str) -> bool:
         return False
 
 
-def register_security_log(action: str, details: str = "") -> None:
-    """Persiste logs de auditoria sem interromper o fluxo da requisição."""
+def register_security_log(
+    action: str,
+    details: str = "",
+    *,
+    unidade_id: int | None = None,
+    commit: bool = True,
+) -> None:
+    """Persiste logs de auditoria sem interromper o fluxo da requisição.
+
+    `unidade_id` é opcional (None preserva o comportamento histórico das
+    chamadas que não têm contexto de unidade). `commit=False` permite que o
+    chamador grave o log na MESMA transação das alterações auditadas — usado
+    pelo conselho (AJ7-A) para não abrir commit parcial no meio do salvamento.
+    """
     try:
         log_entry = LogAcao(
             usuario_id=current_user.id if current_user.is_authenticated else None,
@@ -87,9 +99,11 @@ def register_security_log(action: str, details: str = "") -> None:
             acao=action,
             detalhes=details[:500],
             ip=request.remote_addr,
+            unidade_id=unidade_id,
         )
         db.session.add(log_entry)
-        db.session.commit()
+        if commit:
+            db.session.commit()
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao registrar log de segurança.")
