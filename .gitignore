@@ -1,9 +1,14 @@
 # Ambiente e segredos
 .env
 .env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.cer
+*.key
+*.dump
+credentials/
+credenciais/
 chaves/
 
 # Python
