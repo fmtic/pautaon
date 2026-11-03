@@ -6,6 +6,7 @@ from sqlalchemy import func
 from app.database import db
 from app.models import Aluno, PeriodoLetivo, Turma, User
 from app.models.enums import UserRole
+from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.utils.logica import get_unidade_id
 
 
@@ -20,8 +21,9 @@ def render_dashboard_gerencial():
             total_turmas = Turma.query.filter_by(
                 ativo=True, unidade_id=unidade_id
             ).count()
-            total_alunos = Aluno.query.filter_by(
-                ativo=True, unidade_id=unidade_id
+            total_alunos = Aluno.query.filter(
+                Aluno.ativo.is_(True),
+                cond_aluno_no_escopo_unidade(unidade_id),
             ).count()
             total_professores = User.query.filter_by(
                 role=UserRole.PROFESSOR.value, unidade_id=unidade_id

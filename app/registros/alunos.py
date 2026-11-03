@@ -56,7 +56,10 @@ from app.services.aluno_perfil import (
     upsert_responsavel,
 )
 from app.services.conselho_leitura import conselhos_por_oferta
-from app.services.enturmado import cond_aluno_enturmado
+from app.services.enturmado import (
+    cond_aluno_enturmado,
+    cond_aluno_no_escopo_unidade,
+)
 from app.services.enturmacao import enturmar_aluno
 from app.services.turma_curso_horario import grades_para_exibicao
 from app.utils.datetime_parse import parse_date
@@ -421,7 +424,7 @@ def gerenciar_alunos():
 
     query = Aluno.query.filter_by(ativo=True)
     if unidade_id:
-        query = query.filter_by(unidade_id=unidade_id)
+        query = query.filter(cond_aluno_no_escopo_unidade(unidade_id))
     if search_nome:
         query = query.filter(
             db.or_(
@@ -480,8 +483,8 @@ def gerenciar_alunos():
     total_q = Aluno.query.filter_by(ativo=True)
     enturm_q = Aluno.query.filter_by(ativo=True)
     if unidade_id:
-        total_q = total_q.filter_by(unidade_id=unidade_id)
-        enturm_q = enturm_q.filter_by(unidade_id=unidade_id)
+        total_q = total_q.filter(cond_aluno_no_escopo_unidade(unidade_id))
+        enturm_q = enturm_q.filter(cond_aluno_no_escopo_unidade(unidade_id))
 
     return render_template(
         "alunos/gerenciar.html",

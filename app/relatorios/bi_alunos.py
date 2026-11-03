@@ -22,6 +22,10 @@ from app.services.aluno_status import (
     periodos_de_referencia_bi,
     status_alunos_para_bi,
 )
+from app.services.enturmado import (
+    cond_aluno_no_escopo_unidade,
+    unidade_efetiva_aluno,
+)
 from app.relatorios.bi_filtros import (
     cond_inscricao_enturmada,
     cond_linha_por_oferta,
@@ -454,7 +458,7 @@ def novos_alunos(
 
         condicoes = [
             db.and_(
-                Aluno.unidade_id == unidade_id_intervalo,
+                cond_aluno_no_escopo_unidade(unidade_id_intervalo),
                 func.date(Aluno.created_at) >= inicio.isoformat(),
                 func.date(Aluno.created_at) <= fim.isoformat(),
             )
@@ -465,7 +469,7 @@ def novos_alunos(
 
     query = Aluno.query
     if unidade_id is not None:
-        query = query.filter(Aluno.unidade_id == unidade_id)
+        query = query.filter(cond_aluno_no_escopo_unidade(unidade_id))
     if data_inicio is not None:
         query = query.filter(func.date(Aluno.created_at) >= str(data_inicio))
     if data_fim is not None:
@@ -547,9 +551,10 @@ def alunos_por_unidade(
     """Retorna a quantidade de alunos distintos agrupada por unidade."""
     from app.models import Inscricao, Unidade
 
-    query = Aluno.query.join(Unidade, Unidade.id == Aluno.unidade_id)
+    unidade_aluno = unidade_efetiva_aluno()
+    query = Aluno.query.join(Unidade, Unidade.id == unidade_aluno)
     if unidade_id:
-        query = query.filter(Aluno.unidade_id == unidade_id)
+        query = query.filter(unidade_aluno == unidade_id)
 
     precisa_inscricao = any(
         valor
@@ -668,7 +673,7 @@ def alunos_por_curso(
     )
 
     if unidade_id:
-        query = query.filter(Aluno.unidade_id == unidade_id)
+        query = query.filter(Turma.unidade_id == unidade_id)
 
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
@@ -761,7 +766,7 @@ def alunos_por_turma(
     )
 
     if unidade_id:
-        query = query.filter(Aluno.unidade_id == unidade_id)
+        query = query.filter(Turma.unidade_id == unidade_id)
 
     if periodo_letivo_id:
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)

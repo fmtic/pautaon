@@ -14,6 +14,7 @@ from flask import abort, flash, redirect, render_template, request, send_file, u
 from flask_login import current_user, login_required
 
 from app.models import Aluno, PeriodoLetivo
+from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.utils.logica import get_unidade_id
 
 from . import bp_relatorios
@@ -122,7 +123,7 @@ def relatorio_alunos():
     if gerar:
         query = Aluno.query.filter_by(ativo=True)
         if u_id:
-            query = query.filter_by(unidade_id=u_id)
+            query = query.filter(cond_aluno_no_escopo_unidade(u_id))
 
         query = aplicar_filtros_alunos(query, filtros)
         query = query.order_by(Aluno.id.asc())
@@ -193,7 +194,7 @@ def exportar_relatorio_alunos():
     u_id = get_unidade_id()
     query = Aluno.query.filter_by(ativo=True)
     if u_id:
-        query = query.filter_by(unidade_id=u_id)
+        query = query.filter(cond_aluno_no_escopo_unidade(u_id))
     query = aplicar_filtros_alunos(query, filtros)
 
     alunos_lista = query.distinct().order_by(Aluno.nome.asc()).all()

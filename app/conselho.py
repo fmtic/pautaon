@@ -927,6 +927,8 @@ def salvar_conselho():
         resposta = respostas_por_chave.get((aluno_id, pergunta_id))
 
         if resposta:
+            if resposta.unidade_id is None:
+                resposta.unidade_id = turma_obj.unidade_id
             # F1: só a mudança de CONTEÚDO troca o autor; regravar o mesmo
             # texto mantém quem gravou antes.
             changed = False
@@ -979,7 +981,8 @@ def salvar_conselho():
                 resposta=value_resposta if has_resposta else None,
                 observacao=value_obs if has_obs else None,
                 autor_id=autor_id,
-                autor_nome=autor_nome
+                autor_nome=autor_nome,
+                unidade_id=turma_obj.unidade_id,
             )
             db.session.add(novo)
             respostas_por_chave[(aluno_id, pergunta_id)] = novo

@@ -14,6 +14,7 @@ from app.models import (
     Turma,
     Unidade,
 )
+from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.utils.frequencia import contar_pendencias_frequencia
 from app.utils.logica import get_unidade_id
 
@@ -34,7 +35,9 @@ def painel_secretaria():
     q_alunos = Aluno.query.filter_by(ativo=True)
     q_turmas = Turma.query.filter_by(ativo=True)
     if unidade_id:
-        q_alunos = q_alunos.filter_by(unidade_id=unidade_id)
+        q_alunos = q_alunos.filter(
+            cond_aluno_no_escopo_unidade(unidade_id)
+        )
         q_turmas = q_turmas.filter_by(unidade_id=unidade_id)
 
     total_alunos = q_alunos.count()
