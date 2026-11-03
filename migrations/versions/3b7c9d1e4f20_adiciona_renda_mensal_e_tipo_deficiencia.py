@@ -37,9 +37,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("perfil_diversidade") as batch_op:
-        batch_op.drop_column("tipo_deficiencia")
-
     with op.batch_alter_table("perfil_socioeconomico") as batch_op:
         batch_op.alter_column(
             "renda_familiar",
