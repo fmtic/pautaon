@@ -62,7 +62,7 @@
             .filter((d) => d !== null);
         if (duracoes.length) {
             const uniforme = duracoes.every((d) => d === duracoes[0]);
-            chAula.textContent = uniforme ? GH.formatarCH(duracoes[0]) : 'varia';
+            chAula.textContent = uniforme ? GH.formatarCH(duracoes[0]) : 'variável';
         }
         const datas = datasAtual();
         const total = GH.estimarCHMinutos(itens, datas[0], datas[1]);

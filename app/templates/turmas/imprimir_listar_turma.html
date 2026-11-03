@@ -97,7 +97,7 @@
                 <td>{{ oferta.turno or turma.turno or '—' }}</td>
                 <td>{{ grade_oferta.dias_texto if grade_oferta and grade_oferta.dias_texto else '—' }}</td>
                 <td>{% if grade_oferta and grade_oferta.por_dia_texto %}{{ grade_oferta.por_dia_texto }}{% else %}{{ grade_oferta.hora_inicio if grade_oferta and grade_oferta.hora_inicio else '--:--' }}–{{ grade_oferta.hora_fim if grade_oferta and grade_oferta.hora_fim else '--:--' }}{% endif %}</td>
-                <td class="text-center">{% if grade_oferta and grade_oferta.ch_aula_varia %}<span title="{{ grade_oferta.ch_aula_por_dia_texto or '' }}">varia</span>{% else %}{{ formatar_ch(carga_oferta.carga_horaria_aula if carga_oferta else None) }}{% endif %}</td>
+                <td class="text-center">{% if grade_oferta and grade_oferta.ch_aula_varia %}<span title="{{ grade_oferta.ch_aula_por_dia_texto or '' }}">variável</span>{% else %}{{ formatar_ch(carga_oferta.carga_horaria_aula if carga_oferta else None) }}{% endif %}</td>
               </tr>
               {% endfor %}
             </tbody>

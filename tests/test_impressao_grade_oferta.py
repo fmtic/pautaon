@@ -5,7 +5,7 @@ Cobre:
       projeção escalar (linha, sub-linha, detalhe e impressão);
     - turma sem oferta ativa e oferta sem grade (fallback escalar);
     - (P5) grade NÃO uniforme: um segmento por dia no estilo do aviso do H3b e
-      coluna "C.H. por aula" = "varia";
+      coluna "C.H. por aula" = "variável";
     - (P5) sem N+1 nas consultas de grade.
 """
 
@@ -293,7 +293,7 @@ class TestTextoGradeNaoUniforme:
         html = corpo.get_data(as_text=True)
         texto = _norm(html)
         assert (
-            "Terça, Quinta Terça 08:00–10:00; Quinta 14:00–16:00 varia" in texto
+            "Terça, Quinta Terça 08:00–10:00; Quinta 14:00–16:00 variável" in texto
         )
         # A lista por dia da C.H. por aula vai no tooltip (não na célula).
         assert 'title="Ter 2h; Qui 2h"' in html
@@ -304,7 +304,7 @@ class TestTextoGradeNaoUniforme:
         html = _listar(app, ids)
         trecho = _sublinha(html, ids["t_var"])
         assert "Terça 08:00–10:00; Quinta 14:00–16:00" in trecho
-        assert "varia" in trecho
+        assert "variavel" in trecho
         assert "Sexta 09:00 - 10:00" in trecho
         assert 'title="Ter 2h; Qui 2h"' in html
 
@@ -314,7 +314,7 @@ class TestTextoGradeNaoUniforme:
             f"/turmas/centros-custo/imprimir?periodo_letivo_id={ids['periodo']}"
         )
         texto = _norm(corpo.get_data(as_text=True))
-        assert "varia" not in texto
+        assert "variavel" not in texto
         assert "Segunda, Quarta 08:00–09:30 1h30min" in texto
 
 

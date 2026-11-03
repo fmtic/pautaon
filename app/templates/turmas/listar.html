@@ -422,7 +422,7 @@
                                                 grade_linha_oferta.hora_fim if grade_linha_oferta and grade_linha_oferta.hora_fim else '--:--' }}
                                                 {% endif %}
                                             </td>
-                                            <td class="text-center">{% if grade_linha_oferta and grade_linha_oferta.ch_aula_varia %}<span title="{{ grade_linha_oferta.ch_aula_por_dia_texto or '' }}">varia</span>{% else %}{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_aula) }}{% endif %}</td>
+                                            <td class="text-center">{% if grade_linha_oferta and grade_linha_oferta.ch_aula_varia %}<span title="{{ grade_linha_oferta.ch_aula_por_dia_texto or '' }}">variável</span>{% else %}{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_aula) }}{% endif %}</td>
                                             <td class="text-center">{{ formatar_ch(carga_oferta_map[o.id].carga_horaria_total) }}</td>
                                             <td class="text-center">{{ freq_oferta_map.get(o.id, 0.0) }}%</td>
                                         </tr>

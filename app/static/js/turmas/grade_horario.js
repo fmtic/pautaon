@@ -398,7 +398,7 @@
                 minutosAula = aulaUnica ? duracoes[0] : null;
             }
             if (chAula) {
-                chAula.textContent = minutosAula !== null ? formatarCH(minutosAula) : (duracoes.length ? 'varia' : '—');
+                chAula.textContent = minutosAula !== null ? formatarCH(minutosAula) : (duracoes.length ? 'variável' : '—');
             }
             if (chTotal) {
                 let ini = null;
