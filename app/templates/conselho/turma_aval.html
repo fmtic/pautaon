@@ -94,9 +94,9 @@
         </div>
 
         <div class="text-center mb-5">
-            <button type="submit" class="btn btn-primary btn-lg px-5 shadow">
+            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit" class="btn btn-primary btn-lg px-5 shadow">
                 <i class="bi bi-save me-2"></i> Salvar Avaliação
-            </button>
+            </button>{% endif %}
         </div>
     </form>
     {% endif %}

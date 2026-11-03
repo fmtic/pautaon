@@ -171,7 +171,7 @@
 
         <div class="sticky-bottom bg-white p-3 border-top shadow-lg text-end mt-4">
             <a href="{{ url_for('conselho.index_conselho') }}" class="btn btn-outline-secondary me-2">Cancelar</a>
-            <button type="submit" class="btn btn-success px-5">Salvar Tudo</button>
+            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit" class="btn btn-success px-5">Salvar Tudo</button>{% endif %}
         </div>
     </form>
     {% endif %}

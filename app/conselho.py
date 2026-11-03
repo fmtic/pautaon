@@ -50,7 +50,7 @@ from app.models.enums import (
 )
 from app.database import db
 from app.registros.shared import assert_unidade_context
-from app.services.aluno_info_professor import professor_da_oferta
+from app.services.aluno_info_professor import professor_pode_acessar_oferta
 from app.services.auth_service import register_security_log
 from app.services.turma_curso import (
     contar_ofertas_conselho,
@@ -76,8 +76,16 @@ _ROLES_PERIODOS_CONSELHO = (
     UserRole.SECRETARIA,
 )
 
+# AJ7-D: só estes papéis podem gravar lançamento individual ou avaliação
+# coletiva. Fechamento e gestão de períodos mantêm suas próprias regras.
+_ROLES_GRAVACAO_CONSELHO = (
+    UserRole.ADMIN,
+    UserRole.PEDAGOGICO,
+    UserRole.PROFESSOR,
+)
+
 # AJ7-A: rótulo próprio da edição do conselho INDIVIDUAL feita por quem não é
-# o professor da oferta (admin, pedagógico, secretaria, gerência). Fica em
+# o professor da oferta (admin, pedagógico). Fica em
 # `edicao` pelo prefixo "alteração" de `_CATEGORIAS_ACAO` e é registrado em
 # `tests/test_aj4_logs_drift.py`.
 ACAO_EDICAO_CONSELHO_GESTOR = "Alteração de conselho (gestor)"
@@ -89,7 +97,13 @@ def _exigir_gestao_periodos_conselho() -> None:
         abort(403)
 
 
-def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
+def _exigir_gravacao_conselho() -> None:
+    """Garante que só os papéis autorizados alcancem os recursos de escrita."""
+    if current_user.role not in _ROLES_GRAVACAO_CONSELHO:
+        abort(403)
+
+
+def _resolver_oferta_conselho(turma, oferta_id=None, usuario=None):
     """Resolve a oferta na qual a rota de conselho vai trabalhar (D5.2, M1).
 
     Regras: 1 oferta ativa = usa direto (dispensa escolha); 2+ exige
@@ -97,8 +111,9 @@ def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
     inativa ou de outra turma cai fora de `ofertas_ativas` e é recusada);
     0 ofertas = turma não abre conselho.
 
-    `professor_id` (opcional) restringe a resolução às ofertas DESSE
-    professor — regra PARTE B/G1, sem herdar o professor da turma. Para os
+    `usuario` (opcional) restringe a resolução às ofertas que ele pode
+    acessar pela regra central de professor por oferta — sem herdar o
+    professor da turma. Para os
     demais perfis a lista continua sendo todas as ofertas ativas.
 
     Retorna ``(oferta, ativas, exigir_escolha)`` — `oferta` é None quando
@@ -106,8 +121,8 @@ def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
     escolha ausente/inválida (a tela precisa mostrar o seletor).
     """
     ativas = ofertas_ativas(turma.id)
-    if professor_id is not None:
-        ativas = [o for o in ativas if professor_da_oferta(o, professor_id)]
+    if usuario is not None:
+        ativas = [o for o in ativas if professor_pode_acessar_oferta(usuario, o)]
     if not ativas:
         return None, ativas, False
     if len(ativas) == 1:
@@ -117,12 +132,12 @@ def _resolver_oferta_conselho(turma, oferta_id=None, professor_id=None):
 
 
 def _escopo_professor():
-    """Id do professor quando a sessão é de professor; `None` nos demais.
+    """Usuário professor quando a sessão é desse papel; `None` nos demais.
 
     PARTE B/G1 (consenso de 29/10/2026): "ofertas do professor" são as de
     `turma_curso.professor_id`, sem herança do professor da turma.
     """
-    return current_user.id if current_user.role == UserRole.PROFESSOR else None
+    return current_user if current_user.role == UserRole.PROFESSOR else None
 
 
 def _guarda_oferta_explicita_do_professor(turma, oferta_id):
@@ -135,7 +150,7 @@ def _guarda_oferta_explicita_do_professor(turma, oferta_id):
     if current_user.role != UserRole.PROFESSOR or oferta_id is None:
         return
     alvo = next((o for o in ofertas_ativas(turma.id) if o.id == oferta_id), None)
-    if alvo is not None and not professor_da_oferta(alvo, current_user):
+    if alvo is not None and not professor_pode_acessar_oferta(current_user, alvo):
         abort(403)
 
 
@@ -210,7 +225,7 @@ def _registrar_log_conselho_gestor(
     oferta, unidade_id, aluno_id, nomes_campos, detalhes_campos,
     primeiro_preenchimento,
 ):
-    """AJ7-A: UM log por aluno quando o editor NÃO é o professor da oferta.
+    """AJ7-A: UM log por aluno quando admin ou pedagógico altera respostas.
 
     Chamado apenas quando algum valor do conselho individual mudou em relação
     ao gravado (o chamador faz a comparação). O professor da oferta nunca gera
@@ -763,6 +778,8 @@ def lancamento_conselho():
 @bp.route('/conselho/salvar', methods=['POST'])
 @login_required
 def salvar_conselho():
+    _exigir_gravacao_conselho()
+
     normalized = _normalize_conselho_request(request.form)
     turma_id = normalized["turma_id"]
     etapa = normalized["etapa"]
@@ -785,6 +802,8 @@ def salvar_conselho():
     oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
         turma_obj, oferta_id_form, escopo_professor
     )
+    if not professor_pode_acessar_oferta(current_user, oferta):
+        abort(403)
     if _escolha_fora_das_ativas(oferta_id_form, oferta):
         flash("A oferta enviada não é uma oferta ativa desta turma.", "warning")
         return redirect(url_for('conselho.lancamento_conselho',
@@ -1212,6 +1231,9 @@ def salvar_fechamento_data(turma_id):
 @bp.route('/turma/<int:turma_id>/avaliacao', methods=['GET', 'POST'])
 @login_required
 def avaliar_turma(turma_id):
+    if request.method == 'POST':
+        _exigir_gravacao_conselho()
+
     turma = db.get_or_404(Turma, turma_id)
 
     # D5.2/B4: isolamento por unidade também aqui (todos os perfis).
@@ -1228,6 +1250,10 @@ def avaliar_turma(turma_id):
     oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
         turma, oferta_id_req, escopo_professor,
     )
+    if request.method == 'POST' and not professor_pode_acessar_oferta(
+        current_user, oferta
+    ):
+        abort(403)
     if _escolha_fora_das_ativas(oferta_id_req, oferta):
         flash("A oferta escolhida não é uma oferta ativa desta turma.", "warning")
         return redirect(url_for('conselho.avaliar_turma', turma_id=turma.id))
