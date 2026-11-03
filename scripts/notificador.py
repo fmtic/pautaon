@@ -11,7 +11,7 @@ def enviar_notificacao(mensagem: str, space_id: str):
     """Envia uma notificação para um espaço do Google Chat."""
     
     if Config.NOTIFICADOR_DRY_RUN:
-        logger.info(f"[DRY RUN] Mensagem não enviada ao espaço '{space_id}'. Conteúdo: {mensagem}")
+        logger.info("[DRY RUN] Notificação não enviada; modo de simulação ativo.")
         return
 
     if not Config.GOOGLE_CHAT_SERVICE_ACCOUNT_FILE:
