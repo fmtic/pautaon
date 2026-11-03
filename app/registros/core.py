@@ -1,7 +1,7 @@
 """
 ================================================================================
-CORE.PY - Registros pedagógicos (form legado, painel do professor, frequência,
-          cursos, planejamento, níveis e temas)
+CORE.PY - Registros pedagógicos (registros legados, painel do professor,
+          frequência, cursos, planejamento, níveis e temas)
 ================================================================================
 
 NOTA ONDA 2B (limpeza)
@@ -9,8 +9,6 @@ NOTA ONDA 2B (limpeza)
     em vez de strings soltas. Autocomplete e rename seguro.
 ================================================================================
 """
-
-import json
 
 from flask import current_app, flash, render_template, url_for, request, redirect, abort, jsonify
 from flask_login import login_required, current_user
@@ -120,36 +118,13 @@ def _valor_esportista_duplicado(
 # ---------------------------------------------------------------------------
 # FORMULÁRIO PRINCIPAL DE REGISTRO (Legacy Support)
 # ---------------------------------------------------------------------------
-@bp.route('/form', methods=['GET', 'POST'])
-@login_required
-def form():
-    """Salva dados legados em estrutura JSON na tabela Registro."""
-    # AJ6-B6: guarda por role já existente (irmãs `editar`/`excluir`). O
-    # professor não tem cadastro legados; sem isto, GET caía em 500 (o
-    # `form.html` raiz não existe) e POST escrevia um `Registro` alheio.
-    if current_user.role != UserRole.PEDAGOGICO:
-        abort(403)
-
-    if request.method == 'POST':
-        try:
-            novo = Registro(
-                educador_id=current_user.id,
-                turma=request.form.get('turma'),
-                mes=request.form.get('mes'),
-                turno=request.form.get('turno'),
-                dados_json=json.dumps(request.form.to_dict())
-            )
-            db.session.add(novo)
-            db.session.commit()
-            return redirect(url_for('main.painel'))
-        except Exception as e:
-            from app.utils.errors import flash_and_log
-
-            db.session.rollback()
-            flash_and_log(e, location='registros.form', hint='db')
-
-    turmas = Turma.get_ativas()
-    return render_template('form.html', turmas=turmas)
+# AJ6-B7: a rota `/form` foi REMOVIDA como código morto. Ela renderizava
+# `form.html` na raiz de `templates/` — arquivo que não existe (500
+# TemplateNotFound até para o pedagógico, o único papel liberado pela guarda
+# do AJ6-B6). Sem chamadores: nenhum `url_for('registros.form')` em
+# templates/JS/menu, nenhuma referência em `<a href>`/`fetch` (prova grep no
+# relatório AJ6B7). As irmãs `editar`/`excluir` abaixo eram as únicas
+# chamadoras internas e passaram a redirecionar ao painel canônico.
 
 
 @bp.route('/editar/<int:id>', methods=['GET', 'POST'])
@@ -167,7 +142,9 @@ def editar(id):
             registro.turno = request.form['turno']
             db.session.commit()
             flash("Atualização do Registro Efetivada", "success")
-            return redirect(url_for('registros.form'))
+            # AJ6-B7: destino era `registros.form` (rota removida — código
+            # morto que além de tudo caía no 500 do template ausente).
+            return redirect(url_for('main.painel'))
         except Exception:
             db.session.rollback()
             flash("Conflito interno ao gravar nova string JSON.", "danger")
@@ -189,7 +166,8 @@ def excluir(id):
         db.session.rollback()
         flash("O banco recusou a deleção do bloco de registro.", "warning")
 
-    return redirect(url_for('registros.form'))
+    # AJ6-B7: destino era `registros.form` (rota removida — código morto).
+    return redirect(url_for('main.painel'))
 
 
 # ---------------------------------------------------------------------------

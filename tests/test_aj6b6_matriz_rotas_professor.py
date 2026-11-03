@@ -17,9 +17,11 @@ Cobre, sempre com SQLite em memória, relógio congelado e nomes sintéticos:
       ou redirect de negação. E endpoint da allowlist que recebe id de recurso
       no path não pode devolver 200 para recurso de OFERTA ALHEIA. Assim, rota
       nova aberta ao professor sem decisão consciente quebra a suíte.
-    - Item 4 (guards reaplicadas): `/form` (500 p/ professor) e
-      `/alunos/instituicoes` (autocomplete da ficha) agora barram o professor
-      com a GUARDA POR ROLE JÁ EXISTENTE (irmãs `editar`/`atualizar_nivel`).
+    - Item 4 (guards reaplicadas): `/alunos/instituicoes` (autocomplete da
+      ficha) barra o professor com a GUARDA POR ROLE JÁ EXISTENTE (irmã
+      `atualizar_nivel_aluno`). O `/form` de AJ6-B6 recebia a mesma guarda;
+      no AJ6-B7 a rota foi REMOVIDA como código morto (template inexistente,
+      zero chamadores) e a trava abaixo garante que ela não volta.
       O gate de `/turmas/centros-custo/imprimir` (sem `professor`) fica travado.
     - Item 6 (links): nas telas do professor nenhum href/action aponta para
       rota fora da allowlist; HTML de não-professor inalterado (snapshot golden).
@@ -282,18 +284,12 @@ def test_allowlist_recurso_alheio_sem_200(app, client):
 # ITEM 4 — guards reaplicadas (antes/depois) + centros-custo travado
 # ===========================================================================
 
-def test_form_guard_e_por_role(app, client):
-    """A guarda reaplicada é POR ROLE (irmãs `editar`/`excluir`: só pedagógico).
-    Antes o professor alcançava `/form` (GET=500 por template ausente; POST
-    escrevia `Registro`). Depois: todo não-pedagógico (professor e admin) é 403
-    ANTES de qualquer render/escrita — negação limpa, sem código morto."""
-    seed = _seed(app)
-    for role in ("pa", "admin"):
-        login_as(client, seed[role], seed["un"])
-        assert client.get("/form", follow_redirects=False).status_code == 403, role
-        login_as(client, seed[role], seed["un"])
-        # POST também barrado pela guarda (não escreve Registro alheio)
-        assert client.post("/form", data={}, follow_redirects=False).status_code == 403, role
+def test_form_rota_morta_removida(app):
+    """AJ6-B7: `/form` era código morto (renderizava `form.html` inexistente —
+    500 até para o pedagógico — e não tinha NENHUM chamador: url_for, template,
+    JS, menu e testes verificados por grep). A rota foi removida do url_map;
+    esta trava impede o retorno silencioso de conteúdo/500 ao professor."""
+    assert "registros.form" not in app.url_map._rules_by_endpoint
 
 
 def test_buscar_instituicoes_negado_ao_professor(app, client):

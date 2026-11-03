@@ -118,12 +118,23 @@ def agendar_entrevista():
 @login_required
 def excluir_agendamento(id):
     from app.models.enums import UserRole
-    agendamento = AgendaServicoSocial.query.get_or_404(id)
 
-    # SEC-04: Apenas o autor, admin ou servico_social podem excluir
-    if current_user.role not in (UserRole.ADMIN, UserRole.SERVICO_SOCIAL) \
-            and agendamento.responsavel_id != current_user.id:
+    # AJ6-B7 (SEC-04 corrigida): a guarda anterior comparava com
+    # `agendamento.responsavel_id` — atributo que não existe no modelo
+    # (a autoria é `user_id`). Efeito real: para QUALQUER papel fora de
+    # (admin, servico_social) o segundo operando do AND avaliava o atributo
+    # inexistente e CHIAVA em 500 (AttributeError) antes do delete — nunca
+    # chegou a funcionar a exceção "autor exclui o próprio" pretendida pelo
+    # SEC-04. O AJ6-B6 viu 404 porque a semente não tinha agendamento (o
+    # get_or_404 estourava antes); com recurso existente era 500 — a falta de
+    # guarda por role estava mascarada. Guarda por role já existente no
+    # blueprint (mesma tupla de `dados_aluno`/`listar_entrevistas`, e a mesma
+    # resposta 403 de `excluir_atendimento`): o professor não acessa a agenda
+    # do serviço social.
+    if current_user.role not in (UserRole.ADMIN, UserRole.SERVICO_SOCIAL):
         abort(403)
+
+    agendamento = AgendaServicoSocial.query.get_or_404(id)
 
     try:
         service = get_calendar_service()
