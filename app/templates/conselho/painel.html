@@ -107,7 +107,7 @@
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-1">
-                    <h5 class="fw-bold text-primary mb-0">{{ turma.ordenacao }}. {{ turma.nome }}</h5>
+                    <h5 class="fw-bold text-primary mb-0">{{ turma.ordenacao if turma.ordenacao is not none else '—' }}. {{ turma.nome }}</h5>
                     {% if item.concluida %}
                     <span class="badge bg-success">Concluído</span>
                     {% else %}

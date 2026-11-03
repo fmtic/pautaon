@@ -39,7 +39,7 @@
             <p class="mb-1 text-muted small text-uppercase fw-bold">
               Turma / Programa
             </p>
-            <p class="mb-0 fw-bold">{{ turma.nome }} | {{ turma.programa }}</p>
+            <p class="mb-0 fw-bold">{{ turma.nome }} | {{ turma.programa or '—' }}</p>
           </div>
           <div class="col-4 text-center border-start border-end">
             <p class="mb-1 text-muted small text-uppercase fw-bold">
@@ -125,7 +125,7 @@
                       {{ item.obj.nome_social or item.obj.nome }}
                     </div>
                     <small class="text-muted"
-                      >{{ item.obj.nivel }} | {{ item.obj.idade }} anos</small
+                      >{{ item.obj.nivel or '—' }} | {{ item.obj.idade }} anos</small
                     >
                   </div>
                 </div>

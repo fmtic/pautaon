@@ -530,7 +530,10 @@ def lancamento_conselho():
     stmt_prog = select(Turma.programa).distinct().where(Turma.ativo == True)
     if unidade_id:
         stmt_prog = stmt_prog.where(Turma.unidade_id == unidade_id)
-    lista_programas = db.session.execute(stmt_prog).scalars().all()
+    # AJ7-B: turma sem programa tem `programa` NULL no DISTINCT; sem o filtro
+    # o select de filtro ganha uma opção literal "None" (mesmo padrão do
+    # painel, que já filtra `if p`).
+    lista_programas = [p for p in db.session.execute(stmt_prog).scalars().all() if p]
 
     opcoes_proximas = OpcaoProximaTurma.query.filter_by(ativo=True).all()
 
@@ -684,8 +687,11 @@ def lancamento_conselho():
         ConselhoClasse.turma_curso_id == oferta.id,
         ConselhoClasse.etapa == etapa
     ).all()
-    respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": r.resposta for r in respostas_db}
-    observacoes_map = {f"{r.aluno_id}_{r.pergunta_id}": r.observacao for r in respostas_db}
+    # AJ7-B: `or ''` na montagem do mapa — chave existente com coluna NULL
+    # devolve o None (o default '' do `.get` do template só vale p/ chave
+    # ausente) e o Jinja imprimia "None" em todos os campos de texto.
+    respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.resposta or '') for r in respostas_db}
+    observacoes_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.observacao or '') for r in respostas_db}
 
     return render_template('conselho/lancamento.html',
                            turma=turma_obj,
