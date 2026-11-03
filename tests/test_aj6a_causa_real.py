@@ -715,6 +715,96 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
         assert s["u1_id"] not in contagens_por_unidade
 
 
+def test_estatisticas_idade_isolam_alunos_da_unidade_errada(
+    app, seed_causa_real
+):
+    from app.utils.logica import calcular_estatisticas_idade
+
+    with app.app_context():
+        s = seed_causa_real
+        curso_u1 = Curso(
+            nome="AJ10 curso idade U1",
+            unidade_id=s["u1_id"],
+            ativo=True,
+        )
+        aluno_u1_sem_unidade = Aluno(
+            nome="AJ10 idade unidade derivada",
+            unidade_id=None,
+            ativo=True,
+            data_nascimento=date(2000, 1, 1),
+        )
+        aluno_de_u2 = Aluno(
+            nome="AJ10 idade unidade divergente",
+            unidade_id=s["u2_id"],
+            ativo=True,
+            data_nascimento=date(1980, 1, 1),
+        )
+        aluno_ambiguo = Aluno(
+            nome="AJ10 idade unidade ambigua",
+            unidade_id=None,
+            ativo=True,
+            data_nascimento=date(1970, 1, 1),
+        )
+        db.session.add_all([
+            curso_u1,
+            aluno_u1_sem_unidade,
+            aluno_de_u2,
+            aluno_ambiguo,
+        ])
+        db.session.flush()
+
+        turma_u1 = Turma(
+            nome="AJ10 turma estatistica unidade U1",
+            unidade_id=s["u1_id"],
+            periodo_letivo_id=s["p1_id"],
+            curso_id=curso_u1.id,
+            ativo=True,
+            turno="Manhã",
+            data_inicio=_INICIO,
+            data_fim=_FIM,
+        )
+        db.session.add(turma_u1)
+        db.session.flush()
+        oferta_u1 = nova_oferta(
+            turma_u1.id,
+            curso_u1.id,
+            s["u1_id"],
+            principal=True,
+        )
+        nova_inscricao(
+            aluno_u1_sem_unidade.id,
+            turma_u1.id,
+            oferta_u1.id,
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
+            aluno_de_u2.id,
+            turma_u1.id,
+            oferta_u1.id,
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
+            aluno_ambiguo.id,
+            turma_u1.id,
+            oferta_u1.id,
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
+            aluno_ambiguo.id,
+            s["turma_nat_id"],
+            s["oferta_nat_mecanica_id"],
+            data_inicio=_INICIO,
+        )
+        db.session.commit()
+
+        metricas = calcular_estatisticas_idade(s["u1_id"])
+
+        assert (
+            metricas["media_turma"][turma_u1.nome]
+            == aluno_u1_sem_unidade.idade
+        )
+
+
 def test_metricas_conselho_incluem_diario_com_unidade_nula(app, seed_causa_real):
     from app.models import ConfiguracaoSistema, TemaAula
     from app.utils.logica import calcular_metricas_conselho
