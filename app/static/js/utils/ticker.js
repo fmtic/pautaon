@@ -9,7 +9,9 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(response => response.json())
             .then(data => {
                 if (data.texto) {
-                    tickerElement.innerHTML = `<i class="bi bi-megaphone-fill me-1"></i> ${data.texto}`;
+                    const icon = document.createElement('i');
+                    icon.classList.add('bi', 'bi-megaphone-fill', 'me-1');
+                    tickerElement.replaceChildren(icon, document.createTextNode(` ${data.texto}`));
                 }
             })
             .catch(error => console.error('Erro ao atualizar o ticker:', error));
