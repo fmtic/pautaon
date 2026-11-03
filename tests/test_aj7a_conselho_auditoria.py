@@ -1,9 +1,9 @@
 """AJ7-A — auditoria da edição do conselho individual por gestor.
 
-Regra: quando admin, pedagógico (ou qualquer papel que NÃO seja o professor da
-oferta) altera respostas do conselho individual de uma oferta, a edição fica
-registrada em `log_acao` com autor, aluno, oferta, professor da oferta e
-campos alterados — nunca com o professor da oferta como autor.
+Regra: quando admin ou pedagógico altera respostas do conselho individual de
+uma oferta, a edição fica registrada em `log_acao` com autor, aluno, oferta,
+professor da oferta e campos alterados — nunca com o professor da oferta como
+autor. Gerência, secretaria e serviço social não podem gravar.
 
 Cobertura:
     A0 descoberta: `ConselhoResposta` não herda `AuditoriaMixin`; o listener
