@@ -229,6 +229,16 @@ class Config:
     GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
     GOOGLE_CALENDAR_DELEGATED_USER = os.getenv("GOOGLE_CALENDAR_DELEGATED_USER")
     GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+    # Google Chat — Notificador de pauta
+    GOOGLE_CHAT_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_CHAT_SERVICE_ACCOUNT_FILE") or os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    GOOGLE_CHAT_SCOPES = [
+        scope.strip()
+        for scope in os.getenv("GOOGLE_CHAT_SCOPES", "https://www.googleapis.com/auth/chat.bot").split(",")
+        if scope.strip()
+    ]
+    NOTIFICADOR_DIAS_ATRASO = get_int("NOTIFICADOR_DIAS_ATRASO", 7)
+    NOTIFICADOR_DRY_RUN = get_bool("NOTIFICADOR_DRY_RUN", True)
+    NOTIFICADOR_LOG_LEVEL = os.getenv("NOTIFICADOR_LOG_LEVEL", "INFO")
 
     GOOGLE_OAUTH_ALLOWED_DOMAINS = [
         item.strip().lower()
