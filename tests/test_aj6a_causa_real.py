@@ -590,7 +590,9 @@ def test_escritor_salvar_frequencia_grava_unidade_id(app, seed_causa_real, clien
         assert reg_atualizado.atividades == "Atividade atualizada"
 
 
-def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_real):
+def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
+    app, seed_causa_real, client,
+):
     from app.models import Aluno, Curso, Turma
     from app.services.aluno_status import status_alunos
     from app.services.enturmado import ids_alunos_enturmados
@@ -611,8 +613,22 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_re
             ativo=True,
             data_nascimento=date(2000, 1, 1),
         )
+        aluno_sem_vinculo = Aluno(
+            nome="AJ10 aluno sem vinculo",
+            unidade_id=None,
+            ativo=True,
+        )
+        admin = User(
+            name="AJ10 admin",
+            email="aj10.admin@example.com",
+            role="admin",
+            unidade_id=s["u2_id"],
+            first_login=False,
+        )
         curso_u1 = Curso(nome="AJ10 curso U1", unidade_id=s["u1_id"], ativo=True)
-        db.session.add_all([aluno_u2, aluno_ambiguo, curso_u1])
+        db.session.add_all([
+            aluno_u2, aluno_ambiguo, aluno_sem_vinculo, admin, curso_u1,
+        ])
         db.session.flush()
 
         turma_u1 = Turma(
@@ -635,40 +651,62 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(app, seed_causa_re
         )
 
         nova_inscricao(
+            aluno_ambiguo.id,
+            s["turma_nat_id"],
+            s["oferta_nat_mecanica_id"],
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
             aluno_u2.id,
-            s["turma_info_id"],
-            s["oferta_info_id"],
+            s["turma_nat_id"],
+            s["oferta_nat_mecanica_id"],
             data_inicio=_INICIO,
         )
         nova_inscricao(
-            aluno_ambiguo.id,
-            s["turma_info_id"],
-            s["oferta_info_id"],
-            data_inicio=_INICIO,
-        )
-        nova_inscricao(
-            aluno_ambiguo.id,
-            turma_u1.id,
-            oferta_u1.id,
-            data_inicio=_INICIO,
+            aluno_ambiguo.id, turma_u1.id, oferta_u1.id, data_inicio=_INICIO,
         )
         db.session.commit()
 
+        admin_id = admin.id
+        aluno_u2_id = aluno_u2.id
+        aluno_ambiguo_id = aluno_ambiguo.id
+        aluno_sem_vinculo_id = aluno_sem_vinculo.id
+
+    login_as(client, admin_id, unidade_id=s["u2_id"])
+    alunos_response = client.get("/alunos")
+    assert alunos_response.status_code == 200
+    alunos_html = alunos_response.get_data(as_text=True)
+    assert "AJ10 aluno nulo U2" in alunos_html
+    assert "AJ10 aluno ambiguo" not in alunos_html
+    assert "AJ10 aluno sem vinculo" not in alunos_html
+
+    login_as(client, admin_id, unidade_id=s["u2_id"])
+    turma_response = client.get(
+        f"/turma/{s['turma_info_id']}?oferta_sel={s['oferta_info_id']}"
+    )
+    assert turma_response.status_code == 200
+    turma_html = turma_response.get_data(as_text=True)
+    assert "AJ10 aluno nulo U2" in turma_html
+    assert "AJ10 aluno ambiguo" not in turma_html
+    assert "AJ10 aluno sem vinculo" not in turma_html
+
+    with app.app_context():
         enturmados = ids_alunos_enturmados(s["u2_id"], s["p2_id"])
-        assert aluno_u2.id in enturmados
-        assert aluno_ambiguo.id not in enturmados
+        assert aluno_u2_id in enturmados
+        assert aluno_ambiguo_id not in enturmados
+        assert aluno_sem_vinculo_id not in enturmados
 
         status = status_alunos(s["p2_id"], data_ref=_INICIO)
-        assert aluno_u2.id in status
-        assert aluno_ambiguo.id not in status
+        assert aluno_u2_id in status
+        assert aluno_ambiguo_id not in status
 
         query = aplicar_filtros_aluno(
             Aluno.query,
             {"unidade_id": s["u2_id"], "periodo_letivo_id": s["p2_id"]},
         )
         ids_filtrados = {aluno.id for aluno in query.all()}
-        assert aluno_u2.id in ids_filtrados
-        assert aluno_ambiguo.id not in ids_filtrados
+        assert aluno_u2_id in ids_filtrados
+        assert aluno_ambiguo_id not in ids_filtrados
 
         contagens_por_unidade = {
             item["id"]: item["valor"] for item in alunos_por_unidade()
