@@ -131,6 +131,9 @@ def test_matriz_post_por_papel_sem_escrita_na_negacao(
     resposta = _post(client, ids, rota)
     assert resposta.status_code == esperado
 
+    if papel is None:
+        assert resposta.headers["Location"].split("?", 1)[0].endswith("/login")
+
     if esperado != 302 or papel is None:
         assert _contar_tabelas(app) == antes
         return
@@ -171,6 +174,8 @@ def test_get_permanece_disponivel_e_esconde_salvar_so_de_nao_gravadores(
 
     resposta = _get(client, ids, rota)
     assert resposta.status_code == esperado
+    if papel is None:
+        assert resposta.headers["Location"].split("?", 1)[0].endswith("/login")
     if esperado != 200:
         return
 
