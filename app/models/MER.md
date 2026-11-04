@@ -1149,7 +1149,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 ### 8.8 Multitenancy nos perfis
 
 - As tabelas de perfil herdam `unidade_id` do aluno no momento da criação.
-- Consultas por unidade devem filtrar tanto por `Aluno.unidade_id` quanto pelas tabelas de perfil (embora na prática o vínculo já garanta).
+- Consultas por unidade devem usar `Aluno.unidade_id`; quando estiver `NULL`, só derivar a unidade se as turmas inscritas apontarem para uma única unidade. Consultas de perfis também mantêm o escopo do aluno (embora o vínculo já garanta).
 
 ### 8.9 Planejamento pedagógico
 
