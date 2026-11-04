@@ -590,7 +590,7 @@ def test_escritor_salvar_frequencia_grava_unidade_id(app, seed_causa_real, clien
         assert reg_atualizado.atividades == "Atividade atualizada"
 
 
-def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
+def test_escopo_unidade_exige_unidade_propria_do_aluno(
     app, seed_causa_real, client,
 ):
     from app.models import Aluno, Curso, Turma
@@ -604,6 +604,12 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
         aluno_u2 = Aluno(
             nome="AJ10 aluno nulo U2",
             unidade_id=None,
+            ativo=True,
+            data_nascimento=date(2000, 1, 1),
+        )
+        aluno_proprio_u2 = Aluno(
+            nome="AJ10 aluno unidade propria U2",
+            unidade_id=s["u2_id"],
             ativo=True,
             data_nascimento=date(2000, 1, 1),
         )
@@ -663,12 +669,19 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
             data_inicio=_INICIO,
         )
         nova_inscricao(
+            aluno_proprio_u2.id,
+            s["turma_nat_id"],
+            s["oferta_nat_mecanica_id"],
+            data_inicio=_INICIO,
+        )
+        nova_inscricao(
             aluno_ambiguo.id, turma_u1.id, oferta_u1.id, data_inicio=_INICIO,
         )
         db.session.commit()
 
         admin_id = admin.id
         aluno_u2_id = aluno_u2.id
+        aluno_proprio_u2_id = aluno_proprio_u2.id
         aluno_ambiguo_id = aluno_ambiguo.id
         aluno_sem_vinculo_id = aluno_sem_vinculo.id
 
@@ -676,7 +689,8 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
     alunos_response = client.get("/alunos")
     assert alunos_response.status_code == 200
     alunos_html = alunos_response.get_data(as_text=True)
-    assert "AJ10 aluno nulo U2" in alunos_html
+    assert "AJ10 aluno nulo U2" not in alunos_html
+    assert "AJ10 aluno unidade propria U2" in alunos_html
     assert "AJ10 aluno ambiguo" not in alunos_html
     assert "AJ10 aluno sem vinculo" not in alunos_html
 
@@ -686,18 +700,21 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
     )
     assert turma_response.status_code == 200
     turma_html = turma_response.get_data(as_text=True)
-    assert "AJ10 aluno nulo U2" in turma_html
+    assert "AJ10 aluno nulo U2" not in turma_html
+    assert "AJ10 aluno unidade propria U2" in turma_html
     assert "AJ10 aluno ambiguo" not in turma_html
     assert "AJ10 aluno sem vinculo" not in turma_html
 
     with app.app_context():
         enturmados = ids_alunos_enturmados(s["u2_id"], s["p2_id"])
-        assert aluno_u2_id in enturmados
+        assert aluno_u2_id not in enturmados
+        assert aluno_proprio_u2_id in enturmados
         assert aluno_ambiguo_id not in enturmados
         assert aluno_sem_vinculo_id not in enturmados
 
         status = status_alunos(s["p2_id"], data_ref=_INICIO)
-        assert aluno_u2_id in status
+        assert aluno_u2_id not in status
+        assert aluno_proprio_u2_id in status
         assert aluno_ambiguo_id not in status
 
         query = aplicar_filtros_aluno(
@@ -705,7 +722,8 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
             {"unidade_id": s["u2_id"], "periodo_letivo_id": s["p2_id"]},
         )
         ids_filtrados = {aluno.id for aluno in query.all()}
-        assert aluno_u2_id in ids_filtrados
+        assert aluno_u2_id not in ids_filtrados
+        assert aluno_proprio_u2_id in ids_filtrados
         assert aluno_ambiguo_id not in ids_filtrados
 
         contagens_por_unidade = {
@@ -715,7 +733,7 @@ def test_aluno_unidade_nula_usa_unidade_pai_sem_vazar_unidade(
         assert s["u1_id"] not in contagens_por_unidade
 
 
-def test_estatisticas_idade_isolam_alunos_da_unidade_errada(
+def test_estatisticas_idade_nao_derivam_unidade_por_inscricao(
     app, seed_causa_real
 ):
     from app.utils.logica import calcular_estatisticas_idade
@@ -799,10 +817,7 @@ def test_estatisticas_idade_isolam_alunos_da_unidade_errada(
 
         metricas = calcular_estatisticas_idade(s["u1_id"])
 
-        assert (
-            metricas["media_turma"][turma_u1.nome]
-            == aluno_u1_sem_unidade.idade
-        )
+        assert turma_u1.nome not in metricas["media_turma"]
 
 
 def test_metricas_conselho_incluem_diario_com_unidade_nula(app, seed_causa_real):
