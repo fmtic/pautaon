@@ -5,6 +5,7 @@ import struct
 import zlib
 from datetime import date
 from pathlib import Path
+from zipfile import ZIP_STORED, ZipFile
 
 import pytest
 
@@ -47,6 +48,23 @@ def _png_valido():
 
 
 PNG = _png_valido()
+JPEG = b"\xff\xd8\xff" + b"conteudo sintetico"
+
+
+def _docx_valido():
+    buffer = io.BytesIO()
+    with ZipFile(buffer, "w") as arquivo_zip:
+        arquivo_zip.writestr("[Content_Types].xml", b"<Types/>")
+        arquivo_zip.writestr("word/document.xml", b"<document/>")
+    return buffer.getvalue()
+
+
+def _odt_valido():
+    buffer = io.BytesIO()
+    with ZipFile(buffer, "w") as arquivo_zip:
+        arquivo_zip.writestr("mimetype", b"application/vnd.oasis.opendocument.text", compress_type=ZIP_STORED)
+        arquivo_zip.writestr("content.xml", b"<document/>")
+    return buffer.getvalue()
 
 
 class Aj5dTestConfig(Config):
@@ -172,6 +190,7 @@ def test_anexo_invalido_nao_grava_e_informa_motivo(
     assert resposta.status_code == 400
     assert mensagem.lower() in resposta.json["erro"].lower()
     assert _arquivos(app) == []
+    assert not Path(app.config["UPLOAD_FOLDER"]).exists()
     with app.app_context():
         assert Atendimento.query.count() == 0
 
@@ -211,8 +230,38 @@ def test_anexo_upload_bloqueado_para_role_sem_acesso(app, client, ids):
 
     assert resposta.status_code == 403
     assert _arquivos(app) == []
+    assert not Path(app.config["UPLOAD_FOLDER"]).exists()
     with app.app_context():
         assert Atendimento.query.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("nome", "conteudo"),
+    [
+        ("anexo.pdf", PDF),
+        ("anexo.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"doc"),
+        ("anexo.docx", _docx_valido()),
+        ("anexo.odt", _odt_valido()),
+        ("anexo.rtf", b"{\\rtf1 texto}"),
+        ("anexo.txt", b"texto sintetico"),
+        ("anexo.png", PNG),
+        ("anexo.jpg", JPEG),
+        ("anexo.jpeg", JPEG),
+    ],
+    ids=("pdf", "doc", "docx", "odt", "rtf", "txt", "png", "jpg", "jpeg"),
+)
+def test_todos_os_tipos_permitidos_com_assinatura_sao_aceitos(
+    app, client, ids, nome, conteudo
+):
+    login_as(client, ids["admin"], ids["unidade"])
+
+    resposta = _enviar_anexo(client, ids, nome, conteudo)
+
+    assert resposta.status_code == 201
+    with app.app_context():
+        informacao = Atendimento.query.one().dados["anexo"]
+    assert Path(informacao["arquivo"]).suffix == Path(nome).suffix
+    assert len(_arquivos(app)) == 1
 
 
 @pytest.mark.parametrize(
@@ -235,6 +284,7 @@ def test_modelo_invalido_nao_grava_e_informa_motivo(
     assert resposta.status_code == 200
     assert mensagem.lower() in resposta.get_data(as_text=True).lower()
     assert _arquivos(app) == []
+    assert not Path(app.config["UPLOAD_FOLDER"]).exists()
     with app.app_context():
         assert ModeloCertificado.query.count() == 0
 

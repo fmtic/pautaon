@@ -20,7 +20,7 @@ from app.services.certificado_modelo import MAX_BYTES, centros_do_periodo
 from config import Config
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 256
-PNG_2 = b"\x89PNG\r\n\x1a\n" + b"1" * 512
+JPG_2 = b"\xff\xd8\xff" + b"1" * 512
 
 
 class SQLiteTestConfig(Config):
@@ -181,7 +181,7 @@ def test_substituir_apaga_arquivo_anterior(app, client):
     with app.app_context():
         primeiro = ModeloCertificado.query.one().arquivo
 
-    _enviar(client, ids, ids["cc1"], nome="modelo2.jpg", conteudo=PNG_2)
+    _enviar(client, ids, ids["cc1"], nome="modelo2.jpg", conteudo=JPG_2)
 
     with app.app_context():
         assert ModeloCertificado.query.count() == 1
