@@ -16,7 +16,6 @@ Convenções:
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,6 +23,7 @@ from flask import current_app
 
 from app.database import db
 from app.models import CentroCusto, ModeloCertificado
+from app.utils.fotos import tipo_por_assinatura
 
 #: 5 MB — limite do upload do modelo (mesma ordem de grandeza dos demais assets).
 MAX_BYTES = 5 * 1024 * 1024
@@ -175,15 +175,22 @@ def salvar_modelo(periodo, centro, upload) -> ModeloCertificado:
             f"de {MAX_BYTES // (1024 * 1024)} MB."
         )
 
+    upload.stream.seek(0)
+    tipo = tipo_por_assinatura(upload.stream.read(32))
+    esperado = "png" if extensao == ".png" else "jpg"
+    upload.stream.seek(0)
+    if tipo != esperado:
+        raise ValueError(
+            "O conteúdo do arquivo não corresponde à extensão informada."
+        )
+
     pasta = _pasta_modelos(periodo.id)
     pasta.mkdir(parents=True, exist_ok=True)
 
     modelo = modelo_de(periodo, centro)
     arquivo_anterior = modelo.arquivo if modelo is not None else None
 
-    novo_arquivo = (
-        f"p{periodo.id}_c{centro.id}_{int(time.time())}_{uuid4().hex[:6]}{extensao}"
-    )
+    novo_arquivo = f"{uuid4().hex}{extensao}"
     upload.save(str(pasta / novo_arquivo))
 
     if modelo is None:

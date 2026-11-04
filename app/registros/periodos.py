@@ -710,7 +710,11 @@ def remover_modelo_certificado(id, centro_id):
 @login_required
 def arquivo_modelo_certificado(id, centro_id):
     """Serve o arquivo do modelo (pré-visualizar ou baixar com ?download=1)."""
-    from app.services.certificado_modelo import caminho_modelo, modelo_de
+    from app.services.certificado_modelo import (
+        EXTENSOES,
+        caminho_modelo,
+        modelo_de,
+    )
 
     periodo = _periodo_para_modelo_certificado(id)
     centro = _centro_do_periodo(periodo, centro_id)
@@ -718,14 +722,20 @@ def arquivo_modelo_certificado(id, centro_id):
     caminho = caminho_modelo(modelo)
     if caminho is None:
         abort(404)
-    return send_file(
+    mimetype = EXTENSOES.get(caminho.suffix.lower())
+    if mimetype is None:
+        abort(404)
+    resposta = send_file(
         caminho,
-        mimetype=modelo.tipo or None,
+        mimetype=mimetype,
         as_attachment=request.args.get("download") == "1",
         download_name=modelo.nome_original or modelo.arquivo,
         conditional=True,
         max_age=0,
     )
+    resposta.headers["X-Content-Type-Options"] = "nosniff"
+    resposta.headers["Cache-Control"] = "private, no-store"
+    return resposta
 
 # ---------------------------------------------------------------------------
 # CENTROS DE CUSTO (catalogo por unidade)

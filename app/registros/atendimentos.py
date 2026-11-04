@@ -5,21 +5,22 @@ Apenas o próprio autor ou um admin pode editar/excluir um registro.
 """
 
 import json
-import os
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+from zipfile import BadZipFile, ZipFile
 
 from flask import (
-    abort, current_app, flash, jsonify, redirect, render_template, request,
-    send_from_directory, url_for,
+    abort, current_app, jsonify, render_template, request,
+    send_file, url_for,
 )
 from flask_login import current_user, login_required
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm import contains_eager
-from werkzeug.utils import secure_filename
-
 from app.database import db
 from app.models import Aluno, Atendimento
+from app.registros.shared import validar_pdf
+from app.utils.fotos import tipo_por_assinatura
 from app.utils.logica import get_unidade_id
 from . import bp
 from .shared import _build_upload_path, _get_upload_root, assert_unidade_context
@@ -36,9 +37,71 @@ SETORES = {
 }
 
 _ANEXOS_PERMITIDOS = {
-    "pdf", "doc", "docx", "odt", "rtf", "txt", "png", "jpg", "jpeg"
+    ".pdf", ".doc", ".docx", ".odt", ".rtf", ".txt",
+    ".png", ".jpg", ".jpeg",
+}
+_ANEXO_MIME = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".rtf": "application/rtf",
+    ".txt": "text/plain",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
 }
 _MAX_ANEXO_BYTES = 2 * 1024 * 1024
+_OLE_ASSINATURA = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ODT_MIMETYPE = b"application/vnd.oasis.opendocument.text"
+_DOCX_MIMETYPE = (
+    b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+)
+
+
+def _anexo_tem_assinatura(anexo, extensao: str) -> bool:
+    stream = anexo.stream
+    stream.seek(0)
+
+    if extensao == ".pdf":
+        return validar_pdf(anexo, max_bytes=_MAX_ANEXO_BYTES) is None
+    if extensao in {".png", ".jpg", ".jpeg"}:
+        tipo = tipo_por_assinatura(stream.read(32))
+        esperado = "png" if extensao == ".png" else "jpg"
+        return tipo == esperado
+    if extensao == ".doc":
+        stream.seek(0)
+        conteudo = stream.read(_MAX_ANEXO_BYTES)
+        return (
+            conteudo.startswith(_OLE_ASSINATURA)
+            and "WordDocument".encode("utf-16le") + b"\x00\x00" in conteudo
+        )
+    if extensao == ".rtf":
+        return stream.read(5).lower() == b"{\\rtf"
+    if extensao == ".txt":
+        conteudo = stream.read(_MAX_ANEXO_BYTES + 1)
+        controles = {byte for byte in range(32)} - {9, 10, 12, 13}
+        return not any(byte in controles for byte in conteudo)
+    if extensao in {".docx", ".odt"}:
+        try:
+            with ZipFile(stream) as arquivo_zip:
+                nomes = set(arquivo_zip.namelist())
+                if extensao == ".docx":
+                    info_tipos = arquivo_zip.getinfo("[Content_Types].xml")
+                    if info_tipos.file_size > 64 * 1024:
+                        return False
+                    return (
+                        _DOCX_MIMETYPE in arquivo_zip.read(info_tipos)
+                        and "word/document.xml" in nomes
+                    )
+                info_mimetype = arquivo_zip.getinfo("mimetype")
+                return (
+                    info_mimetype.file_size == len(_ODT_MIMETYPE)
+                    and arquivo_zip.read(info_mimetype) == _ODT_MIMETYPE
+                )
+        except (BadZipFile, KeyError, OSError, RuntimeError):
+            return False
+    return False
 
 
 def _ler_payload() -> dict:
@@ -56,26 +119,30 @@ def _salvar_anexo(aluno_id: int) -> dict | None:
     if not anexo or not anexo.filename:
         return None
 
-    extensao = Path(anexo.filename).suffix.lower().lstrip(".")
+    extensao = Path(anexo.filename).suffix.lower()
     if extensao not in _ANEXOS_PERMITIDOS:
         raise ValueError("Tipo de anexo não permitido.")
 
-    anexo.stream.seek(0, os.SEEK_END)
+    anexo.stream.seek(0, 2)
     tamanho = anexo.stream.tell()
     anexo.stream.seek(0)
+    if tamanho == 0:
+        raise ValueError("O anexo está vazio.")
     if tamanho > _MAX_ANEXO_BYTES:
         raise ValueError("O anexo deve ter no máximo 2 MB.")
+    if not _anexo_tem_assinatura(anexo, extensao):
+        raise ValueError(
+            "O conteúdo do anexo não corresponde ao formato "
+            f"{extensao.lstrip('.').upper()} informado."
+        )
 
-    nome_original = anexo.filename
-    nome_seguro = secure_filename(nome_original)
     pasta = _build_upload_path("documentos", "atendimentos")
-    os.makedirs(pasta, exist_ok=True)
-    nome_final = secure_filename(
-        f"atendimento_{aluno_id}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{nome_seguro}"
-    )
-    anexo.save(os.path.join(pasta, nome_final))
+    Path(pasta).mkdir(parents=True, exist_ok=True)
+    nome_final = f"{uuid4().hex}{extensao}"
+    anexo.stream.seek(0)
+    anexo.save(str(Path(pasta) / nome_final))
     return {
-        "nome": nome_original,
+        "nome": anexo.filename,
         "arquivo": f"atendimentos/{nome_final}",
         "tamanho": tamanho,
     }
@@ -317,9 +384,9 @@ def registrar_atendimento(aluno_id):
 
     try:
         anexo = _salvar_anexo(aluno_id)
-    except ValueError:
+    except ValueError as exc:
         current_app.logger.warning("Arquivo de anexo inválido ao registrar atendimento.")
-        return jsonify({"ok": False, "erro": "Anexo inválido."}), 400
+        return jsonify({"ok": False, "erro": str(exc)}), 400
     if anexo:
         dados["anexo"] = anexo
 
@@ -412,9 +479,9 @@ def editar_atendimento(id):
 
     try:
         anexo = _salvar_anexo(a.aluno_id)
-    except ValueError:
+    except ValueError as exc:
         current_app.logger.warning("Arquivo de anexo inválido ao editar atendimento.")
-        return jsonify({"ok": False, "erro": "Anexo inválido."}), 400
+        return jsonify({"ok": False, "erro": str(exc)}), 400
     if anexo:
         a.dados = {**(a.dados or {}), "anexo": anexo}
 
@@ -475,11 +542,17 @@ def baixar_anexo_atendimento(id: int):
     pasta = upload_root / "documentos" / "atendimentos"
     target_file = pasta / filename
     if target_file.is_file():
-        return send_from_directory(
-            str(pasta),
-            filename,
+        mimetype = _ANEXO_MIME.get(target_file.suffix.lower())
+        if mimetype is None:
+            abort(404)
+        resposta = send_file(
+            target_file,
+            mimetype=mimetype,
             download_name=anexo_info.get("nome", filename),
             as_attachment=False,
         )
+        resposta.headers["X-Content-Type-Options"] = "nosniff"
+        resposta.headers["Cache-Control"] = "private, no-store"
+        return resposta
 
     abort(404)
