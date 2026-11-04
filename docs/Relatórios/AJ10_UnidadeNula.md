@@ -37,7 +37,15 @@ O filtro próprio da listagem de atendimentos em `app/registros/atendimentos.py:
 
 `scripts/backfill_unidade_id_nulos.sql` é rollback-first: `\set ON_ERROR_STOP on`, `BEGIN`, contagens esperadas (frequência 52, diário 4, respostas 78), validação de parent/ambiguidade, atualizações apenas de linhas nulas, `RETURNING id`, verificações finais e `ROLLBACK`; `COMMIT` fica comentado. Snapshots temporários dentro da transação verificam que unidades já preenchidas não mudaram. `aluno` fica fora do script por não ter unidade pai derivável.
 
-**Validação pendente:** não foi possível executar o script em clone `TEMPLATE`. Uma consulta a `pg_stat_activity` encontrou uma sessão `idle` adicional em `pautaon`, que bloqueia `CREATE DATABASE ... TEMPLATE pautaon`. Nenhuma sessão foi encerrada, nenhum clone foi criado e nenhum `DROP DATABASE` foi necessário. Nem a execução com `ROLLBACK` nem a variante com `COMMIT` foi feita. É necessária nova janela com o banco sem conexões, ou autorização explícita para validar por clone lógico `pg_dump`/restore.
+Validação concluída no clone `pautaon_rel_aj10_backfill`, criado com `TEMPLATE pautaon` depois que a sessão `idle` adicional encerrou. A variante com `COMMIT` foi enviada por stdin ao `psql`; o arquivo versionado permaneceu rollback-first. As saídas de `RETURNING` foram capturadas para validar as quantidades sem exibir IDs individuais.
+
+| Tabela | Antes: total/nulos | Após execução com `ROLLBACK` | Após variante com `COMMIT` |
+|---|---:|---:|---:|
+| `frequencia` | 64 / 52 | 64 / 52 | 64 / 0 |
+| `registro_aula` | 6 / 4 | 6 / 4 | 6 / 0 |
+| `conselho_resposta` | 78 / 78 | 78 / 78 | 78 / 0 |
+
+As duas execuções retornaram atualizações de 52/4/78 linhas. Com `ROLLBACK`, as contagens e unidades pré-preenchidas ficaram inalteradas; com `COMMIT`, as contagens totais permaneceram iguais, todos os nulos alvo foram preenchidos e as unidades pré-preenchidas (12 frequências, 2 diários, 0 respostas) permaneceram iguais. As contagens de todas as 38 tabelas também permaneceram iguais. `DROP DATABASE pautaon_rel_aj10_backfill` foi executado e a ausência do banco confirmada.
 
 ## Migration
 
