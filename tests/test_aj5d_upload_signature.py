@@ -54,7 +54,12 @@ JPEG = b"\xff\xd8\xff" + b"conteudo sintetico"
 def _docx_valido():
     buffer = io.BytesIO()
     with ZipFile(buffer, "w") as arquivo_zip:
-        arquivo_zip.writestr("[Content_Types].xml", b"<Types/>")
+        tipos = (
+            b"<Types><Override ContentType=\""
+            b"application/vnd.openxmlformats-officedocument."
+            b"wordprocessingml.document.main+xml\"/></Types>"
+        )
+        arquivo_zip.writestr("[Content_Types].xml", tipos)
         arquivo_zip.writestr("word/document.xml", b"<document/>")
     return buffer.getvalue()
 
@@ -64,6 +69,13 @@ def _odt_valido():
     with ZipFile(buffer, "w") as arquivo_zip:
         arquivo_zip.writestr("mimetype", b"application/vnd.oasis.opendocument.text", compress_type=ZIP_STORED)
         arquivo_zip.writestr("content.xml", b"<document/>")
+    return buffer.getvalue()
+
+
+def _zip_generico():
+    buffer = io.BytesIO()
+    with ZipFile(buffer, "w") as arquivo_zip:
+        arquivo_zip.writestr("payload.txt", b"texto")
     return buffer.getvalue()
 
 
@@ -107,6 +119,11 @@ def ids(app):
                 role="professor", unidade_id=unidade.id, is_active=True,
                 first_login=False,
             ),
+            "pedagogico_b": User(
+                name="Pedagogico AJ5D B", email="pedagogico-b.aj5d@example.test",
+                role="pedagogico", unidade_id=outra_unidade.id, is_active=True,
+                first_login=False,
+            ),
         }
         for usuario in usuarios.values():
             usuario.set_password("SenhaSintetica!123")
@@ -133,6 +150,7 @@ def ids(app):
             "outra_unidade": outra_unidade.id,
             "admin": usuarios["admin"].id,
             "professor": usuarios["professor"].id,
+            "pedagogico_b": usuarios["pedagogico_b"].id,
             "aluno": aluno.id,
             "centro": centro.id,
             "periodo": periodo.id,
@@ -175,10 +193,21 @@ def _enviar_modelo(client, ids, nome, conteudo, *, seguir=True):
     [
         ("fraude.pdf", b"texto comum", "PDF"),
         ("fraude.png", b"<html>nao e PNG</html>", "PNG"),
+        ("binario.txt", b"MZ\x90\x00", "TXT"),
+        ("zip-falso.docx", _zip_generico(), "DOCX"),
+        ("zip-falso.odt", _zip_generico(), "ODT"),
         ("vazio.pdf", b"", "vazio"),
         ("grande.pdf", PDF + b"x" * (2 * MB), "2 MB"),
     ],
-    ids=("pdf-falso", "png-falso", "arquivo-vazio", "acima-do-limite"),
+    ids=(
+        "pdf-falso",
+        "png-falso",
+        "texto-binario",
+        "zip-falso-docx",
+        "zip-falso-odt",
+        "arquivo-vazio",
+        "acima-do-limite",
+    ),
 )
 def test_anexo_invalido_nao_grava_e_informa_motivo(
     app, client, ids, nome, conteudo, mensagem
@@ -219,6 +248,9 @@ def test_anexo_pdf_valido_usa_uuid_e_download_protegido(app, client, ids):
     assert "no-store" in download.headers["Cache-Control"]
     assert download.headers["Content-Disposition"].startswith("inline;")
 
+    login_as(client, ids["pedagogico_b"], ids["outra_unidade"])
+    assert client.get(f"/atendimentos/{atendimento_id}/anexo").status_code == 403
+
     login_as(client, ids["professor"], ids["unidade"])
     assert client.get(f"/atendimentos/{atendimento_id}/anexo").status_code == 403
 
@@ -239,7 +271,12 @@ def test_anexo_upload_bloqueado_para_role_sem_acesso(app, client, ids):
     ("nome", "conteudo"),
     [
         ("anexo.pdf", PDF),
-        ("anexo.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"doc"),
+        (
+            "anexo.doc",
+            b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+            + "WordDocument".encode("utf-16le")
+            + b"\x00\x00",
+        ),
         ("anexo.docx", _docx_valido()),
         ("anexo.odt", _odt_valido()),
         ("anexo.rtf", b"{\\rtf1 texto}"),
@@ -331,4 +368,7 @@ def test_modelo_upload_e_download_bloqueados_para_role_sem_acesso(
         f"/periodo-letivo/{ids['periodo']}/certificado-modelo/"
         f"{ids['centro']}/arquivo"
     )
+    assert client.get(url).status_code == 403
+
+    login_as(client, ids["pedagogico_b"], ids["outra_unidade"])
     assert client.get(url).status_code == 403
