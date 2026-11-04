@@ -7,10 +7,7 @@ from sqlalchemy import and_, case, func, or_
 from app.database import db
 from app.models import Aluno, Inscricao, PeriodoLetivo, Turma
 from app.models.enums import JANELA_RENOVACAO_DIAS, StatusAluno
-from app.services.enturmado import (
-    cond_aluno_no_escopo_unidade,
-    cond_oferta_efetiva,
-)
+from app.services.enturmado import cond_oferta_efetiva
 from app.utils.timezone import get_local_now
 
 TURNOS_CONHECIDOS = ("Manhã", "Tarde", "Noite", "EAD")
@@ -181,7 +178,7 @@ def status_alunos(
         return {}
 
     alunos_query = Aluno.query.filter(
-        cond_aluno_no_escopo_unidade(periodo.unidade_id),
+        Aluno.unidade_id == periodo.unidade_id,
         Aluno.ativo.is_(True),
     )
     if requested_ids is not None:

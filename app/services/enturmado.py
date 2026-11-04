@@ -21,7 +21,7 @@ módulo só depende de `app.models`.
 """
 from __future__ import annotations
 
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, or_, select
 
 from app import db
 from app.models import Aluno, Inscricao, PeriodoLetivo, Turma, TurmaCurso
@@ -144,64 +144,6 @@ def cond_aluno_enturmado(periodo_letivo_id: int | None = None):
 # Consultas prontas (aluno distinto; sem N+1 — uma consulta por chamada)
 # ---------------------------------------------------------------------------
 
-def cond_aluno_no_escopo_unidade(unidade_id: int | None):
-    """Escopo de aluno pela unidade própria ou por vínculo inequívoco com turma.
-
-    Aluno sem unidade só pode ser atribuído à unidade quando todas as suas
-    inscrições apontam para turmas de uma única unidade. Vínculos em mais de
-    uma unidade permanecem fora do escopo para evitar exposição cruzada.
-    """
-    if unidade_id is None:
-        return true()
-
-    turma_da_unidade = (
-        select(Inscricao.id)
-        .join(Turma, Turma.id == Inscricao.turma_id)
-        .where(
-            Inscricao.aluno_id == Aluno.id,
-            Turma.unidade_id == unidade_id,
-        )
-        .correlate(Aluno)
-        .exists()
-    )
-    turma_de_outra_unidade = (
-        select(Inscricao.id)
-        .join(Turma, Turma.id == Inscricao.turma_id)
-        .where(
-            Inscricao.aluno_id == Aluno.id,
-            Turma.unidade_id.is_not(None),
-            Turma.unidade_id != unidade_id,
-        )
-        .correlate(Aluno)
-        .exists()
-    )
-    return or_(
-        Aluno.unidade_id == unidade_id,
-        and_(
-            Aluno.unidade_id.is_(None),
-            turma_da_unidade,
-            ~turma_de_outra_unidade,
-        ),
-    )
-
-
-def unidade_efetiva_aluno():
-    """Unidade própria ou unidade única derivável pelas turmas inscritas."""
-    unidade_derivada = (
-        select(func.min(Turma.unidade_id))
-        .join(Inscricao, Inscricao.turma_id == Turma.id)
-        .where(
-            Inscricao.aluno_id == Aluno.id,
-            Turma.unidade_id.is_not(None),
-        )
-        .group_by(Inscricao.aluno_id)
-        .having(func.count(func.distinct(Turma.unidade_id)) == 1)
-        .correlate(Aluno)
-        .scalar_subquery()
-    )
-    return func.coalesce(Aluno.unidade_id, unidade_derivada)
-
-
 def ids_alunos_enturmados(
     unidade_id: int | None = None,
     periodo_letivo_id: int | None = None,
@@ -218,7 +160,7 @@ def ids_alunos_enturmados(
         cond_aluno_enturmado(periodo_letivo_id=periodo_letivo_id)
     )
     if unidade_id is not None:
-        q = q.filter(cond_aluno_no_escopo_unidade(unidade_id))
+        q = q.filter(Aluno.unidade_id == unidade_id)
     return {row[0] for row in q.distinct().all()}
 
 

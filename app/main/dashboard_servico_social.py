@@ -5,7 +5,6 @@ from datetime import date
 from flask import flash, render_template, request
 
 from app.models import AgendaServicoSocial, Aluno, Turma
-from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.utils.logica import get_unidade_id
 
 
@@ -18,9 +17,7 @@ def render_dashboard_servico_social():
         unidade_id = get_unidade_id()
         q_alunos = Aluno.query.filter_by(ativo=True)
         if unidade_id:
-            q_alunos = q_alunos.filter(
-                cond_aluno_no_escopo_unidade(unidade_id)
-            )
+            q_alunos = q_alunos.filter_by(unidade_id=unidade_id)
         total_alunos = q_alunos.count()
 
         q_turmas = Turma.query.filter_by(ativo=True)

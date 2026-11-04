@@ -51,7 +51,6 @@ from app.models.enums import (
     CONCEITOS_PRESENCA,
     UserRole,
 )
-from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.utils.autor import autor_do_lancamento
 from app.utils.datetime_parse import parse_date
 from app.utils.timezone import get_local_now  # noqa: F401
@@ -827,13 +826,10 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
     """Média de idade geral, por programa e por turma."""
     alunos_query = Aluno.query.filter(Aluno.ativo == True)
     if unidade_id:
-        alunos_query = alunos_query.filter(
-            cond_aluno_no_escopo_unidade(unidade_id)
-        )
+        alunos_query = alunos_query.filter_by(unidade_id=unidade_id)
     alunos = alunos_query.all()
     if not alunos:
         return {'media_geral': 0, 'media_programa': {}, 'media_turma': {}}
-    alunos_ids_escopo = {aluno.id for aluno in alunos}
 
     idades_geral = [a.idade for a in alunos]
     media_geral = sum(idades_geral) / len(idades_geral) if idades_geral else 0
@@ -849,10 +845,7 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
             Turma.ativo == True,
         )
         if unidade_id:
-            q = q.filter(
-                Turma.unidade_id == unidade_id,
-                Aluno.id.in_(alunos_ids_escopo),
-            )
+            q = q.filter(Aluno.unidade_id == unidade_id, Turma.unidade_id == unidade_id)
         alunos_prog = q.all()
         if alunos_prog:
             idades = [a.idade for a in alunos_prog]
@@ -865,7 +858,7 @@ def calcular_estatisticas_idade(unidade_id: Optional[int] = None) -> Dict[str, A
     for t in turma_query.all():
         idades = [
             a.idade for a in t.alunos
-            if a.ativo and (not unidade_id or a.id in alunos_ids_escopo)
+            if a.ativo and (not unidade_id or a.unidade_id == unidade_id)
         ]
         if idades:
             media_por_turma[t.nome] = sum(idades) / len(idades)

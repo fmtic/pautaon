@@ -22,7 +22,6 @@ from sqlalchemy import and_, case, func, or_, select
 
 from app.models import Aluno, Inscricao, Turma, TurmaCurso
 from app.services.enturmado import (  # noqa: F401 — reexporta os nomes originais
-    cond_aluno_no_escopo_unidade,
     cond_inscricao_enturmada,
     cond_oferta_efetiva,
 )
@@ -82,8 +81,7 @@ def cond_linha_por_oferta(col_turma_curso_id, col_turma_id, curso_id=None,
 def aplicar_filtros_aluno(query, filtros):
     """Aplica filtros globais a uma query baseada em Aluno.
 
-    A unidade vem de `Aluno.unidade_id`; para aluno legado sem unidade,
-    admite-se somente uma unidade única derivada das turmas inscritas.
+    A unidade pertence diretamente ao Aluno.
     Filtros acadêmicos são resolvidos pelo vínculo:
         Aluno -> Inscricao -> Turma (período/turma) -> TurmaCurso (curso/prof)
     """
@@ -98,9 +96,7 @@ def aplicar_filtros_aluno(query, filtros):
     )
 
     if filtros.get("unidade_id"):
-        query = query.filter(
-            cond_aluno_no_escopo_unidade(filtros["unidade_id"])
-        )
+        query = query.filter(Aluno.unidade_id == filtros["unidade_id"])
 
     if precisa_inscricao:
         query = query.join(

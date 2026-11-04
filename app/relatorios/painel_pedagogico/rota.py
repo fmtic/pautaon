@@ -9,7 +9,6 @@ from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
 from app.models import Aluno, Inscricao, PeriodoLetivo, Turma
-from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.services.aluno_status import periodos_de_referencia_bi
 from app.services.conselho_leitura import rotulo_oferta
 from app.utils.logica import get_unidade_id
@@ -143,7 +142,7 @@ def busca_alunos():
         like = f"%{q}%"
         alunos = (
             Aluno.query.filter(
-                cond_aluno_no_escopo_unidade(unidade_id),
+                Aluno.unidade_id == unidade_id,
                 (Aluno.nome.ilike(like)) | (Aluno.nome_social.ilike(like)),
             )
             .order_by(Aluno.nome)
@@ -152,12 +151,7 @@ def busca_alunos():
         )
         for a in alunos:
             insc = (
-                Inscricao.query.join(Turma, Turma.id == Inscricao.turma_id)
-                .filter(
-                    Inscricao.aluno_id == a.id,
-                    Inscricao.ativo.is_(True),
-                    Turma.unidade_id == unidade_id,
-                )
+                Inscricao.query.filter_by(aluno_id=a.id, ativo=True)
                 .order_by(Inscricao.data_inicio.desc())
                 .first()
             )

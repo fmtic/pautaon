@@ -24,7 +24,6 @@ from app.models import (
 )
 from app.models.enums import UserRole
 from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
-from app.services.enturmado import cond_aluno_no_escopo_unidade
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
@@ -1489,7 +1488,7 @@ def ver_turma(id):
         )
         if turma_obj.unidade_id:
             alunos_disponiveis = alunos_disponiveis.filter(
-                cond_aluno_no_escopo_unidade(turma_obj.unidade_id)
+                Aluno.unidade_id == turma_obj.unidade_id
             )
         alunos_disponiveis = alunos_disponiveis.order_by(Aluno.nome).all()
     else:
@@ -1665,9 +1664,7 @@ def enturmar_alunos(turma_id):
         try:
             alunos = Aluno.query.filter(Aluno.id.in_(aluno_ids_int))
             if turma_obj.unidade_id:
-                alunos = alunos.filter(
-                    cond_aluno_no_escopo_unidade(turma_obj.unidade_id)
-                )
+                alunos = alunos.filter(Aluno.unidade_id == turma_obj.unidade_id)
             alunos = alunos.all()
             enturmados = 0
             for aluno in alunos:
