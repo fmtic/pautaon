@@ -633,7 +633,8 @@ def test_escopo_unidade_exige_unidade_propria_do_aluno(
         )
         curso_u1 = Curso(nome="AJ10 curso U1", unidade_id=s["u1_id"], ativo=True)
         db.session.add_all([
-            aluno_u2, aluno_ambiguo, aluno_sem_vinculo, admin, curso_u1,
+            aluno_u2, aluno_proprio_u2, aluno_ambiguo, aluno_sem_vinculo,
+            admin, curso_u1,
         ])
         db.session.flush()
 
