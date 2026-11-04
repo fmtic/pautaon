@@ -1,6 +1,6 @@
 # AJ5-D — Assinatura técnica dos uploads
 
-Data: 04/11/2026  
+Data: 04/11/2026
 Branch: `nova_feature`
 
 ## Escopo e salvaguardas
@@ -98,3 +98,4 @@ Commits com paths explícitos; testes, correções e documentação estão separ
 | test | `4f421affc5b67c4ee44d3ab2e547d1a9af6c152b` | Containers DOC/DOCX/ODT e rejeições adicionais |
 | fix | `657374cf7d1ab0a37e1a480b6d279d1bbbce0ec2` | Validação de assinatura, UUIDs e headers |
 | fix | `f242a24be194ad2a85b93837b15fd48088e4a97b` | Checagem estrutural e remoção do argumento obsoleto |
+| docs | `8aec5173ed12c48a6aaec138f84a6e5aeb0389e3` | Criação deste relatório; o commit seguinte só limpa whitespace |
