@@ -83,6 +83,9 @@ def _anexo_tem_assinatura(anexo, extensao: str) -> bool:
         controles = {byte for byte in range(32)} - {9, 10, 12, 13}
         return not any(byte in controles for byte in conteudo)
     if extensao in {".docx", ".odt"}:
+        if stream.read(4) != b"PK\x03\x04":
+            return False
+        stream.seek(0)
         try:
             with ZipFile(stream) as arquivo_zip:
                 nomes = set(arquivo_zip.namelist())
@@ -114,7 +117,7 @@ def _ler_payload() -> dict:
     return payload
 
 
-def _salvar_anexo(aluno_id: int) -> dict | None:
+def _salvar_anexo() -> dict | None:
     anexo = request.files.get("anexo")
     if not anexo or not anexo.filename:
         return None
@@ -383,7 +386,7 @@ def registrar_atendimento(aluno_id):
         return jsonify({"ok": False, "erro": "O motivo do atendimento é obrigatório."}), 400
 
     try:
-        anexo = _salvar_anexo(aluno_id)
+        anexo = _salvar_anexo()
     except ValueError as exc:
         current_app.logger.warning("Arquivo de anexo inválido ao registrar atendimento.")
         return jsonify({"ok": False, "erro": str(exc)}), 400
@@ -478,7 +481,7 @@ def editar_atendimento(id):
         return jsonify({"ok": False, "erro": "O motivo do atendimento é obrigatório."}), 400
 
     try:
-        anexo = _salvar_anexo(a.aluno_id)
+        anexo = _salvar_anexo()
     except ValueError as exc:
         current_app.logger.warning("Arquivo de anexo inválido ao editar atendimento.")
         return jsonify({"ok": False, "erro": str(exc)}), 400
