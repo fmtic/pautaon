@@ -7,6 +7,16 @@ do sistema `pautaON`, bem como as funcionalidades de visualização e exportaç�
 Os indicadores estão agrupados por categorias temáticas. Cada item detalha o seu propósito
 funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dado retornado.
 
+## Glossário do catálogo
+
+Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_AuditoriaBI.md`) e vale para toda a Central:
+
+- **Cadastro novo vs aluno novo:** "cadastro novo" (ALU-004) é registro recém-criado em `Aluno.created_at`; **não** é "aluno novo no período" (ALU-013 — status Novo, sem inscrição em período anterior da mesma unidade). Os termos nunca devem ser usados como sinônimos.
+- **"Ativo" sempre com o nome do campo:** `Aluno.ativo` (cadastro), `Inscricao.ativo` (vínculo), `Turma.ativo` (turma) ou `TurmaCurso.ativo` (oferta). Nenhum indicador deve dizer "ativo" sem qualificar o campo.
+- **"Outros":** é o status **residual do classificador** de enturmação (`app.services.aluno_status`) — aluno que não se enquadra em nenhuma das outras categorias; entra em ALU-012 e não tem regra própria além do resíduo.
+- **Unidade estatística de frequência/aulas:** FRE-* contam **linhas de lançamento** e AUL-* contam **linhas de registro de aula** — não pessoas nem dias. Um aluno com 20 lançamentos pesa 20 vezes em FRE-001/002/003; `J` (falta justificada) fica fora do numerador e do denominador das taxas.
+- **Regra D2 (legado):** linhas de frequência/registro com `turma_curso_id NULL` pertencem à **oferta ativa única** da turma; fora desse caso ficam só nos totais de unidade/turma.
+
 ---
 
 ## Sumário
@@ -20,6 +30,9 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 7. [Categoria: Atendimento](#7-categoria-atendimento)
 8. [Categoria: Indicadores Cruzados (CRU)](#8-categoria-indicadores-cruzados-cru)
 9. [Visualizações e Exportações](#9-visualizações-e-exportações)
+10. [Pendências do catálogo](#10-pendências-do-catálogo-bi-pósrelease--aj12aj14aj15)
+
+(Além do [Glossário do catálogo](#glossário-do-catálogo), logo após a introdução.)
 
 ---
 
@@ -41,7 +54,7 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Um número inteiro (`int`).
 
 ### ALU-004: Novos cadastros
-- **O que faz:** Conta registros criados em `Aluno.created_at` dentro do intervalo selecionado. Com período informado, usa `PeriodoLetivo.data_inicio` e `data_fim`; sem período, usa o período ativo vigente de cada unidade. Não exige enturmação nem `Aluno.ativo=True`; registros com `created_at` nulo não entram. O filtro de turno não se aplica a cadastros.
+- **O que faz:** Conta registros **criados** em `Aluno.created_at` dentro do intervalo selecionado — **cadastro novo**, não "aluno novo no período" (ver Glossário; distinção travada na auditoria AJ12). Com período informado, usa `PeriodoLetivo.data_inicio` e `data_fim`; sem período, usa o período ativo vigente de cada unidade. Não exige enturmação nem `Aluno.ativo=True`; registros com `created_at` nulo não entram. O filtro de turno não se aplica a cadastros.
 - **Onde busca os dados:** Tabela/Modelo `Aluno` (`created_at`).
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -56,7 +69,7 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`, na ordem das faixas definidas, omitindo faixas com zero alunos.
 
 ### ALU-007: Alunos PCD enturmados
-- **O que faz:** Conta alunos enturmados em P (Novo + Renovado + Retornante) identificados como PCD, usando `PerfilDiversidade.saude_laudo` ou o fallback legado `Aluno.diversidade_json`.
+- **O que faz:** Conta alunos enturmados em P (Novo + Renovado + Retornante) identificados como PCD, usando `PerfilDiversidade.saude_laudo` ou o fallback legado `Aluno.diversidade_json`. **Base distinta de DIV-001:** ALU-007 restringe à enturmação em P; DIV-001 distribui todos os alunos com perfil PCD (ver DIV-001) — os totais não são comparáveis entre si.
 - **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `PeriodoLetivo` e `PerfilDiversidade`.
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -69,6 +82,7 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que faz:** Agrupa por curso e conta alunos distintos enturmados em P/D (Novo + Renovado + Retornante), com inscrição vigente. O curso vem da OFERTA da inscrição (`TurmaCurso.curso_id`), não da turma. Cada aluno conta uma vez dentro de cada curso, de modo que a soma dos cursos pode exceder o total de alunos distintos da unidade. Sem período explícito, usa o período vigente de cada unidade.
 - **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `TurmaCurso`, `Curso` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
+- **Pendente (BI pós-release, AJ12):** o filtro de **turno** ainda não se aplica a este indicador; decisão registrada no backlog (AJ15).
 
 ### ALU-010: Alunos por turma
 - **O que faz:** Agrupa e conta a quantidade de alunos distintos vinculados a cada turma. Cada aluno conta UMA vez por turma, mesmo inscrito em mais de uma oferta; filtros de curso/professor resolvem pela OFERTA (`TurmaCurso`).
@@ -137,8 +151,8 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Um número inteiro (`int`).
 
 ### INS-004: Novas inscrições
-- **O que faz:** Retorna o volume de novas inscrições efetuadas no período informado.
-- **Onde busca os dados:** Tabela/Modelo `Inscricao`.
+- **O que faz:** Retorna o volume de inscrições com **início** (`Inscricao.data_inicio`) no período informado — "nova" aqui é **início de vigência**, não data de criação do registro (semântica fixada na auditoria AJ12; a alternativa de usar `created_at` ficou pendente de decisão de negócio).
+- **Onde busca os dados:** Tabela/Modelo `Inscricao` (`data_inicio`).
 - **O que retorna:** Um número inteiro (`int`).
 
 ### INS-005: Desativações
@@ -146,11 +160,11 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **Onde busca os dados:** Tabela/Modelo `Inscricao`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### INS-006: Motivos de desativação _(não implementado)_
-- **Motivo:** Não há dados de motivo de desativação registrados no banco.
+### INS-006: Motivos de desativação _(indisponível — não implementado, oculto da Central)_
+- **Motivo:** Não há dados de motivo de desativação registrados no banco. Desde o AJ14, o indicador **não aparece na lista da Central** enquanto não for implementado; a chamada direta pela API continua respondendo com o erro de não implementado (400).
 
-### INS-007: Tempo médio de permanência _(não implementado)_
-- **Motivo:** Não há registros com `data_desativacao` preenchida no banco.
+### INS-007: Tempo médio de permanência _(indisponível — não implementado, oculto da Central)_
+- **Motivo:** Não há registros com `data_desativacao` preenchida no banco. Desde o AJ14, o indicador **não aparece na lista da Central** enquanto não for implementado; a chamada direta pela API continua respondendo com o erro de não implementado (400).
 
 ### INS-008: Inscrições por curso
 - **O que faz:** Agrupa e conta o total de inscrições vinculadas a cada curso; o curso vem da OFERTA da inscrição (`Inscricao.turma_curso_id` → `TurmaCurso.curso_id`).
@@ -182,7 +196,7 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Um número inteiro (`int`).
 
 ### FRE-005: Frequência média
-- **O que faz:** Calcula a taxa percentual média global de frequência dos alunos, desconsiderando faltas justificadas. Percentual = presenças / (presenças + faltas), arredondado a 1 casa, pelo serviço `app/services/frequencia_oferta.py`; curso/professor pela OFERTA da linha (legado segue a regra D2).
+- **O que faz:** Calcula a **taxa global ponderada por lançamento** de frequência — presenças / (presenças + faltas) sobre **todas as linhas** do escopo, desconsiderando faltas justificadas (`J` fora de numerador e denominador). **Não é** a média aritmética dos percentuais por aluno: alunos com mais lançamentos pesam mais (distinção travada na auditoria AJ12). Arredondado a 1 casa, pelo serviço `app/services/frequencia_oferta.py`; curso/professor pela OFERTA da linha (legado segue a regra D2).
 - **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um valor percentual arredondado (`float`).
 
@@ -215,8 +229,8 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 
 ## 4. Categoria: Turmas
 
-### TUR-001: Total de turmas
-- **O que faz:** Retorna o total geral de turmas cadastradas conforme os filtros aplicados.
+### TUR-001: Turmas ativas
+- **O que faz:** Retorna o total de turmas **ativas** (`Turma.ativo=True`) conforme os filtros aplicados — descreve exatamente a implementação (alinado no AJ12; "total geral" com inativas seria mudança de regra, registrada como decisão em aberto na seção de duplicados).
 - **Onde busca os dados:** Tabela/Modelo `Turma`.
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -236,8 +250,8 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Um valor decimal (`float`).
 
 ### TUR-005: Turmas por curso
-- **O que faz:** Agrupa e conta o total de turmas associadas a cada curso.
-- **Onde busca os dados:** Tabelas `Turma` e `Curso`.
+- **O que faz:** Agrupa e conta turmas por **curso da OFERTA ativa** (`TurmaCurso.curso_id`), e não pelo curso legado da turma; cada turma conta **uma vez por curso** (implementado no AJ14). Turma sem oferta ativa com curso não entra na distribuição.
+- **Onde busca os dados:** Tabelas `Turma`, `TurmaCurso` e `Curso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### TUR-006: Turmas por período
@@ -251,8 +265,8 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### TUR-008: Turmas por professor
-- **O que faz:** Agrupa e conta o total de turmas sob a responsabilidade de cada professor.
-- **Onde busca os dados:** Tabelas `Turma` e `User`.
+- **O que faz:** Agrupa e conta turmas pelo **professor da OFERTA ativa** (`TurmaCurso.professor_id`), e não pelo `professor_id` vestigial da turma; cada turma conta **uma vez por professor** (implementado no AJ14). Turma sem oferta ativa com professor não entra na distribuição.
+- **Onde busca os dados:** Tabelas `Turma`, `TurmaCurso` e `User`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ---
@@ -314,7 +328,7 @@ funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dad
 - **O que retorna:** Um número inteiro (`int`).
 
 ### DIV-001: Alunos por tipo de deficiência
-- **O que faz:** Distribui os alunos PCD por tipo de deficiência declarada.
+- **O que faz:** Distribui os alunos PCD por tipo de deficiência declarada, sobre **todos os alunos com perfil** (não restringe à enturmação em P — **base distinta de ALU-007**, que conta só enturmados em P). Um aluno com **mais de um tipo** declarado é contado **em cada tipo**, por isso a soma das categorias **pode exceder** o total de alunos PCD distintos.
 - **Onde busca os dados:** Tabelas `Aluno` e `PerfilDiversidade`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
@@ -339,7 +353,7 @@ Indicadores que cruzam duas ou mais dimensões de dados para análises integrada
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
 ### CRU-002: Alunos por raça/cor no Conselho de Classe
-- **O que faz:** Distribui os alunos participantes do Conselho de Classe por raça/cor declarada; filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
+- **O que faz:** Distribui por raça/cor declarada os alunos **com ao menos uma `ConselhoResposta` preenchida** no escopo do conselho (turma/período) — existência de registro-base sem resposta **não** conta como participação (regra implementada no AJ14); filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
 - **Onde busca os dados:** Tabelas `ConselhoClasse`, `TurmaCurso` e `PerfilDiversidade`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
@@ -354,7 +368,7 @@ Indicadores que cruzam duas ou mais dimensões de dados para análises integrada
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
 ### CRU-005: Desempenho no Conselho de Classe por faixa de renda
-- **O que faz:** Cruza os resultados do Conselho de Classe com a faixa de renda familiar dos alunos; filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
+- **O que faz:** Cruza os resultados do Conselho de Classe com a faixa de renda familiar dos alunos, considerando **somente `ConselhoClasse` com `situacao_final` não nula** (regra implementada no AJ14); filtros de curso/professor resolvem pela OFERTA do conselho (`ConselhoClasse.turma_curso_id` → `TurmaCurso`).
 - **Onde busca os dados:** Tabelas `ConselhoClasse`, `TurmaCurso` e `PerfilSocioeconomico`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
 
@@ -370,8 +384,9 @@ Esta seção documenta as funcionalidades de apresentação e exportação dispo
 
 ### 9.1 Tipos de Visualização
 
-Após executar um indicador, resultados do tipo **distribuição** (lista) oferecem quatro modos
-de visualização selecionáveis no cabeçalho do card de resultado:
+Após executar um indicador, resultados do tipo **distribuição** (lista) oferecem **cinco** modos
+de visualização selecionáveis no cabeçalho do card de resultado (corrigido no AJ12 — o texto
+antigo dizia "quatro" e listava cinco):
 
 | Modo | Tipo Chart.js | Descrição |
 |---|---|---|
@@ -463,9 +478,10 @@ fonte grande (`28pt`, azul).
 
 ### 9.5 Filtros Globais
 
-Os três filtros da Central de BI são aplicados tanto na **execução dos indicadores** quanto
+Os **três filtros visíveis** da Central de BI são aplicados tanto na **execução dos indicadores** quanto
 na **exportação XLSX** (os valores selecionados no momento do clique em "Exportar XLSX" são
-enviados junto à requisição):
+enviados junto à requisição). **Somente estes três têm controles na tela** (alinado no AJ12);
+curso, turma e professor são aceitos pela API/exportação, mas **não possuem controles visíveis** na Central:
 
 | Filtro | ID HTML | Parâmetro de API |
 |---|---|---|
@@ -475,4 +491,17 @@ enviados junto à requisição):
 
 ---
 
-_Última atualização: 2026-09-29_
+## 10. Pendências do catálogo (BI pós-release — AJ12/AJ14/AJ15)
+
+Registradas no backlog (entrada de 05/11/2026), sem alteração de código neste documento:
+
+- **CRU-004** deve apurar o **curso de origem pela OFERTA** da inscrição transferida (hoje resolve por turma/curso legado).
+- **ALU-009** deve passar a aceitar o **filtro de turno** (ver nota no item).
+- **TUR-004** deve contar **aluno distinto** por turma (hoje é média sobre linhas de inscrição).
+- **Consolidar duplicados:** INS-003/INS-005 (mesmo critério de inscrição inativa), TUR-001/TUR-002 (ambos contam turmas ativas), ALU-010/TUR-003 (aliases da mesma função).
+- **Implementar INS-006/INS-007** com critérios aprovados (hoje indisponíveis e ocultos da Central).
+- **DIV-001 vs ALU-007:** bases distintas documentadas; eventual unificação depende de decisão de negócio.
+
+---
+
+_Última atualização: 2026-11-05 — glossário e correções da auditoria AJ12 (§5 do relatório) e das correções do AJ14 (INS-006/007 ocultos, TUR-005/008 por oferta, CRU-002 por resposta preenchida, CRU-005 só com `situacao_final`), registradas na tarefa AJ15._

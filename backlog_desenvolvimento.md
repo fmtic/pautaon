@@ -1,3 +1,54 @@
+### Alterações do dia — 05/11/2026 (AJ15 — atualização de documentação: ciclo AJ3–AJ14 concluído, pendências e regras)
+
+Tarefa **somente documentação** (MER.md, backlog, catálogo do BI, runbook de deploy e relatório). **Nenhuma linha de código, migration ou teste alterada**; head do código segue `c1d2e3f4a5b6`. Worktree próprio a partir da `nova_feature` integrada, commits com caminhos explícitos, sem push. Regras de negócio registradas em MER §8.2/§8.27; runbook completo em `docs/deploy_release.md`; relatório `docs/Relatórios/AJ15_Docs.md`.
+
+**Concluídos do ciclo AJ (uma linha cada; AJ3–AJ6 detalhados na entrada de 02/11):**
+
+- **AJ3** — fechamento do AJ1/AJ2 com 86 testes reais nos 4 arquivos que só tinham `assert True` + fix `1e39e23` (categoria `exclusao`); suíte 1222 → 1308. `docs/Relatórios/AJ3_TestesFechamento.md`.
+- **AJ4** — teste de drift de rótulos do `log_acao` com censo congelado + separação de literais não emitidos; `docs/Relatórios/AJ4_LogsDrift.md`.
+- **AJ4-B** — calendário determinístico da suíte via `hoje_fixo`; `docs/Relatórios/AJ4B_CalendarioSuite.md`.
+- **AJ5-A/B/C/C1/D/E** — cadastro de aluno (auditoria, exclusão de documento), validação PDF (`%PDF-`, tetos), formulário unificado com contrato de valores + snapshots, round-trip do checkbox, **validação de assinatura nos uploads de atendimento/certificado (AJ5-D)**, layout travado por AST; relatórios `AJ5*.md`.
+- **AJ6 (A a C)** — painel de turmas e `unidade_id` pelo escritor, autorização do professor **por oferta** (regra única), escopo de `ver_turma`/dashboard, allowlist de rotas travada por teste com detector de escrita, `/turma` exclusiva dos gestores, conftest único e limpeza de unidades de teste; relatórios `AJ6*.md`. Suíte de referência: 1559 passed.
+- **AJ7-A** — auditoria da edição do conselho individual por gestor: `LogAcao(acao="Alteração de conselho (gestor)")` com ids/marcadores e **nunca o texto**; censo de rótulos 30 → 31. `docs/Relatórios/AJ7A_AuditoriaConselho.md`.
+- **AJ7-B** — corrigido o literal `"None"` nos campos de texto do conselho (render Jinja de `None`); sem migration. `docs/Relatórios/AJ7B_NoneConselho.md`.
+- **AJ7-C** — suíte verde no head com rótulos de UI alinhados em testes (sem mudança de UI). `docs/Relatórios/AJ7C_TestesRotulos.md`.
+- **AJ7-D** — gravação do conselho restrita por papel: `POST /conselho/salvar` e `POST /turma/<id>/avaliacao` só para admin, pedagógico e professor da oferta; demais 403. `docs/Relatórios/AJ7D_GravacaoConselho.md`.
+- **AJ8** — pré-release de segurança: nenhum segredo/dado pessoal versionado no HEAD; varredura manual do histórico (gitleaks/trufflehog indisponíveis). `docs/Relatórios/AJ8_PreRelease.md`.
+- **AJ9 / AJ9-B / AJ9-C** — dependências validadas (`cryptography`, `oauthlib`, `pytest`) e ensaio de migrations: **banco vazio não chega ao head** (baseline quebrada); dump de produção restaurado localmente e atualizado de `c4d5e6f7a8b9` até `c1d2e3f4a5b6` (24 revisões), com 7 valores de `curso.carga_horaria` sem destino (o dump os guarda). Relatórios `AJ9*.md`.
+- **AJ10 / AJ10-R** — leitura de `unidade_id` nulo no escopo de aluno e **reversão** da herança por inscrições: aluno sem unidade própria fica fora dos escopos por unidade; revisão do downgrade de `3b7c9d1e4f20`. Relatórios `AJ10*.md`.
+- **AJ11** — varredura de código morto executada como análise (achados registrados nas pendências abaixo: F401s preexistentes, `documento_entregue()`, alias `/professor/painel`, templates/rotas órfãos); **remoção não executada** — decisão pendente.
+- **AJ12** — auditoria dos 61 indicadores do BI no clone (61 comparados, hipóteses verificadas, invariantes numéricos, redundâncias e proposta de catálogo em §5); **sem alteração de código**. `docs/Relatórios/AJ12_AuditoriaBI.md`.
+- **AJ13** — verificação pré-release no clone atualizado até `c1d2e3f4a5b6`: suíte completa **1.638 passed, 0 failed, 0 skipped**, varredura GET por papel sem 404/5xx na amostra. `docs/Relatórios/AJ13_Verificacao.md`.
+- **AJ14** — correções mínimas do BI (INS-006/007 fora da Central, TUR-005/008 por oferta, CRU-002 por resposta preenchida, CRU-005 só com `situacao_final`) com valores idênticos no clone; suíte 1.643 passed. **Correções aplicadas no worktree `D:\pautaon-aj14` (branch `aj14-bi`), ainda não commitadas/integradas** — registradas no catálogo `app/relatorios/indicadores.md` como alvo e no relatório `AJ14_BI.md` (inexistente no Git no momento desta tarefa; ver dúvidas no relatório AJ15).
+
+**Pendências registradas (aj15):**
+
+- **Migration baseline** — banco vazio **não chega ao head** (`flask db upgrade` falha em banco novo; AJ9). Criar/validar baseline antes de qualquer instalação nova.
+- **Idempotência de `e1e3a5b2c333`** — duplica `f1a2b3c4d5e6` (colunas de auditoria de `aluno`); em banco novo a segunda falha por coluna duplicada (MER §11.1 item 2).
+- **`Curso` sem `AuditoriaMixin`** — a migration `a9f3c8e2d1b7` criou as colunas de auditoria em `curso`, mas o modelo não as herda: banco com três colunas a mais que o modelo (dropar colunas ou herdar o mixin).
+- **`periodo_letivo.unidade_id`** — modelo nullable (via `TenantMixin`) vs DB NOT NULL: divergência modelo × schema (MER §12.10).
+- **Plano NOT NULL §12.10** — endurecer `unidade_id` dos planos exige **backfill prévio** das linhas NULL; não aplicado.
+- **CSP report-only** — continuar em `report-only` até coletar violações reais; sem endpoint de coleta hoje (S1 E3).
+- **Logs de e-mail com destinatários** — registros de envio contêm destinatários; avaliar privacidade/redação antes de expor em tela ou log durável.
+- **Validação de assinatura nas imagens de configuração** — uploads de configuração (ex.: certificado/modelos) ainda sem validação por assinatura de bytes como na AJ5-B/AJ5-D.
+- **Pillow no `requirements.txt`** — a validação de foto usa Pillow "se instalado" (S1 E5); fixar a dependência ou documentar o comportamento degradado.
+- **Teste instável da pauta (carimbo de minuto)** — teste que compara carimbo com resolução de minuto pode flutuar na virada; tornar determinístico (padrão `hoje_fixo`).
+- **Gerência somente leitura no conselho (pós-release)** — decisão de produto: liberar leitura à gerência sem escrita (hoje 403 na gravação; AJ7-D).
+- **Vocabulário oferta/curso inconsistente** — `painel.html` fala em "ofertas ativas", mensagens de `conselho.py` falam em "curso", roteiro B3-03 misturam os termos; padronizar a linguagem de UI.
+- **SEC-04 — autor exclui o próprio agendamento nunca funcionou** — a guarda legada testava `responsavel_id` (atributo inexistente; autoria é `user_id`); AJ6-B7 fechou o 500 com guarda por role, mas a exceção "autor exclui o próprio" **não foi implementada** — decidir se deve existir.
+- **AJ11 — código morto (remoção pendente)** — `ruff F401`: **62 achados preexistentes** (re-exports de `app/models/__init__.py` e scripts); `vulture` a rodar; templates/estáticos órfãos; rotas sem referência; helper `Aluno.documento_entregue()` sem chamadores; alias `/professor/painel` (candidato a morte após a allowlist AJ6-B6/B7); guarda `PAUTAON_ALLOW_REAL_DB=1` para scripts com `create_app()` que gravam (herdam o `.env` real).
+- **BI pós-release (da AJ12/AJ14)** — CRU-004 por **oferta** (curso de origem via oferta, não turma); ALU-009 com **filtro de turno**; TUR-004 por **aluno distinto** (hoje média de linhas de inscrição); consolidar duplicados **INS-003/005**, **TUR-001/002**, **ALU-010/TUR-003**; implementar **INS-006/007** (hoje indisponíveis e ocultos da Central); diferenciar **DIV-001 vs ALU-007** (bases distintas documentadas no catálogo).
+
+**Regras de negócio vigentes (registradas em MER §8.2/§8.27, onde já havia texto, mantido):**
+
+- `/turma` (listagem) e `/turmas/centros-custo/imprimir` — **somente** admin, secretaria, pedagógico e gerência; professor 403.
+- Professor **só acessa o que pertence às ofertas dele** (regra única `ofertas_do_professor`/`professor_pode_acessar_oferta`) e **nunca vê ficha de aluno**; `Turma.professor_id` é **vestigial** e nunca concede acesso.
+- `historico_aluno` — acesso do professor é **temporário** (exposição limitada a nome, nome social e matrícula); **alvo futuro:** restringir aos gestores e, no futuro, ao próprio aluno.
+- Conselho — escrita do individual (`POST /conselho/salvar`) e de `avaliar_turma` só para **professor da oferta, pedagógico e admin**, com log `"Alteração de conselho (gestor)"` quando o gestor edita; **o texto do conselho nunca vai ao log**.
+- Aluno **sem `unidade_id` fica fora dos escopos por unidade** (AJ10-R); correção por **backfill manual** (`scripts/backfill_unidade_id_nulos.sql`).
+- Regra **D2** — linhas legadas com `turma_curso_id NULL` pertencem à **oferta ativa única** da turma.
+
+---
 ### Alterações do dia — 02/11/2026 (AJ3–AJ6 — fechamento do ciclo: concluídos e pendências)
 
 Fechamento documental do ciclo **AJ3–AJ6** na branch `nova_feature`: **nenhuma migration** (head `c9d0e1f2a3b4`), **nenhuma escrita em banco real** (só `SELECT`), **sem push**, histórico intacto, commits atômicos com **suíte verde** e ruff `F821/F811/F841/F401` limpo. Notas de semântica resultantes em MER §8.26.
