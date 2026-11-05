@@ -56,6 +56,8 @@ def bi_dashboard():
 
     categorias = {}
     for codigo, indicador in indicadores.items():
+        if codigo in {"INS-006", "INS-007"}:
+            continue
         categoria = indicador["categoria"]
         categorias.setdefault(categoria, []).append((codigo, indicador))
 

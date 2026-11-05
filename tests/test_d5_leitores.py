@@ -13,8 +13,8 @@ Regras cobertas (docs/D5_0_desenho.md §1.5/§1.6 + D5.4):
       frequência vêm da própria oferta.
     - Certificado: uma linha por inscrição; o ícone Concluído/Pendente vem de
       `TurmaCurso.conselho_concluido` da oferta (nunca do derivado da turma).
-    - BI CRU-002 conta aluno DISTINTO; CRU-005 conta uma linha por situação
-      distinta (comportamento caracterizado, sem alterar a lógica).
+    - BI CRU-002 conta alunos distintos com resposta preenchida; CRU-005
+      considera conselhos com situação final não nula.
     - Isolamento por unidade nas leituras.
 
 Um usuário por teste (T1 §5.6): cada teste semeia via `_setup` da D5.2 e faz
@@ -463,18 +463,24 @@ def test_certificado_uma_linha_por_inscricao_e_icone_da_oferta(client, app):
 # ---------------------------------------------------------------------------
 
 def test_bi_cru002_conta_aluno_distinto_e_cru005_conta_por_situacao(app):
-    """Caracteriza o comportamento herdado, SEM alterar `bi_alunos.py`.
+    """CRU-002 exige resposta preenchida e CRU-005 agrupa situação final.
 
-    Regra do CRU-002: `count(distinct aluno_id)` — o mesmo aluno em 2 ofertas
-    da mesma turma conta **1**.
-    Regra do CRU-005: itera as LINHAS de conselho — o mesmo aluno conta **1
-    por situação distinta** em que aparece (aqui: 1 aprovado + 1 outro).
+    O aluno tem uma resposta preenchida em um conselho; o segundo conselho
+    não o duplica no CRU-002. O CRU-005 continua contando as duas situações
+    finais não nulas.
     """
     ids = _setup(app, ofertas=2)
-    _conselho_em(app, ids, ids["aluno_a"], ids["ofertas"][0],
-                 EtapaConselho.FINAL, situacao="Aprovado")
+    conselho_preenchido = _conselho_em(
+        app, ids, ids["aluno_a"], ids["ofertas"][0],
+        EtapaConselho.FINAL, situacao="Aprovado",
+    )
     _conselho_em(app, ids, ids["aluno_a"], ids["ofertas"][1],
                  EtapaConselho.FINAL, situacao="Evadido")
+    pergunta_aluno, _ = _perguntas(app)
+    _responder(
+        app, conselho_preenchido, ids["aluno_a"], pergunta_aluno,
+        "Resposta preenchida",
+    )
     with app.app_context():
         db.session.add(PerfilDiversidade(
             aluno_id=ids["aluno_a"], unidade_id=ids["un_a"], raca_cor="Parda",

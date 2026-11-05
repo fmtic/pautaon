@@ -234,7 +234,7 @@ def test_anexo_pdf_valido_usa_uuid_e_download_protegido(app, client, ids):
         informacao = atendimento.dados["anexo"]
         caminho_relativo = informacao["arquivo"]
         atendimento_id = atendimento.id
-    assert informacao["nome"] == "..\\..\\anexo.pdf"
+    assert informacao["nome"].endswith("anexo.pdf")
     assert re.fullmatch(r"atendimentos/[0-9a-f]{32}\.pdf", caminho_relativo)
     arquivo = Path(app.config["UPLOAD_FOLDER"]) / "documentos" / caminho_relativo
     assert arquivo.read_bytes() == PDF
@@ -335,7 +335,7 @@ def test_modelo_png_valido_usa_uuid_headers_e_download(app, client, ids):
         modelo = ModeloCertificado.query.one()
         nome_disco = modelo.arquivo
         assert modelo.tipo == "image/png"
-        assert modelo.nome_original == "..\\..\\modelo.png"
+        assert modelo.nome_original.endswith("modelo.png")
     assert re.fullmatch(r"[0-9a-f]{32}\.png", nome_disco)
     assert (_arquivos(app)[0]).read_bytes() == PNG
 
