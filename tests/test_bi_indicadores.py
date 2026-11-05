@@ -7,17 +7,23 @@ import pytest
 from app import create_app, db
 from app.models import (
     Aluno,
+    ConselhoClasse,
+    ConselhoResposta,
     Curso,
     Inscricao,
+    PerguntaConselho,
     PerfilDiversidade,
+    PerfilSocioeconomico,
     PeriodoLetivo,
     Turma,
     TurmaCurso,
     Unidade,
     User,
 )
+from app.models.enums import EtapaConselho
 from app.relatorios.bi import executar_indicador
 from app.relatorios.bi_alunos import turmas_por_professor
+from app.relatorios.catalogo import listar_indicadores
 from app.services.aluno_status import status_alunos_para_bi
 from config import Config
 from _helpers import login_as, professor_semente
@@ -63,7 +69,7 @@ def test_indicadores_sociais_e_operacionais(app):
         assert isinstance(res_atd1, int)
 
 
-def test_indicador_de_turmas_por_professor_usa_responsavel_direto(app):
+def test_indicador_de_turmas_por_professor_usa_oferta_ativa(app):
     with app.app_context():
         unidade = Unidade(nome="Unidade da Natação", ativo=True)
         db.session.add(unidade)
@@ -76,13 +82,24 @@ def test_indicador_de_turmas_por_professor_usa_responsavel_direto(app):
             first_login=False,
             unidade_id=unidade.id,
         )
+        curso = Curso(nome="Natação", unidade_id=unidade.id, ativo=True)
         turma = Turma(
             nome="1 - Natação",
             ativo=True,
             unidade_id=unidade.id,
             professor=professor,
         )
-        db.session.add_all([professor, turma])
+        db.session.add_all([professor, curso, turma])
+        db.session.flush()
+        db.session.add(TurmaCurso(
+            turma_id=turma.id,
+            curso_id=curso.id,
+            professor_id=professor.id,
+            unidade_id=unidade.id,
+            principal=True,
+            ativo=True,
+            programa="Teste",
+        ))
         db.session.flush()
 
         resultado = turmas_por_professor(
@@ -459,3 +476,297 @@ def test_alu004_conta_cadastros_no_intervalo_sem_exigir_enturmacao(app):
             periodo_letivo_id=periodo.id,
         ) == 0
         assert Aluno.query.filter(Aluno.created_at.is_(None)).count() == 1
+
+
+@pytest.mark.parametrize("codigo", ("INS-006", "INS-007"))
+def test_ins_nao_implementado_nao_aparece_na_central(codigo, app):
+    with app.app_context():
+        unidade = Unidade(nome="Unidade BI Central", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+        usuario = User(
+            name="Admin BI Central",
+            email="admin.bi.central@example.test",
+            role="admin",
+            unidade_id=unidade.id,
+            is_active=True,
+            first_login=False,
+        )
+        db.session.add(usuario)
+        db.session.commit()
+        usuario_id = usuario.id
+        unidade_id = unidade.id
+
+    client = app.test_client()
+    login_as(client, usuario_id, unidade_id)
+    central = client.get("/relatorios/bi")
+    assert central.status_code == 200
+    html = central.get_data(as_text=True)
+    indicadores = listar_indicadores()
+    assert codigo not in html
+    assert codigo in indicadores
+    with app.app_context(), pytest.raises(ValueError, match="não foi implementado"):
+        executar_indicador(codigo)
+    resposta = client.get(f"/relatorios/bi/indicador/{codigo}")
+    assert resposta.status_code == 400
+    assert resposta.json["erro"]
+
+
+@pytest.mark.parametrize("codigo", ("TUR-005", "TUR-008"))
+def test_tur_indicadores_contam_turmas_por_oferta_ativa(codigo, app):
+    with app.app_context():
+        hoje = date.today()
+        unidade = Unidade(nome="Unidade BI Ofertas", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+        periodo = PeriodoLetivo(
+            nome="Período BI Ofertas",
+            data_inicio=hoje - timedelta(days=10),
+            data_fim=hoje + timedelta(days=10),
+            unidade_id=unidade.id,
+            ativo=True,
+        )
+        cursos = [
+            Curso(nome=f"Curso BI {i}", unidade_id=unidade.id, ativo=True)
+            for i in range(1, 6)
+        ]
+        professores = [
+            User(
+                name=f"Professor BI {i}",
+                email=f"professor.bi.{i}@example.test",
+                role="professor",
+                first_login=False,
+                unidade_id=unidade.id,
+            )
+            for i in range(1, 4)
+        ]
+        db.session.add_all([periodo, *cursos, *professores])
+        db.session.flush()
+
+        turma_duas_ofertas = Turma(
+            nome="Turma com duas ofertas",
+            ativo=True,
+            unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
+            curso_id=cursos[0].id,
+            professor_id=professores[0].id,
+        )
+        turma_professor_repetido = Turma(
+            nome="Turma com professor repetido",
+            ativo=True,
+            unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
+            curso_id=cursos[2].id,
+            professor_id=professores[0].id,
+        )
+        db.session.add_all([turma_duas_ofertas, turma_professor_repetido])
+        db.session.flush()
+
+        ofertas = [
+            TurmaCurso(
+                turma_id=turma_duas_ofertas.id,
+                curso_id=cursos[0].id,
+                professor_id=professores[0].id,
+                unidade_id=unidade.id,
+                principal=True,
+                ativo=True,
+                programa="Teste",
+            ),
+            TurmaCurso(
+                turma_id=turma_duas_ofertas.id,
+                curso_id=cursos[1].id,
+                professor_id=professores[1].id,
+                unidade_id=unidade.id,
+                principal=False,
+                ativo=True,
+                programa="Teste",
+            ),
+            TurmaCurso(
+                turma_id=turma_professor_repetido.id,
+                curso_id=cursos[2].id,
+                professor_id=professores[0].id,
+                unidade_id=unidade.id,
+                principal=True,
+                ativo=True,
+                programa="Teste",
+            ),
+            TurmaCurso(
+                turma_id=turma_professor_repetido.id,
+                curso_id=cursos[3].id,
+                professor_id=professores[0].id,
+                unidade_id=unidade.id,
+                principal=False,
+                ativo=True,
+                programa="Teste",
+            ),
+            TurmaCurso(
+                turma_id=turma_duas_ofertas.id,
+                curso_id=cursos[4].id,
+                professor_id=professores[2].id,
+                unidade_id=unidade.id,
+                principal=False,
+                ativo=False,
+                programa="Teste",
+            ),
+        ]
+        db.session.add_all(ofertas)
+        db.session.commit()
+
+        resultado = executar_indicador(codigo, unidade_id=unidade.id)
+        if codigo == "TUR-005":
+            assert {item["id"]: item["valor"] for item in resultado} == {
+                curso.id: 1 for curso in cursos[:4]
+            }
+        else:
+            assert {item["id"]: item["valor"] for item in resultado} == {
+                professores[0].id: 2,
+                professores[1].id: 1,
+            }
+
+
+@pytest.mark.parametrize("codigo", ("CRU-002", "CRU-005"))
+def test_cru_indicadores_exigem_resposta_e_situacao_validas(codigo, app):
+    with app.app_context():
+        hoje = date.today()
+        unidade = Unidade(nome="Unidade BI Conselho", ativo=True)
+        db.session.add(unidade)
+        db.session.flush()
+        periodo = PeriodoLetivo(
+            nome="Período BI Conselho",
+            data_inicio=hoje - timedelta(days=10),
+            data_fim=hoje + timedelta(days=10),
+            unidade_id=unidade.id,
+            ativo=True,
+        )
+        curso = Curso(nome="Curso BI Conselho", unidade_id=unidade.id, ativo=True)
+        professor = User(
+            name="Professor BI Conselho",
+            email="professor.bi.conselho@example.test",
+            role="professor",
+            first_login=False,
+            unidade_id=unidade.id,
+        )
+        db.session.add_all([periodo, curso, professor])
+        db.session.flush()
+        turma = Turma(
+            nome="Turma BI Conselho",
+            ativo=True,
+            unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
+            curso_id=curso.id,
+            professor_id=professor.id,
+        )
+        db.session.add(turma)
+        db.session.flush()
+        oferta = TurmaCurso(
+            turma_id=turma.id,
+            curso_id=curso.id,
+            professor_id=professor.id,
+            unidade_id=unidade.id,
+            principal=True,
+            ativo=True,
+            programa="Teste",
+        )
+        alunos = [
+            Aluno(nome=f"Aluno BI Conselho {i}", unidade_id=unidade.id, ativo=True)
+            for i in range(1, 4)
+        ]
+        db.session.add_all([oferta, *alunos])
+        db.session.flush()
+
+        conselhos = [
+            ConselhoClasse(
+                turma_id=turma.id,
+                aluno_id=alunos[0].id,
+                turma_curso_id=oferta.id,
+                unidade_id=unidade.id,
+                etapa=EtapaConselho.FINAL,
+                situacao_final="Aprovado",
+            ),
+            ConselhoClasse(
+                turma_id=turma.id,
+                aluno_id=alunos[1].id,
+                turma_curso_id=oferta.id,
+                unidade_id=unidade.id,
+                etapa=EtapaConselho.FINAL,
+                situacao_final=None,
+            ),
+            ConselhoClasse(
+                turma_id=turma.id,
+                aluno_id=alunos[2].id,
+                turma_curso_id=oferta.id,
+                unidade_id=unidade.id,
+                etapa=EtapaConselho.FINAL,
+                situacao_final="Reprovado por Falta",
+            ),
+        ]
+        db.session.add_all(conselhos)
+        db.session.flush()
+        pergunta = PerguntaConselho(texto="Pergunta BI")
+        db.session.add(pergunta)
+        db.session.flush()
+        db.session.add_all([
+            ConselhoResposta(
+                conselho_id=conselhos[0].id,
+                aluno_id=alunos[0].id,
+                pergunta_id=pergunta.id,
+                unidade_id=unidade.id,
+                resposta="Resposta preenchida",
+            ),
+            ConselhoResposta(
+                conselho_id=conselhos[2].id,
+                aluno_id=alunos[2].id,
+                pergunta_id=pergunta.id,
+                unidade_id=unidade.id,
+                resposta="   ",
+            ),
+        ])
+        db.session.add_all([
+            PerfilDiversidade(
+                aluno_id=alunos[0].id, unidade_id=unidade.id, raca_cor="Branca"
+            ),
+            PerfilDiversidade(
+                aluno_id=alunos[1].id, unidade_id=unidade.id, raca_cor="Parda"
+            ),
+            PerfilDiversidade(
+                aluno_id=alunos[2].id, unidade_id=unidade.id, raca_cor="Preta"
+            ),
+            PerfilSocioeconomico(
+                aluno_id=alunos[0].id,
+                unidade_id=unidade.id,
+                renda_familiar=1000,
+                vulnerabilidade_social=False,
+                beneficio_social_status="Não",
+            ),
+            PerfilSocioeconomico(
+                aluno_id=alunos[1].id,
+                unidade_id=unidade.id,
+                renda_familiar=2000,
+                vulnerabilidade_social=False,
+                beneficio_social_status="Não",
+            ),
+            PerfilSocioeconomico(
+                aluno_id=alunos[2].id,
+                unidade_id=unidade.id,
+                renda_familiar=4000,
+                vulnerabilidade_social=False,
+                beneficio_social_status="Não",
+            ),
+        ])
+        db.session.commit()
+
+        resultado = executar_indicador(
+            codigo,
+            unidade_id=unidade.id,
+            periodo_letivo_id=periodo.id,
+            turma_id=turma.id,
+        )
+        if codigo == "CRU-002":
+            assert {item["id"]: item["valor"] for item in resultado} == {"Branca": 1}
+        else:
+            assert {item["id"]: item["valor"] for item in resultado} == {
+                "ate_1500": 1,
+                "1500_3000": 0,
+                "acima_3000": 1,
+                "nao_informado": 0,
+            }

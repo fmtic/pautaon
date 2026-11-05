@@ -1646,8 +1646,13 @@ def turmas_por_curso(
 
     # Turma desativada (excluída) não entra em contagens agregadas.
     query = Turma.query.filter(Turma.ativo.is_(True)).join(
+        TurmaCurso,
+        TurmaCurso.turma_id == Turma.id,
+    ).filter(
+        TurmaCurso.ativo.is_(True),
+    ).join(
         Curso,
-        Curso.id == Turma.curso_id,
+        Curso.id == TurmaCurso.curso_id,
     )
 
     if unidade_id:
@@ -1657,13 +1662,13 @@ def turmas_por_curso(
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
     if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
+        query = query.filter(TurmaCurso.curso_id == curso_id)
 
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+        query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Turma.data_inicio >= data_inicio)
@@ -1675,7 +1680,7 @@ def turmas_por_curso(
         query.with_entities(
             Curso.id,
             Curso.nome,
-            db.func.count(Turma.id),
+            db.func.count(db.distinct(Turma.id)),
         )
         .group_by(Curso.id, Curso.nome)
         .order_by(Curso.nome)
@@ -1834,8 +1839,13 @@ def turmas_por_professor(
 
     # Turma desativada (excluída) não entra em contagens agregadas.
     query = Turma.query.filter(Turma.ativo.is_(True)).join(
+        TurmaCurso,
+        TurmaCurso.turma_id == Turma.id,
+    ).filter(
+        TurmaCurso.ativo.is_(True),
+    ).join(
         User,
-        User.id == Turma.professor_id,
+        User.id == TurmaCurso.professor_id,
     )
 
     if unidade_id:
@@ -1845,13 +1855,13 @@ def turmas_por_professor(
         query = query.filter(Turma.periodo_letivo_id == periodo_letivo_id)
 
     if curso_id:
-        query = query.filter(Turma.curso_id == curso_id)
+        query = query.filter(TurmaCurso.curso_id == curso_id)
 
     if turma_id:
         query = query.filter(Turma.id == turma_id)
 
     if professor_id:
-        query = query.filter(Turma.professor_id == professor_id)
+        query = query.filter(TurmaCurso.professor_id == professor_id)
 
     if data_inicio:
         query = query.filter(Turma.data_inicio >= data_inicio)
@@ -1863,7 +1873,7 @@ def turmas_por_professor(
         query.with_entities(
             User.id,
             User.name,
-            db.func.count(Turma.id),
+            db.func.count(db.distinct(Turma.id)),
         )
         .group_by(
             User.id,
@@ -2640,10 +2650,17 @@ def alunos_raca_conselho(
     data_fim=None,
 ):
     """Retorna a distribuição de alunos por raça/cor avaliados no Conselho de Classe."""
-    from app.models import ConselhoClasse, Turma
+    from app.models import ConselhoClasse, ConselhoResposta, Turma
 
     query = ConselhoClasse.query.join(
         PerfilDiversidade, PerfilDiversidade.aluno_id == ConselhoClasse.aluno_id
+    ).filter(
+        ConselhoClasse.respostas.any(
+            db.and_(
+                ConselhoResposta.resposta.isnot(None),
+                db.func.trim(ConselhoResposta.resposta) != "",
+            )
+        )
     )
     if unidade_id:
         query = query.filter(ConselhoClasse.unidade_id == unidade_id)
@@ -2802,7 +2819,7 @@ def desempenho_conselho_por_renda(
 
     query = ConselhoClasse.query.join(
         PerfilSocioeconomico, PerfilSocioeconomico.aluno_id == ConselhoClasse.aluno_id
-    )
+    ).filter(ConselhoClasse.situacao_final.isnot(None))
 
     if unidade_id:
         query = query.filter(ConselhoClasse.unidade_id == unidade_id)

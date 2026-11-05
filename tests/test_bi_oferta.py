@@ -40,11 +40,13 @@ from app.models import (
     Aluno,
     Atendimento,
     ConselhoClasse,
+    ConselhoResposta,
     Curso,
     EnderecoAluno,
     Frequencia,
     PerfilDiversidade,
     PerfilSocioeconomico,
+    PerguntaConselho,
     PeriodoLetivo,
     RegistroAula,
     Turma,
@@ -286,7 +288,7 @@ def _seed():
                       bairro="Oeste", possui_acesso_internet=False),
     ])
 
-    db.session.add_all([
+    conselhos = [
         ConselhoClasse(turma_id=alfa.id, aluno_id=Ana.id, turma_curso_id=o1.id,
                        etapa=EtapaConselho.FINAL, situacao_final="Aprovado",
                        unidade_id=ua.id, concluido=True),
@@ -300,6 +302,21 @@ def _seed():
         ConselhoClasse(turma_id=delta.id, aluno_id=Fefa.id, turma_curso_id=od.id,
                        etapa=EtapaConselho.FINAL, situacao_final="Aprovado",
                        unidade_id=ua.id, concluido=True),
+    ]
+    db.session.add_all(conselhos)
+    db.session.flush()
+    pergunta_conselho = PerguntaConselho(texto="Pergunta preenchida do cenário BI")
+    db.session.add(pergunta_conselho)
+    db.session.flush()
+    db.session.add_all([
+        ConselhoResposta(
+            conselho_id=conselho.id,
+            aluno_id=conselho.aluno_id,
+            pergunta_id=pergunta_conselho.id,
+            unidade_id=conselho.unidade_id,
+            resposta="Resposta preenchida",
+        )
+        for conselho in conselhos
     ])
 
     db.session.add_all([
@@ -887,4 +904,3 @@ def test_sem_n_plus_1_frequencia_agregada(cenario):
     assert n_turma_1 <= 6 and n_curso_1 <= 6, (
         f"contagem absoluta alta: {n_turma_1}/{n_curso_1}"
     )
-
