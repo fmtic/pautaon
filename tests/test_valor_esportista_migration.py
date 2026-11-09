@@ -1,20 +1,20 @@
-"""A1 — migration do Valor do Esportista: upgrade e downgrade com dados.
+"""AJ16-B — migration do valor do esportista: da frequência para a AULA.
 
-As funções de DDL são exercitadas diretamente contra o bind SQLite (mesmo
-padrão de `test_h5b_migrations.py`), sem depender de contexto Alembic.
+As funções de DDL/checagem são exercitadas diretamente contra o bind SQLite
+(mesmo padrão de `test_h5b_migrations.py`), sem depender de contexto Alembic.
+O SQL compilado no dialeto PostgreSQL é conferido com `create_mock_engine`.
 
-O schema "pré-A1" é montado à mão — apenas `unidade` + `frequencia` sem a
-coluna nova. Não dá para partir de `db.create_all()` e dropar a coluna: o
-SQLite recusa `ALTER TABLE ... DROP COLUMN` quando a coluna aparece na
-definição de uma FK (a do modelo), embora aceite a mesma coluna criada por
-`ADD COLUMN`. Montar o estado anterior evita esse atrito e é fiel ao banco
-que a migration vai encontrar.
+O schema "pré-AJ16-B" é montado à mão: `frequencia` COM
+`valor_esportista_id` (sem FK declarada, para o SQLite permitir `DROP COLUMN`),
+`registro_aula` e `valor_esportista`. É fiel ao banco que a migration encontra
+— inclusive porque o head anterior (`c1d2e3f4a5b6`) já tem `registro_aula` e a
+coluna antiga.
 """
 
 from __future__ import annotations
 
 import importlib.util
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -31,8 +31,6 @@ from sqlalchemy import (
 )
 
 from app import create_app, db
-from app.models import Unidade
-from app.utils.logica import get_local_now
 from config import Config
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -47,7 +45,11 @@ def _carregar(nome: str, arquivo: str):
     return modulo
 
 
-mig = _carregar("mig_valor_esportista", "b7c8d9e0f1a2_valor_esportista.py")
+mig = _carregar(
+    "mig_valor_aula", "f2a3b4c5d6e7_valor_esportista_na_aula.py"
+)
+
+DATA = date(2026, 11, 3)
 
 
 class SQLiteTestConfig(Config):
@@ -71,39 +73,38 @@ def app():
         db.drop_all()
 
 
-def _schema_pre_a1(bind):
-    """Estado anterior à feature: `unidade` + `frequencia` sem a coluna nova."""
-    Unidade.__table__.create(bind)
+def _schema_pre_aj16b(bind):
+    metadata = MetaData()
     Table(
-        mig.TABELA_FREQUENCIA,
-        MetaData(),
+        "valor_esportista", metadata,
+        Column("id", Integer(), primary_key=True),
+        Column("nome", String(100), nullable=False),
+        Column("ativo", Integer(), nullable=False, default=1),
+        Column("unidade_id", Integer(), nullable=True),
+    ).create(bind)
+    Table(
+        "registro_aula", metadata,
+        Column("id", Integer(), primary_key=True),
+        Column("turma_id", Integer(), nullable=False),
+        Column("turma_curso_id", Integer(), nullable=True),
+        Column("data", Date(), nullable=False),
+    ).create(bind)
+    # A coluna antiga sem FK: o SQLite não dropa coluna que aparece numa FK.
+    Table(
+        "frequencia", metadata,
         Column("id", Integer(), primary_key=True),
         Column("aluno_id", Integer(), nullable=False),
         Column("turma_id", Integer(), nullable=False),
         Column("turma_curso_id", Integer(), nullable=True),
         Column("data", Date(), nullable=False),
-        Column("conceito", String(length=1), nullable=True),
+        Column("conceito", String(1), nullable=True),
         Column("unidade_id", Integer(), nullable=True),
+        Column(mig.COLUNA, Integer(), nullable=True),
     ).create(bind)
 
 
-def _seed(unidade_id):
-    """Dois registros de frequência anteriores à feature (A e F)."""
-    hoje = get_local_now().date()
-    for indice, conceito in enumerate(("A", "F")):
-        db.session.execute(
-            text(
-                "INSERT INTO frequencia "
-                "(aluno_id, turma_id, data, conceito, unidade_id) "
-                "VALUES (1, 1, :d, :c, :u)"
-            ),
-            {
-                "d": (hoje - timedelta(days=indice)).isoformat(),
-                "c": conceito,
-                "u": unidade_id,
-            },
-        )
-    db.session.commit()
+def _tabelas():
+    return set(inspect(db.session.connection()).get_table_names())
 
 
 def _colunas(tabela):
@@ -112,169 +113,273 @@ def _colunas(tabela):
     }
 
 
-def _tabelas():
-    return set(inspect(db.session.connection()).get_table_names())
-
-
-def _conceitos():
+def _inserir_valor(nome):
     return db.session.execute(
-        text("SELECT conceito FROM frequencia ORDER BY data DESC")
-    ).scalars().all()
+        text(
+            "INSERT INTO valor_esportista (nome, ativo, unidade_id) "
+            "VALUES (:n, 1, 1) RETURNING id"
+        ),
+        {"n": nome},
+    ).scalar()
 
 
-def _aplicar_upgrade():
+def _inserir_registro(turma_curso_id, data=DATA, turma_id=1):
+    return db.session.execute(
+        text(
+            "INSERT INTO registro_aula (turma_id, turma_curso_id, data) "
+            "VALUES (:t, :tc, :d) RETURNING id"
+        ),
+        {"t": turma_id, "tc": turma_curso_id, "d": data.isoformat()},
+    ).scalar()
+
+
+def _inserir_frequencia(
+    *, aluno_id, valor_id, turma_curso_id=1, data=DATA, conceito="A",
+):
+    db.session.execute(
+        text(
+            "INSERT INTO frequencia "
+            "(aluno_id, turma_id, turma_curso_id, data, conceito, unidade_id, "
+            f"{mig.COLUNA}) "
+            "VALUES (:a, 1, :tc, :d, :c, 1, :v)"
+        ),
+        {
+            "a": aluno_id, "tc": turma_curso_id, "d": data.isoformat(),
+            "c": conceito, "v": valor_id,
+        },
+    )
+
+
+def _aplicar_upgrade(*, backfill_duas_vezes=False):
     bind = db.session.connection()
-    mig._criar_tabela(bind)
-    mig._adicionar_coluna_frequencia(bind)
-    db.session.commit()
+    try:
+        mig._criar_tabela(bind)
+        mig._checar_guardas(bind)
+        mig._backfill(bind)
+        if backfill_duas_vezes:
+            mig._backfill(bind)
+        mig._verificar_conjuntos(bind)
+        mig._dropar_coluna_antiga(bind)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def _aplicar_downgrade():
     bind = db.session.connection()
-    mig._dropar_coluna_frequencia(bind)
     mig._dropar_tabela(bind)
+    mig._recriar_coluna_antiga(bind)
     db.session.commit()
 
 
-def _inserir_valor(nome, unidade_id):
-    db.session.execute(
-        text(
-            f"INSERT INTO {mig.TABELA} (nome, ativo, unidade_id) "
-            "VALUES (:n, 1, :u)"
-        ),
-        {"n": nome, "u": unidade_id},
-    )
-    db.session.commit()
-    return db.session.execute(
-        text(f"SELECT id FROM {mig.TABELA} WHERE nome = :n"), {"n": nome}
-    ).scalar()
-
-
-def _valor_da_linha(conceito):
+def _vinculos():
     return db.session.execute(
         text(
-            f"SELECT {mig.COLUNA} FROM frequencia WHERE conceito = :c"
-        ),
-        {"c": conceito},
-    ).scalar()
+            f"SELECT registro_aula_id, valor_esportista_id "
+            f"FROM {mig.TABELA} ORDER BY 1, 2"
+        )
+    ).all()
 
 
-def test_upgrade_cria_tabela_e_coluna_sem_perder_dados(app):
+def _valores_antigos():
+    return db.session.execute(
+        text(
+            f"SELECT aluno_id, {mig.COLUNA} FROM frequencia ORDER BY aluno_id"
+        )
+    ).all()
+
+
+def _preparar_pares(quantidade_valores, *, duplicar_aluno=False):
+    """`quantidade_valores` valores distintos na MESMA oferta+data."""
+    registro_id = _inserir_registro(1)
+    for indice in range(1, quantidade_valores + 1):
+        _inserir_frequencia(aluno_id=indice, valor_id=indice)
+    if duplicar_aluno:
+        # Mesmo valor repetido em outro aluno da mesma aula: um único vínculo.
+        _inserir_frequencia(aluno_id=99, valor_id=1)
+    return registro_id
+
+
+# ---------------------------------------------------------------------------
+# Upgrade com dados
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("quantidade", [3, 7])
+def test_upgrade_move_n_valores_para_a_aula(app, quantidade):
     with app.app_context():
-        bind = db.session.connection()
-        _schema_pre_a1(bind)
-        unidade_id = db.session.execute(
-            text(
-                "INSERT INTO unidade (nome, ativo) VALUES ('U A1V-MIG', 1) "
-                "RETURNING id"
-            )
-        ).scalar()
+        _schema_pre_aj16b(db.session.connection())
+        for indice in range(1, quantidade + 1):
+            _inserir_valor(f"Valor {indice}")
+        registro_id = _preparar_pares(quantidade)
         db.session.commit()
-        _seed(unidade_id)
 
         _aplicar_upgrade()
 
         assert mig.TABELA in _tabelas()
-        assert mig.COLUNA in _colunas(mig.TABELA_FREQUENCIA)
-        assert _conceitos() == ["A", "F"]  # nenhuma linha perdida
-        # Sem backfill: a coluna nasce NULL em todas as linhas antigas.
-        assert _valor_da_linha("A") is None
-        assert _valor_da_linha("F") is None
-
-
-def test_upgrade_aplica_unicidade_por_unidade_sem_distinguir_case(app):
-    with app.app_context():
-        bind = db.session.connection()
-        _schema_pre_a1(bind)
-        unidade_id = db.session.execute(
-            text(
-                "INSERT INTO unidade (nome, ativo) VALUES ('U A1V-MIG', 1) "
-                "RETURNING id"
-            )
-        ).scalar()
-        db.session.commit()
-
-        _aplicar_upgrade()
-        _inserir_valor("Alegria", unidade_id)
-
-        try:
-            _inserir_valor("ALEGRIA", unidade_id)
-        except Exception:
-            db.session.rollback()
-        else:  # pragma: no cover - falha explícita se o índice não existir
-            raise AssertionError("índice único funcional não barrou o duplicado")
-
+        assert mig.COLUNA not in _colunas(mig.TABELA_FREQ)
+        assert _vinculos() == [
+            (registro_id, indice) for indice in range(1, quantidade + 1)
+        ]
+        # Conceitos e linhas de frequência intactos.
         assert db.session.execute(
-            text(f"SELECT COUNT(*) FROM {mig.TABELA}")
-        ).scalar() == 1
+            text("SELECT COUNT(*) FROM frequencia")
+        ).scalar() == quantidade
 
 
-def test_downgrade_remove_apenas_a_feature_e_preserva_registros(app):
+def test_upgrade_deduplica_valores_do_mesmo_par(app):
     with app.app_context():
-        bind = db.session.connection()
-        _schema_pre_a1(bind)
-        unidade_id = db.session.execute(
-            text(
-                "INSERT INTO unidade (nome, ativo) VALUES ('U A1V-MIG', 1) "
-                "RETURNING id"
-            )
-        ).scalar()
+        _schema_pre_aj16b(db.session.connection())
+        for indice in range(1, 4):
+            _inserir_valor(f"Valor {indice}")
+        registro_id = _preparar_pares(3, duplicar_aluno=True)
         db.session.commit()
-        _seed(unidade_id)
 
         _aplicar_upgrade()
-        valor_id = _inserir_valor("Foco", unidade_id)
-        db.session.execute(
-            text(f"UPDATE frequencia SET {mig.COLUNA} = :v WHERE conceito = 'A'"),
-            {"v": valor_id},
-        )
+
+        assert _vinculos() == [
+            (registro_id, 1),
+            (registro_id, 2),
+            (registro_id, 3),
+        ]
+
+
+def test_backfill_escolhe_o_diario_canonico_min_id(app):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        _inserir_valor("Alegria")
+        _inserir_valor("Foco")
+        canonico = _inserir_registro(1)
+        duplicado = _inserir_registro(1)
+        _inserir_frequencia(aluno_id=1, valor_id=1)
+        _inserir_frequencia(aluno_id=2, valor_id=2)
         db.session.commit()
-        assert _valor_da_linha("A") == valor_id
+
+        _aplicar_upgrade()
+
+        assert _vinculos() == [(canonico, 1), (canonico, 2)]
+        assert duplicado != canonico
+
+
+def test_backfill_e_idempotente(app):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        _inserir_valor("Alegria")
+        _inserir_valor("Foco")
+        _preparar_pares(2, duplicar_aluno=True)
+        db.session.commit()
+
+        _aplicar_upgrade(backfill_duas_vezes=True)
+
+        assert len(_vinculos()) == 2
+
+
+def test_verificacao_interna_aborta_quando_conjuntos_divergem(app):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        _inserir_valor("Alegria")
+        _inserir_valor("Foco")
+        registro_id = _inserir_registro(1)
+        _inserir_frequencia(aluno_id=1, valor_id=1)
+        db.session.commit()
+
+        bind = db.session.connection()
+        mig._criar_tabela(bind)
+        mig._checar_guardas(bind)
+        mig._backfill(bind)
+        # Força um vínculo que não existe no conjunto antigo.
+        db.session.execute(
+            text(
+                f"INSERT INTO {mig.TABELA} "
+                "(registro_aula_id, valor_esportista_id) VALUES (:r, 2)"
+            ),
+            {"r": registro_id},
+        )
+        db.session.flush()
+
+        # Commit fecharia a connection capturada; a verificação lê o mesmo bind.
+        with pytest.raises(RuntimeError, match="verificação interna"):
+            mig._verificar_conjuntos(bind)
+        db.session.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Guardas: abortam antes de qualquer escrita
+# ---------------------------------------------------------------------------
+
+def test_guarda_aborta_com_valor_sem_oferta_e_nada_muda(app, monkeypatch):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        _inserir_valor("Alegria")
+        _inserir_frequencia(aluno_id=1, valor_id=1, turma_curso_id=None)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            mig.op, "get_bind", lambda: db.session.connection(),
+        )
+        with pytest.raises(RuntimeError, match="turma_curso_id NULL"):
+            mig.upgrade()
+        db.session.rollback()
+
+        assert mig.COLUNA in _colunas(mig.TABELA_FREQ)
+        assert _valores_antigos() == [(1, 1)]
+        assert mig.TABELA not in _tabelas()
+
+
+def test_guarda_aborta_sem_registro_aula_e_nada_muda(app, monkeypatch):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        _inserir_valor("Alegria")
+        _inserir_frequencia(aluno_id=1, valor_id=1, turma_curso_id=1)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            mig.op, "get_bind", lambda: db.session.connection(),
+        )
+        with pytest.raises(RuntimeError, match="sem registro_aula"):
+            mig.upgrade()
+        db.session.rollback()
+
+        assert mig.COLUNA in _colunas(mig.TABELA_FREQ)
+        assert _valores_antigos() == [(1, 1)]
+        assert mig.TABELA not in _tabelas()
+
+
+# ---------------------------------------------------------------------------
+# Downgrade
+# ---------------------------------------------------------------------------
+
+def test_downgrade_recria_coluna_vazia_e_remove_a_tabela(app):
+    with app.app_context():
+        _schema_pre_aj16b(db.session.connection())
+        for indice in range(1, 4):
+            _inserir_valor(f"Valor {indice}")
+        _preparar_pares(3)
+        db.session.commit()
+
+        _aplicar_upgrade()
+        assert len(_vinculos()) == 3
 
         _aplicar_downgrade()
 
         assert mig.TABELA not in _tabelas()
-        assert mig.COLUNA not in _colunas(mig.TABELA_FREQUENCIA)
-        assert _conceitos() == ["A", "F"]  # conceito e linhas intactos
-
-
-def test_reaplicar_upgrade_apos_downgrade(app):
-    with app.app_context():
-        bind = db.session.connection()
-        _schema_pre_a1(bind)
-        unidade_id = db.session.execute(
-            text(
-                "INSERT INTO unidade (nome, ativo) VALUES ('U A1V-MIG', 1) "
-                "RETURNING id"
-            )
-        ).scalar()
-        db.session.commit()
-        _seed(unidade_id)
-
-        _aplicar_upgrade()
-        _aplicar_downgrade()
-        _aplicar_upgrade()
-
-        assert mig.TABELA in _tabelas()
-        assert mig.COLUNA in _colunas(mig.TABELA_FREQUENCIA)
-        assert _conceitos() == ["A", "F"]
-        # A tabela recriada volta vazia (o downgrade leva o catálogo junto).
+        assert mig.COLUNA in _colunas(mig.TABELA_FREQ)
+        # O vínculo aluno↔valor NÃO é restaurado (o dado antigo era por aluno).
+        assert all(valor is None for _aluno, valor in _valores_antigos())
         assert db.session.execute(
-            text(f"SELECT COUNT(*) FROM {mig.TABELA}")
-        ).scalar() == 0
-        assert date.fromisoformat(
-            db.session.execute(
-                text("SELECT data FROM frequencia LIMIT 1")
-            ).scalar()
-        )
+            text("SELECT COUNT(*) FROM frequencia")
+        ).scalar() == 3
 
 
-def test_sql_gerado_para_postgres_e_reversivel(monkeypatch):
-    """A DDL do Postgres recebe a FK SET NULL e o downgrade desfaz só a feature.
+def test_docstring_avisa_que_downgrade_nao_restaura_vinculo():
+    assert "NÃO restaura" in (mig.__doc__ or "")
 
-    Não abre conexão: o `MockEngine` compila o que a migration emitiria no
-    dialeto PostgreSQL (o SQLite dos testes não valida o `ADD CONSTRAINT`).
-    """
+
+# ---------------------------------------------------------------------------
+# DDL compilada para PostgreSQL
+# ---------------------------------------------------------------------------
+
+def _sql_postgres(funcao, *args):
     comandos = []
     engine = create_mock_engine(
         "postgresql+psycopg://",
@@ -282,31 +387,68 @@ def test_sql_gerado_para_postgres_e_reversivel(monkeypatch):
             str(stmt.compile(dialect=engine.dialect))
         ),
     )
-    monkeypatch.setattr(mig.op, "get_bind", lambda: engine)
+    funcao(engine, *args)
+    return " ".join("\n".join(comandos).split())
 
-    mig.upgrade()
-    sql = " ".join("\n".join(comandos).split())
-    assert "CREATE TABLE valor_esportista" in sql
-    assert "CONSTRAINT fk_valor_esportista_unidade" in sql
+
+def test_ddl_postgres_cria_tabela_com_pk_fks_e_indice():
+    sql = _sql_postgres(mig._criar_tabela)
+
+    assert "CREATE TABLE registro_aula_valor_esportista" in sql
+    assert "PRIMARY KEY (registro_aula_id, valor_esportista_id)" in sql
     assert (
-        "CREATE UNIQUE INDEX uix_valor_esportista_nome_unidade "
-        "ON valor_esportista (lower(nome), unidade_id)"
+        "CONSTRAINT fk_registro_aula_valor_esportista_registro "
+        "FOREIGN KEY(registro_aula_id) REFERENCES registro_aula (id) "
+        "ON DELETE CASCADE"
     ) in sql
-    assert "ALTER TABLE frequencia ADD COLUMN valor_esportista_id INTEGER" in sql
     assert (
-        "ADD CONSTRAINT fk_frequencia_valor_esportista FOREIGN KEY "
-        "(valor_esportista_id) REFERENCES valor_esportista(id) "
+        "CONSTRAINT fk_registro_aula_valor_esportista_valor "
+        "FOREIGN KEY(valor_esportista_id) REFERENCES valor_esportista (id) "
+        "ON DELETE RESTRICT"
+    ) in sql
+    assert (
+        "CREATE INDEX ix_registro_aula_valor_esportista_valor "
+        "ON registro_aula_valor_esportista (valor_esportista_id)"
+    ) in sql
+
+
+def test_ddl_postgres_dropa_indice_fk_e_coluna_antiga():
+    sql = _sql_postgres(mig._dropar_coluna_antiga)
+
+    assert "DROP INDEX IF EXISTS ix_frequencia_valor_esportista" in sql
+    assert (
+        "ALTER TABLE frequencia DROP CONSTRAINT IF EXISTS "
+        "fk_frequencia_valor_esportista"
+    ) in sql
+    assert (
+        "ALTER TABLE frequencia DROP COLUMN IF EXISTS valor_esportista_id"
+    ) in sql
+
+
+def test_ddl_postgres_downgrade_recria_coluna_fk_e_indice():
+    sql = _sql_postgres(mig._recriar_coluna_antiga)
+
+    assert (
+        "ALTER TABLE frequencia ADD COLUMN IF NOT EXISTS "
+        "valor_esportista_id INTEGER"
+    ) in sql
+    assert (
+        "ALTER TABLE frequencia ADD CONSTRAINT fk_frequencia_valor_esportista "
+        "FOREIGN KEY (valor_esportista_id) REFERENCES valor_esportista(id) "
         "ON DELETE SET NULL"
     ) in sql
-    assert "CREATE INDEX ix_frequencia_valor_esportista" in sql
+    assert (
+        "CREATE INDEX IF NOT EXISTS ix_frequencia_valor_esportista "
+        "ON frequencia (valor_esportista_id)"
+    ) in sql
 
-    comandos.clear()
-    mig.downgrade()
-    sql = " ".join("\n".join(comandos).split())
-    assert "DROP INDEX IF EXISTS ix_frequencia_valor_esportista" in sql
-    assert "DROP CONSTRAINT IF EXISTS fk_frequencia_valor_esportista" in sql
-    assert "ALTER TABLE frequencia DROP COLUMN valor_esportista_id" in sql
-    assert "DROP INDEX IF EXISTS uix_valor_esportista_nome_unidade" in sql
-    assert "DROP TABLE valor_esportista" in sql
-    # Reversível sem apagar dados de frequência.
-    assert "DELETE FROM" not in sql.upper()
+
+def test_ddl_postgres_downgrade_dropa_tabela_nova():
+    sql = _sql_postgres(mig._dropar_tabela)
+
+    assert (
+        "DROP TABLE IF EXISTS registro_aula_valor_esportista"
+    ) in sql
+    assert (
+        "DROP INDEX IF EXISTS ix_registro_aula_valor_esportista_valor"
+    ) in sql

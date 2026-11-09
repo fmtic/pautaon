@@ -69,7 +69,9 @@ CONTEXTO_VAZIO = {
     "data": None,
     "frequencias": {},
     "valores_esportista_ativos": [],
-    "valores_por_aluno": {},
+    "valores_aula": [],
+    "valores_aula_ids": set(),
+    "valores_aula_inativos": [],
     "tema_selecionado": [],
     "obs_salva": "",
     "atividades_salvas": "",
@@ -103,12 +105,15 @@ def test_render_nao_perde_textos(app):
         corpo = render_template("frequencia/lancar.html", **CONTEXTO_VAZIO)
 
     # Rótulos e blocos que existem desde a A1 — a correção do `</div>` não
-    # pode ter engolido conteúdo. O rótulo do Valor/Postura vive no cartão do
-    # aluno e por isso não entra aqui (o contexto vazio não tem alunos).
+    # pode ter engolido conteúdo. O grupo de valores é da AULA (AJ16-B) e
+    # aparece mesmo sem alunos; o rótulo por aluno não existe mais.
     for texto in (
         "Lançamento de Frequência",
         "Atividades da aula",
         "Observações da Aula",
+        "Temas (Planejamento)",
+        "Valores do Esportista (Aula)",
+        "Marque os valores trabalhados na aula.",
         # V3a: texto reescrito no cbbe75a (reorganização do layout de
         # lançamento) — o teste ficou com o texto antigo e a suíte estava
         # vermelha antes de qualquer mudança da V3a.

@@ -1,10 +1,13 @@
 # ruff: noqa: F811
-"""V3b — "Engajamento da turma" no Painel Pedagógico do professor.
+"""V3b/AJ16-B — "Engajamento da turma" no Painel Pedagógico do professor.
 
 Cobrir o serviço `valores_mais_atribuidos` (ordenação, empate, percentual,
 legado D2, valor inativo, escopo por oferta, SELECTs constantes) e o bloco no
 HTML (posição, estado vazio, rodapé, escape, sem dado por aluno, troca com o
 filtro, isolamento de professor/unidade).
+
+Fonte de dados desde o AJ16-B: `registro_aula_valor_esportista`. Cada vínculo
+(aula × valor) conta 1; a aula pode ter 0..N valores, como os temas.
 
 Rota: `/professor/painel-pedagogico` (`main.painel_pedagogico_professor`).
 """
@@ -19,15 +22,14 @@ from app import db
 from app.models import (
     Aluno,
     Curso,
-    Frequencia,
     PeriodoLetivo,
+    RegistroAula,
     Turma,
     TurmaCurso,
     Unidade,
     User,
     ValorEsportista,
 )
-from app.models.enums import ConceitoFrequencia
 from app.services.engajamento_turma import valores_mais_atribuidos
 from config import Config
 
@@ -148,25 +150,32 @@ def _valor(app, ids, nome, *, ativo=True):
         return valor.id
 
 
-def _atribuir(app, ids, valor_id, quantidade, *, oferta_id=None, legado=False):
-    """Cria `quantidade` linhas de Frequencia com o valor (aluno/data únicos)."""
+def _aula(app, ids, valores_ids, *, oferta_id=None, legado=False):
+    """Cria um diário com o conjunto de valores informado (uma aula)."""
     oferta = ids["o1"] if oferta_id is None else oferta_id
     with app.app_context():
-        for _ in range(quantidade):
-            k = ids["_k"]
-            ids["_k"] += 1
-            db.session.add(
-                Frequencia(
-                    aluno_id=ids["alunos"][k % len(ids["alunos"])],
-                    turma_id=ids["turma"],
-                    turma_curso_id=None if legado else oferta,
-                    data=HOJE - timedelta(days=1 + k),
-                    conceito=ConceitoFrequencia.A,
-                    valor_esportista_id=valor_id,
-                    unidade_id=ids["un"],
-                )
-            )
+        k = ids["_k"]
+        ids["_k"] += 1
+        diario = RegistroAula(
+            turma_id=ids["turma"],
+            turma_curso_id=None if legado else oferta,
+            data=HOJE - timedelta(days=1 + k),
+            unidade_id=ids["un"],
+        )
+        diario.valores = list(
+            ValorEsportista.query.filter(
+                ValorEsportista.id.in_(valores_ids)
+            ).all()
+        )
+        db.session.add(diario)
         db.session.commit()
+        return diario.id
+
+
+def _atribuir(app, ids, valor_id, quantidade, *, oferta_id=None, legado=False):
+    """Cria `quantidade` aulas, cada uma com uma ocorrência do valor."""
+    for _ in range(quantidade):
+        _aula(app, ids, [valor_id], oferta_id=oferta_id, legado=legado)
 
 
 def _top3(app, ids, oferta_id=None):
@@ -216,11 +225,24 @@ def test_menos_de_tres_valores(app):
 
 
 def test_sem_valores(app):
-    ids = _seed(app)  # nenhuma Frequencia com valor
+    ids = _seed(app)  # nenhum diário com valor
 
     resultado = _top3(app, ids)
 
     assert resultado == {"itens": [], "total": 0}
+
+
+def test_aula_com_varios_valores_conta_cada_vinculo(app):
+    ids = _seed(app)
+    colaboracao = _valor(app, ids, "Colaboração")
+    respeito = _valor(app, ids, "Respeito")
+
+    _aula(app, ids, [colaboracao, respeito])
+
+    resultado = _top3(app, ids)
+
+    assert resultado["total"] == 2
+    assert sorted(_nomes(resultado)) == ["Colaboração", "Respeito"]
 
 
 def test_percentual_e_sobre_o_total_da_oferta(app):
@@ -250,7 +272,7 @@ def test_oferta_a_nao_ve_dados_da_oferta_b(app):
 def test_legado_d2_entra_na_oferta_unica(app):
     ids = _seed(app)
     with app.app_context():
-        # Só a O1 fica ativa na turma: as linhas legado (NULL) são dela.
+        # Só a O1 fica ativa na turma: as aulas legado (NULL) são dela.
         for oferta_id in (ids["o2"], ids["o3"]):
             db.session.get(TurmaCurso, oferta_id).ativo = False
         db.session.commit()
@@ -336,7 +358,7 @@ def test_bloco_abaixo_do_grafico_e_blocos_preservados(app, client):
     html = _html(app, client, ids)
 
     assert "Engajamento da turma" in html
-    assert "Valores/Posturas do Esportista mais atribuídos" in html
+    assert "Valores/Posturas do Esportista registrados em aulas" in html
     assert html.index("chartEvolucao") < html.index("Engajamento da turma")
     # Blocos existentes intactos.
     assert "Evolução de Assiduidade Aula a Aula" in html
@@ -360,7 +382,7 @@ def test_rodape_com_total(app, client):
 
     html = _html(app, client, ids)
 
-    assert "Baseado em 5 registros de presença com valor." in html
+    assert "Baseado em 5 valores registrados em aulas." in html
     assert "60.0%" in html
 
 
@@ -398,8 +420,8 @@ def test_bloco_muda_com_o_filtro(app, client):
 
     assert "Colaboração" in html_o1 and "Empatia" not in html_o1
     assert "Empatia" in html_o2 and "Colaboração" not in html_o2
-    assert "Baseado em 2 registros" in html_o1
-    assert "Baseado em 3 registros" in html_o2
+    assert "Baseado em 2 valores registrados em aulas." in html_o1
+    assert "Baseado em 3 valores registrados em aulas." in html_o2
 
 
 def test_nao_ve_oferta_de_outro_professor(app, client):
@@ -412,7 +434,7 @@ def test_nao_ve_oferta_de_outro_professor(app, client):
     # A oferta do outro professor não entra: cai na primeira entrada dele.
     assert "Empatia" not in html
     assert "Colaboração" in html
-    assert "Baseado em 1 registros de presença com valor." in html
+    assert "Baseado em 1 valores registrados em aulas." in html
 
 
 def test_professor_de_outra_unidade_nao_ve_o_bloco(app, client):

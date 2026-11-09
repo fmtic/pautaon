@@ -1,64 +1,89 @@
 # ruff: noqa: F811
-"""V2 — caracterização ANTIGO × NOVO da regra de obrigatoriedade.
+"""AJ16-B — caracterização ANTIGO (A1/V2) × NOVO (valor na aula).
 
-Com a implementação da regra (`_planejar_frequencia` em `logica.py`), os
-mesmos cenários passam a ser pendência. O que muda, caso a caso:
+O valor deixou de ser um FK opcional por aluno em `frequencia` e passou a ser
+um conjunto da AULA (oferta + data), validado antes de qualquer escrita. O que
+muda, caso a caso:
 
-    | cenário                                   | antes (A1)        | agora (V2)   |
-    |-------------------------------------------|-------------------|--------------|
-    | A/B/C/D sem valor, unidade com catálogo   | salva, valor NULL | recusa tudo  |
-    | valor inativo novo, inexistente, externo  | salva, valor NULL | recusa tudo  |
+    | cenário                                        | antes (A1/V2)     | agora |
+    |------------------------------------------------|-------------------|-------|
+    | A/B/C/D sem valor, unidade com catálogo        | recusa (V2)       | recusa|
+    | valor inativo novo, inexistente, externo       | recusa (V2)       | recusa|
+    | valor válido + conceito A–D                    | 1 valor por aluno | conjunto da aula |
+    | F/J sem valor, aula com valor já selecionado   | limpa por aluno   | preserva |
 
-"Recusa tudo" = nenhuma linha de `frequencia` e nenhuma linha de diário; a
-mensagem da pauta lista os alunos pendentes. A exceção por unidade sem catálogo
-ativo é coberta em `test_valor_obrigatorio.py`.
+A diferença estrutural central: não existe mais `frequencia.valor_esportista_id`
+nem `postura_aluno_<id>`; o único caminho é `valor_ids` (repetido) → N:N em
+`RegistroAula.valores`. "Recusa" = nada gravado (frequência, diário e vínculos)
+e mensagem única na pauta.
 """
 
 import pytest
 
 from _helpers import login_as
-from test_valor_esportista_lancamento import (  # noqa: F401
-    _cenario,
-    _post,
-    _valor_gravado,
-)
+from _valor_aula import cenario, contagens, linha, post, valores_da_aula
 
 from app.models import Frequencia
 
 
-#: chave do cenário -> id enviado no campo `postura_aluno_<id>`.
-VALORES_INVALIDOS = {
-    "inativo": lambda ids: ids["inativo"],
-    "de outra unidade": lambda ids: ids["externo"],
-    "inexistente": lambda ids: 999999,
-}
-
-
-def _linhas(app):
+def _conceitos(app):
     with app.app_context():
-        return Frequencia.query.count()
+        return [
+            linha.conceito for linha in Frequencia.query.order_by(Frequencia.id)
+        ]
 
 
-def test_a_d_sem_valor_agora_e_pendencia(app, client):
-    """ANTES: salvava ("A", None). AGORA: recusa e não grava."""
-    ids = _cenario(app)
-    login_as(client, ids["user"], ids["un"])
+def test_antes_salvava_presenca_sem_valor_agora_recusa(app, client):
+    ids = cenario(app)
+    login_as(client, ids["admin"], ids["un"])
 
-    resposta = _post(client, ids, conceito="A", valor_id=None)
+    resposta = post(client, ids, {ids["aluno"]: "A"}, [])
 
     assert resposta.status_code == 302
-    assert _linhas(app) == 0
-    assert _valor_gravado(app, ids) == (None, None)
+    assert contagens(app) == (0, 0, 0)
+    assert _conceitos(app) == []
 
 
-@pytest.mark.parametrize("caso", list(VALORES_INVALIDOS))
-def test_valor_invalido_agora_e_pendencia(app, client, caso):
-    """ANTES: descartava o valor e salvava o conceito. AGORA: recusa."""
-    ids = _cenario(app)
-    login_as(client, ids["user"], ids["un"])
+@pytest.mark.parametrize("origem", ["inativo_novo", "inexistente", "outra_unidade"])
+def test_antes_descartava_valor_invalido_agora_recusa(app, client, origem):
+    ids = cenario(app)
+    login_as(client, ids["admin"], ids["un"])
 
-    resposta = _post(client, ids, conceito="A", valor_id=VALORES_INVALIDOS[caso](ids))
+    valor_id = {
+        "inativo_novo": ids["valores"]["inativo"],
+        "inexistente": 999999,
+        "outra_unidade": ids["valores"]["externo"],
+    }[origem]
 
-    assert resposta.status_code == 302, caso
-    assert _linhas(app) == 0, caso
-    assert _valor_gravado(app, ids) == (None, None), caso
+    resposta = post(client, ids, {ids["aluno"]: "A"}, [valor_id])
+
+    assert resposta.status_code == 302, origem
+    assert contagens(app) == (0, 0, 0), origem
+    assert _conceitos(app) == [], origem
+
+
+def test_agora_o_valor_e_da_aula_e_nao_do_aluno(app, client):
+    ids = cenario(app)
+    login_as(client, ids["admin"], ids["un"])
+
+    post(
+        client, ids, {ids["aluno"]: "A"},
+        [ids["valores"]["ativo"], ids["valores"]["outro"]],
+    )
+
+    assert valores_da_aula(app, ids) == sorted(
+        [ids["valores"]["ativo"], ids["valores"]["outro"]]
+    )
+    # A linha de frequência não guarda mais o valor.
+    assert not hasattr(linha(app, ids["aluno"]), "valor_esportista_id")
+
+
+def test_agora_f_j_nao_limpam_o_conjunto_da_aula(app, client):
+    ids = cenario(app)
+    login_as(client, ids["admin"], ids["un"])
+
+    post(client, ids, {ids["aluno"]: "A"}, [ids["valores"]["ativo"]])
+    post(client, ids, {ids["aluno"]: "F"}, [ids["valores"]["ativo"]])
+
+    assert _conceitos(app) == ["F"]
+    assert valores_da_aula(app, ids) == [ids["valores"]["ativo"]]

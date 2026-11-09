@@ -34,9 +34,11 @@ from app.models import (
     Frequencia,
     PerguntaConselho,
     PeriodoLetivo,
+    RegistroAula,
     Turma,
     Unidade,
     User,
+    ValorEsportista,
 )
 from app.models.enums import EtapaConselho
 from app.utils.autor import autor_do_lancamento
@@ -201,6 +203,53 @@ def test_regravacao_identica_nao_troca_o_autor(app, client):
     linha = _linha(app, ids)
     assert linha.conceito == "B"
     assert linha.autor_id == ids["prof"]
+
+
+def test_alterar_sozinho_os_valores_nao_troca_autor(app, client):
+    """AJ16-B: mudar só os valores da aula (sem tocar no conceito) não troca o autor."""
+    ids = _cenario(app)
+    with app.app_context():
+        v1 = ValorEsportista(nome="Alegria", unidade_id=ids["un"], ativo=True)
+        v2 = ValorEsportista(nome="Foco", unidade_id=ids["un"], ativo=True)
+        db.session.add_all([v1, v2])
+        db.session.commit()
+        vid1, vid2 = v1.id, v2.id
+
+    login_as(client, ids["admin"], ids["un"])
+    # Primeiro POST: conceito A + um valor.
+    resp = client.post("/frequencia", data={
+        "turma": str(ids["turma"]),
+        "data": ids["data"],
+        f"aluno_{ids['alunos'][0]}": "A",
+        "valor_ids": str(vid1),
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+
+    linha = _linha(app, ids)
+    assert linha.autor_id == ids["admin"]
+
+    # Segundo POST por outro usuário: MESMO conceito A, mas valor diferente.
+    login_as(client, ids["pedagogico"], ids["un"])
+    resp = client.post("/frequencia", data={
+        "turma": str(ids["turma"]),
+        "data": ids["data"],
+        f"aluno_{ids['alunos'][0]}": "A",
+        "valor_ids": str(vid2),
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+
+    # O autor NÃO mudou (só os valores foram alterados, não o conceito).
+    linha = _linha(app, ids)
+    assert linha.conceito == "A"
+    assert linha.autor_id == ids["admin"]
+    assert linha.autor_nome == "Admin F1"
+
+    # Mas os valores da aula foram substituídos.
+    with app.app_context():
+        diario = RegistroAula.query.filter_by(
+            turma_curso_id=ids["oferta"], data=ids["data"],
+        ).first()
+        assert sorted(v.id for v in diario.valores) == [vid2]
 
 
 # ---------------------------------------------------------------------------
