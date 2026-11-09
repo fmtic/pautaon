@@ -1,3 +1,25 @@
+### Alterações do dia — 09/11/2026 (AJ16-B — Valor do Esportista passa a pertencer à AULA)
+
+**Decisão de produto (aceita explicitamente):** o valor/postura do esportista deixa de ser um FK **por aluno** em `frequencia.valor_esportista_id` e passa a ser um **conjunto da aula** (oferta + data), em N:N com `registro_aula` (`registro_aula_valor_esportista`), no mesmo molde dos temas. A migração **não preserva o vínculo aluno↔valor**: o dado antigo era por aluno e o novo é por aula; a informação de qual aluno recebeu qual valor é **perdida**. Essa perda foi aceita pelo responsável.
+
+**Regras de negócio (AJ16-B):**
+- Uma aula pode ter 0..N valores, como os temas; o conjunto é substituído a cada salvamento (dedupe no servidor).
+- **Obrigatoriedade:** se a unidade da turma tem catálogo ativo E ao menos um aluno da pauta tem conceito A–D, a aula exige ≥1 valor. Aula só com F/J/sem conceito não exige. Validação ANTES de qualquer escrita; mensagem "Selecione ao menos um valor trabalhado na aula. Nada foi salvo."
+- Valores selecionados são preservados mesmo em aula sem presença.
+- Valor inativo já vinculado à aula continua exibido e contado; inativo novo, inexistente ou de outra unidade é recusado.
+- NÃO existe valor "default"; aulas antigas sem valor ficam sem valor.
+- **Engajamento da turma:** mesmo cálculo (ordenação, empate, percentual), mas a fonte passa a ser a tabela N:N por oferta; cada vínculo conta 1; rótulo/rodapé ajustados para "valores registrados em aulas".
+
+**Banco (uma migration atômica, `f2a3b4c5d6e7`, depois do head `c1d2e3f4a5b6`):** cria `registro_aula_valor_esportista` (PK composta; FK `registro_aula` ON DELETE CASCADE; FK `valor_esportista` ON DELETE RESTRICT; índice reverso); guardas abortam com mensagem clara se há frequência com valor e `turma_curso_id NULL` ou par sem `registro_aula`; backfill com `MIN(registro_aula.id)` por par quando há diário duplicado; verificação interna (conjunto antigo = novo, senão aborta); remove índice, FK e coluna `frequencia.valor_esportista_id`. Downgrade recria a coluna nullable mas **não** restaura o vínculo aluno↔valor (documentado no docstring). Compatível com PostgreSQL e SQLite.
+
+**Aplicação:** `app/models/aulas.py` (tabela + relação `RegistroAula.valores` selectin; removidos `Frequencia.valor_esportista_id` e `.valor_esportista`), `app/utils/logica.py` (`carregar_frequencias_e_valores` devolve a lista da aula; `salvar_frequencia` com parse de `valor_ids`, validação e `registro.valores = ...`; removidos `_resolver_valor_esportista` e `_planejar_frequencia` por aluno), `app/registros/core.py` (POST e GET), `app/templates/frequencia/lancar.html` (um grupo único de checkboxes junto dos temas), `app/static/js/frequencia.js` (validação do grupo da aula), `app/services/engajamento_turma.py` (fonte N:N) e `app/templates/dashboard/painel_pedagogico.html` (rótulo). Sem fallback para a coluna antiga; sem código morto.
+
+**Testes:** reescritos `test_valor_esportista_lancamento`, `test_valor_obrigatorio`, `test_valor_obrigatorio_ui`, `test_valor_obrigatorio_caracterizacao`, `test_v3b_engajamento_turma`, `test_lancar_template_estrutura`; ajustados `test_valor_esportista_nao_regressao` e `test_valor_esportista_migration`. Novos: migration com dados (3 e 7 valores, diário duplicado, guardas), idempotência do backfill, downgrade, DDL PostgreSQL, N+1 da pauta constante, autor F1 não muda ao alterar só os valores.
+
+**Validação em clone:** dump de produção restaurado em banco novo, migrado até `c1d2e3f4a5b6`, migration aplicada (esperado: 0 vínculos), downgrade verificado; dados sintéticos com 6 pares e 3–7 valores inseridos antes da migration, vínculos conferidos e verificação 0/0; guarda sem diário aborta sem alterar nada. `pautaon` e `pautaon_ensaio`: somente leitura de contagens, migration NÃO aplicada (responsável aplica).
+
+**Docs:** MER §7.19, §7.20, §7.20.2 (nova), §8.1, §8.13, tabela de migrations e head; relatório `docs/Relatórios/AJ16B_ValorAula.md`. Head novo: `f2a3b4c5d6e7`.
+
 ### Alterações do dia — 05/11/2026 (AJ15 — atualização de documentação: ciclo AJ3–AJ14 concluído, pendências e regras)
 
 Tarefa **somente documentação** (MER.md, backlog, catálogo do BI, runbook de deploy e relatório). **Nenhuma linha de código, migration ou teste alterada**; head do código segue `c1d2e3f4a5b6`. Worktree próprio a partir da `nova_feature` integrada, commits com caminhos explícitos, sem push. Regras de negócio registradas em MER §8.2/§8.27; runbook completo em `docs/deploy_release.md`; relatório `docs/Relatórios/AJ15_Docs.md`.
