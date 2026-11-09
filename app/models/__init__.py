@@ -52,7 +52,11 @@ from app.models.perfis import (
 )
 from app.models.matriculas import Inscricao, Transferencia
 from app.models.calendario import DiaBloqueado, DiaBloqueadoTurma
-from app.models.aulas import Frequencia, RegistroAula
+from app.models.aulas import (
+    Frequencia,
+    RegistroAula,
+    registro_aula_valor_esportista,
+)
 from app.models.conselho import (
     PeriodoConselho,
     PerguntaConselho,
@@ -88,7 +92,7 @@ __all__ = [
     # Calendário
     'DiaBloqueado', 'DiaBloqueadoTurma',
     # Aulas
-    'Frequencia', 'RegistroAula',
+    'Frequencia', 'RegistroAula', 'registro_aula_valor_esportista',
     # Conselho
     'PeriodoConselho', 'PerguntaConselho', 'OpcaoProximaTurma',
     'ConselhoClasse', 'ConselhoResposta',

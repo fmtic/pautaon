@@ -25,10 +25,11 @@ NOTAS ONDA 4 — FASE 4
       - WHERE turma_curso_id IS NULL     → preserva legado.
       - WHERE turma_curso_id IS NOT NULL → permite lançamentos por oferta.
 
-NOTAS A1 — VALORES DO ESPORTISTA
-    `Frequencia.valor_esportista_id` (FK → valor_esportista, ON DELETE SET
-    NULL) é um dado ADICIONAL do lançamento: não entra em nenhuma conta de
-    presença/falta/total nem em pauta, diário, relatório ou exportação.
+NOTAS A1/AJ16-B — VALORES DO ESPORTISTA
+    O valor/postura do esportista pertence à AULA (oferta + data), em N:N com
+    `RegistroAula` (`registro_aula_valor_esportista`), como os temas. Não entra
+    em nenhuma conta de presença/falta/total nem em pauta, diário, relatório ou
+    exportação. A antiga coluna `frequencia.valor_esportista_id` foi removida.
 
 NOTAS F1 — AUTOR DO LANÇAMENTO
     `autor_id` (FK → user, ON DELETE SET NULL) + `autor_nome` (snapshot) guardam
@@ -43,6 +44,32 @@ NOTAS F1 — AUTOR DO LANÇAMENTO
 from app.models.base import db, datetime, date, hybrid_property, get_local_now, TenantMixin
 from app.models.auditoria_mixin import AuditoriaMixin
 from app.models.enums import ConceitoFrequencia
+
+
+registro_aula_valor_esportista = db.Table(
+    'registro_aula_valor_esportista',
+    db.Column(
+        'registro_aula_id', db.Integer,
+        db.ForeignKey(
+            'registro_aula.id',
+            name='fk_registro_aula_valor_esportista_registro',
+            ondelete='CASCADE',
+        ),
+        primary_key=True,
+    ),
+    db.Column(
+        'valor_esportista_id', db.Integer,
+        db.ForeignKey(
+            'valor_esportista.id',
+            name='fk_registro_aula_valor_esportista_valor',
+            ondelete='RESTRICT',
+        ),
+        primary_key=True,
+    ),
+    db.Index(
+        'ix_registro_aula_valor_esportista_valor', 'valor_esportista_id',
+    ),
+)
 
 
 registro_aula_tema = db.Table(
@@ -130,20 +157,6 @@ class Frequencia(TenantMixin, db.Model):
         ),
         nullable=True,
     )
-    # A1: dado ADICIONAL (não participa de nenhuma conta de frequência).
-    # ON DELETE SET NULL: o histórico sobrevive à remoção do catálogo; na
-    # prática o valor só é inativado (nunca apagado com uso).
-    valor_esportista_id: int = db.Column(
-        db.Integer,
-        db.ForeignKey(
-            'valor_esportista.id', name='fk_frequencia_valor_esportista',
-            ondelete='SET NULL',
-        ),
-        nullable=True,
-        index=True,
-        comment='FK → valor_esportista (dado adicional do lançamento)',
-    )
-
     # F1: autor do lançamento (último que salvou). ON DELETE SET NULL — a linha
     # de frequência sobrevive à exclusão do usuário; o snapshot do nome fica.
     autor_id: int = db.Column(
@@ -162,7 +175,6 @@ class Frequencia(TenantMixin, db.Model):
 
     unidade = db.relationship('Unidade', backref='frequencias')
     turma_curso = db.relationship('TurmaCurso', backref='frequencias')
-    valor_esportista = db.relationship('ValorEsportista', backref='frequencias')
     autor = db.relationship('User', foreign_keys=[autor_id])
 
     @hybrid_property
@@ -202,6 +214,10 @@ acompanhamento pedagógico.
         - `turma_rel` é o nome do relacionamento com Turma; o backref `diarios`
           está no lado da Turma.
         - `turma_curso_id` (Onda 4 Fase 4, nullable na transição).
+        - `valores` (AJ16-B) são os valores/posturas do esportista trabalhados
+          na AULA, em N:N; um mesmo valor só entra uma vez por aula. A relação
+          usa `lazy='selectin'`, como `temas`, para a pauta carregar o conjunto
+          em uma consulta adicional constante.
     """
     __tablename__ = 'registro_aula'
     __table_args__ = (
@@ -230,5 +246,9 @@ acompanhamento pedagógico.
     temas = db.relationship(
         'TemaAula', secondary=registro_aula_tema,
         order_by='TemaAula.ordem, TemaAula.id', lazy='selectin',
+    )
+    valores = db.relationship(
+        'ValorEsportista', secondary=registro_aula_valor_esportista,
+        order_by='ValorEsportista.nome', lazy='selectin',
     )
     instrutor = db.relationship('User', foreign_keys=[instrutor_id])
