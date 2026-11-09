@@ -36,13 +36,13 @@ from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
 from app.utils.timezone import get_local_now
 from app.utils.logica import (
-    PendenciaValorEsportista,
+    PendenciaValorAula,
+    ValorAulaInvalido,
     calcular_dias_aula_turma,
     calcular_estatisticas_frequencia,
     carregar_contexto_turma,
     carregar_frequencias_e_valores,
     get_unidade_id,
-    mensagem_valor_obrigatorio,
     salvar_frequencia,
     _blocked_dates_str,
 )
@@ -364,17 +364,9 @@ def frequencia():
                 form_data.pop('turma_curso', None)
             ignorados = 0
             for chave in list(form_data.keys()):
-                # `postura_aluno_<id>` é o Valor do Esportista da mesma pauta:
-                # sai junto com o conceito quando o aluno não pertence à oferta.
-                prefixo = next(
-                    (
-                        p for p in ('aluno_', 'postura_aluno_')
-                        if chave.startswith(p)
-                    ),
-                    None,
-                )
-                if prefixo:
-                    aluno_raw = chave[len(prefixo):]
+                # `valor_ids` é da AULA (não do aluno), então nunca sai junto.
+                if chave.startswith('aluno_'):
+                    aluno_raw = chave[len('aluno_'):]
                     if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
                         form_data.pop(chave)
                         ignorados += 1
@@ -387,11 +379,9 @@ def frequencia():
 
         try:
             turma_id, data = salvar_frequencia(form_data)
-        except PendenciaValorEsportista as exc:
-            # V2: nada foi gravado (nem conceitos, nem diário). A pauta reabre
-            # com a lista de quem faltou; o que foi digitado não é preservado
-            # (TRAVA leve de UI registrada no relatório da V2).
-            flash(mensagem_valor_obrigatorio(exc.alunos), 'warning')
+        except (PendenciaValorAula, ValorAulaInvalido) as exc:
+            # AJ16-B: nada foi gravado (nem conceitos, nem diário, nem valores).
+            flash(str(exc), 'warning')
             return redirect(url_for('registros.frequencia', **redirect_back))
         if not data:
             flash("Preencha a data da aula antes de salvar.", "warning")
@@ -449,7 +439,7 @@ def frequencia():
     ofertas = []
     oferta_atual = None
     exigir_escolha = False
-    valores_por_aluno = {}
+    valores_aula = []
     atividades_salvas = ""
 
     if turma_id:
@@ -544,9 +534,9 @@ def frequencia():
                 data = datas_calendario[-1] if datas_calendario else None
 
         if data and not exigir_escolha:
-            # A1: conceitos + Valor do Esportista de cada aluno/aula na MESMA
-            # leitura de `frequencia` (sem consulta adicional na pauta).
-            freqs, valores_por_aluno, tema_sel, obs, atividades_salvas = (
+            # AJ16-B: conceitos + valores da AULA (N:N no diário) na mesma
+            # leitura da pauta; a relação `valores` é `selectin`.
+            freqs, valores_aula, tema_sel, obs, atividades_salvas = (
                 carregar_frequencias_e_valores(
                     turma_id, data,
                     turma_curso_id=oferta_atual.id if oferta_atual else None,
@@ -679,7 +669,11 @@ def frequencia():
                            data=data,
                            frequencias=freqs,
                            valores_esportista_ativos=valores_esportista_ativos,
-                           valores_por_aluno=valores_por_aluno,
+                           valores_aula=valores_aula,
+                           valores_aula_ids={v.id for v in valores_aula},
+                           valores_aula_inativos=[
+                               v for v in valores_aula if not v.ativo
+                           ],
                            # V2: aviso "Cadastre os valores no Planejamento" só
                            # para quem gerencia o planejamento (mesmos perfis da
                            # rota /planejamento, onde o catálogo é cadastrado).

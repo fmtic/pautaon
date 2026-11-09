@@ -30,7 +30,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app, session
 from flask_login import current_user
-from sqlalchemy.orm import joinedload
 
 from app.database import db
 from app.models import (
@@ -45,6 +44,7 @@ from app.models import (
     Turma,
     TurmaCurso,
     User,
+    ValorEsportista,
 )
 from app.models.enums import (
     ConceitoFrequencia,
@@ -393,15 +393,10 @@ def _ler_registros_aula(
     data_alvo: date,
     turma_curso_id: Optional[int] = None,
 ) -> Tuple[List[Frequencia], Optional[RegistroAula]]:
-    """Linhas de frequência (com o valor do esportista) + diário da aula.
-
-    O `joinedload` traz o catálogo do Valor do Esportista na MESMA consulta de
-    frequência — a tela de lançamento não precisa de uma segunda leitura.
-    """
+    """Linhas de frequência + diário da aula (com temas e valores em selectin)."""
     if turma_curso_id is not None:
         registros = (
             Frequencia.query
-            .options(joinedload(Frequencia.valor_esportista))
             .filter_by(turma_curso_id=turma_curso_id, data=data_alvo)
             .all()
         )
@@ -413,7 +408,6 @@ def _ler_registros_aula(
         # reaproveitar/reescrever registros de ofertas (mesma turma_id/data).
         registros = (
             Frequencia.query
-            .options(joinedload(Frequencia.valor_esportista))
             .filter_by(turma_id=turma_id, data=data_alvo, turma_curso_id=None)
             .all()
         )
@@ -472,103 +466,114 @@ def carregar_frequencias_e_valores(
     turma_id: int,
     data: str | date,
     turma_curso_id: Optional[int] = None,
-) -> Tuple[Dict[int, str], Dict[int, Any], List[int], str, str]:
-    """Como `carregar_frequencias`, acrescido do Valor do Esportista (A1).
+) -> Tuple[Dict[int, str], List[ValorEsportista], List[int], str, str]:
+    """Como `carregar_frequencias`, acrescido dos valores da AULA (AJ16-B).
 
-    Devolve `(conceitos, {aluno_id: ValorEsportista}, temas, observacoes,
-    atividades)` a partir da MESMA leitura de `frequencia` feita por
-    `carregar_frequencias`, sem consulta adicional na tela de lançamento.
-    Só entram alunos com valor gravado; o valor **inativo** já salvo continua
-    sendo devolvido de propósito, para o template exibi-lo como opção extra do
-    aluno e não perder o histórico.
+    Devolve `(conceitos, valores_da_aula, temas, observacoes, atividades)`.
+    Os valores vêm de `RegistroAula.valores` (relação N:N, `lazy='selectin'`),
+    não mais de cada linha de frequência; o conjunto é preservado mesmo em
+    aula sem presença. Valores **inativos** já vinculados continuam sendo
+    devolvidos de propósito, para o template exibi-los e não perder histórico.
     """
     data_alvo = parse_date(data)
     if not turma_id or not data_alvo:
-        return {}, {}, [], "", ""
+        return {}, [], [], "", ""
 
     registros, diario = _ler_registros_aula(turma_id, data_alvo, turma_curso_id)
     frequencias = {f.aluno_id: f.conceito for f in registros}
-    valores = {
-        f.aluno_id: f.valor_esportista
-        for f in registros
-        if f.valor_esportista is not None
-    }
+    valores_aula = list(diario.valores) if diario is not None else []
     tema_selecionado, obs_salva, atividades_salvas = _resumo_diario(diario)
 
-    return frequencias, valores, tema_selecionado, obs_salva, atividades_salvas
+    return frequencias, valores_aula, tema_selecionado, obs_salva, atividades_salvas
 
 
-def _resolver_valor_esportista(
-    valor_raw,
-    conceito: str,
+#: Mensagem única da pendência por aula (AJ16-B).
+MENSAGEM_VALOR_AULA_OBRIGATORIO = (
+    "Selecione ao menos um valor trabalhado na aula. Nada foi salvo."
+)
+
+
+class PendenciaValorAula(ValueError):
+    """Lançamento recusado: aula com presença (A–D) e nenhum valor marcado.
+
+    É levantada **antes** de qualquer escrita — nem conceito, nem linha de
+    frequência, nem diário (temas/observações/atividades/valores).
+    """
+
+    def __init__(self):
+        super().__init__(MENSAGEM_VALOR_AULA_OBRIGATORIO)
+
+
+class ValorAulaInvalido(ValueError):
+    """Seleção de valores inválida: nada pode ser gravado."""
+
+
+def _ids_valor_do_form(form: Dict[str, str]) -> List[int]:
+    """Ids únicos de `valor_ids`, recusando qualquer valor não numérico."""
+    if hasattr(form, 'getlist'):
+        brutos = form.getlist('valor_ids')
+    else:
+        brutos = form.get('valor_ids', [])
+        if isinstance(brutos, (str, int)):
+            brutos = [brutos]
+
+    ids: List[int] = []
+    for bruto in brutos:
+        texto = str(bruto or '').strip()
+        if not texto:
+            continue
+        if not texto.isdigit() or int(texto) <= 0:
+            raise ValorAulaInvalido("Seleção de valores inválida. Nada foi salvo.")
+        ids.append(int(texto))
+    return list(dict.fromkeys(ids))
+
+
+def _resolver_valores_da_aula(
+    ids: List[int],
     unidade_id: Optional[int],
-    valor_atual_id: Optional[int],
-) -> Optional[int]:
-    """Id do Valor do Esportista a gravar na linha de frequência (A1).
+    valores_antigos: List[ValorEsportista],
+) -> List[ValorEsportista]:
+    """Resolve o conjunto da aula, recusando valor inexistente/inativo/estranho.
 
-    Devolve `None` (limpa o campo) quando:
-        - o conceito não é A/B/C/D (F e J nunca têm valor);
-        - o campo veio vazio, não numérico ou <= 0;
-        - o id não existe, é de outra unidade ou está inativo.
+    Regra (AJ16-B):
+        - id inexistente ou de outra unidade é recusado;
+        - valor inativo **já vinculado** à aula é preservado;
+        - valor inativo novo é recusado (mesmo espírito da A1/V2).
 
-    Exceção: se o id é o **mesmo já salvo** na linha, ele é preservado mesmo
-    inativo — reabrir a pauta e salvar não pode apagar o histórico de um valor
-    que acabou de ser inativado no cadastro.
-
-    O valor é um dado ADICIONAL: nada aqui toca `conceito` ou qualquer conta
-    de presença/falta.
+    A ordem final é alfabética (a mesma de `RegistroAula.valores`), sem
+    duplicatas.
     """
-    if conceito not in _CONCEITOS_PRESENCA_TEXTO:
-        return None
-    texto = str(valor_raw or '').strip()
-    if not texto.isdigit():
-        return None
-    valor_id = int(texto)
-    if valor_id <= 0:
-        return None
-    if valor_atual_id is not None and valor_id == valor_atual_id:
-        return valor_id
+    if not ids:
+        return []
 
-    from app.models import ValorEsportista
+    antigos = {valor.id for valor in valores_antigos}
+    encontrados = {
+        valor.id: valor
+        for valor in ValorEsportista.query.filter(
+            ValorEsportista.id.in_(ids)
+        ).all()
+    }
+    resolvidos: List[ValorEsportista] = []
+    for valor_id in ids:
+        valor = encontrados.get(valor_id)
+        if valor is None:
+            raise ValorAulaInvalido(
+                f"Valor do Esportista {valor_id} não existe. Nada foi salvo."
+            )
+        if unidade_id is not None and valor.unidade_id != unidade_id:
+            raise ValorAulaInvalido(
+                "Um dos valores selecionados pertence a outra unidade. "
+                "Nada foi salvo."
+            )
+        if not valor.ativo and valor_id not in antigos:
+            raise ValorAulaInvalido(
+                "Um dos valores selecionados está inativo. Nada foi salvo."
+            )
+        resolvidos.append(valor)
 
-    valor = db.session.get(ValorEsportista, valor_id)
-    if valor is None or not valor.ativo:
-        current_app.logger.warning(
-            'Frequência: valor %s ignorado (inexistente ou inativo).', valor_id,
-        )
-        return None
-    if unidade_id is not None and valor.unidade_id != unidade_id:
-        current_app.logger.warning(
-            'Frequência: valor %s ignorado (unidade %s != %s).',
-            valor_id, valor.unidade_id, unidade_id,
-        )
-        return None
-    return valor_id
-
-
-class PendenciaValorEsportista(ValueError):
-    """Lançamento recusado: aluno com presença (A–D) sem Valor do Esportista.
-
-    Carrega os `Aluno` pendentes para a rota montar a mensagem sem refazer a
-    validação. É levantada **antes** de qualquer escrita — nem conceito, nem
-    linha de frequência, nem diário (temas/observações/atividades).
-    """
-
-    def __init__(self, alunos: List[Aluno]):
-        self.alunos = list(alunos)
-        super().__init__(mensagem_valor_obrigatorio(self.alunos))
-
-
-def mensagem_valor_obrigatorio(alunos: List[Aluno]) -> str:
-    """Mensagem única da pendência: até 10 nomes + "e mais N"."""
-    nomes = [aluno.nome for aluno in alunos[:10]]
-    restantes = len(alunos) - len(nomes)
-    lista = ", ".join(nomes)
-    if restantes > 0:
-        lista += f" e mais {restantes}"
-    return (
-        "Valor/Postura do Esportista é obrigatório para presença (A–D). "
-        f"Alunos pendentes: {lista}. Nada foi salvo."
+    return sorted(
+        resolvidos,
+        key=lambda valor: ((valor.nome or '').casefold(), valor.nome or '', valor.id),
     )
 
 
@@ -587,35 +592,47 @@ def unidade_tem_valores_ativos(unidade_id: Optional[int]) -> bool:
     return bool(db.session.query(consulta.exists()).scalar())
 
 
-def _planejar_frequencia(
+def _conceitos_enviados(
     form: Dict[str, str],
+    alunos: List[Aluno],
+) -> Dict[int, str]:
+    """Conceitos não vazios enviados para os alunos da pauta."""
+    conceitos: Dict[int, str] = {}
+    for aluno in alunos:
+        conceito = (form.get(f'aluno_{aluno.id}', '') or '').strip()
+        if conceito:
+            conceitos[aluno.id] = conceito
+    return conceitos
+
+
+def _aula_exige_valor(
+    conceitos: Dict[int, str],
+    unidade_id: Optional[int],
+) -> bool:
+    """A–D na pauta + catálogo ativo na unidade ⇒ a aula exige ≥1 valor."""
+    if not unidade_tem_valores_ativos(unidade_id):
+        return False
+    return any(
+        conceito in _CONCEITOS_PRESENCA_TEXTO
+        for conceito in conceitos.values()
+    )
+
+
+def _planejar_frequencia(
+    conceitos: Dict[int, str],
     alunos: List[Aluno],
     *,
     oferta_id: Optional[int],
     turma_id: int,
     data_alvo: date,
-    unidade_id: Optional[int],
-    exige_valor: bool,
-) -> Tuple[List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]], List[Aluno]]:
-    """Plano de gravação da pauta + alunos pendentes de Valor do Esportista.
+) -> List[Tuple[Aluno, str, Optional[Frequencia]]]:
+    """Fase de LEITURA: resolve a linha existente de cada aluno com conceito.
 
-    Fase de LEITURA: resolve, por aluno com conceito enviado, a linha de
-    frequência existente e o valor a gravar. Devolve
-    `([(aluno, conceito, freq|None, valor_id|None)], [alunos_pendentes])`.
-
-    Pendência (V2) = conceito A–D com `valor_id` nulo quando a unidade tem
-    catálogo ativo. Valor inativo já salvo conta como preenchido
-    (`_resolver_valor_esportista` preserva); inativo novo, inexistente ou de
-    outra unidade conta como AUSENTE.
-
-    Aluno sem conceito não entra no plano: a linha existente fica intocada
-    (contrato da A1 — o select desabilitado não envia campo).
+    Aluno sem conceito não entra no plano: a linha existente fica intocada.
     """
-    plano: List[Tuple[Aluno, str, Optional[Frequencia], Optional[int]]] = []
-    pendentes: List[Aluno] = []
-
+    plano: List[Tuple[Aluno, str, Optional[Frequencia]]] = []
     for aluno in alunos:
-        conceito = form.get(f'aluno_{aluno.id}', '').strip()
+        conceito = conceitos.get(aluno.id)
         if not conceito:
             continue
 
@@ -629,24 +646,8 @@ def _planejar_frequencia(
                 turma_curso_id=None,
             ).first()
 
-        valor_id = _resolver_valor_esportista(
-            form.get(f'postura_aluno_{aluno.id}', ''),
-            conceito,
-            unidade_id=unidade_id,
-            valor_atual_id=freq.valor_esportista_id if freq is not None else None,
-        )
-
-        if (
-            exige_valor
-            and conceito in _CONCEITOS_PRESENCA_TEXTO
-            and valor_id is None
-        ):
-            pendentes.append(aluno)
-            continue
-
-        plano.append((aluno, conceito, freq, valor_id))
-
-    return plano, pendentes
+        plano.append((aluno, conceito, freq))
+    return plano
 
 
 def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
@@ -668,8 +669,14 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
 
     F1 (autor do lançamento): cada linha criada recebe `autor_id`/`autor_nome`
     do usuário logado. Em linha existente o autor só é trocado quando o
-    CONCEITO muda — regravar o mesmo conceito (ou só mexer no Valor do
-    Esportista) mantém o autor anterior.
+    CONCEITO muda — regravar o mesmo conceito (ou só mexer nos valores da
+    aula) mantém o autor anterior.
+
+    AJ16-B: os valores/posturas do esportista são da AULA. O formulário envia
+    `valor_ids` (repetido); o conjunto é validado e substituído por inteiro em
+    `RegistroAula.valores`, com deduplicação. Havendo A–D na pauta e catálogo
+    ativo na unidade, exigir ao menos um valor — sempre antes de qualquer
+    escrita.
     """
     try:
         turma_raw = form.get('turma', '0').strip()
@@ -713,7 +720,7 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         )
         oferta_id = oferta.id if oferta else None
 
-        # --- Alunos da pauta + plano de gravação (V2) ---
+        # --- Alunos da pauta + conceitos enviados ---
         alunos_post = (
             Aluno.query.join(Inscricao)
             .filter(
@@ -723,29 +730,16 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             )
             .all()
         )
+        conceitos = _conceitos_enviados(form, alunos_post)
 
-        # A1: o valor/postura do esportista pertence à unidade da TURMA — o
-        # mesmo escopo do GET (a sessão pode estar em Visão Global).
+        # AJ16-B: o valor/postura do esportista pertence à unidade da TURMA —
+        # o mesmo escopo do GET (a sessão pode estar em Visão Global).
         turma_obj = db.session.get(Turma, turma_id)
         valor_unidade_id = (
             turma_obj.unidade_id if turma_obj is not None else get_unidade_id()
         )
 
-        # V2: tudo é validado em memória ANTES de qualquer escrita. Havendo
-        # pendência, nada é gravado — nem conceitos, nem diário.
-        plano, pendentes = _planejar_frequencia(
-            form,
-            alunos_post,
-            oferta_id=oferta_id,
-            turma_id=turma_id,
-            data_alvo=data_alvo,
-            unidade_id=valor_unidade_id,
-            exige_valor=unidade_tem_valores_ativos(valor_unidade_id),
-        )
-        if pendentes:
-            raise PendenciaValorEsportista(pendentes)
-
-        # --- Registro de aula (diário do educador) ---
+        # --- Registro de aula existente (leitura para a validação) ---
         if oferta_id is not None:
             registro = RegistroAula.query.filter_by(
                 turma_curso_id=oferta_id, data=data_alvo
@@ -754,6 +748,28 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             registro = RegistroAula.query.filter_by(
                 turma_id=turma_id, data=data_alvo, turma_curso_id=None
             ).first()
+        valores_antigos = list(registro.valores) if registro is not None else []
+
+        # AJ16-B: valida o conjunto da aula ANTES de qualquer escrita. Ids
+        # inexistentes, de outra unidade ou inativos novos são recusados; um
+        # inativo já vinculado continua válido. O conjunto substitui o antigo
+        # por inteiro (com deduplicação).
+        ids_valores = _ids_valor_do_form(form)
+        valores_aula = _resolver_valores_da_aula(
+            ids_valores, valor_unidade_id, valores_antigos,
+        )
+        if _aula_exige_valor(conceitos, valor_unidade_id) and not valores_aula:
+            raise PendenciaValorAula()
+
+        plano = _planejar_frequencia(
+            conceitos,
+            alunos_post,
+            oferta_id=oferta_id,
+            turma_id=turma_id,
+            data_alvo=data_alvo,
+        )
+
+        # --- Registro de aula (diário do educador) ---
         if registro:
             if registro.unidade_id is None and valor_unidade_id is not None:
                 registro.unidade_id = valor_unidade_id
@@ -775,10 +791,11 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
             )
             registro.temas = TemaAula.query.filter(TemaAula.id.in_(tema_ids)).all() if tema_ids else []
             db.session.add(registro)
+        registro.valores = valores_aula
 
         # --- Frequência por aluno (plano já validado) ---
         autor_id, autor_nome = autor_do_lancamento()
-        for aluno, conceito, freq, valor_id in plano:
+        for aluno, conceito, freq in plano:
             if freq is None:
                 freq = Frequencia(
                     aluno_id=aluno.id,
@@ -799,14 +816,11 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
                     freq.autor_id = autor_id
                     freq.autor_nome = autor_nome
             freq.conceito = conceito
-            # A1: dado ADICIONAL — grava/limpa o valor conforme o conceito,
-            # sem tocar em nenhuma outra coluna.
-            freq.valor_esportista_id = valor_id
 
         db.session.commit()
         return turma_id, data_alvo.strftime('%Y-%m-%d')
 
-    except PendenciaValorEsportista:
+    except (PendenciaValorAula, ValorAulaInvalido):
         db.session.rollback()
         raise
     except Exception:

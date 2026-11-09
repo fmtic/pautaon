@@ -183,7 +183,40 @@ turma_curso quando há oferta. #}
                     
                     <small id="ajuda-temas-aula" class="text-muted d-block mt-1" style="font-size: 0.7rem;">Marque os temas trabalhados.</small>
                 </div>
-                
+
+                <!-- Valores do Esportista da AULA (AJ16-B): um conjunto único
+                para a oferta + data, igual aos temas. -->
+                <div>
+                    <label class="form-label fw-bold text-secondary">Valores do Esportista (Aula)</label>
+                    <div id="select-valor-aula" class="border rounded p-2 bg-white d-flex flex-wrap gap-3"
+                        style="max-height: 6rem; overflow-y: auto; font-size: 0.8rem;"
+                        aria-describedby="ajuda-valores-aula">
+                        {% for v in valores_esportista_ativos %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="valor_ids"
+                                id="valor-aula-{{ v.id }}" value="{{ v.id }}"
+                                {% if v.id in valores_aula_ids %}checked{% endif %}
+                                {% if is_readonly %}disabled{% endif %}>
+                            <label class="form-check-label" for="valor-aula-{{ v.id }}">{{ v.nome }}</label>
+                        </div>
+                        {% endfor %}
+                        {% for v in valores_aula_inativos %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="valor_ids"
+                                id="valor-aula-{{ v.id }}" value="{{ v.id }}" checked
+                                {% if is_readonly %}disabled{% endif %}>
+                            <label class="form-check-label" for="valor-aula-{{ v.id }}">{{ v.nome }} (inativo)</label>
+                        </div>
+                        {% endfor %}
+                        {% if not valores_esportista_ativos and not valores_aula_inativos %}
+                        <span class="text-muted small">Nenhum valor cadastrado no planejamento.</span>
+                        {% endif %}
+                    </div>
+                    <small id="ajuda-valores-aula" class="text-muted d-block mt-1" style="font-size: 0.7rem;">
+                        Marque os valores trabalhados na aula.
+                    </small>
+                </div>
+
             </div>
 
             <!-- COLUNA DIREITA: Textareas empilhadas -->
@@ -269,37 +302,10 @@ turma_curso quando há oferta. #}
                                 <input type="radio" class="btn-check" name="aluno_{{ aluno.id }}"
                                     id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}" {% if
                                     frequencias.get(aluno.id)==c %}checked{% endif %} {% if not
-                                    aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}
-                                    onchange="tratarConceitoAluno('{{ aluno.id }}', '{{ c }}')">
+                                    aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
                                 <label class="btn btn-sm btn-outline-secondary label-conceito conceito-{{ c }}"
                                     for="aluno_{{ aluno.id }}_{{ c }}">{{ c }}</label>
                                 {% endfor %}
-                            </div>
-
-                            {% set freq_atual = frequencias.get(aluno.id) %}
-                            {% set valor_salvo = valores_por_aluno.get(aluno.id) %}
-                            {% set valor_inativo = valor_salvo if valor_salvo and not valor_salvo.ativo else None %}
-                            {% set postura_obrigatoria = freq_atual in ['A', 'B', 'C', 'D']
-                                and aluno.pode_receber_frequencia and not is_readonly
-                                and (valores_esportista_ativos|length) > 0 %}
-                            <div class="mt-2">
-                                <label for="postura_{{ aluno.id }}"
-                                    class="form-label text-muted small mb-1 fw-bold">Valor / Postura do
-                                    Esportista</label>
-                                <select name="postura_aluno_{{ aluno.id }}" id="postura_{{ aluno.id }}"
-                                    class="form-select form-select-sm" {% if not postura_obrigatoria %}disabled{% endif %}
-                                    {% if postura_obrigatoria %}required{% endif %}>
-                                    <option value="">Selecione a opção</option>
-                                    {% for v in valores_esportista_ativos %}
-                                    <option value="{{ v.id }}" {% if valor_salvo and valor_salvo.id == v.id %}selected{% endif %}>{{ v.nome }}</option>
-                                    {% endfor %}
-                                    {% if valor_inativo %}
-                                    <option value="{{ valor_inativo.id }}" selected>{{ valor_inativo.nome }} (inativo)</option>
-                                    {% endif %}
-                                </select>
-                                {% if not valores_esportista_ativos and not valor_inativo %}
-                                <small class="text-muted d-block mt-1">Nenhum valor cadastrado no planejamento.</small>
-                                {% endif %}
                             </div>
 
                             {% if not aluno.pode_receber_frequencia %}

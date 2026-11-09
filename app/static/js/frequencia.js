@@ -2,11 +2,11 @@
  * frequencia.js — navegação por turma/data via GET; submit de conceitos via POST.
  * O beforeunload foi removido pois bloqueava o submit do form.
  *
- * V2: com catálogo de valores ativo na unidade (`data-valor-obrigatorio="1"` no
- * form), o select de Valor/Postura fica `required` quando o conceito é A–D e o
- * submit é bloqueado com destaque enquanto houver pendência. F, J e "sem
- * conceito" desabilitam o select e nunca exigem o valor — a mesma regra (e a
- * mesma exceção) do servidor, sem duplicar validação além do necessário.
+ * AJ16-B: os valores/posturas do esportista são da AULA (um conjunto único,
+ * como os temas), não de cada aluno. Com catálogo ativo na unidade
+ * (`data-valor-obrigatorio="1"` no form), o envio é bloqueado enquanto houver
+ * ao menos um conceito A–D marcado e nenhum valor selecionado. F/J e "sem
+ * conceito" não exigem valor — a mesma regra do servidor.
  *
  * As funções puras são exportadas para `tests/test_valor_obrigatorio_ui.py`
  * quando o arquivo roda em node; o DOM só é tocado no navegador.
@@ -14,26 +14,66 @@
 
 const CONCEITOS_PRESENCA = ['A', 'B', 'C', 'D'];
 
-/** A–D exigem o Valor do Esportista; F, J e "sem conceito" não. */
-function exigeValorEsportista(conceito) {
-    return CONCEITOS_PRESENCA.includes(conceito);
+/** Algum conceito A–D entre os informados? */
+function aulaTemPresenca(conceitos) {
+    return Array.from(conceitos || []).some(
+        conceito => CONCEITOS_PRESENCA.includes(conceito)
+    );
 }
 
-/**
- * Há pendência de cliente? Repete a exceção do servidor: só vale com catálogo
- * ativo na unidade da turma.
- */
-function valorEsportistaPendente({ conceito, valorId, catalogoAtivo }) {
-    return Boolean(catalogoAtivo) && exigeValorEsportista(conceito) && !valorId;
+/** Há pendência de cliente? Só vale com catálogo ativo na unidade da turma. */
+function valorAulaPendente({ conceitos, valorIds, catalogoAtivo }) {
+    return Boolean(catalogoAtivo)
+        && aulaTemPresenca(conceitos)
+        && (!valorIds || valorIds.length === 0);
 }
 
-function formExigeValor() {
-    return Boolean(document.querySelector('form[data-valor-obrigatorio="1"]'));
+function conceitosMarcados(form) {
+    return Array.from(
+        form.querySelectorAll('input.btn-check[name^="aluno_"]:checked')
+    ).map(radio => radio.value);
+}
+
+function valoresMarcados(form) {
+    return Array.from(
+        form.querySelectorAll('input[name="valor_ids"]:checked')
+    ).map(input => input.value);
+}
+
+function marcarPendencia(grupo, pendente) {
+    if (!grupo) return;
+    grupo.classList.toggle('border-danger', Boolean(pendente));
+}
+
+function mostrarAvisoPendencia() {
+    const aviso = document.getElementById('aviso-valor-pendente');
+    const texto = document.getElementById('aviso-valor-pendente-texto');
+    if (!aviso || !texto) return;
+    texto.textContent =
+        'Selecione ao menos um valor trabalhado na aula antes de salvar.';
+    aviso.classList.remove('d-none');
+}
+
+function esconderAvisoPendencia() {
+    const aviso = document.getElementById('aviso-valor-pendente');
+    if (aviso) aviso.classList.add('d-none');
+}
+
+/** Grupo de valores pendente (A–D sem nenhum valor), já com o destaque. */
+function validarPendencias(form) {
+    const grupo = form.querySelector('#select-valor-aula');
+    const pendente = valorAulaPendente({
+        conceitos: conceitosMarcados(form),
+        valorIds: valoresMarcados(form),
+        catalogoAtivo: true,
+    });
+    marcarPendencia(grupo, pendente);
+    return pendente ? [grupo] : [];
 }
 
 function atualizarUrl() {
     const selectTurma = document.getElementById('select-turma');
-    const selectData  = document.getElementById('select-data');
+    const selectData = document.getElementById('select-data');
     const selectCurso = document.getElementById('select-turma-curso');
     if (!selectTurma) return;
 
@@ -45,62 +85,6 @@ function atualizarUrl() {
     if (selectCurso && selectCurso.value) params.append('turma_curso', selectCurso.value);
 
     window.location.href = window.location.pathname + '?' + params.toString();
-}
-
-/** Marca/desmarca o destaque de erro no select do aluno. */
-function marcarPendencia(selectPostura, pendente) {
-    if (!selectPostura) return;
-    selectPostura.classList.toggle('is-invalid', Boolean(pendente));
-}
-
-function mostrarAvisoPendencia(quantidade) {
-    const aviso = document.getElementById('aviso-valor-pendente');
-    const texto = document.getElementById('aviso-valor-pendente-texto');
-    if (!aviso || !texto) return;
-    const plural = quantidade === 1 ? 'aluno' : 'alunos';
-    texto.textContent =
-        `Selecione o Valor/Postura do Esportista de ${quantidade} ${plural} `
-        + 'com presença (A–D) antes de salvar.';
-    aviso.classList.remove('d-none');
-}
-
-function esconderAvisoPendencia() {
-    const aviso = document.getElementById('aviso-valor-pendente');
-    if (aviso) aviso.classList.add('d-none');
-}
-
-/** Estado inicial do select de valor conforme o conceito marcado. */
-function tratarConceitoAluno(alunoId, conceito) {
-    const selectPostura = document.getElementById('postura_' + alunoId);
-    if (!selectPostura) return;
-
-    if (exigeValorEsportista(conceito)) {
-        selectPostura.removeAttribute('disabled');
-        if (formExigeValor()) selectPostura.setAttribute('required', 'required');
-    } else {
-        selectPostura.value = '';
-        selectPostura.setAttribute('disabled', 'true');
-        selectPostura.removeAttribute('required');
-        marcarPendencia(selectPostura, false);
-    }
-}
-
-/** Selects pendentes do form (A–D sem valor), já com o destaque aplicado. */
-function validarPendencias(form) {
-    const pendentes = [];
-    form.querySelectorAll('select[id^="postura_"]').forEach(selectPostura => {
-        const alunoId = selectPostura.id.slice('postura_'.length);
-        const radio = form.querySelector(`input[name="aluno_${alunoId}"]:checked`);
-        const conceito = radio ? radio.value : '';
-        const pendente = valorEsportistaPendente({
-            conceito,
-            valorId: selectPostura.value,
-            catalogoAtivo: true,
-        });
-        marcarPendencia(selectPostura, pendente);
-        if (pendente) pendentes.push(selectPostura);
-    });
-    return pendentes;
 }
 
 if (typeof document !== 'undefined') {
@@ -121,27 +105,25 @@ if (typeof document !== 'undefined') {
             });
         }
 
-        // A1/V2: estado inicial do select de Valor/Postura. O servidor já
-        // renderiza `disabled`/`required` conforme o conceito salvo; repetir
-        // aqui cobre o radio restaurado pelo navegador (voltar/recarregar).
-        document.querySelectorAll('input.btn-check[name^="aluno_"]').forEach(radio => {
-            if (!radio.checked) return;
-            tratarConceitoAluno(radio.name.slice('aluno_'.length), radio.value);
-        });
-
-        // Limpa o destaque assim que o professor escolhe o valor.
-        document.querySelectorAll('select[id^="postura_"]').forEach(selectPostura => {
-            selectPostura.addEventListener('change', function () {
-                marcarPendencia(this, false);
-                const form = this.closest('form');
-                if (form && !validarPendencias(form).length) esconderAvisoPendencia();
-            });
-        });
-
         const formPauta = document.querySelector('form[data-valor-obrigatorio="1"]');
         if (!formPauta) return;
 
-        // Fallback do submit (a validação nativa já bloqueia antes disto).
+        // Limpa o destaque assim que o professor marca um valor.
+        formPauta.querySelectorAll('input[name="valor_ids"]').forEach(input => {
+            input.addEventListener('change', function () {
+                const grupo = formPauta.querySelector('#select-valor-aula');
+                marcarPendencia(grupo, false);
+                if (!validarPendencias(formPauta).length) esconderAvisoPendencia();
+            });
+        });
+
+        // Reavalia ao trocar um conceito (o conjunto de A–D pode mudar).
+        formPauta.querySelectorAll('input.btn-check[name^="aluno_"]').forEach(radio => {
+            radio.addEventListener('change', function () {
+                if (!validarPendencias(formPauta).length) esconderAvisoPendencia();
+            });
+        });
+
         formPauta.addEventListener('submit', function (event) {
             const pendentes = validarPendencias(formPauta);
             if (!pendentes.length) {
@@ -149,24 +131,16 @@ if (typeof document !== 'undefined') {
                 return;
             }
             event.preventDefault();
-            mostrarAvisoPendencia(pendentes.length);
-            pendentes[0].focus();
+            mostrarAvisoPendencia();
+            pendentes[0].scrollIntoView({ block: 'center' });
         });
-
-        // `required` nativo: o evento `submit` nem chega a disparar.
-        formPauta.addEventListener('invalid', function (event) {
-            const alvo = event.target;
-            if (!alvo || !alvo.id || !alvo.id.startsWith('postura_')) return;
-            marcarPendencia(alvo, true);
-            mostrarAvisoPendencia(validarPendencias(formPauta).length || 1);
-        }, true);
     });
 }
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         CONCEITOS_PRESENCA,
-        exigeValorEsportista,
-        valorEsportistaPendente,
+        aulaTemPresenca,
+        valorAulaPendente,
     };
 }
