@@ -303,7 +303,7 @@
                 <h5 class="fw-bold mb-1">
                     <i class="bi bi-award text-primary me-2"></i>Engajamento da turma
                 </h5>
-                <p class="text-muted small mb-0">Valores/Posturas do Esportista mais atribuídos</p>
+                <p class="text-muted small mb-0">Valores/Posturas do Esportista registrados em aulas</p>
             </div>
             <div class="card-body pt-0">
                 {% if engajamento and engajamento.itens %}
@@ -323,7 +323,7 @@
                     {% endfor %}
                 </ul>
                 <div class="text-muted small border-top pt-2 mt-1">
-                    Baseado em {{ engajamento.total }} registros de presença com valor.
+                    Baseado em {{ engajamento.total }} valores registrados em aulas.
                 </div>
                 {% else %}
                 <p class="text-muted small mb-0">Ainda não há valores registrados nesta oferta.</p>

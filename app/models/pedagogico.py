@@ -7,7 +7,7 @@ Contem:
     - Curso : oferta de uma unidade; agrupa turmas e temas de aula.
     - CentroCusto : catalogo de centros de custo por unidade.
     - Nivel : nivel pedagogico (Basico, Intermediario, Avancado).
-    - ValorEsportista : valor/postura observado no lancamento de frequencia.
+    - ValorEsportista : valor/postura trabalhado na aula (N:N com RegistroAula).
 
 Ambos sao catalogos reutilizaveis escopados por unidade.
 """
@@ -63,9 +63,9 @@ class Nivel(db.Model):
 class ValorEsportista(db.Model):
     """Valor / postura do esportista (catálogo do planejamento pedagógico).
 
-    É um dado ADICIONAL do lançamento de frequência: `Frequencia`
-    `.valor_esportista_id` guarda o valor observado na aula e **nenhuma**
-    conta de presença/falta o lê (ver `app/utils/logica.py`).
+    É um dado ADICIONAL da AULA: `RegistroAula.valores` guarda os valores
+    trabalhados na aula (N:N, igual aos temas) e **nenhuma** conta de
+    presença/falta o lê (ver `app/utils/logica.py`).
 
     Regras:
         - Escopo sempre por unidade (não existe valor global, ao contrário de
@@ -76,7 +76,8 @@ class ValorEsportista(db.Model):
           (`lower(nome)`, `unidade_id`) garante no banco e a rota valida com
           `func.lower` para devolver mensagem amigável antes do IntegrityError.
         - `ativo=False` esconde o valor do seletor de lançamento mas **não**
-          apaga o histórico: o valor inativo já lançado continua exibido.
+          apaga o histórico: o valor inativo já vinculado à aula continua
+          exibido e contado.
     """
     __tablename__ = 'valor_esportista'
     __table_args__ = (

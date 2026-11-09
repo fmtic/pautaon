@@ -448,5 +448,5 @@ def test_html_demais_campos_preservados(app, client):
     assert "Data da Aula" in html
     assert "Atividades da aula" in html
     assert "Observações da Aula" in html
-    assert "Valor / Postura do Esportista" in html
+    assert "Valores do Esportista (Aula)" in html
     assert "Aluno Um" in html
