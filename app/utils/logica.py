@@ -732,6 +732,23 @@ def salvar_frequencia(form: Dict[str, str]) -> Tuple[int, Optional[str]]:
         )
         conceitos = _conceitos_enviados(form, alunos_post)
 
+        # AJ18-C (item 1): defesa em profundidade — ignora conceitos enviados
+        # para alunos cuja entrada na oferta é posterior à data-alvo. Linhas
+        # já registradas antes da entrada não são alteradas (alunos sem conceito
+        # enviado não entram no plano e permanecem intocados).
+        if oferta_id is not None and data_alvo is not None:
+            from app.services.entrada_oferta import aula_conta_para_aluno
+            inscricoes_por_aluno = {}
+            for insc in Inscricao.query.filter(
+                Inscricao.turma_curso_id == oferta_id,
+                Inscricao.ativo.is_(True),
+            ).all():
+                inscricoes_por_aluno.setdefault(insc.aluno_id, insc)
+            for aluno_id_conceito in list(conceitos.keys()):
+                insc = inscricoes_por_aluno.get(aluno_id_conceito)
+                if insc is not None and not aula_conta_para_aluno(insc, data_alvo):
+                    conceitos.pop(aluno_id_conceito, None)
+
         # AJ16-B: o valor/postura do esportista pertence à unidade da TURMA —
         # o mesmo escopo do GET (a sessão pode estar em Visão Global).
         turma_obj = db.session.get(Turma, turma_id)

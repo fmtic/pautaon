@@ -367,11 +367,8 @@ def frequencia():
             # aluno_<id> fora da pauta são ignorados e contabilizados no log.
             # A pauta segue a mesma regra do GET: inscrição sempre apontada
             # para a oferta (Inscricao.turma_curso_id NOT NULL desde a Onda 4).
-            permitidos = {
-                a.id for a in _alunos_da_oferta(
-                    int(turma_post_id), oferta_post.id,
-                )
-            }
+            pauta_oferta = _alunos_da_oferta(int(turma_post_id), oferta_post.id)
+            permitidos = {a.id for a in pauta_oferta}
             # Mantém os campos repetidos (`tema_ids`) ao fazer a cópia mutável
             # usada para remover alunos que não pertencem à pauta da oferta.
             form_data = request.form.copy()
@@ -386,19 +383,66 @@ def frequencia():
                 # sem validação extra (decisão D2 — sem dupla checagem de
                 # vigência/dia no caminho de oferta única).
                 form_data.pop('turma_curso', None)
-            ignorados = 0
+            ignorados_fora_pauta = 0
+            ignorados_entrada = 0
+            inscricoes_pauta = {}
+            if data_alvo_post:
+                inscricoes_pauta = {
+                    insc.aluno_id: insc
+                    for insc in Inscricao.query.filter(
+                        Inscricao.turma_curso_id == oferta_post.id,
+                        Inscricao.ativo.is_(True),
+                        Inscricao.aluno_id.in_(permitidos or [-1]),
+                    ).all()
+                }
             for chave in list(form_data.keys()):
                 # `valor_ids` é da AULA (não do aluno), então nunca sai junto.
                 if chave.startswith('aluno_'):
                     aluno_raw = chave[len('aluno_'):]
-                    if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
+                    if not aluno_raw.isdigit():
+                        continue
+                    aluno_id_form = int(aluno_raw)
+                    if aluno_id_form not in permitidos:
                         form_data.pop(chave)
-                        ignorados += 1
-            if ignorados:
+                        ignorados_fora_pauta += 1
+                        continue
+                    # AJ18-C (item 1): ignora lançamento de aluno cuja entrada
+                    # na oferta é posterior à data-alvo (mesmo ponto de
+                    # `permitidos`). Defensivo contra manipulação do form.
+                    if data_alvo_post:
+                        from app.services.entrada_oferta import aula_conta_para_aluno
+                        insc_aluno = inscricoes_pauta.get(aluno_id_form)
+                        if insc_aluno is not None and not aula_conta_para_aluno(
+                            insc_aluno, data_alvo_post
+                        ):
+                            conceito_ignorado = form_data.get(chave)
+                            form_data.pop(chave)
+                            ignorados_entrada += 1
+                            from app.models import LogAcao
+                            db.session.add(LogAcao(
+                                usuario_id=current_user.id,
+                                usuario_nome=getattr(current_user, 'name', None),
+                                acao='Lançamento de frequência ignorado (entrada futura)',
+                                detalhes=(
+                                    f'aluno_id={aluno_id_form} oferta_id={oferta_post.id} '
+                                    f'turma_id={turma_post_id} data={data_post} '
+                                    f'conceito_recebido={conceito_ignorado} '
+                                    f'entrada={getattr(insc_aluno, "data_entrada_oferta", None)}'
+                                ),
+                                ip=request.remote_addr,
+                                unidade_id=oferta_post.unidade_id,
+                            ))
+            if ignorados_fora_pauta:
                 current_app.logger.warning(
                     'Frequência: %s lançamento(s) ignorado(s) fora da pauta da '
                     'oferta %s (turma %s)',
-                    ignorados, oferta_post.id, turma_post_id,
+                    ignorados_fora_pauta, oferta_post.id, turma_post_id,
+                )
+            if ignorados_entrada:
+                current_app.logger.warning(
+                    'Frequência: %s lançamento(s) ignorado(s) por entrada '
+                    'posterior à data na oferta %s (turma %s, data %s)',
+                    ignorados_entrada, oferta_post.id, turma_post_id, data_post,
                 )
 
         try:
