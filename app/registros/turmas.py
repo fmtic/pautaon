@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.models.enums import UserRole
 from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
+from app.services.entrada_oferta import inicio_efetivo, parse_escolha_entrada
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
@@ -1590,6 +1591,20 @@ def ver_turma(id):
             if chave in ids_do_professor
         }
 
+    # AJ18-B: pergunta de data de entrada quando a oferta selecionada já começou.
+    entrada_hoje = get_local_now().date()
+    oferta_entrada = oferta_sel
+    entrada_obrigatoria = False
+    entrada_ini_iso = None
+    entrada_fim_iso = None
+    if oferta_entrada is not None:
+        ini_eff = inicio_efetivo(oferta_entrada)
+        fim_eff = oferta_entrada.data_fim or (oferta_entrada.turma.data_fim if oferta_entrada.turma else None)
+        entrada_ini_iso = ini_eff.isoformat() if ini_eff else None
+        entrada_fim_iso = fim_eff.isoformat() if fim_eff else None
+        if ini_eff and entrada_hoje > ini_eff:
+            entrada_obrigatoria = True
+
     return render_template(
         "turmas/detalhe.html",
         alunos_sem_turma=alunos_disponiveis,
@@ -1610,6 +1625,10 @@ def ver_turma(id):
             else []
         ),
         abrir_modal_enturmar=request.args.get("modal") == "enturmar",
+        entrada_obrigatoria=entrada_obrigatoria,
+        entrada_hoje_iso=entrada_hoje.isoformat(),
+        entrada_ini_iso=entrada_ini_iso,
+        entrada_fim_iso=entrada_fim_iso,
         **ctx,
     )
 
@@ -1666,7 +1685,15 @@ def enturmar_alunos(turma_id):
             if turma_obj.unidade_id:
                 alunos = alunos.filter(Aluno.unidade_id == turma_obj.unidade_id)
             alunos = alunos.all()
+            # AJ18-B: quando a oferta já começou, a escolha de entrada é obrigatória
+            # para CADA aluno selecionado do lote (recusa atômica se faltar),
+            # mesmo que nenhum campo entrada_* seja enviado no POST. Oferta não
+            # iniciada -> NULL sem perguntar.
+            hoje_ent = get_local_now().date()
+            ini_eff = inicio_efetivo(oferta_sel)
+            entrada_obrigatoria = bool(ini_eff and hoje_ent > ini_eff)
             enturmados = 0
+            acoes = []
             for aluno in alunos:
                 nivel_form = request.form.get(f"nivel_{aluno.id}")
                 nivel_val = None if nivel_form == "Não se aplica" else nivel_form
@@ -1674,23 +1701,92 @@ def enturmar_alunos(turma_id):
                 if nivel_form:
                     aluno.nivel = nivel_val
 
+                # AJ18-B: data de entrada do aluno na oferta.
+                if entrada_obrigatoria:
+                    entrada_raw = request.form.get(f"entrada_{aluno.id}")
+                    if not entrada_raw:
+                        flash(
+                            "Informe a data de entrada na oferta para todos os alunos selecionados.",
+                            "warning",
+                        )
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
+                    try:
+                        data_entrada, rotulo_entrada = parse_escolha_entrada(
+                            entrada_raw, oferta_sel, hoje_ent
+                        )
+                    except ValueError as e:
+                        flash(str(e), "warning")
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
+                else:
+                    data_entrada, rotulo_entrada = None, "desde o início"
+
                 # ETAPA M2: duplicidade e criação concentradas no serviço
                 # único de enturmação. Duplicata ativa na mesma oferta segue
                 # como salto silencioso (sem flash), como antes; em outra
                 # oferta da turma, o aluno pode ter nova inscrição ativa.
                 try:
-                    enturmar_aluno(
+                    insc = enturmar_aluno(
                         aluno,
                         turma_obj,
                         oferta_id,
                         nivel=nivel_val,
-                        data_inicio=date.today(),
+                        data_inicio=hoje_ent,
+                        data_entrada=data_entrada,
                     )
                 except ValueError as e:
                     if str(e) != MSG_JA_ENTURMADO:
-                        raise
+                        flash(str(e), "warning")
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
                     continue
                 enturmados += 1
+                acoes.append((aluno, insc, rotulo_entrada))
+
+            # LogAcao por aluno enturmado com a data escolhida.
+            if acoes:
+                try:
+                    from app.models import LogAcao
+                except Exception:
+                    LogAcao = None
+                if LogAcao is not None:
+                    for aluno_log, _, rotulo_entrada in acoes:
+                        db.session.add(
+                            LogAcao(
+                                usuario_id=current_user.id,
+                                usuario_nome=getattr(current_user, "name", None),
+                                acao="Enturmação de aluno na oferta",
+                                detalhes=(
+                                    f"aluno_id={aluno_log.id} nome=\"{aluno_log.nome}\" "
+                                    f"turma_id={turma_obj.id} oferta_id={oferta_sel.id} "
+                                    f"entrada={rotulo_entrada}"
+                                ),
+                                ip=request.remote_addr,
+                                unidade_id=turma_obj.unidade_id,
+                            )
+                        )
 
             db.session.commit()
             flash(

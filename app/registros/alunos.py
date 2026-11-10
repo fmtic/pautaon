@@ -1378,6 +1378,7 @@ def transferir_aluno(aluno_id):
             oferta_destino.id,
             nivel=inscricao_origem.nivel,
             data_inicio=data_transferencia,
+            data_entrada=data_transferencia,
         )
 
         from app.models import Transferencia

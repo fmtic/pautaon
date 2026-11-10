@@ -12,4 +12,4 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = [".venv", "venv", "instance", "docs", ".git"]
+norecursedirs = [".venv", "venv", "instance", "docs", ".git", ".tmp"]
