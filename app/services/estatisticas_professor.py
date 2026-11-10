@@ -11,14 +11,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from sqlalchemy import func
-
-from app.database import db
-from app.models import Aluno, Curso, Frequencia, RegistroAula, TemaAula, Turma, TurmaCurso
-from app.models.enums import CONCEITOS_PRESENCA, ConceitoFrequencia
-from app.services.turma_curso import _alunos_da_oferta, datas_esperadas_oferta, ofertas_ativas
+from app.models import Aluno, Frequencia, Inscricao, RegistroAula, TemaAula, Turma, TurmaCurso
+from app.services.entrada_oferta import aula_conta_para_aluno
+from app.services.turma_curso import _alunos_da_oferta, datas_aula_oferta
 from app.utils.frequencia import alunos_ativos_da_turma, datas_bloqueadas_str
 from app.utils.logica import formatar_nome_proprio, gerar_datas
 from app.utils.timezone import get_local_now
@@ -303,18 +300,56 @@ def obter_estatisticas_professor(
     alunos_processados.sort(key=lambda x: (not x["alerta_duplo"], x["faixa_freq"] != "lo", x["nome"]))
 
     # 8. Relação Professor x Aluno x Pauta (Cobertura curricular e dias esperados)
+    # AJ18-C (item 2): denominadores por data respeitam a entrada do aluno na
+    # oferta (alunos esperados = pauta com entrada NULL ou <= data, regra única
+    # em app.services.entrada_oferta). Data sem aluno esperado mantém
+    # comportamento de pauta vazia (não entra como esperada/pendente).
     hoje = get_local_now().date()
     blocked = datas_bloqueadas_str(turma_alvo.periodo_letivo_id)
     if oferta_alvo is not None:
-        datas_esperadas = datas_esperadas_oferta(oferta_alvo, hoje, blocked)
+        datas_calendario = datas_aula_oferta(oferta_alvo, limite=hoje, blocked=blocked)
         curso_id = oferta_alvo.curso_id
+        inscricoes_pauta = Inscricao.query.filter(
+            Inscricao.turma_curso_id == oferta_alvo.id,
+            Inscricao.ativo.is_(True),
+            Inscricao.aluno_id.in_(aluno_ids_pauta or [-1]),
+        ).all() if aluno_ids_pauta else []
     else:
         datas_geradas = gerar_datas(turma_alvo, incluir_futuro=False, blocked_dates=blocked)
-        datas_esperadas = [d for d in (date.fromisoformat(str(di)) for di in datas_geradas if di) if d <= hoje]
+        datas_calendario = [
+            d for d in (date.fromisoformat(str(di)) for di in datas_geradas if di) if d <= hoje
+        ]
         curso_id = turma_alvo.curso_id
+        inscricoes_pauta = Inscricao.query.filter(
+            Inscricao.turma_id == turma_alvo.id,
+            Inscricao.ativo.is_(True),
+            Inscricao.aluno_id.in_(aluno_ids_pauta or [-1]),
+        ).all() if aluno_ids_pauta else []
 
-    aulas_esperadas_qtd = len(datas_esperadas)
-    aulas_lancadas_qtd = len(datas_ordenadas)
+    inscr_por_aluno = {}
+    for insc in inscricoes_pauta:
+        inscr_por_aluno.setdefault(insc.aluno_id, insc)
+
+    lancados_por_data = defaultdict(set)
+    for reg in registros_freq:
+        if reg.data is not None and reg.aluno_id is not None:
+            lancados_por_data[reg.data].add(reg.aluno_id)
+
+    aulas_esperadas_qtd = 0
+    aulas_lancadas_qtd = 0
+    for d_cal in datas_calendario:
+        esperados = {
+            aid for aid in aluno_ids_pauta
+            if (insc := inscr_por_aluno.get(aid)) is not None
+            and aula_conta_para_aluno(insc, d_cal)
+        }
+        if not esperados:
+            # Data sem aluno esperado: comportamento de pauta vazia.
+            continue
+        aulas_esperadas_qtd += 1
+        if esperados.issubset(lancados_por_data.get(d_cal, set())):
+            aulas_lancadas_qtd += 1
+
     pautas_em_dia_pct = round((aulas_lancadas_qtd / aulas_esperadas_qtd * 100), 1) if aulas_esperadas_qtd > 0 else 100.0
 
     # Temas do curso
