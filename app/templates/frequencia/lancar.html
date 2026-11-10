@@ -67,184 +67,203 @@ turma_curso quando há oferta. #}
     <input type="hidden" name="turma_curso" value="{{ oferta_atual.id }}">
     {% endif %}
     
-    <!-- QUADRO DE DADOS DA AULA -->
-    <div class="card mb-4 p-3">
-        <div class="row g-3">
-            
-            <!-- COLUNA ESQUERDA: Selects e Temas -->
-            <div class="col-md-{% if ofertas|length >= 2 %}6{% else %}4{% endif %} d-flex flex-column gap-3">
-                
-                <!-- Selects -->
-                <div class="row g-3">
-                    <div class="col-6">
-                        <label class="form-label fw-bold">Turma</label>
-                        <select name="turma" id="select-turma" class="form-select form-select-sm" onchange="atualizarUrl()">
-                            <option value="">Selecione</option>
-                            {% for t in turmas %}
-                            <option value="{{ t.id }}" {% if turma_id|string==t.id|string %}selected{% endif %}>
-                                {{ t.nome }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% if turma %}
-                        <div class="mt-2 text-primary small fw-bold">
-                            <i class="bi bi-clock-history me-1"></i> Turno: {{ turma.turno or '-' }}
-                        </div>
-                        {% endif %}
-                    </div>
+    <!-- QUADRO DE DADOS DA AULA (AJ16-D): três faixas — seleção, conteúdo e registro -->
+    <div class="card mb-4 card-dados-aula">
 
-                    {% if ofertas|length >= 2 %}
-                    <div class="col-6">
-                        <label class="form-label fw-bold">Curso da oferta</label>
-                        <select name="turma_curso" id="select-turma-curso" class="form-select form-select-sm border-primary"
-                            onchange="atualizarUrl()">
-                            <option value="">Selecione o curso</option>
-                            {% for o in ofertas %}
-                            {% set grade_oferta = grade_oferta_map.get(o.id) %}
-                            <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
-                                {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
-                                {%- if o.turno %} — {{ o.turno }}{% endif -%}
-                                {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto
-                                }}){% endif -%}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% if not oferta_atual %}
-                        <div class="alert alert-info py-2 mt-2 mb-0" style="font-size: 0.7rem;">
-                            <i class="bi bi-info-circle me-1"></i> Selecione o curso.
-                        </div>
-                        {% endif %}
+        <!-- 1) SELEÇÃO: turma, curso da oferta e data -->
+        <section class="p-3" aria-labelledby="titulo-selecao-aula">
+            <div class="secao-aula-titulo" id="titulo-selecao-aula">Aula</div>
+            <div class="row g-3">
+                <div class="col-md-{% if ofertas|length >= 2 %}4{% else %}6{% endif %}">
+                    <label class="form-label fw-bold">Turma</label>
+                    <select name="turma" id="select-turma" class="form-select form-select-sm" onchange="atualizarUrl()">
+                        <option value="">Selecione</option>
+                        {% for t in turmas %}
+                        <option value="{{ t.id }}" {% if turma_id|string==t.id|string %}selected{% endif %}>
+                            {{ t.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if turma %}
+                    <div class="mt-2 text-primary small fw-bold">
+                        <i class="bi bi-clock-history me-1"></i> Turno: {{ turma.turno or '-' }}
                     </div>
                     {% endif %}
-
-                    <div class="col-6">
-                        <label class="form-label fw-bold">Data da Aula</label>
-                        {% if datas %}
-                        <select name="data" id="select-data" class="form-select form-select-sm border-primary" onchange="atualizarUrl()">
-                            <option value="">Selecione a data</option>
-                            {% for d in datas|sort %}
-                            {% set st = (situacao_datas.status.get(d) if situacao_datas else None) %}
-                            <option value="{{ d }}" {% if data==d %}selected{% endif %}>
-                                {%- if st == 'lancada' -%}
-                                ✔ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %}
-                                {%- elif st == 'pendente' -%}
-                                ○ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %} — pendente
-                                {%- else -%}
-                                {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}
-                                {%- endif -%}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% if situacao_datas and situacao_datas.total_ate_hoje %}
-                        <div class="mt-2" style="font-size: 0.72rem;" id="resumo-datas-lancadas">
-                            {% if situacao_datas.pendentes == 0 %}
-                            <span class="text-success fw-semibold">
-                                <i class="bi bi-check2-circle me-1"></i>Todas as aulas até hoje estão lançadas ✔
-                            </span>
-                            {% else %}
-                            <span class="text-muted">
-                                {{ situacao_datas.lancadas }} de {{ situacao_datas.total_ate_hoje }} aulas até hoje lançadas · {{ situacao_datas.pendentes }} pendente(s)
-                            </span>
-                            {% if situacao_datas.proxima_pendente %}
-                            <a class="btn btn-sm btn-outline-warning py-0 px-2 ms-2"
-                                href="{{ url_for('registros.frequencia', turma_id=turma_id, data=situacao_datas.proxima_pendente, **({'turma_curso': oferta_atual.id} if oferta_atual else {})) }}">
-                                <i class="bi bi-arrow-right-circle me-1"></i>Ir para a próxima pendente
-                            </a>
-                            {% endif %}
-                            {% endif %}
-                        </div>
-                        {% endif %}
-                        {% else %}
-                        <div class="alert alert-info py-2 mb-0" style="font-size: 0.7rem;">
-                            <i class="bi bi-calendar-x me-1"></i>
-                            Nenhuma aula disponível.
-                        </div>
-                        <input type="hidden" name="data" value="">
-                        {% endif %}
-                    </div>
                 </div>
 
-                <!-- Temas (logo abaixo dos selects na coluna da esquerda) -->
-                <div>
-                    <label class="form-label fw-bold text-secondary">Temas (Planejamento)</label>
-                    <div id="select-tema-aula" class="border rounded p-2 bg-white d-flex flex-wrap gap-3"
-                        style="max-height: 6rem; overflow-y: auto; font-size: 0.8rem;" aria-describedby="ajuda-temas-aula">
-                        {% for tema in temas %}
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="tema_ids"
-                                id="tema-aula-{{ tema.id }}" value="{{ tema.id }}" {% if tema.id in tema_selecionado
-                                %}checked{% endif %}>
-                            <label class="form-check-label" for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
-                        </div>
+                {% if ofertas|length >= 2 %}
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Curso da oferta</label>
+                    <select name="turma_curso" id="select-turma-curso" class="form-select form-select-sm border-primary"
+                        onchange="atualizarUrl()">
+                        <option value="">Selecione o curso</option>
+                        {% for o in ofertas %}
+                        {% set grade_oferta = grade_oferta_map.get(o.id) %}
+                        <option value="{{ o.id }}" {% if oferta_atual and o.id==oferta_atual.id %}selected{% endif %}>
+                            {{ o.curso.nome if o.curso else 'Curso #' ~ o.curso_id }}
+                            {%- if o.turno %} — {{ o.turno }}{% endif -%}
+                            {%- if grade_oferta and grade_oferta.texto_horario_curto %} ({{ grade_oferta.texto_horario_curto
+                            }}){% endif -%}
+                        </option>
                         {% endfor %}
-                        {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{%
-                        endif %}
+                    </select>
+                    {% if not oferta_atual %}
+                    <div class="alert alert-info py-2 mt-2 mb-0" style="font-size: 0.7rem;">
+                        <i class="bi bi-info-circle me-1"></i> Selecione o curso.
                     </div>
-                    
-                    <small id="ajuda-temas-aula" class="text-muted d-block mt-1" style="font-size: 0.7rem;">Marque os temas trabalhados.</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <div class="col-md-{% if ofertas|length >= 2 %}4{% else %}6{% endif %}">
+                    <label class="form-label fw-bold">Data da Aula</label>
+                    {% if datas %}
+                    <select name="data" id="select-data" class="form-select form-select-sm border-primary" onchange="atualizarUrl()">
+                        <option value="">Selecione a data</option>
+                        {% for d in datas|sort %}
+                        {% set st = (situacao_datas.status.get(d) if situacao_datas else None) %}
+                        <option value="{{ d }}" {% if data==d %}selected{% endif %}>
+                            {%- if st == 'lancada' -%}
+                            ✔ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %}
+                            {%- elif st == 'pendente' -%}
+                            ○ {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}{% if dias_abrev.get(d) %} ({{ dias_abrev.get(d) }}){% endif %} — pendente
+                            {%- else -%}
+                            {{ d[8:10] }}/{{ d[5:7] }}/{{ d[0:4] }}
+                            {%- endif -%}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    <div class="alert alert-info py-2 mb-0" style="font-size: 0.7rem;">
+                        <i class="bi bi-calendar-x me-1"></i>
+                        Nenhuma aula disponível.
+                    </div>
+                    <input type="hidden" name="data" value="">
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if datas and situacao_datas and situacao_datas.total_ate_hoje %}
+            <div class="mt-2" style="font-size: 0.72rem;" id="resumo-datas-lancadas">
+                {% if situacao_datas.pendentes == 0 %}
+                <span class="text-success fw-semibold">
+                    <i class="bi bi-check2-circle me-1"></i>Todas as aulas até hoje estão lançadas ✔
+                </span>
+                {% else %}
+                <span class="text-muted">
+                    {{ situacao_datas.lancadas }} de {{ situacao_datas.total_ate_hoje }} aulas até hoje lançadas · {{ situacao_datas.pendentes }} pendente(s)
+                </span>
+                {% if situacao_datas.proxima_pendente %}
+                <a class="btn btn-sm btn-outline-warning py-0 px-2 ms-2"
+                    href="{{ url_for('registros.frequencia', turma_id=turma_id, data=situacao_datas.proxima_pendente, **({'turma_curso': oferta_atual.id} if oferta_atual else {})) }}">
+                    <i class="bi bi-arrow-right-circle me-1"></i>Ir para a próxima pendente
+                </a>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- 2) CONTEÚDO DA AULA: temas e valores do esportista (ambos 0..N por aula) -->
+        <section class="p-3 border-top" aria-labelledby="titulo-conteudo-aula">
+            <div class="secao-aula-titulo" id="titulo-conteudo-aula">Conteúdo da aula</div>
+            <div class="row g-3">
+
+                <div class="col-md-6">
+                    <div class="painel-chips" id="painel-temas">
+                        <div class="painel-chips-cabecalho">
+                            <span class="painel-chips-titulo" id="titulo-temas">
+                                Temas (Planejamento)
+                            </span>
+                            <span class="badge text-bg-light border painel-chips-contador" id="contador-temas"
+                                data-grupo="select-tema-aula" aria-live="polite"></span>
+                        </div>
+                        <div id="select-tema-aula" class="chips" role="group" aria-labelledby="titulo-temas"
+                            aria-describedby="ajuda-temas-aula">
+                            {% for tema in temas %}
+                            <input class="btn-check" type="checkbox" name="tema_ids" autocomplete="off"
+                                id="tema-aula-{{ tema.id }}" value="{{ tema.id }}"
+                                {% if tema.id in tema_selecionado %}checked{% endif %}>
+                            <label class="btn btn-sm btn-outline-primary rounded-pill"
+                                for="tema-aula-{{ tema.id }}">{{ tema.titulo }}</label>
+                            {% endfor %}
+                            {% if not temas %}<span class="text-muted small">Nenhum tema planejado disponível.</span>{% endif %}
+                        </div>
+                        <small id="ajuda-temas-aula" class="text-muted d-block mt-2">Marque os temas trabalhados.</small>
+                    </div>
                 </div>
 
-                <!-- Valores do Esportista da AULA (AJ16-B): um conjunto único
-                para a oferta + data, igual aos temas. -->
-                <div>
-                    <label class="form-label fw-bold text-secondary">Valores do Esportista (Aula)</label>
-                    <div id="select-valor-aula" class="border rounded p-2 bg-white d-flex flex-wrap gap-3"
-                        style="max-height: 6rem; overflow-y: auto; font-size: 0.8rem;"
-                        aria-describedby="ajuda-valores-aula">
-                        {% for v in valores_esportista_ativos %}
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="valor_ids"
+                <div class="col-md-6">
+                    <div class="painel-chips" id="painel-valores">
+                        <div class="painel-chips-cabecalho">
+                            <span class="painel-chips-titulo" id="titulo-valores">
+                                Valores do Esportista (Aula)
+                                {% if valores_esportista_ativos and not is_readonly %}
+                                <span class="badge text-bg-warning ms-1 align-middle">Obrigatório</span>
+                                {% endif %}
+                            </span>
+                            <span class="badge text-bg-light border painel-chips-contador" id="contador-valores"
+                                data-grupo="select-valor-aula" aria-live="polite"></span>
+                        </div>
+                        <div id="select-valor-aula" class="chips" role="group" aria-labelledby="titulo-valores"
+                            aria-describedby="ajuda-valores-aula">
+                            {% for v in valores_esportista_ativos %}
+                            <input class="btn-check" type="checkbox" name="valor_ids" autocomplete="off"
                                 id="valor-aula-{{ v.id }}" value="{{ v.id }}"
                                 {% if v.id in valores_aula_ids %}checked{% endif %}
                                 {% if is_readonly %}disabled{% endif %}>
-                            <label class="form-check-label" for="valor-aula-{{ v.id }}">{{ v.nome }}</label>
-                        </div>
-                        {% endfor %}
-                        {% for v in valores_aula_inativos %}
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="valor_ids"
+                            <label class="btn btn-sm btn-outline-primary rounded-pill"
+                                for="valor-aula-{{ v.id }}">{{ v.nome }}</label>
+                            {% endfor %}
+                            {% for v in valores_aula_inativos %}
+                            <input class="btn-check" type="checkbox" name="valor_ids" autocomplete="off"
                                 id="valor-aula-{{ v.id }}" value="{{ v.id }}" checked
                                 {% if is_readonly %}disabled{% endif %}>
-                            <label class="form-check-label" for="valor-aula-{{ v.id }}">{{ v.nome }} (inativo)</label>
+                            <label class="btn btn-sm btn-outline-secondary rounded-pill"
+                                for="valor-aula-{{ v.id }}">{{ v.nome }} (inativo)</label>
+                            {% endfor %}
+                            {% if not valores_esportista_ativos and not valores_aula_inativos %}
+                            <span class="text-muted small">Nenhum valor cadastrado no planejamento.</span>
+                            {% endif %}
                         </div>
-                        {% endfor %}
-                        {% if not valores_esportista_ativos and not valores_aula_inativos %}
-                        <span class="text-muted small">Nenhum valor cadastrado no planejamento.</span>
-                        {% endif %}
+                        <small id="ajuda-valores-aula" class="text-muted d-block mt-2">
+                            Marque os valores trabalhados na aula.
+                        </small>
+                        <div id="aviso-valor-pendente" class="alert alert-warning py-2 mt-2 mb-0 d-none" role="alert">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            <span id="aviso-valor-pendente-texto"></span>
+                        </div>
                     </div>
-                    <small id="ajuda-valores-aula" class="text-muted d-block mt-1" style="font-size: 0.7rem;">
-                        Marque os valores trabalhados na aula.
-                    </small>
                 </div>
 
             </div>
+        </section>
 
-            <!-- COLUNA DIREITA: Textareas empilhadas -->
-            <div class="col-md-{% if ofertas|length >= 2 %}6{% else %}8{% endif %}">
-                <div class="mb-2">
+        <!-- 3) REGISTRO DA AULA: atividades e observações -->
+        <section class="p-3 border-top" aria-labelledby="titulo-registro-aula">
+            <div class="secao-aula-titulo" id="titulo-registro-aula">Registro da aula</div>
+            <div class="row g-3">
+                <div class="col-md-6">
                     <label for="atividades_aula" class="form-label fw-bold text-primary mb-1">
                         <i class="bi bi-list-check me-2"></i>Atividades da aula
                     </label>
                     <textarea id="atividades_aula" name="atividades" class="form-control form-control-sm border-secondary shadow-none"
-                        rows="2" placeholder="Ex.: Observação da direção do vento...">{{ atividades_salvas or '' }}</textarea>
+                        rows="3" placeholder="Ex.: Observação da direção do vento...">{{ atividades_salvas or '' }}</textarea>
                 </div>
-                
-                <div>
-                     <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
-                         <i class="bi bi-chat-left-dots-fill me-2"></i>Observações da Aula
-                     </label>
-                     <textarea id="observacoes_aula" name="observacoes" class="form-control form-control-sm border-secondary shadow-none"
-                         rows="2" placeholder="Ex.: Turma com dificuldades no tema...">{{ obs_salva or '' }}</textarea>
-                </div>
-
-                <div class="mt-2 text-end">
-                     <small class="text-muted" style="font-size: 0.75rem;">
-                         <i class="bi bi-info-circle me-1"></i>O conteúdo de atividades e observações será arquivado no diário de classe da turma.
-                     </small>
+                <div class="col-md-6">
+                    <label for="observacoes_aula" class="form-label fw-bold text-primary mb-1">
+                        <i class="bi bi-chat-left-dots-fill me-2"></i>Observações da Aula
+                    </label>
+                    <textarea id="observacoes_aula" name="observacoes" class="form-control form-control-sm border-secondary shadow-none"
+                        rows="3" placeholder="Ex.: Turma com dificuldades no tema...">{{ obs_salva or '' }}</textarea>
                 </div>
             </div>
-            
-        </div>
+            <div class="mt-2 text-end">
+                <small class="text-muted" style="font-size: 0.75rem;">
+                    <i class="bi bi-info-circle me-1"></i>O conteúdo de atividades e observações será arquivado no diário de classe da turma.
+                </small>
+            </div>
+        </section>
     </div>
 
     <!-- QUADRO DE FREQUÊNCIA -->
@@ -320,11 +339,6 @@ turma_curso quando há oferta. #}
         </div>
     </div>
 
-    <div id="aviso-valor-pendente" class="alert alert-warning py-2 mt-3 mb-0 d-none" role="alert">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        <span id="aviso-valor-pendente-texto"></span>
-    </div>
-
     <div class="d-flex justify-content-end mt-3 mb-4">
         {% if not is_readonly %}
         <button class="btn btn-success px-5">Salvar</button>
@@ -357,5 +371,50 @@ turma_curso quando há oferta. #}
 </div>
 <script src="{{ url_for('static', filename='js/aluno_info_professor.js') }}"></script>
 {% endif %}
+
+<style>
+    /* AJ16-D — lançamento: quadro de dados da aula */
+    .card-dados-aula .secao-aula-titulo {
+        font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+        text-transform: uppercase; color: var(--bs-secondary-color); margin-bottom: .6rem;
+    }
+    .painel-chips {
+        height: 100%; padding: .75rem; background: var(--bs-body-bg);
+        border: 1px solid var(--bs-border-color); border-radius: .5rem;
+    }
+    .painel-chips-cabecalho {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: .5rem; margin-bottom: .6rem;
+    }
+    .painel-chips-titulo { font-weight: 600; font-size: .9rem; }
+    .painel-chips .chips {
+        display: flex; flex-wrap: wrap; gap: .4rem; max-height: 10rem; overflow-y: auto;
+    }
+    .painel-chips .chips .btn { font-size: .8rem; }
+    .painel-chips-contador:empty { display: none; }
+    /* realça o painel de valores quando o JS exibe o aviso de pendência */
+    .painel-chips:has(#aviso-valor-pendente:not(.d-none)) {
+        border-color: var(--bs-danger); box-shadow: 0 0 0 .15rem rgba(var(--bs-danger-rgb), .15);
+    }
+</style>
+<script>
+    // AJ16-D — contador "N de M selecionados" dos grupos de chips (somente apresentação)
+    (function () {
+        function atualizar(contador) {
+            var grupo = document.getElementById(contador.getAttribute('data-grupo'));
+            if (!grupo) { return; }
+            var caixas = grupo.querySelectorAll('input[type="checkbox"]');
+            var marcadas = grupo.querySelectorAll('input[type="checkbox"]:checked').length;
+            contador.textContent = caixas.length
+                ? (marcadas ? marcadas + ' de ' + caixas.length + ' selecionados' : 'nenhum selecionado')
+                : '';
+        }
+        document.querySelectorAll('.painel-chips-contador').forEach(function (contador) {
+            var grupo = document.getElementById(contador.getAttribute('data-grupo'));
+            atualizar(contador);
+            if (grupo) { grupo.addEventListener('change', function () { atualizar(contador); }); }
+        });
+    })();
+</script>
 
 {% endblock %}
