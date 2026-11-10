@@ -250,11 +250,6 @@ def frequencia():
                 abort(403)
 
         data_post = (request.form.get('data') or request.form.get('data_hidden') or '').strip()
-        if turma_post_id.isdigit() and data_post:
-            contexto = carregar_contexto_turma(int(turma_post_id))
-            if data_post not in contexto.get('datas', []):
-                flash('A data informada não pertence ao calendário válido da turma.', 'warning')
-                return redirect(url_for('registros.frequencia', turma_id=turma_post_id))
 
         # Onda 4 (Fase 4, D2): resolve a oferta ANTES de gravar.
         # Decisão do responsável: com 2+ ofertas ativas a escolha é exigida e
@@ -337,6 +332,35 @@ def frequencia():
         ):
             abort(403)
 
+        if turma_post_id.isdigit() and data_post:
+            # AJ16-E: a data precisa pertencer ao MESMO calendário que a tela
+            # oferece no <select name="data"> — com oferta resolvida é a grade
+            # da oferta (`datas_aula_oferta`, mesma fonte de `situacao_datas` e
+            # do seletor do GET); sem oferta é o calendário legado da turma
+            # (`gerar_datas` via `carregar_contexto_turma`). Antes o POST
+            # validava sempre contra o calendário da turma, o que rejeitava
+            # datas legítimas da oferta — inclusive a "próxima pendente" —
+            # quando a vigência da oferta divergia da vigência da turma (ou a
+            # turma não tinha vigência própria).
+            contexto_post = carregar_contexto_turma(int(turma_post_id))
+            if oferta_post is not None:
+                datas_lancaveis = {
+                    dia.strftime('%Y-%m-%d')
+                    for dia in datas_aula_oferta(
+                        oferta_post,
+                        limite=get_local_now().date(),
+                        blocked=_blocked_dates_str(contexto_post['turma']),
+                    )
+                }
+            else:
+                datas_lancaveis = set(contexto_post.get('datas', []))
+            if data_post not in datas_lancaveis:
+                flash(
+                    'A data informada não pertence ao calendário válido da turma.',
+                    'warning',
+                )
+                return redirect(url_for('registros.frequencia', **redirect_back))
+
         form_data = request.form
         if oferta_post is not None:
             # Rejeita lançamentos de alunos fora da pauta da oferta: chaves
@@ -384,7 +408,18 @@ def frequencia():
             flash(str(exc), 'warning')
             return redirect(url_for('registros.frequencia', **redirect_back))
         if not data:
-            flash("Preencha a data da aula antes de salvar.", "warning")
+            if data_post:
+                # AJ16-E: a data foi enviada e já passou pela validação de
+                # calendário — um retorno sem data aqui só acontece por uma
+                # exceção interna de `salvar_frequencia` (já registrada no
+                # log). Não é "falta de data": mostra erro honesto em vez da
+                # mensagem enganosa "Preencha a data da aula antes de salvar.".
+                flash(
+                    'Não foi possível salvar a frequência. Tente novamente.',
+                    'danger',
+                )
+            else:
+                flash("Preencha a data da aula antes de salvar.", "warning")
             return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
 
         flash('Frequência salva com sucesso!', 'success')
