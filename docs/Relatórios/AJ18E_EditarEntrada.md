@@ -90,7 +90,28 @@ Qualquer exceção inesperada faz `rollback` e é reenviada, de modo que a data 
 
 **Drift de logs:** o rótulo `"Alteração da data de entrada na oferta"` foi registrado em `ROTULOS_SEM_LINHA` (contagem 10 → 11) e em `CATEGORIA_ESPERADA` como `edicao`, seguindo o padrão de `"Enturmação de aluno na oferta"`.
 
-**Snapshot:** `tests/snapshots/aj6b6_admin_registros_ver_turma.txt` regenerado após conferir que a diferença palavra a palavra se limita à nova região (linha "Desde o início" na célula do aluno, botão "Entrada", modal AJ18-E e bloco JS); nenhuma alteração fora dela.
+**Snapshots (AJ6-B3 e AJ6-B6):** além de
+`tests/snapshots/aj6b6_admin_registros_ver_turma.txt` (commit `894c042`), o
+AJ18-E altera a ficha `/turma/<id>` nos golden de
+`test_aj6b3_snapshot_nao_professor.py`. A comparação token a token (HTML
+normalizado, tokens separados por espaço) dos **10** arquivos
+`aj6b3_{perfil}_{t1,t2}.txt` mostrou que **todas** as diferenças estão
+confinadas à região nova — nenhuma mudança fora dela:
+
+| Perfis | Arquivos | Tokens (novo/antigo) | Diferenças |
+|---|---|---|---|
+| admin, pedagogico, secretaria | `aj6b3_{perfil}_{t1,t2}.txt` (6) | +450 / -10 | linha "Desde o início" por aluno (3 trocas), 1 botão "Entrada" por aluno (3 inserções de 21 tokens), modal `#modalEntrada` (1 inserção de 84 tokens) e bloco JS (comentário/seletor + 259 tokens) |
+| gerencia, servico_social | `aj6b3_{perfil}_{t1,t2}.txt` (4) | +303 / -10 | apenas linha "Desde o início" por aluno (3 trocas) e bloco JS (comentário/seletor + 259 tokens); **sem botão e sem modal** |
+
+Os 10 arquivos foram regenerados com `AJ6B4_ATUALIZAR_SNAPSHOTS=1` e o teste
+passou sem a variável. Commit dos snapshots: **`cd01033`**. Regressões
+relacionadas a `ver_turma`/`detalhe.html`: `test_aj6b3`, `test_aj6b6`,
+`test_aj18e`, `test_aj6b5` (snapshot da lista + navegação), `test_aj6b4`,
+`test_aj6b2`, `test_aj6b3_escopo`, `test_leituras_residuais_grade_h3f`,
+`test_filtros_turmas`, `test_conselho_ui`, `test_g1p2_links_impressao`,
+`test_i1_guardas_por_oferta` e `test_turma_curso_lista` — **28 passed** no
+direcionado (`aj6b3` + `aj6b6` + `aj18e`) e **117 passed** nas demais
+regressões que tocam `ver_turma`/`detalhe.html`.
 
 ---
 
