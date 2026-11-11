@@ -288,3 +288,63 @@ function salvarFechamento() {
         alert("Erro ao salvar o fechamento: " + error.message);
     });
 }
+
+
+// -------------------------------------------------------------------------
+// FUNÇÕES DE IMPRESSÃO, EXPORTAÇÃO E FECHAMENTO
+// -------------------------------------------------------------------------
+
+document.addEventListener('DOMContentLoaded', function() {
+    const alunos = document.querySelectorAll('.aluno-card');
+    if (alunos.length === 0) return;
+    
+    let currentIndex = 0;
+    const total = alunos.length;
+    
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const progressPercent = document.getElementById('progressPercent');
+
+    function updateView() {
+        // Mostra apenas o card do aluno atual
+        alunos.forEach((card, index) => {
+            card.style.display = index === currentIndex ? 'block' : 'none';
+        });
+        
+        // Atualiza a exibição dos botões
+        if (btnPrev) btnPrev.style.display = currentIndex === 0 ? 'none' : 'inline-block';
+        if (btnNext) btnNext.style.display = currentIndex === total - 1 ? 'none' : 'inline-block';
+        
+        // Atualiza a barra de progresso
+        const percent = ((currentIndex + 1) / total) * 100;
+        if (progressBar) {
+            progressBar.style.width = percent + '%';
+            progressBar.setAttribute('aria-valuenow', percent);
+        }
+        if (progressText) {
+            progressText.innerText = `Aluno ${currentIndex + 1} de ${total}`;
+        }
+        if (progressPercent) {
+            progressPercent.innerText = Math.round(percent) + '%';
+        }
+    }
+
+    // Função de navegação exposta para o HTML
+    window.mudarAluno = function(direction) {
+        currentIndex += direction;
+        if (currentIndex < 0) currentIndex = 0;
+        if (currentIndex >= total) currentIndex = total - 1;
+        
+        updateView();
+        
+        // Rola a tela suavemente para a barra de progresso no topo da página
+        const container = document.getElementById('progressContainer');
+        if (container) {
+            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    updateView(); // Inicializa o layout
+});

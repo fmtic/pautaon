@@ -2,18 +2,19 @@
 
 {% block content %}
 {# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
-   continua sendo apenas o texto da opção, sem a letra. #}
+continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="text-primary fw-bold mb-0">Conselho da Turma</h2>
             {# D5.2 (Q1): a avaliação coletiva é da OFERTA, não mais da turma #}
-            <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta %} | {{ oferta.curso.nome }}{% endif %}</p>
+            <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta
+                %} | {{ oferta.curso.nome }}{% endif %}</p>
         </div>
         {# Rota canônica do painel: `main.painel` monta `entradas`, `aulas_pendentes`
-           e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
-           mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
+        e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
+        mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
         <a href="{{ url_for('main.painel') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar ao Painel
         </a>
@@ -69,13 +70,14 @@
                     {% for pergunta in perguntas_turma %}
                     <div class="col-md-6 mb-3">
                         <div class="p-3 bg-white rounded border h-100 shadow-sm">
-                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ loop.index }}. {{ pergunta.texto }}</label>
+                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ loop.index }}. {{
+                                pergunta.texto }}</label>
 
                             {% if pergunta.opcoes %}
                             <div class="mb-2">
                                 {% for opcao in pergunta.opcoes.split(' | ') %}
                                 <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
-                                    style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
+                                    style="font-size: 1rem; padding: 0.375rem 0.75rem; text-align: justify;"
                                     onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = '{{ opcao }}'">
                                     {{ letras[loop.index0] }}) {{ opcao }}
                                 </button>
@@ -94,7 +96,8 @@
         </div>
 
         <div class="text-center mb-5">
-            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit" class="btn btn-primary btn-lg px-5 shadow">
+            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit"
+                class="btn btn-primary btn-lg px-5 shadow">
                 <i class="bi bi-save me-2"></i> Salvar Avaliação
             </button>{% endif %}
         </div>

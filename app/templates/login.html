@@ -10,7 +10,6 @@
   <link rel="shortcut icon" href="{{ informacao_padrao.favicon_url }}" type="image/png" />
   <style>
     body {
-      /* Degradê Azul Profissional */
       background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
       height: 100vh;
     }
@@ -19,11 +18,9 @@
       border: none;
       border-radius: 15px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-      /* Sombra mais profunda para destacar */
     }
 
     .btn-login {
-      /* Botão combinando com o fundo azul */
       background: #1e3c72;
       border: none;
       padding: 12px;
@@ -33,19 +30,30 @@
 
     .btn-login:hover {
       background: #162a50;
-      /* Azul mais escuro no hover */
       transform: translateY(-2px);
     }
+    
+    .btn-google {
+      background-color: #fff;
+      color: #3c4043;
+      border: 1px solid #dadce0;
+      padding: 10px;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+    
+    .btn-google:hover {
+      background-color: #f8f9fa;
+      border-color: #d2e3fc;
+      box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+    }
 
-    /* Cor do ícone da logo combinando */
     .text-primary {
       color: #1e3c72 !important;
     }
 
-    /* Estilo para os inputs */
     .input-group-text {
       background: #f8f9fa;
-      /* Fundo leve para o ícone */
       border-right: none;
       color: #1e3c72;
     }
@@ -60,10 +68,31 @@
       border-color: #dee2e6;
     }
 
-    /* Cor de foco para o input-group */
     .input-group:focus-within {
       box-shadow: 0 0 0 0.25rem rgba(30, 60, 114, 0.25);
       border-radius: 0.375rem;
+    }
+    
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+    
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid #dee2e6;
+    }
+    
+    .divider:not(:empty)::before {
+      margin-right: .25em;
+    }
+    
+    .divider:not(:empty)::after {
+      margin-left: .25em;
     }
   </style>
 </head>
@@ -76,7 +105,6 @@
           <div class="text-center mb-4">
             <img src="{{ informacao_padrao.logo_principal_url }}" alt="{{ informacao_padrao.nome_instituicao }}"
               class="img-fluid mb-3" style="max-height: 90px" />
-            <!-- <h4 class="fw-bold">Pauta Online</h4> -->
             <p class="text-muted small">Entre com suas credenciais</p>
           </div>
 
@@ -87,7 +115,6 @@
           </div>
           {% endfor %} {% endif %} {% endwith %}
 
-          <!-- O formulário de login aceita credenciais locais ou do domínio AD/LDAP. -->
           <form method="POST" action="/login">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
@@ -101,7 +128,6 @@
             </div>
 
             <div class="mb-4">
-              <!-- A senha é validada contra o banco local ou contra o domínio, conforme o fluxo implementado. -->
               <label class="form-label small fw-bold">Senha</label>
               <div class="input-group">
                 <span class="input-group-text text-muted"><i class="bi bi-lock-fill"></i></span>
@@ -114,22 +140,31 @@
             </div>
 
             <button type="submit" class="btn btn-primary btn-login w-100 text-white shadow-sm">
-              ACESSAR SISTEMA
+              ACESSAR
             </button>
           </form>
+          
+          <!-- Separador e Botão Google -->
+          <div class="divider text-muted small">OU</div>
+          
+          <a href="/login/google" class="btn btn-google w-100 d-flex align-items-center justify-content-center shadow-sm rounded-3">
+            <img class="report-logo" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" style="width: 80px; margin-right: 5px;">
+            E-mail Institucional
+          </a>
+
           <!-- Termos -->
-          <div class="text-center mt-3">
-            <a href="/politica_privacidade" class="text-white text-decoration-none me-3"
+          <div class="text-center mt-4">
+            <a href="/politica_privacidade" class="text-decoration-none me-3"
               style="font-size: 0.85rem; color: #6b3131 !important;">
               Política de Privacidade
             </a>
-            <a href="/termos_servico" class="text-white text-decoration-none"
+            <a href="/termos_servico" class="text-decoration-none"
               style="font-size: 0.85rem; color: #6b3131 !important;">
               Termos de Serviço
             </a>
           </div>
 
-          <div class="text-center mt-4">
+          <div class="text-center mt-3">
             <small class="text-muted">Licenciado para {{ informacao_padrao.nome_instituicao or
               'pautaON' }}</small>
           </div>
