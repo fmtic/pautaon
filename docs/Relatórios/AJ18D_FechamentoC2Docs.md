@@ -203,7 +203,7 @@ Nenhuma dessas lacunas foi preenchida nesta tarefa — ficam registradas para um
 | `e75d619` | `test(aj18c2): preserva linha em branco final do teste apos execucao da suite` | `tests/test_aj18c2_entrada_ui.py` |
 | `b2dd8d9` | `refactor(aj18c2): centraliza seletor de radios de aluno e cobre inscricao inativa e outra oferta` | `app/static/js/frequencia.js`, `tests/test_aj18c2_entrada_ui.py` |
 | `a6fe6c6` | `docs(aj18d): fechamento do C2, auditoria disabled, MER e backlog` | `docs/Relatórios/AJ18D_FechamentoC2Docs.md`, `docs/Relatórios/AJ18C2_EntradaTela.md`, `app/models/MER.md`, `backlog_desenvolvimento.md` |
-| `AJ18-D2` | `docs(aj18d2): corrige head de producao no MER, backlog e relatorio` | `app/models/MER.md`, `backlog_desenvolvimento.md`, `docs/Relatórios/AJ18D_FechamentoC2Docs.md` |
+| `71ff568` | `docs(aj18d2): corrige head de producao no MER, backlog e relatorio` | `app/models/MER.md`, `backlog_desenvolvimento.md`, `docs/Relatórios/AJ18D_FechamentoC2Docs.md` |
 
 O hash deste commit de documentação é registrado no commit imediatamente seguinte, que altera apenas esta linha do relatório (o hash de um commit não pode conter o próprio hash).
 
@@ -251,4 +251,4 @@ Observações: `app/models/MER.md:39` ("Não há ambiente de produção real") �
 - Head do código: **`1fdc7c03bdc2`** (AJ18-B).
 - Pendência: **1 revisão** (`1fdc7c03bdc2`).
 - Nenhum código de aplicação, migration ou teste foi alterado.
-- Commit deste ajuste: `AJ18-D2` (hash registrado no commit seguinte).
+- Commit deste ajuste: `71ff568` (MER, backlog e este relatório); o hash foi registrado no commit imediatamente seguinte, que altera apenas esta linha.
