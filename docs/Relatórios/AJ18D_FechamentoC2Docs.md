@@ -202,7 +202,9 @@ Nenhuma dessas lacunas foi preenchida nesta tarefa — ficam registradas para um
 |---|---|---|
 | `e75d619` | `test(aj18c2): preserva linha em branco final do teste apos execucao da suite` | `tests/test_aj18c2_entrada_ui.py` |
 | `b2dd8d9` | `refactor(aj18c2): centraliza seletor de radios de aluno e cobre inscricao inativa e outra oferta` | `app/static/js/frequencia.js`, `tests/test_aj18c2_entrada_ui.py` |
-| *(este relatório)* | `docs(aj18d): fechamento do C2, auditoria disabled, MER e backlog` | `docs/Relatórios/AJ18D_FechamentoC2Docs.md`, `docs/Relatórios/AJ18C2_EntradaTela.md`, `app/models/MER.md`, `backlog_desenvolvimento.md` |
+| `a6fe6c6` | `docs(aj18d): fechamento do C2, auditoria disabled, MER e backlog` | `docs/Relatórios/AJ18D_FechamentoC2Docs.md`, `docs/Relatórios/AJ18C2_EntradaTela.md`, `app/models/MER.md`, `backlog_desenvolvimento.md` |
+
+O hash deste commit de documentação é registrado no commit imediatamente seguinte, que altera apenas esta linha do relatório (o hash de um commit não pode conter o próprio hash).
 
 Os commits anteriores da branch permanecem: `43e22ce` (UI), `85ba662` (relatório C2).
 
