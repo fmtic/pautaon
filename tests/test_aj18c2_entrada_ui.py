@@ -394,3 +394,4 @@ def test_js_conceitos_marcados_ignora_disabled(node):
 
     # E não gera pendência de valor obrigatório
     assert saida["pendenciaSoDesabilitado"] is False
+
