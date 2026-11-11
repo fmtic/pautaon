@@ -137,7 +137,7 @@ Comando direcionado executado (`.\.venv\Scripts\python.exe -m pytest -q ...`):
 | `tests/test_grade_horario_js.py` | 12 passed |
 | **Total** | **105 passed** |
 
-**Suíte completa** (executada ao final pelo responsável): **1699 passed**. A referência anterior do C1 era 1692 passed; o C2 acrescentou 7 testes (3 no fechamento).
+**Suíte completa de referência:** **1699 passed** (o C1 fechou em 1692; o responsável confirma a execução final). A referência anterior do C1 era 1692 passed; o C2 acrescentou 7 testes (3 no fechamento).
 
 **Ruff** (`--select F821,F811,F841,F401`) nos arquivos Python alterados (`app/registros/core.py`, `tests/test_aj18c2_entrada_ui.py`): **All checks passed**. A varredura de todo o `tests/` aponta **13 F401 preexistentes** em arquivos não tocados (imports não usados), mantidos para não misturar escopo. O JS é validado pelo harness Node dos testes, não pelo Ruff.
 
@@ -212,7 +212,7 @@ Os commits anteriores da branch permanecem: `43e22ce` (UI), `85ba662` (relatóri
 
 ## 9. Pendências
 
-1. **Suíte completa:** responsável executa ao final; resultado esperado/registrado: **1699 passed**.
+1. **Suíte completa:** confirmar a execução final; referência desta entrega: **1699 passed**.
 2. **Deploy conjunto:** a migration `1fdc7c03bdc2` deve subir **junto** com o código do AJ18. Produção está em `c4d5e6f7a8b9` (26 revisões atrás); inscrições existentes ficam `NULL` e mantêm o comportamento atual — **sem backfill**.
 3. **AJ18-E:** agregados/relatórios e edição posterior da `data_entrada_oferta` **não** foram implementados. BI, histórico, certificados e pauta impressa continuam lendo o que foi gravado (D4).
 4. **Teste manual:** enturmar aluno depois do início em uma oferta real; conferir `"Entrou em dd/mm"`, inputs bloqueados, POST manipulado ignorado/auditado e pendências/cobertura sem as aulas anteriores à entrada.
