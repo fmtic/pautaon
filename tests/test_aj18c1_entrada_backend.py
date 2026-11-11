@@ -372,7 +372,7 @@ def test_regressao_sem_data_entrada_igual_antes(app):
     assert situacao["proxima_pendente"] == _iso(datas[1])
 
 
-# 8) Re-enturmao
+# 8) Re-enturmação
 def test_re_enturmatacao_usa_inscricao_ativa(app):
     ids = _seed(app, entrada_dois=None)
     datas = _datas_ate_hoje(app, ids, ids["oferta"])
@@ -381,47 +381,7 @@ def test_re_enturmatacao_usa_inscricao_ativa(app):
 
     from app.models import Inscricao
     with app.app_context():
-        antiga = Inscricao(
-            aluno_id=ids["aluno_dois"], turma_id=ids["turma"],
-            turma_curso_id=ids["oferta"], ativo=False,
-            data_entrada_oferta=None,
-            data_desativacao=HOJE,
-            motivo_desativacao="re-enturmao",
-        )
-        db.session.add(antiga)
-        db.session.flush()
-        antiga_id = antiga.id
-
-        nova = Inscricao(
-            aluno_id=ids["aluno_dois"], turma_id=ids["turma"],
-            turma_curso_id=ids["oferta"], ativo=True,
-            data_entrada_oferta=date(2026, 10, 12),
-        )
-        db.session.add(nova)
-        db.session.commit()
-
-    situacao = _situacao(app, ids, ids["oferta"])
-    assert situacao["status"][_iso(data_antes)] == "pendente"
-
-    _lancar_direto(app, ids, ids["oferta"], data_antes,
-                   alunos=[ids["aluno_um"]])
-    situacao = _situacao(app, ids, ids["oferta"])
-    assert situacao["status"][_iso(data_antes)] == "lancada"
-
-    with app.app_context():
-        db.session.delete(db.session.get(Inscricao, antiga_id))
-        db.session.commit()
-
-# 8) Re-enturmao
-def test_re_enturmatacao_usa_inscricao_ativa(app):
-    ids = _seed(app, entrada_dois=None)
-    datas = _datas_ate_hoje(app, ids, ids["oferta"])
-    data_antes = next(d for d in datas if d < date(2026, 10, 12))
-    assert data_antes
-
-    from app.models import Inscricao
-    with app.app_context():
-        # Remove a inscricao antiga ativa do seed e criar nova com entrada tardia.
+        # Desativa a inscrição ativa do seed e cria nova com entrada tardia.
         antiga = db.session.query(Inscricao).filter_by(
             aluno_id=ids["aluno_dois"], turma_curso_id=ids["oferta"],
             ativo=True).one()
@@ -430,7 +390,7 @@ def test_re_enturmatacao_usa_inscricao_ativa(app):
         antiga.motivo_desativacao = "re-enturmao"
         db.session.add(antiga)
 
-        # Nova inscricao ativa com entrada tardia.
+        # Nova inscrição ativa com entrada tardia.
         nova = Inscricao(
             aluno_id=ids["aluno_dois"], turma_id=ids["turma"],
             turma_curso_id=ids["oferta"], ativo=True,
@@ -446,3 +406,95 @@ def test_re_enturmatacao_usa_inscricao_ativa(app):
                    alunos=[ids["aluno_um"]])
     situacao = _situacao(app, ids, ids["oferta"])
     assert situacao["status"][_iso(data_antes)] == "lancada"
+
+
+# 9) Regressão AJ18-C1: total_aulas_realizadas independente de grade
+def test_total_aulas_realizadas_sem_grade(app):
+    """Aula lançada em oferta sem grade (dias_semana=None) conta em
+    total_aulas_realizadas.
+
+    Antes do fix do C1b, total_aulas_realizadas era mapeado para
+    aulas_lancadas_qtd (de cobertura_pauta), que depende do calendário da
+    oferta. Sem grade, datas_aula_oferta devolve [] e o campo zerava.
+    O fix restaura total_aulas_realizadas = len(datas_ordenadas) —
+    número de datas distintas com frequência lançada, independente de grade.
+    """
+    with app.app_context():
+        un = Unidade(nome="Unidade Reg C1", ativo=True)
+        db.session.add(un)
+        db.session.flush()
+
+        prof = User(
+            name="Prof Reg C1", email="prof.regc1@x.com",
+            role="professor", first_login=False, unidade_id=un.id,
+        )
+        prof.set_password("SenhaLocal!123")
+        db.session.add(prof)
+        db.session.flush()
+
+        ini = HOJE - timedelta(days=30)
+        fim = HOJE + timedelta(days=30)
+        periodo = PeriodoLetivo(
+            nome="Per Reg C1", data_inicio=ini, data_fim=fim,
+            unidade_id=un.id, ativo=True,
+        )
+        db.session.add(periodo)
+        db.session.flush()
+
+        turma = Turma(
+            nome="Turma Reg C1", unidade_id=un.id,
+            periodo_letivo_id=periodo.id, professor_id=prof.id,
+            ativo=True, data_inicio=ini, data_fim=fim,
+        )
+        db.session.add(turma)
+        db.session.flush()
+
+        curso = Curso(nome="Curso Reg C1", unidade_id=un.id, ativo=True)
+        db.session.add(curso)
+        db.session.flush()
+
+        # Oferta SEM grade (sem dias_semana → datas_aula_oferta devolve [])
+        oferta = nova_oferta(
+            turma.id, curso.id, un.id, principal=True,
+            professor_id=prof.id,
+            # Sem dias_semana/hora → grade vazia → datas_aula_oferta devolve []
+        )
+
+        aluno = Aluno(nome="Aluno Reg C1", unidade_id=un.id, ativo=True)
+        db.session.add(aluno)
+        db.session.flush()
+
+        from app.models import Inscricao
+        insc = Inscricao(
+            aluno_id=aluno.id, turma_id=turma.id,
+            turma_curso_id=oferta.id, ativo=True,
+        )
+        db.session.add(insc)
+
+        # Lança frequência para 1 data avulsa (fora de qualquer calendário)
+        data_avulsa = HOJE - timedelta(days=3)
+        db.session.add(Frequencia(
+            aluno_id=aluno.id, turma_id=turma.id,
+            turma_curso_id=oferta.id, data=data_avulsa,
+            conceito=ConceitoFrequencia.A, unidade_id=un.id,
+        ))
+        db.session.commit()
+
+        oferta_id = oferta.id
+        turma_id = turma.id
+        prof_id = prof.id
+
+    stats = obter_estatisticas_professor(
+        prof_id, turma_id=turma_id, turma_curso_id=oferta_id,
+    )
+    resumo = stats["resumo_geral"]
+    # Uma data foi lançada → total_aulas_realizadas deve ser 1
+    assert resumo["total_aulas_realizadas"] == 1, (
+        f"total_aulas_realizadas zerou com oferta sem grade; "
+        f"veio {resumo['total_aulas_realizadas']!r}"
+    )
+    # cobertura_pauta deve ter aulas_esperadas=0 (sem grade, sem calendário)
+    cob = stats["cobertura_pauta"]
+    assert cob["aulas_esperadas"] == 0, (
+        f"aulas_esperadas deveria ser 0 sem grade; veio {cob['aulas_esperadas']!r}"
+    )

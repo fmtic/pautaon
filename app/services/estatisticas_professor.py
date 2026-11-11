@@ -379,7 +379,7 @@ def obter_estatisticas_professor(
 
     resumo_geral = {
         "total_alunos": len(alunos_processados),
-        "total_aulas_realizadas": aulas_lancadas_qtd,
+        "total_aulas_realizadas": len(datas_ordenadas),
         "frequencia_media_turma": taxa_presenca_turma,
         "iqr_nota": iqr_nota,
         "pct_alto_rendimento": round((qtd_alto_rend / len(alunos_processados) * 100), 1) if alunos_processados else 0.0,
