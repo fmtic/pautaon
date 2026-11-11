@@ -104,3 +104,45 @@ Nenhum teste da AJ18-C executado (implementação pendente). Testes direcionados
 4. Item (5): testes direcionados (SQLite) e verificação de regressão/snapshots conforme especificação.
 5. Item (6): `ruff --select F821,F811,F841,F401` nos arquivos alterados.
 6. Item (7): commit com paths explícitos + hash e atualização deste relatório com mudanças por item, diffs de snapshot (se houver) e resultados.
+
+# AJ18-C1 — Conclusão dos testes backend
+
+Todos os testes da AJ18-C1 foram desenvolvidos e passaram com sucesso no branch j18-c-entrada-lancamento.
+
+## Testes executados (8/8 passing)
+
+1. **test_post_ignora_aluno_entrada_posterior_salva_demais** — POST /frequencia ignora luno_* de aluno com entrada posterior à data (nada gravado, LogAcao registrado) e salva os demais; entrada <= data e NULL gravam normalmente.
+
+2. **test_salvar_frequencia_defesa_entrada_posterior** — Defesa em salvar_frequencia chamada direta: aluno de entrada posterior não grava e não dá erro; linhas pré-entrada existentes não são alteradas (D4).
+
+3. **test_situacao_datas_aluno_entrada_tardia** — situacao_datas_oferta / pendências com 1 aluno de entrada tardia: datas anteriores à entrada NÃO ficam pendentes por causa dele; datas a partir da entrada exigem lançamento; completar o lançamento dos demais fecha a data.
+
+4. **test_proxima_pendente_nao_aponta_nao_entrado** — `proxima_pendente` nunca aponta data em que só falta aluno ainda não entrado.
+
+5. **test_data_sem_aluno_esperado_nao_eh_pendente** — Data sem nenhum aluno esperado não é pendente nem "próxima pendente" (comportamento de pauta vazia documentado).
+
+6. **test_estatisticas_professor_cobertura_entrada_tardia** — statisticas_professor: ulas_esperadas/lançadas/pendentes e 	axa_cumprimento_pauta respeitam a data de entrada por data.
+
+7. **test_regressao_sem_data_entrada_igual_antes** — Regressão: oferta sem data_entrada_oferta definida → resultados idênticos aos de antes (todos os alunos esperados em toda data).
+
+8. **test_re_enturmatacao_usa_inscricao_ativa** — Re-enturmação: aluno com inscrição antiga inativa e nova inscrição com entrada: usa só a inscrição ativa para decidir se a aula conta para ele.
+
+## Itens concluídos da AJ18-C1
+
+- **(1) Escrita** — POST /frequencia ignora luno_* de entrada futura com LogAcao; defesa em salvar_frequencia.
+- **(2) Denominadores por data** — situacao_datas_oferta, _pendencias_por_ofertas, cobertura de professor usando ula_conta_para_aluno como fonte única.
+- **(6) Qualidade** — Todos os testes direcionados passando com uff --select F821,F811,F841,F401 limpo.
+
+## Pendências para a AJ18-C2
+
+- Interface do usuário: template lancar.html e requencia.js para desabilitar campos, mostrar Entrou em dd/mm nas datas anteriores, validação de valor obrigatório desabilitado, etc.
+- Novos endpoints ou modificações UI não estão neste entregável.
+
+## Hashes dos commits
+
+- 4408b13 — HEAD atual (j18-c-entrada-lancamento), relatório inicial.
+-  ef7718 — AJ18-C1a: escrita ignora aluno_* pós-entrada com LogAcao e defesa.
+- 372e07e — AJ18-C1b: denominadores e cobertura respeitam data de entrada por data.
+- 9151ee5 — AJ18-C1: relatório sem estado 'não implementado' (mudanças, testes, hashes).
+
+Próxima etapa: AJ18-C2 (interface do usuário).
