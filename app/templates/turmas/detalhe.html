@@ -455,15 +455,23 @@
         {% if abrir_modal_entrada and entrada_pendentes %}
         <div class="alert alert-warning small" id="entradaPendentesAviso">
           Existem <strong>{{ entrada_pendentes }}</strong> frequência(s) deste
-          aluno nesta oferta em datas anteriores à nova entrada. Elas
-          <strong>não serão apagadas nem alteradas</strong>. Confirme para
-          continuar.
-          <div class="form-check mt-2">
-            <input class="form-check-input" type="checkbox" name="confirmar"
-              value="1" id="entradaConfirmar" />
-            <label class="form-check-label small" for="entradaConfirmar">
-              Confirmo a alteração mantendo as frequências anteriores.
-            </label>
+          aluno nesta oferta em datas anteriores à nova entrada{% if entrada_pendentes_ini and entrada_pendentes_fim %}
+          (de <strong>{{ entrada_pendentes_ini.strftime('%d/%m/%Y') }}</strong>
+          a <strong>{{ entrada_pendentes_fim.strftime('%d/%m/%Y') }}</strong>){% endif %}.
+          Escolha o que fazer com elas:
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button type="submit" name="acao_anteriores" value="manter"
+              class="btn btn-sm btn-primary fw-bold" id="entradaManter">
+              Manter frequências
+            </button>
+            <button type="submit" name="acao_anteriores" value="remover"
+              class="btn btn-sm btn-danger fw-bold" id="entradaRemover">
+              Remover frequências
+            </button>
+          </div>
+          <div class="text-danger mt-2 mb-0">
+            <strong>Remover é irreversível:</strong> as frequências listadas
+            serão apagadas definitivamente.
           </div>
         </div>
         {% endif %}
@@ -482,7 +490,9 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        {% if not (abrir_modal_entrada and entrada_pendentes) %}
         <button type="submit" class="btn btn-primary fw-bold">SALVAR DATA DE ENTRADA</button>
+        {% endif %}
       </div>
     </form>
   </div>

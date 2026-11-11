@@ -17,6 +17,12 @@
 - **AJ18-E** — agregados/relatórios e demais leitores (histórico, BI, certificados) não foram alterados nesta rodada; avaliar se algum deve respeitar a data de entrada (decisão de produto).
 - **Teste manual** — enturmar aluno após o início em oferta real, conferir "Entrou em dd/mm", bloqueio dos inputs, POST manipulado ignorado/auditado e pendências/cobertura sem contar aulas anteriores à entrada.
 
+### Alterações do dia — 11/11/2026 (AJ18-F — remover frequências anteriores ao avançar a entrada)
+
+Branch `aj18-f-remover-anteriores` (a partir de `nova_feature`), **sem migration**, sem push.
+
+**AJ18-F.** `alterar_entrada` (`app/services/entrada_oferta.py`) passou a suportar `remover_anteriores`: ao avançar a entrada com frequências anteriores, o serviço resume contagem/intervalo (`data < nova`, mesma oferta/aluno, resolução D2 do legado em oferta única) e, se confirmado para remover, apaga essas linhas na **mesma transação** da alteração (sem commit no serviço), retornando `ResultadoAlteracaoEntrada`. `POST /turma/<id>/oferta/<id>/inscricao/<id>/entrada` (`app/registros/turmas.py`) aceita `acao_anteriores` `manter|remover` (inválida → 400; `confirmar=1` legado aceito), reabre o modal com contagem/intervalo e registra `LogAcao` "Alteração da data de entrada na oferta" com `mantidas N` ou `removidas N ... (de/a)`; perfis autorizados inalterados. UI em `turmas/detalhe.html` com escolha explícita manter/remover. `tests/test_aj18f_remover_anteriores.py` cobre escopo, manter/remover, log, atomicidade, 400/403, recuar/igualar, recálculo de pauta/pendências/agregados e legado; `test_aj18e_editar_entrada.py` ajustado para `acao_anteriores=manter`. Direcionados (SQLite memória): **37 passed** (AJ18-F + AJ18-E + snapshots AJ6B3/AJ6B6 regenerados onde a UI mudou); ruff limpo. Relatório `docs/Relatórios/AJ18F_RemoverAnteriores.md`; MER §7.15/§8.3 atualizado.
+
 ### Alterações do dia — 11/11/2026 (AJ18-E — edição da data de entrada na oferta)
 
 Branch `aj18-e-editar-entrada` (a partir de `nova_feature` @ `c5a257b`), **sem migration** (a coluna `1fdc7c03bdc2` já existe), sem push.

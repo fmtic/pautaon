@@ -7,12 +7,14 @@ Fornece:
 - datas_esperadas_do_aluno(inscricao, oferta, ...): calendário cortado.
 - parse_escolha_entrada(valor, oferta, hoje): interpreta "hoje"/"inicio"/YYYY-MM-DD.
 - validar_entrada_na_vigencia(entrada, oferta): valida janela D2.
-- alterar_entrada(inscricao, escolha, hoje): corrige a data de entrada sem
-  desenturmar (AJ18-E), exigindo confirmação quando há frequência anterior.
+- alterar_entrada(inscricao, escolha, hoje, ...): corrige a data de entrada sem
+  desenturmar (AJ18-E) e, opcionalmente, remove as frequências anteriores
+  (AJ18-F), exigindo confirmação quando elas são mantidas.
 """
 from __future__ import annotations
 
 from datetime import date
+from typing import NamedTuple
 
 from app.services.turma_curso import datas_aula_oferta
 
@@ -20,18 +22,38 @@ from app.services.turma_curso import datas_aula_oferta
 class EntradaComLinhasAnteriores(ValueError):
     """A nova entrada deixaria frequências já gravadas antes do piso do aluno.
 
-    Carrega a ``quantidade`` de linhas para o chamador avisar o usuário e só
-    prosseguir com confirmação explícita. Nenhuma linha é apagada ou alterada
-    (D4).
+    Carrega a ``quantidade`` e o intervalo (``data_min``/``data_max``) para o
+    chamador avisar o usuário e só prosseguir com confirmação explícita.
+    Nenhuma linha é apagada ou alterada neste caminho (D4).
     """
 
-    def __init__(self, quantidade: int):
+    def __init__(
+        self,
+        quantidade: int,
+        data_min: date | None = None,
+        data_max: date | None = None,
+    ):
         self.quantidade = quantidade
+        self.data_min = data_min
+        self.data_max = data_max
         super().__init__(
             f"Existem {quantidade} frequência(s) deste aluno nesta oferta em "
             "datas anteriores à nova entrada. Confirme a alteração para "
-            "mantê-las."
+            "mantê-las ou escolha removê-las."
         )
+
+
+class ResultadoAlteracaoEntrada(NamedTuple):
+    """Resultado de ``alterar_entrada`` (AJ18-E/AJ18-F)."""
+
+    anterior: date | None
+    nova: date | None
+    removidas: int = 0
+    removidas_ini: date | None = None
+    removidas_fim: date | None = None
+    anteriores: int = 0
+    anteriores_ini: date | None = None
+    anteriores_fim: date | None = None
 
 
 def vigencia_efetiva(oferta) -> tuple[date | None, date | None]:
@@ -117,13 +139,13 @@ def validar_entrada_na_vigencia(entrada: date, oferta, rotulo: str | None = None
     return entrada, rotulo
 
 
-def contar_frequencias_anteriores(inscricao, entrada: date) -> int:
-    """Quantas frequências do aluno na oferta têm data anterior a ``entrada``.
+def _condicoes_frequencias_anteriores(inscricao, entrada: date):
+    """Filtros SQL das frequências do aluno anteriores a ``entrada``.
 
     Usa a MESMA resolução de oferta/legado D2 dos leitores: quando a oferta é a
     única ativa da turma, linhas com ``turma_curso_id`` NULL também contam como
-    dela (``ofertas_unicas_ativas``). Somente leitura — nenhuma linha é apagada
-    ou alterada (D4).
+    dela (``ofertas_unicas_ativas``). A remoção (AJ18-F) usa exatamente estas
+    condições, então nunca alcança outra oferta nem outro aluno.
     """
     from sqlalchemy import and_, or_
 
@@ -132,7 +154,7 @@ def contar_frequencias_anteriores(inscricao, entrada: date) -> int:
 
     oferta = getattr(inscricao, "turma_curso", None)
     if oferta is None:
-        return 0
+        return None
 
     escopo = [Frequencia.turma_curso_id == oferta.id]
     if oferta.id in ofertas_unicas_ativas([oferta.id]):
@@ -146,22 +168,72 @@ def contar_frequencias_anteriores(inscricao, entrada: date) -> int:
             )
         ]
 
-    return (
-        Frequencia.query.filter(
-            Frequencia.aluno_id == inscricao.aluno_id,
-            Frequencia.data < entrada,
-            Frequencia.conceito.isnot(None),
-            *escopo,
-        ).count()
+    return [
+        Frequencia.aluno_id == inscricao.aluno_id,
+        Frequencia.data < entrada,
+        Frequencia.conceito.isnot(None),
+        *escopo,
+    ]
+
+
+def resumo_frequencias_anteriores(inscricao, entrada: date):
+    """``(quantidade, data_min, data_max)`` das frequências anteriores.
+
+    Uma única consulta agregada; ``(0, None, None)`` quando não há oferta ou
+    linhas. Somente leitura — nenhuma linha é apagada ou alterada.
+    """
+    from sqlalchemy import func
+
+    from app.models import Frequencia
+
+    condicoes = _condicoes_frequencias_anteriores(inscricao, entrada)
+    if not condicoes:
+        return 0, None, None
+
+    quantidade, data_min, data_max = (
+        Frequencia.query.with_entities(
+            func.count(Frequencia.id),
+            func.min(Frequencia.data),
+            func.max(Frequencia.data),
+        )
+        .filter(*condicoes)
+        .one()
     )
+    return int(quantidade or 0), data_min, data_max
 
 
-def alterar_entrada(inscricao, escolha, hoje: date, *, confirmar: bool = False):
+def contar_frequencias_anteriores(inscricao, entrada: date) -> int:
+    """Quantas frequências do aluno na oferta têm data anterior a ``entrada``."""
+    return resumo_frequencias_anteriores(inscricao, entrada)[0]
+
+
+def _remover_frequencias_anteriores(inscricao, entrada: date) -> int:
+    """Remove as frequências anteriores do aluno na oferta (AJ18-F).
+
+    NÃO commita: a remoção entra na mesma transação da alteração da data.
+    Devolve a quantidade efetivamente removida.
+    """
+    from app.models import Frequencia
+
+    condicoes = _condicoes_frequencias_anteriores(inscricao, entrada)
+    if not condicoes:
+        return 0
+    return Frequencia.query.filter(*condicoes).delete(synchronize_session=False)
+
+
+def alterar_entrada(
+    inscricao,
+    escolha,
+    hoje: date,
+    *,
+    confirmar: bool = False,
+    remover_anteriores: bool = False,
+) -> ResultadoAlteracaoEntrada:
     """Corrige ``data_entrada_oferta`` de uma inscrição já existente. NÃO commita.
 
     Reutiliza exatamente a interpretação e a validação do enturmar
     (``parse_escolha_entrada``/``validar_entrada_na_vigencia`` e a vigência
-    efetiva da oferta). Devolve ``(anterior, nova)``.
+    efetiva da oferta).
 
     Regras:
         - ``"inicio"`` grava NULL (desde o início);
@@ -170,8 +242,11 @@ def alterar_entrada(inscricao, escolha, hoje: date, *, confirmar: bool = False):
         - escolha igual ao valor atual é no-op (não altera, não gera log);
         - avançar a data (ou sair de NULL) com frequências já gravadas antes da
           nova entrada exige ``confirmar=True``; sem isso levanta
-          ``EntradaComLinhasAnteriores`` com a quantidade. As linhas não são
-          apagadas nem alteradas (D4);
+          ``EntradaComLinhasAnteriores`` com quantidade e intervalo;
+        - ``remover_anteriores=True`` remove essas frequências na MESMA
+          transação (mesma oferta/aluno, ``data < nova``) e dispensa a
+          confirmação. Só vale no avanço com linhas anteriores; nos demais
+          casos é ignorado sem erro;
         - mover a data para trás ou para NULL nunca exige confirmação.
     """
     oferta = getattr(inscricao, "turma_curso", None)
@@ -193,13 +268,38 @@ def alterar_entrada(inscricao, escolha, hoje: date, *, confirmar: bool = False):
         nova, _rotulo = parse_escolha_entrada(valor, oferta, hoje)
 
     if nova == anterior:
-        return anterior, nova
+        return ResultadoAlteracaoEntrada(anterior, nova)
 
     avanca = nova is not None and (anterior is None or nova > anterior)
-    if avanca and not confirmar:
-        quantidade = contar_frequencias_anteriores(inscricao, nova)
-        if quantidade:
-            raise EntradaComLinhasAnteriores(quantidade)
+    anteriores = 0
+    anteriores_ini = None
+    anteriores_fim = None
+    removidas = 0
+    removidas_ini = None
+    removidas_fim = None
+
+    if avanca:
+        anteriores, anteriores_ini, anteriores_fim = (
+            resumo_frequencias_anteriores(inscricao, nova)
+        )
+
+    if avanca and anteriores:
+        if remover_anteriores:
+            removidas = _remover_frequencias_anteriores(inscricao, nova)
+            removidas_ini, removidas_fim = anteriores_ini, anteriores_fim
+        elif not confirmar:
+            raise EntradaComLinhasAnteriores(
+                anteriores, anteriores_ini, anteriores_fim
+            )
 
     inscricao.data_entrada_oferta = nova
-    return anterior, nova
+    return ResultadoAlteracaoEntrada(
+        anterior,
+        nova,
+        removidas,
+        removidas_ini,
+        removidas_fim,
+        anteriores,
+        anteriores_ini,
+        anteriores_fim,
+    )

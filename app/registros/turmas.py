@@ -1613,6 +1613,8 @@ def ver_turma(id):
     # AJ18-E: reabre o modal de correção da entrada com a contagem devolvida
     # pelo POST (única fonte da verdade). Só faz sentido para quem pode editar.
     entrada_pendentes = None
+    entrada_pendentes_ini = None
+    entrada_pendentes_fim = None
     entrada_escolha = None
     entrada_inscricao_id = None
     abrir_modal_entrada = False
@@ -1632,6 +1634,12 @@ def ver_turma(id):
             if inscricao_entrada is not None:
                 entrada_inscricao_id = inscricao_entrada.id
                 entrada_pendentes = pendentes_arg
+                entrada_pendentes_ini = parse_date(
+                    request.args.get("entrada_pendentes_ini")
+                )
+                entrada_pendentes_fim = parse_date(
+                    request.args.get("entrada_pendentes_fim")
+                )
                 entrada_escolha = request.args.get("entrada_escolha")
                 abrir_modal_entrada = True
 
@@ -1664,6 +1672,8 @@ def ver_turma(id):
         entrada_inscricao_id=entrada_inscricao_id,
         entrada_escolha=entrada_escolha,
         entrada_pendentes=entrada_pendentes,
+        entrada_pendentes_ini=entrada_pendentes_ini,
+        entrada_pendentes_fim=entrada_pendentes_fim,
         **ctx,
     )
 
@@ -1879,13 +1889,29 @@ def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
         abort(404)
 
     escolha = request.form.get("escolha")
-    confirmar = request.form.get("confirmar") == "1"
+    acao_anteriores = request.form.get("acao_anteriores")
+    if acao_anteriores is not None and acao_anteriores not in (
+        "manter",
+        "remover",
+    ):
+        abort(400)
+    # AJ18-F: "manter" equivale à confirmação do AJ18-E; "remover" exclui as
+    # linhas anteriores na mesma transação. O checkbox antigo continua aceito.
+    manter = acao_anteriores == "manter"
+    confirmar = request.form.get("confirmar") == "1" or manter
+    remover_anteriores = acao_anteriores == "remover"
     hoje = get_local_now().date()
 
     try:
-        anterior, nova = alterar_entrada(
-            inscricao, escolha, hoje, confirmar=confirmar
+        resultado = alterar_entrada(
+            inscricao,
+            escolha,
+            hoje,
+            confirmar=confirmar,
+            remover_anteriores=remover_anteriores,
         )
+        anterior = resultado.anterior
+        nova = resultado.nova
         if anterior == nova:
             flash("A data de entrada já é essa; nada foi alterado.", "info")
             return redirect(
@@ -1898,18 +1924,29 @@ def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
 
         from app.models import LogAcao
 
+        detalhes = (
+            f"aluno_id={inscricao.aluno_id} "
+            f'nome="{inscricao.aluno.nome}" '
+            f"turma_id={turma_id} oferta_id={oferta_id} "
+            f"entrada_anterior={_rotulo_data_entrada(anterior)} "
+            f"entrada_nova={_rotulo_data_entrada(nova)}"
+        )
+        if resultado.removidas:
+            detalhes += (
+                f" removidas {resultado.removidas} frequências anteriores a "
+                f"{nova.strftime('%d/%m/%Y')} "
+                f"(de {resultado.removidas_ini.strftime('%d/%m/%Y')} a "
+                f"{resultado.removidas_fim.strftime('%d/%m/%Y')})"
+            )
+        elif resultado.anteriores:
+            detalhes += f" mantidas {resultado.anteriores}"
+
         db.session.add(
             LogAcao(
                 usuario_id=current_user.id,
                 usuario_nome=getattr(current_user, "name", None),
                 acao="Alteração da data de entrada na oferta",
-                detalhes=(
-                    f"aluno_id={inscricao.aluno_id} "
-                    f'nome="{inscricao.aluno.nome}" '
-                    f"turma_id={turma_id} oferta_id={oferta_id} "
-                    f"entrada_anterior={_rotulo_data_entrada(anterior)} "
-                    f"entrada_nova={_rotulo_data_entrada(nova)}"
-                ),
+                detalhes=detalhes,
                 ip=request.remote_addr,
                 unidade_id=turma_obj.unidade_id,
             )
@@ -1917,17 +1954,19 @@ def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
         db.session.commit()
     except EntradaComLinhasAnteriores as exc:
         db.session.rollback()
-        return redirect(
-            url_for(
-                "registros.ver_turma",
-                id=turma_id,
-                oferta_sel=oferta_id,
-                modal="entrada",
-                inscricao=inscricao_id,
-                entrada_escolha=escolha,
-                entrada_pendentes=exc.quantidade,
-            )
-        )
+        parametros = {
+            "id": turma_id,
+            "oferta_sel": oferta_id,
+            "modal": "entrada",
+            "inscricao": inscricao_id,
+            "entrada_escolha": escolha,
+            "entrada_pendentes": exc.quantidade,
+        }
+        if exc.data_min is not None:
+            parametros["entrada_pendentes_ini"] = exc.data_min.isoformat()
+        if exc.data_max is not None:
+            parametros["entrada_pendentes_fim"] = exc.data_max.isoformat()
+        return redirect(url_for("registros.ver_turma", **parametros))
     except ValueError as exc:
         db.session.rollback()
         flash(str(exc), "warning")
@@ -1943,11 +1982,15 @@ def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
     nome_curso = (
         oferta.curso.nome if oferta.curso else f"Curso #{oferta.curso_id}"
     )
-    flash(
+    mensagem = (
         f"Data de entrada de {inscricao.aluno.nome} na oferta "
-        f"{nome_curso} alterada.",
-        "success",
+        f"{nome_curso} alterada."
     )
+    if resultado.removidas:
+        mensagem += (
+            f" {resultado.removidas} frequência(s) anterior(es) removida(s)."
+        )
+    flash(mensagem, "success")
     return redirect(
         url_for("registros.ver_turma", id=turma_id, oferta_sel=oferta_id)
     )

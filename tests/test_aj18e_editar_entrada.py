@@ -314,10 +314,11 @@ def test_frequencia_anterior_exige_confirmacao_e_preserva_linhas(app, client):
     # A reabertura mostra a contagem e a confirmação explícita.
     body = client.get(recusa.headers["Location"]).get_data(as_text=True)
     assert "frequência(s)" in body
-    assert 'name="confirmar"' in body
+    assert 'name="acao_anteriores"' in body
+    assert 'value="manter"' in body
 
     confirma = client.post(
-        _url(ids), data={"escolha": nova.isoformat(), "confirmar": "1"}
+        _url(ids), data={"escolha": nova.isoformat(), "acao_anteriores": "manter"}
     )
     assert confirma.status_code == 302
     assert _entrada(app, ids) == nova
