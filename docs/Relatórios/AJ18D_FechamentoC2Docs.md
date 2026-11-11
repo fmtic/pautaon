@@ -161,7 +161,7 @@ Comando direcionado executado (`.\.venv\Scripts\python.exe -m pytest -q ...`):
   - migration `1fdc7c03bdc2`, `down_revision = f2a3b4c5d6e7`, **head atual**;
   - AJ18-E explicitamente **ainda não existente**.
 - **Tabela de migrations:** nova linha `1fdc7c03bdc2` (head) e `f2a3b4c5d6e7` deixou de ser head.
-- **Head e contagem:** §7.4b, §8.3 e o cabeçalho passam a citar `1fdc7c03bdc2` e **26 revisões pendentes** entre a produção (`c4d5e6f7a8b9`) e o head; "Última atualização" em 2026-11-11 com o complemento AJ18-B.
+- **Head e contagem:** §7.4b, §8.3 e o cabeçalho passam a citar `1fdc7c03bdc2` e **1 revisão pendente** entre a produção (`f2a3b4c5d6e7`, AJ16-B) e o head; "Última atualização" em 2026-11-11 com o complemento AJ18-B.
 
 ### 7.2. Backlog (`backlog_desenvolvimento.md`)
 
@@ -203,6 +203,7 @@ Nenhuma dessas lacunas foi preenchida nesta tarefa — ficam registradas para um
 | `e75d619` | `test(aj18c2): preserva linha em branco final do teste apos execucao da suite` | `tests/test_aj18c2_entrada_ui.py` |
 | `b2dd8d9` | `refactor(aj18c2): centraliza seletor de radios de aluno e cobre inscricao inativa e outra oferta` | `app/static/js/frequencia.js`, `tests/test_aj18c2_entrada_ui.py` |
 | `a6fe6c6` | `docs(aj18d): fechamento do C2, auditoria disabled, MER e backlog` | `docs/Relatórios/AJ18D_FechamentoC2Docs.md`, `docs/Relatórios/AJ18C2_EntradaTela.md`, `app/models/MER.md`, `backlog_desenvolvimento.md` |
+| `AJ18-D2` | `docs(aj18d2): corrige head de producao no MER, backlog e relatorio` | `app/models/MER.md`, `backlog_desenvolvimento.md`, `docs/Relatórios/AJ18D_FechamentoC2Docs.md` |
 
 O hash deste commit de documentação é registrado no commit imediatamente seguinte, que altera apenas esta linha do relatório (o hash de um commit não pode conter o próprio hash).
 
@@ -213,8 +214,41 @@ Os commits anteriores da branch permanecem: `43e22ce` (UI), `85ba662` (relatóri
 ## 9. Pendências
 
 1. **Suíte completa:** confirmar a execução final; referência desta entrega: **1699 passed**.
-2. **Deploy conjunto:** a migration `1fdc7c03bdc2` deve subir **junto** com o código do AJ18. Produção está em `c4d5e6f7a8b9` (26 revisões atrás); inscrições existentes ficam `NULL` e mantêm o comportamento atual — **sem backfill**.
+2. **Deploy conjunto:** a migration `1fdc7c03bdc2` deve subir **junto** com o código do AJ18. Produção está em `f2a3b4c5d6e7` (1 revisão atrás: `1fdc7c03bdc2`); inscrições existentes ficam `NULL` e mantêm o comportamento atual — **sem backfill**.
 3. **AJ18-E:** agregados/relatórios e edição posterior da `data_entrada_oferta` **não** foram implementados. BI, histórico, certificados e pauta impressa continuam lendo o que foi gravado (D4).
 4. **Teste manual:** enturmar aluno depois do início em uma oferta real; conferir `"Entrou em dd/mm"`, inputs bloqueados, POST manipulado ignorado/auditado e pendências/cobertura sem as aulas anteriores à entrada.
 5. **AJ17-B:** branch `aj17-b-google` **não integrada**; não faz parte deste deploy.
 6. **F401 preexistentes:** 13 achados em testes antigos, fora do escopo; corrigir em tarefa própria se desejado.
+
+---
+
+## 10. AJ18-D2 — correção do head de produção (11/11/2026)
+
+**Fato:** a produção está em `f2a3b4c5d6e7` (AJ16-B). O AJ18 acrescenta **uma única** revisão — `1fdc7c03bdc2` —, logo há **1 revisão pendente**; não 26 a partir de `c4d5e6f7a8b9`.
+
+### 10.1. Ocorrências encontradas e tratamento
+
+| Arquivo:local | Afirmação encontrada | Classificação | Ação |
+|---|---|---|---|
+| `app/models/MER.md:3` (cabeçalho, complemento AJ15) | "24 revisões entre `c4d5e6f7a8b9` (produção) e o head" | Histórica, escrita no presente | Marcada como "produção naquela data; estado atual em §8.3"; produção atual acrescentada ao complemento AJ18-B |
+| `app/models/MER.md:8` ("Última atualização", notas AJ7–AJ13) | "produção em `c4d5e6f7a8b9` com 24 revisões pendentes" | Histórica (05/11/2026) | Marcada como "então — estado em 05/11/2026", com ponteiro para o estado atual |
+| `app/models/MER.md:411` (§7.4b) | "o principal chegou a ela no upgrade de release" | Implícita, sem hash de produção | Explicitada: produção em `f2a3b4c5d6e7`, que inclui a migration |
+| `app/models/MER.md:1485` (§8.27) | "head real ... `c1d2e3f4a5b6` ... produção está em `c4d5e6f7a8b9`, com 24 revisões pendentes" | Histórica, escrita no presente | Passado + "estado em 05/11/2026" + estado atual (`f2a3b4c5d6e7`, 1 pendente) |
+| `app/models/MER.md:1833` (após a tabela de migrations) | "produção está em `c4d5e6f7a8b9` ... 26 revisões pendentes" | **Falsa com o AJ18** | Corrigida para `f2a3b4c5d6e7` e 1 revisão pendente |
+| `app/models/MER.md:1805-1831` (tabela de migrations) | `c4d5e6f7a8b9` aparece como hash de revisão | Não é estado de produção | Mantido; a linha do head (`1fdc7c03bdc2`) já estava correta |
+| `backlog_desenvolvimento.md:16` (entrada AJ18) | "Produção segue `c4d5e6f7a8b9` (26 revisões pendentes)" | **Falsa com o AJ18** | Corrigida para `f2a3b4c5d6e7` e 1 revisão pendente |
+| `backlog_desenvolvimento.md:74` (entrada AJ15/AJ9) | dump atualizado de `c4d5e6f7a8b9` até `c1d2e3f4a5b6` (24 revisões) | Registro histórico do ensaio AJ9 | Mantido — descreve o dump daquela data |
+| `backlog_desenvolvimento.md:834,840,882,938,940,943` | `c4d5e6f7a8b9` como `alembic_version`/revisão de entradas antigas | Histórico | Mantido |
+| `backlog_desenvolvimento.md:691` | "head atual `a1b2c3d4e5f6`; contagem ... 26 revisões" | Histórico de outra tarefa; não é produção | Mantido |
+| `docs/Relatórios/AJ18D_FechamentoC2Docs.md` §7.1 | "26 revisões pendentes entre a produção (`c4d5e6f7a8b9`)" | **Falsa** | Corrigida |
+| `docs/Relatórios/AJ18D_FechamentoC2Docs.md` §9.2 | "Produção está em `c4d5e6f7a8b9` (26 revisões atrás)" | **Falsa** | Corrigida |
+
+Observações: `app/models/MER.md:39` ("Não há ambiente de produção real") é nota conceitual sobre o ambiente, não afirmação de head, e foi mantida; `MER:1204` e a linha `1fdc7c03bdc2` da tabela já estavam corretas. Nenhuma outra frase "produção está em ..." ou "N revisões pendentes" foi encontrada no MER ou no backlog.
+
+### 10.2. Estado final
+
+- Produção: **`f2a3b4c5d6e7`** (AJ16-B).
+- Head do código: **`1fdc7c03bdc2`** (AJ18-B).
+- Pendência: **1 revisão** (`1fdc7c03bdc2`).
+- Nenhum código de aplicação, migration ou teste foi alterado.
+- Commit deste ajuste: `AJ18-D2` (hash registrado no commit seguinte).

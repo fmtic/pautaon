@@ -13,7 +13,7 @@
 **Docs AJ18:** MER §7.15 (`data_entrada_oferta`), §8.3 (regra de entrada: serviço único, POST, lote atômico, transferência, re-enturmação, frequência/pendências/cobertura, D4 sem filtro em agregados, UI desabilitada, migration `1fdc7c03bdc2`/`f2a3b4c5d6e7`), tabela de migrations e head; backlog e relatório de fechamento `docs/Relatórios/AJ18D_FechamentoC2Docs.md`.
 
 **Pendências AJ18:**
-- **Deploy conjunto com a migration** `1fdc7c03bdc2`: aplicar junto com o código; `NULL` preserva o comportamento atual, sem backfill. Produção segue `c4d5e6f7a8b9` (26 revisões pendentes até o head) — responsável aplica.
+- **Deploy conjunto com a migration** `1fdc7c03bdc2`: aplicar junto com o código; `NULL` preserva o comportamento atual, sem backfill. Produção está em `f2a3b4c5d6e7` (AJ16-B): **uma revisão pendente** (`1fdc7c03bdc2`) — responsável aplica.
 - **AJ18-E** — agregados/relatórios e demais leitores (histórico, BI, certificados) não foram alterados nesta rodada; avaliar se algum deve respeitar a data de entrada (decisão de produto).
 - **Teste manual** — enturmar aluno após o início em oferta real, conferir "Entrou em dd/mm", bloqueio dos inputs, POST manipulado ignorado/auditado e pendências/cobertura sem contar aulas anteriores à entrada.
 
