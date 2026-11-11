@@ -24,7 +24,12 @@ from app.models import (
 )
 from app.models.enums import UserRole
 from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
-from app.services.entrada_oferta import inicio_efetivo, parse_escolha_entrada
+from app.services.entrada_oferta import (
+    EntradaComLinhasAnteriores,
+    alterar_entrada,
+    inicio_efetivo,
+    parse_escolha_entrada,
+)
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
@@ -1605,6 +1610,31 @@ def ver_turma(id):
         if ini_eff and entrada_hoje > ini_eff:
             entrada_obrigatoria = True
 
+    # AJ18-E: reabre o modal de correção da entrada com a contagem devolvida
+    # pelo POST (única fonte da verdade). Só faz sentido para quem pode editar.
+    entrada_pendentes = None
+    entrada_escolha = None
+    entrada_inscricao_id = None
+    abrir_modal_entrada = False
+    if current_user.role in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        inscricao_id_entrada = request.args.get("inscricao", type=int)
+        pendentes_arg = request.args.get("entrada_pendentes", type=int)
+        if inscricao_id_entrada and pendentes_arg:
+            inscricao_entrada = Inscricao.query.filter_by(
+                id=inscricao_id_entrada,
+                turma_id=id,
+                ativo=True,
+            ).first()
+            if inscricao_entrada is not None:
+                entrada_inscricao_id = inscricao_entrada.id
+                entrada_pendentes = pendentes_arg
+                entrada_escolha = request.args.get("entrada_escolha")
+                abrir_modal_entrada = True
+
     return render_template(
         "turmas/detalhe.html",
         alunos_sem_turma=alunos_disponiveis,
@@ -1629,6 +1659,11 @@ def ver_turma(id):
         entrada_hoje_iso=entrada_hoje.isoformat(),
         entrada_ini_iso=entrada_ini_iso,
         entrada_fim_iso=entrada_fim_iso,
+        hoje=entrada_hoje,
+        abrir_modal_entrada=abrir_modal_entrada,
+        entrada_inscricao_id=entrada_inscricao_id,
+        entrada_escolha=entrada_escolha,
+        entrada_pendentes=entrada_pendentes,
         **ctx,
     )
 
@@ -1801,6 +1836,121 @@ def enturmar_alunos(turma_id):
         flash("Rejeitado: Nenhum aluno foi parametrizado.", "warning")
 
     return redirect(url_for("registros.ver_turma", id=turma_id))
+
+
+def _rotulo_data_entrada(valor):
+    """Rótulo do log/UI para uma data de entrada (NULL = desde o início)."""
+    return valor.isoformat() if valor is not None else "desde o início"
+
+
+@bp.route(
+    "/turma/<int:turma_id>/oferta/<int:oferta_id>/inscricao/<int:inscricao_id>/entrada",
+    methods=["POST"],
+)
+@login_required
+def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
+    """AJ18-E: corrige a data de entrada de um aluno já enturmado.
+
+    Não desenturma: altera somente ``Inscricao.data_entrada_oferta``. Perfis
+    com permissão de enturmar (admin/pedagógico/secretaria), isolamento por
+    unidade. Inscrição inexistente, inativa ou de outra turma/oferta → 404.
+    A gravação e o ``LogAcao`` acontecem no mesmo commit (ou nada acontece).
+    """
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        abort(403)
+
+    turma_obj = Turma.query.get_or_404(turma_id)
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+
+    oferta = TurmaCurso.query.filter_by(id=oferta_id, turma_id=turma_id).first()
+    if oferta is None or not oferta.ativo:
+        abort(404)
+    inscricao = Inscricao.query.filter_by(
+        id=inscricao_id,
+        turma_id=turma_id,
+        turma_curso_id=oferta_id,
+        ativo=True,
+    ).first()
+    if inscricao is None:
+        abort(404)
+
+    escolha = request.form.get("escolha")
+    confirmar = request.form.get("confirmar") == "1"
+    hoje = get_local_now().date()
+
+    try:
+        anterior, nova = alterar_entrada(
+            inscricao, escolha, hoje, confirmar=confirmar
+        )
+        if anterior == nova:
+            flash("A data de entrada já é essa; nada foi alterado.", "info")
+            return redirect(
+                url_for(
+                    "registros.ver_turma",
+                    id=turma_id,
+                    oferta_sel=oferta_id,
+                )
+            )
+
+        from app.models import LogAcao
+
+        db.session.add(
+            LogAcao(
+                usuario_id=current_user.id,
+                usuario_nome=getattr(current_user, "name", None),
+                acao="Alteração da data de entrada na oferta",
+                detalhes=(
+                    f"aluno_id={inscricao.aluno_id} "
+                    f'nome="{inscricao.aluno.nome}" '
+                    f"turma_id={turma_id} oferta_id={oferta_id} "
+                    f"entrada_anterior={_rotulo_data_entrada(anterior)} "
+                    f"entrada_nova={_rotulo_data_entrada(nova)}"
+                ),
+                ip=request.remote_addr,
+                unidade_id=turma_obj.unidade_id,
+            )
+        )
+        db.session.commit()
+    except EntradaComLinhasAnteriores as exc:
+        db.session.rollback()
+        return redirect(
+            url_for(
+                "registros.ver_turma",
+                id=turma_id,
+                oferta_sel=oferta_id,
+                modal="entrada",
+                inscricao=inscricao_id,
+                entrada_escolha=escolha,
+                entrada_pendentes=exc.quantidade,
+            )
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(
+            url_for(
+                "registros.ver_turma", id=turma_id, oferta_sel=oferta_id
+            )
+        )
+    except Exception:
+        db.session.rollback()
+        raise
+
+    nome_curso = (
+        oferta.curso.nome if oferta.curso else f"Curso #{oferta.curso_id}"
+    )
+    flash(
+        f"Data de entrada de {inscricao.aluno.nome} na oferta "
+        f"{nome_curso} alterada.",
+        "success",
+    )
+    return redirect(
+        url_for("registros.ver_turma", id=turma_id, oferta_sel=oferta_id)
+    )
 
 
 def _editar_turma_contexto(turma_obj, rascunho=None):

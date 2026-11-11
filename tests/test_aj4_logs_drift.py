@@ -94,6 +94,7 @@ CENSO_REAL = frozenset(
 ROTULOS_SEM_LINHA = frozenset(
     {
         "Acesso via Google",
+        "Alteração da data de entrada na oferta",
         "Cadastro Período Letivo",
         "Desbloqueio de login",
         "Enturmação de aluno na oferta",
@@ -141,6 +142,7 @@ CATEGORIA_ESPERADA = {
     "Alterar TemaAula": "edicao",
     "Alterar Turma": "edicao",
     "Alterar TurmaCurso": "edicao",
+    "Alteração da data de entrada na oferta": "edicao",
     "Alteração de Cadastros": "edicao",
     "Alteração de conselho (gestor)": "edicao",
     "Aviso de Invasão/Falha": "login",
@@ -503,7 +505,7 @@ def test_listas_congeladas_sem_sobreposicao():
                 "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
                 f"{sorted(a & b)}."
             )
-    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 10
+    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 11
     assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 

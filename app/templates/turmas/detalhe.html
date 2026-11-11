@@ -169,6 +169,10 @@
           </div>
           <hr class="my-3">
           {% set inscricoes_oferta = alunos_por_oferta.get(oferta.id, []) %}
+          {# AJ18-E: ação de correção da entrada só existe com oferta iniciada e
+             para os perfis que podem enturmar (sem gerência). #}
+          {% set inicio_entrada_oferta = oferta.data_inicio or turma.data_inicio %}
+          {% set fim_entrada_oferta = oferta.data_fim or turma.data_fim %}
           <div class="d-flex justify-content-between align-items-center mb-2">
             <strong>Alunos enturmados</strong>
             <span class="text-muted small">{{ inscricoes_oferta|length }} aluno(s)</span>
@@ -195,7 +199,16 @@
                         class="w-100 h-100 object-fit-cover" alt="Foto de {{ aluno.nome }}" />
                     </div>
                   </td>
-                  <td class="fw-bold small">{{ aluno.nome }}</td>
+                  <td class="fw-bold small">
+                    {{ aluno.nome }}
+                    <div class="fw-normal text-muted">
+                      {% if inscricao_aluno.data_entrada_oferta %}
+                      Entrou em {{ inscricao_aluno.data_entrada_oferta.strftime('%d/%m/%Y') }}
+                      {% else %}
+                      Desde o início
+                      {% endif %}
+                    </div>
+                  </td>
                   <td>
                     {# AJ6-B6: `nivel` é campo da FICHA do aluno. Guarda mínima: esconder
                        SÓ do professor (fora da sua allowlist); demais perfis, incl.
@@ -215,6 +228,23 @@
                     {% endif %}
                   </td>
                   <td class="text-end">
+                    {# AJ18-E: corrigir a data de entrada sem desenturmar. #}
+                    {% if current_user.role in ['admin', 'pedagogico', 'secretaria']
+                          and inicio_entrada_oferta and inicio_entrada_oferta <= hoje %}
+                    <button type="button"
+                      class="btn btn-sm btn-outline-secondary js-alterar-entrada"
+                      data-bs-toggle="modal" data-bs-target="#modalEntrada"
+                      data-url="{{ url_for('registros.alterar_entrada_aluno', turma_id=turma.id, oferta_id=oferta.id, inscricao_id=inscricao_aluno.id) }}"
+                      data-inscricao="{{ inscricao_aluno.id }}"
+                      data-aluno="{{ aluno.nome }}"
+                      data-entrada="{{ inscricao_aluno.data_entrada_oferta.isoformat() if inscricao_aluno.data_entrada_oferta else '' }}"
+                      data-atual="{% if inscricao_aluno.data_entrada_oferta %}Entrou em {{ inscricao_aluno.data_entrada_oferta.strftime('%d/%m/%Y') }}{% else %}Desde o início{% endif %}"
+                      data-ini="{{ inicio_entrada_oferta.isoformat() }}"
+                      data-fim="{{ fim_entrada_oferta.isoformat() if fim_entrada_oferta else '' }}"
+                      title="Alterar data de entrada">
+                      <i class="bi bi-calendar-event"></i> Entrada
+                    </button>
+                    {% endif %}
                     {# AJ6-B6: editar/transferir mexem na FICHA do aluno e não estão na
                        allowlist do professor. Guarda mínima: esconder SÓ do professor;
                        demais perfis inalterados (desenturmar mantém a sua guarda). #}
@@ -404,6 +434,61 @@
 </div>
 {% endif %}
 
+{% if current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
+<!-- Modal Alterar Data de Entrada (AJ18-E) -->
+<div class="modal fade" id="modalEntrada" tabindex="-1"
+  data-reabrir="{{ '1' if abrir_modal_entrada else '0' }}"
+  data-inscricao="{{ entrada_inscricao_id or '' }}"
+  data-escolha="{{ entrada_escolha or '' }}">
+  <div class="modal-dialog">
+    <form id="formEntrada" method="POST" class="modal-content">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">Alterar data de entrada</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">
+          Aluno: <strong id="entradaAlunoNome">—</strong><br />
+          Data atual: <strong id="entradaAtual">—</strong>
+        </p>
+        {% if abrir_modal_entrada and entrada_pendentes %}
+        <div class="alert alert-warning small" id="entradaPendentesAviso">
+          Existem <strong>{{ entrada_pendentes }}</strong> frequência(s) deste
+          aluno nesta oferta em datas anteriores à nova entrada. Elas
+          <strong>não serão apagadas nem alteradas</strong>. Confirme para
+          continuar.
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="confirmar"
+              value="1" id="entradaConfirmar" />
+            <label class="form-check-label small" for="entradaConfirmar">
+              Confirmo a alteração mantendo as frequências anteriores.
+            </label>
+          </div>
+        </div>
+        {% endif %}
+        {# Mesmas 3 opções do enturmar, reutilizando markup e JS da escolha de
+           entrada (`.entrada-celula`/`.entrada-radio`). #}
+        <div class="entrada-celula">
+          <div class="d-flex flex-column gap-1">
+            <label class="mb-0"><input type="radio" name="escolha" value="hoje" class="form-check-input me-1 entrada-radio"> Hoje ({{ entrada_hoje_iso }})</label>
+            <label class="mb-0"><input type="radio" name="escolha" value="inicio" class="form-check-input me-1 entrada-radio"> Desde o início</label>
+            <div class="d-flex align-items-center gap-2">
+              <label class="mb-0"><input type="radio" name="escolha" value="" class="form-check-input me-1 entrada-radio entrada-radio-data"> Data específica</label>
+              <input type="date" class="form-control form-control-sm entrada-date" style="width:auto" disabled>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary fw-bold">SALVAR DATA DE ENTRADA</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     var searchInput = document.getElementById("alunoSearchInput");
@@ -419,8 +504,9 @@
       });
     }
 
-    // AJ18-B: sincroniza rádio "Data específica" com o input date da linha.
-    document.querySelectorAll("#modalEnturmar .entrada-celula").forEach(function (cel) {
+    // AJ18-B/E: sincroniza rádio "Data específica" com o input date da linha
+    // (vale para o modal de enturmar e para o de alterar a entrada).
+    document.querySelectorAll(".entrada-celula").forEach(function (cel) {
       var radioData = cel.querySelector(".entrada-radio-data");
       var dateInput = cel.querySelector(".entrada-date");
       var radios = cel.querySelectorAll(".entrada-radio");
@@ -474,6 +560,77 @@
         });
       });
     });
+
+    // AJ18-E: um único modal reutilizado por aluno. Os dados vêm do botão da
+    // linha; o POST é a única fonte da verdade (inclusive da contagem de
+    // frequências anteriores, devolvida na reabertura).
+    var modalEntrada = document.getElementById("modalEntrada");
+    var formEntrada = document.getElementById("formEntrada");
+    if (modalEntrada && formEntrada) {
+      var nomeEl = document.getElementById("entradaAlunoNome");
+      var atualEl = document.getElementById("entradaAtual");
+      var radioHoje = formEntrada.querySelector('input.entrada-radio[value="hoje"]');
+      var radioInicio = formEntrada.querySelector('input.entrada-radio[value="inicio"]');
+      var radioData = formEntrada.querySelector(".entrada-radio-data");
+      var dateInput = formEntrada.querySelector(".entrada-date");
+
+      var preencherEntrada = function (btn) {
+        formEntrada.action = btn.getAttribute("data-url");
+        nomeEl.textContent = btn.getAttribute("data-aluno") || "";
+        atualEl.textContent = btn.getAttribute("data-atual") || "";
+        var entrada = btn.getAttribute("data-entrada") || "";
+        radioHoje.checked = false;
+        radioInicio.checked = false;
+        radioData.checked = false;
+        radioData.value = "";
+        dateInput.value = "";
+        dateInput.disabled = true;
+        dateInput.min = btn.getAttribute("data-ini") || "";
+        dateInput.max = btn.getAttribute("data-fim") || "";
+        if (entrada) {
+          radioData.checked = true;
+          radioData.value = entrada;
+          dateInput.value = entrada;
+          dateInput.disabled = false;
+        } else {
+          radioInicio.checked = true;
+        }
+      };
+
+      document.querySelectorAll(".js-alterar-entrada").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          preencherEntrada(btn);
+        });
+      });
+
+      // Reabre com a contagem devolvida pelo POST: mesma modal, mesmo markup,
+      // com o aviso renderizado pelo servidor e a escolha tentada preservada.
+      if (modalEntrada.getAttribute("data-reabrir") === "1") {
+        var alvo = document.querySelector(
+          '.js-alterar-entrada[data-inscricao="' +
+            modalEntrada.getAttribute("data-inscricao") + '"]'
+        );
+        if (alvo) {
+          preencherEntrada(alvo);
+          var escolha = modalEntrada.getAttribute("data-escolha") || "";
+          if (escolha === "inicio") {
+            radioInicio.checked = true;
+            radioData.checked = false;
+            dateInput.disabled = true;
+          } else if (escolha === "hoje") {
+            radioHoje.checked = true;
+            radioData.checked = false;
+            dateInput.disabled = true;
+          } else if (escolha) {
+            radioData.checked = true;
+            radioData.value = escolha;
+            dateInput.value = escolha;
+            dateInput.disabled = false;
+          }
+          new bootstrap.Modal(modalEntrada).show();
+        }
+      }
+    }
   });
 
   // Etapa M1: após trocar o curso no seletor (reload), reabrir o modal.
