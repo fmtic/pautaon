@@ -1618,6 +1618,7 @@ def ver_turma(id):
     entrada_escolha = None
     entrada_inscricao_id = None
     abrir_modal_entrada = False
+    entrada_conselho_bloqueia_remocao = False
     if current_user.role in (
         UserRole.ADMIN,
         UserRole.PEDAGOGICO,
@@ -1642,6 +1643,10 @@ def ver_turma(id):
                 )
                 entrada_escolha = request.args.get("entrada_escolha")
                 abrir_modal_entrada = True
+                entrada_conselho_bloqueia_remocao = bool(
+                    inscricao_entrada.turma_curso
+                    and inscricao_entrada.turma_curso.conselho_concluido
+                )
 
     return render_template(
         "turmas/detalhe.html",
@@ -1674,6 +1679,7 @@ def ver_turma(id):
         entrada_pendentes=entrada_pendentes,
         entrada_pendentes_ini=entrada_pendentes_ini,
         entrada_pendentes_fim=entrada_pendentes_fim,
+        entrada_conselho_bloqueia_remocao=entrada_conselho_bloqueia_remocao,
         **ctx,
     )
 

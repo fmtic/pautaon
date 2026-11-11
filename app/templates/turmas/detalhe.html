@@ -464,14 +464,22 @@
               class="btn btn-sm btn-primary fw-bold" id="entradaManter">
               Manter frequências
             </button>
+            {% if not entrada_conselho_bloqueia_remocao %}
             <button type="submit" name="acao_anteriores" value="remover"
               class="btn btn-sm btn-danger fw-bold" id="entradaRemover">
               Remover frequências
             </button>
+            {% endif %}
           </div>
-          <div class="text-danger mt-2 mb-0">
+          <div class="{% if not entrada_conselho_bloqueia_remocao %}text-danger {% endif %}mt-2 mb-0">
+            {% if entrada_conselho_bloqueia_remocao %}
+            O conselho desta oferta já foi concluído: não é possível remover
+            frequências anteriores. Você pode manter as frequências para
+            avançar a entrada.
+            {% else %}
             <strong>Remover é irreversível:</strong> as frequências listadas
             serão apagadas definitivamente.
+            {% endif %}
           </div>
         </div>
         {% endif %}

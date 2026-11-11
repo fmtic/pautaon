@@ -442,3 +442,106 @@ def test_gerencia_nao_ganha_botao_nem_modal(app, client):
     ).get_data(as_text=True)
     assert 'data-bs-target="#modalEntrada"' not in body
     assert 'name="acao_anteriores"' not in body
+
+
+# ---------------------------------------------------------------------------
+# Trava opção A (F2): conselho concluído bloqueia "Remover", permite "Manter"
+# ---------------------------------------------------------------------------
+
+def _concluir_conselho(app, oferta_id):
+    with app.app_context():
+        oferta = db.session.get(TurmaCurso, oferta_id)
+        oferta.conselho_concluido = True
+        db.session.commit()
+
+
+def test_conselho_concluido_bloqueia_remocao_sem_alterar(app, client):
+    ids = _seed(app, entrada=HOJE - timedelta(days=30))
+    datas = _datas(app, ids)
+    anteriores = [d for d in datas if d < HOJE - timedelta(days=30)]
+    # nova: uma data de aula após a entrada atual que ainda tem anteriores
+    posteriores = [d for d in datas if d > HOJE - timedelta(days=30)]
+    assert anteriores and len(posteriores) >= 2
+    nova = posteriores[1]
+    _lancar(app, ids, anteriores[:1])
+    _concluir_conselho(app, ids["oferta"])
+
+    login_as(client, ids["admin"], ids["un"])
+    resp = client.post(
+        _url(ids),
+        data={"escolha": nova.isoformat(), "acao_anteriores": "remover"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    corpo = resp.get_data(as_text=True)
+    assert "conselho" in corpo.lower()
+    assert _entrada(app, ids) == HOJE - timedelta(days=30)
+    with app.app_context():
+        assert Frequencia.query.filter_by(aluno_id=ids["aluno"]).count() == 1
+    assert len(_logs(app)) == 0
+
+
+def test_conselho_concluido_permite_manter(app, client):
+    ids = _seed(app, entrada=HOJE - timedelta(days=30))
+    datas = _datas(app, ids)
+    anteriores = [d for d in datas if d < HOJE - timedelta(days=30)]
+    posteriores = [d for d in datas if d > HOJE - timedelta(days=30)]
+    assert anteriores and len(posteriores) >= 2
+    nova = posteriores[1]
+    _lancar(app, ids, anteriores[:1])
+    _concluir_conselho(app, ids["oferta"])
+
+    login_as(client, ids["admin"], ids["un"])
+    resp = client.post(
+        _url(ids),
+        data={"escolha": nova.isoformat(), "acao_anteriores": "manter"},
+    )
+    assert resp.status_code == 302
+    assert _entrada(app, ids) == nova
+    with app.app_context():
+        assert Frequencia.query.filter_by(aluno_id=ids["aluno"]).count() == 1
+    logs = _logs(app)
+    assert len(logs) == 1
+    assert "mantidas 1" in (logs[0].detalhes or "")
+
+
+def test_sem_conselho_remocao_liberada(app, client):
+    ids = _seed(app, entrada=HOJE - timedelta(days=30))
+    datas = _datas(app, ids)
+    anteriores = [d for d in datas if d < HOJE - timedelta(days=30)]
+    posteriores = [d for d in datas if d > HOJE - timedelta(days=30)]
+    assert anteriores and len(posteriores) >= 2
+    nova = posteriores[1]
+    _lancar(app, ids, anteriores[:1])
+
+    login_as(client, ids["admin"], ids["un"])
+    resp = client.post(
+        _url(ids),
+        data={"escolha": nova.isoformat(), "acao_anteriores": "remover"},
+    )
+    assert resp.status_code == 302
+    assert _entrada(app, ids) == nova
+    with app.app_context():
+        assert Frequencia.query.filter_by(aluno_id=ids["aluno"]).count() == 0
+
+
+def test_modal_oculta_remover_quando_conselho_concluido(app, client):
+    ids = _seed(app, entrada=HOJE - timedelta(days=30))
+    datas = _datas(app, ids)
+    anteriores = [d for d in datas if d < HOJE - timedelta(days=30)]
+    posteriores = [d for d in datas if d > HOJE - timedelta(days=30)]
+    assert anteriores and len(posteriores) >= 2
+    nova = posteriores[1]
+    _lancar(app, ids, anteriores[:1])
+    _concluir_conselho(app, ids["oferta"])
+
+    login_as(client, ids["admin"], ids["un"])
+    # dispara reabertura do modal (tenta avançar sem decisão -> pendentes)
+    resp = client.post(
+        _url(ids), data={"escolha": nova.isoformat()}, follow_redirects=True
+    )
+    assert resp.status_code == 200
+    corpo = resp.get_data(as_text=True)
+    assert "entradaManter" in corpo
+    assert "Remover frequências" not in corpo
+    assert "conselho" in corpo.lower()

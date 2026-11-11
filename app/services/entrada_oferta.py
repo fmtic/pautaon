@@ -285,6 +285,12 @@ def alterar_entrada(
 
     if avanca and anteriores:
         if remover_anteriores:
+            if getattr(oferta, "conselho_concluido", False):
+                raise ValueError(
+                    "Não é possível remover frequências anteriores: "
+                    "o conselho desta oferta já foi concluído. "
+                    "Mantenha as frequências para avançar a entrada."
+                )
             removidas = _remover_frequencias_anteriores(inscricao, nova)
             removidas_ini, removidas_fim = anteriores_ini, anteriores_fim
         elif not confirmar:
