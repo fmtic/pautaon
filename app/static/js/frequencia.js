@@ -28,10 +28,22 @@ function valorAulaPendente({ conceitos, valorIds, catalogoAtivo }) {
         && (!valorIds || valorIds.length === 0);
 }
 
-function conceitosMarcados(form) {
+/**
+ * Radios de conceito dos alunos que podem ser lançados.
+ * `:not(:disabled)` cobre tanto o aluno pos-entrada (desabilitado e sem `name`)
+ * quanto o transferido/readonly; o seletor é a fonte ÚNICA usada pelo resumo e
+ * pelos listeners deste arquivo.
+ */
+function radiosAlunoHabilitados(form) {
     return Array.from(
-        form.querySelectorAll('input.btn-check[name^="aluno_"]:checked:not(:disabled)')
-    ).map(radio => radio.value);
+        form.querySelectorAll('input.btn-check[name^="aluno_"]:not(:disabled)')
+    );
+}
+
+function conceitosMarcados(form) {
+    return radiosAlunoHabilitados(form)
+        .filter(radio => radio.checked)
+        .map(radio => radio.value);
 }
 
 function valoresMarcados(form) {
@@ -118,7 +130,7 @@ if (typeof document !== 'undefined') {
         });
 
         // Reavalia ao trocar um conceito (o conjunto de A–D pode mudar).
-        formPauta.querySelectorAll('input.btn-check[name^="aluno_"]:not(:disabled)').forEach(radio => {
+        radiosAlunoHabilitados(formPauta).forEach(radio => {
             radio.addEventListener('change', function () {
                 if (!validarPendencias(formPauta).length) esconderAvisoPendencia();
             });
@@ -142,6 +154,7 @@ if (typeof module !== 'undefined' && module.exports) {
         CONCEITOS_PRESENCA,
         aulaTemPresenca,
         valorAulaPendente,
+        radiosAlunoHabilitados,
         conceitosMarcados,
     };
 }

@@ -395,3 +395,137 @@ def test_js_conceitos_marcados_ignora_disabled(node):
     # E não gera pendência de valor obrigatório
     assert saida["pendenciaSoDesabilitado"] is False
 
+
+# ---------------------------------------------------------------------------
+# 8) JS estático em Node: seleção única dos radios de aluno ignora disabled
+#    (mesmo seletor usado pelo resumo de conceitos e pelo listener)
+# ---------------------------------------------------------------------------
+HARNESS_JS_RADIOS = """
+const F = require(process.argv[1]);
+
+function criarFormMock(radios) {
+    return {
+        querySelectorAll: function(seletor) {
+            if (seletor.includes(':not(:disabled)')) {
+                return radios.filter(r => !r.disabled);
+            }
+            return radios;
+        }
+    };
+}
+
+const radios = [
+    { name: 'aluno_1', value: 'A', checked: true, disabled: false },
+    { name: 'aluno_1', value: 'B', checked: false, disabled: false },
+    { name: 'aluno_2', value: 'A', checked: true, disabled: true },
+    { name: 'aluno_3', value: 'F', checked: false, disabled: true },
+];
+
+console.log(JSON.stringify({
+    habilitados: F.radiosAlunoHabilitados(criarFormMock(radios)).map(r => r.value),
+    conceitos: F.conceitosMarcados(criarFormMock(radios)),
+}));
+"""
+
+
+def test_js_radios_aluno_habilitados_ignora_disabled(node):
+    processo = subprocess.run(
+        [node, "-e", HARNESS_JS_RADIOS, str(ARQ_JS)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert processo.returncode == 0, processo.stderr
+    saida = json.loads(processo.stdout)
+
+    # O seletor único devolve habilitados (marcados ou não), nunca os disabled.
+    assert saida["habilitados"] == ["A", "B"]
+    assert saida["conceitos"] == ["A"]
+
+
+# ---------------------------------------------------------------------------
+# 9) Inscrição antiga inativa (mesma oferta) com entrada posterior: ignorada
+# ---------------------------------------------------------------------------
+def test_inscricao_inativa_com_entrada_posterior_nao_desabilita(app, client):
+    ids = _seed(app, entrada_dois=None)
+    datas = _datas_ate_hoje(app, ids, ids["oferta"])
+    data_antes = next(d for d in datas if d < DATA_ENTRADA_DOIS)
+
+    with app.app_context():
+        # A inscrição ativa do aluno 1 é NULL (desde o início); a linha antiga
+        # inativa tem entrada posterior à data selecionada e não pode vencer.
+        nova_inscricao(
+            ids["aluno_um"], ids["turma"], ids["oferta"], ativo=False,
+            data_entrada_oferta=DATA_ENTRADA_DOIS,
+        )
+        db.session.commit()
+
+    login_as(client, ids["prof"], ids["un"])
+
+    url = f"/frequencia?turma_id={ids['turma']}&turma_curso={ids['oferta']}&data={_iso(data_antes)}"
+    resp = client.get(url)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert "Entrou em" not in html
+    name_aluno = f'name="aluno_{ids["aluno_um"]}"'
+    assert name_aluno in html
+    tag = re.search(r'<input[^>]*id="' + re.escape(f"aluno_{ids['aluno_um']}_A") + r'"[^>]*>', html)
+    assert tag is not None
+    assert name_aluno in tag.group(0)
+    assert "disabled" not in tag.group(0)
+
+
+# ---------------------------------------------------------------------------
+# 10) Inscrição em OUTRA oferta da mesma turma não desabilita o aluno
+# ---------------------------------------------------------------------------
+def test_inscricao_de_outra_oferta_nao_desabilita(app, client):
+    ids = _seed(app, entrada_dois=None)
+    datas = _datas_ate_hoje(app, ids, ids["oferta"])
+    data_antes = next(d for d in datas if d < DATA_ENTRADA_DOIS)
+
+    with app.app_context():
+        curso_dois = Curso(nome="Curso Dois C2", unidade_id=ids["un"], ativo=True)
+        db.session.add(curso_dois)
+        db.session.flush()
+        oferta_dois = nova_oferta(
+            ids["turma"], curso_dois.id, ids["un"], principal=False,
+            professor_id=ids["prof"], dias_semana=DIAS_GRADE,
+            hora_inicio=time(8), hora_fim=time(10),
+        )
+        # Ativa na oferta 2 (entrada posterior), NULL na oferta 1.
+        nova_inscricao(
+            ids["aluno_um"], ids["turma"], oferta_dois.id,
+            data_entrada_oferta=DATA_ENTRADA_DOIS,
+        )
+        db.session.commit()
+        oferta_dois_id = oferta_dois.id
+
+    login_as(client, ids["prof"], ids["un"])
+
+    url_oferta_um = (
+        f"/frequencia?turma_id={ids['turma']}&turma_curso={ids['oferta']}"
+        f"&data={_iso(data_antes)}"
+    )
+    resp = client.get(url_oferta_um)
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    name_aluno = f'name="aluno_{ids["aluno_um"]}"'
+    assert name_aluno in html
+    tag = re.search(r'<input[^>]*id="' + re.escape(f"aluno_{ids['aluno_um']}_A") + r'"[^>]*>', html)
+    assert tag is not None
+    assert "disabled" not in tag.group(0)
+    assert "Entrou em" not in html
+
+    # Na oferta 2 (onde a entrada futura existe), o mesmo aluno é desabilitado.
+    url_oferta_dois = (
+        f"/frequencia?turma_id={ids['turma']}&turma_curso={oferta_dois_id}"
+        f"&data={_iso(data_antes)}"
+    )
+    resp_dois = client.get(url_oferta_dois)
+    assert resp_dois.status_code == 200
+    html_dois = resp_dois.get_data(as_text=True)
+    assert f"Entrou em {DATA_ENTRADA_DOIS.strftime('%d/%m')}" in html_dois
+    assert name_aluno not in html_dois
+
