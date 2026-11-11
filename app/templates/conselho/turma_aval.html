@@ -5,6 +5,27 @@
 continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
 <div class="container mt-4">
+    <style>
+        :root {
+            --conselho-pergunta-cor: #0a3d62;
+        }
+
+        .conselho-pergunta {
+            color: var(--conselho-pergunta-cor);
+        }
+
+        .conselho-opcao.active {
+            border-color: #0a3d62;
+            background-color: #e7f1ff;
+            font-weight: 700;
+        }
+
+        .conselho-opcao:focus-visible {
+            outline: 2px solid #0a3d62;
+            outline-offset: 2px;
+        }
+    </style>
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="text-primary fw-bold mb-0">Conselho da Turma</h2>
@@ -70,27 +91,44 @@ continua sendo apenas o texto da opção, sem a letra. #}
                     {% for pergunta in perguntas_turma %}
                     <div class="col-md-6 mb-3">
                         <div class="p-3 bg-white rounded border h-100 shadow-sm">
-                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ loop.index }}. {{
-                                pergunta.texto }}</label>
+                            <label class="fw-bold mb-2 conselho-pergunta text-uppercase"
+                                for="resp_turma_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
+
+                            {% set resp_atual = respostas.get(pergunta.id|string, '') %}
 
                             {% if pergunta.opcoes %}
-                            <div class="mb-2">
+                            {# Com opções: a escolha vai num campo oculto e o botão fica destacado. #}
+                            <input type="hidden" name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
+                                value="{{ resp_atual }}">
+                            <div class="mb-2 conselho-opcoes">
                                 {% for opcao in pergunta.opcoes.split(' | ') %}
-                                <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
+                                <button type="button"
+                                    class="btn btn-xs btn-outline-primary me-1 mb-1 conselho-opcao {% if resp_atual == opcao %}active fw-bold{% endif %}"
                                     style="font-size: 1rem; padding: 0.375rem 0.75rem; text-align: justify;"
-                                    onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = '{{ opcao }}'">
+                                    data-valor="{{ opcao }}"
+                                    onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = this.getAttribute('data-valor'); this.parentElement.querySelectorAll('.conselho-opcao').forEach(b=>b.classList.remove('active','fw-bold')); this.classList.add('active','fw-bold');">
                                     {{ letras[loop.index0] }}) {{ opcao }}
                                 </button>
                                 {% endfor %}
                             </div>
-                            {% endif %}
-
+                            {% else %}
+                            {# Sem opções: o texto digitado é a própria resposta. #}
                             <textarea name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
                                 class="form-control" rows="3"
-                                placeholder="Digite sua observação...">{{ respostas.get(pergunta.id|string, '') }}</textarea>
+                                placeholder="Digite a resposta...">{{ resp_atual }}</textarea>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
+                </div>
+
+                {# Observação geral única, no fim do questionário (gravada em `_obs`). #}
+                <div class="p-3 bg-white rounded border shadow-sm mt-2">
+                    <label class="fw-bold mb-2 conselho-pergunta text-uppercase" for="obs_turma">
+                        Observações e informações adicionais
+                    </label>
+                    <textarea name="obs_turma" id="obs_turma" class="form-control" rows="4"
+                        placeholder="Digite observações gerais sobre a turma...">{{ observacao or '' }}</textarea>
                 </div>
             </div>
         </div>
