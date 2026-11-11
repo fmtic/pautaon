@@ -30,7 +30,7 @@ function valorAulaPendente({ conceitos, valorIds, catalogoAtivo }) {
 
 function conceitosMarcados(form) {
     return Array.from(
-        form.querySelectorAll('input.btn-check[name^="aluno_"]:checked')
+        form.querySelectorAll('input.btn-check[name^="aluno_"]:checked:not(:disabled)')
     ).map(radio => radio.value);
 }
 
@@ -118,7 +118,7 @@ if (typeof document !== 'undefined') {
         });
 
         // Reavalia ao trocar um conceito (o conjunto de A–D pode mudar).
-        formPauta.querySelectorAll('input.btn-check[name^="aluno_"]').forEach(radio => {
+        formPauta.querySelectorAll('input.btn-check[name^="aluno_"]:not(:disabled)').forEach(radio => {
             radio.addEventListener('change', function () {
                 if (!validarPendencias(formPauta).length) esconderAvisoPendencia();
             });
@@ -142,5 +142,6 @@ if (typeof module !== 'undefined' && module.exports) {
         CONCEITOS_PRESENCA,
         aulaTemPresenca,
         valorAulaPendente,
+        conceitosMarcados,
     };
 }

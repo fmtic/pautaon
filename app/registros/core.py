@@ -741,8 +741,52 @@ def frequencia():
         ):
             pode_imprimir_pauta = False
 
+    # AJ18-C (item 3): alunos da pauta com entrada posterior à data selecionada.
+    # Expor ao template para a data selecionada quais alunos da pauta têm
+    # entrada posterior à data (via aula_conta_para_aluno) e a data de entrada.
+    from app.services.entrada_oferta import aula_conta_para_aluno
+
+    alunos_entrada_posterior = {}
+    data_alvo_get = None
+    if data:
+        try:
+            data_alvo_get = date.fromisoformat(data)
+        except (ValueError, TypeError):
+            data_alvo_get = None
+
+    if data_alvo_get and aluno_ids:
+        inscricoes_get = []
+        if oferta_atual is not None:
+            inscricoes_get = Inscricao.query.filter(
+                Inscricao.turma_curso_id == oferta_atual.id,
+                Inscricao.ativo.is_(True),
+                Inscricao.aluno_id.in_(aluno_ids),
+            ).all()
+        elif turma_id:
+            inscricoes_get = (
+                Inscricao.query
+                .filter(
+                    Inscricao.turma_id == turma_id,
+                    Inscricao.ativo.is_(True),
+                    Inscricao.aluno_id.in_(aluno_ids),
+                )
+                .order_by(Inscricao.id)
+                .all()
+            )
+        insc_map_get = {}
+        for insc in inscricoes_get:
+            insc_map_get.setdefault(insc.aluno_id, insc)
+
+        for aid in aluno_ids:
+            insc = insc_map_get.get(aid)
+            if insc is not None and not aula_conta_para_aluno(insc, data_alvo_get):
+                entrada_ef = getattr(insc, "data_entrada_oferta", None)
+                if entrada_ef is not None:
+                    alunos_entrada_posterior[aid] = entrada_ef
+
     return render_template('frequencia/lancar.html',
                            alunos_com_info=alunos_com_info,
+                           alunos_entrada_posterior=alunos_entrada_posterior,
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,

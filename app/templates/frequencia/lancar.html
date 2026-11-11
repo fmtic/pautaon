@@ -272,6 +272,7 @@ turma_curso quando há oferta. #}
 
         <div class="row g-3">
             {% for aluno in alunos %}
+            {% set entrada_aluno = (alunos_entrada_posterior.get(aluno.id) if alunos_entrada_posterior else None) %}
             <div class="col-md-6 col-lg-4">
                 <div class="card h-100 shadow-sm border-0 card-aluno">
                     <div class="card-body d-flex align-items-center">
@@ -318,16 +319,18 @@ turma_curso quando há oferta. #}
 
                             <div class="btn-group w-100 mt-2" role="group">
                                 {% for c in ['A', 'B', 'C', 'D', 'F', 'J'] %}
-                                <input type="radio" class="btn-check" name="aluno_{{ aluno.id }}"
+                                <input type="radio" class="btn-check" {% if not entrada_aluno %}name="aluno_{{ aluno.id }}"{% endif %}
                                     id="aluno_{{ aluno.id }}_{{ c }}" value="{{ c }}" {% if
                                     frequencias.get(aluno.id)==c %}checked{% endif %} {% if not
-                                    aluno.pode_receber_frequencia or is_readonly %}disabled{% endif %}>
+                                    aluno.pode_receber_frequencia or is_readonly or entrada_aluno %}disabled{% endif %}>
                                 <label class="btn btn-sm btn-outline-secondary label-conceito conceito-{{ c }}"
                                     for="aluno_{{ aluno.id }}_{{ c }}">{{ c }}</label>
                                 {% endfor %}
                             </div>
 
-                            {% if not aluno.pode_receber_frequencia %}
+                            {% if entrada_aluno %}
+                            <small class="text-muted mt-1 d-block"><i class="bi bi-info-circle me-1"></i>Entrou em {{ entrada_aluno.strftime('%d/%m') }}</small>
+                            {% elif not aluno.pode_receber_frequencia %}
                             <small class="text-warning mt-1 d-block"><i class="bi bi-exclamation-triangle"></i>
                                 Aluno transferido - frequência não aplicável</small>
                             {% endif %}
