@@ -21,8 +21,8 @@ _GOLDEN_HTML = {
     ("admin", "individual"): "097be7f9f03b288c185ef85a38bc71b824b2bb4e5f4222bb345828cadad7de67",
     ("admin", "coletiva"): "f5460658bbd639e35ecfb72d6d706838189b00ff527f5a487cf6c9845c32a11c",
     ("pedagogico", "individual"): "7288a44a0880a5f9940cca779e0461b6ed1704fdbba25760085838cb3efaea10",
-    ("pedagogico", "coletiva"): "e2a1baba211e0ee9cd5dd21f06379a3b94eddc64408fabe1679262d565175ab1",
-    ("professor", "individual"): "e76db195b98ba7c17a8662052d7efe5989c97541f84bec7c958f319cd6e5de03",
+    ("pedagogico", "coletiva"): "30ab34d0a7d268db4b2c63efbdbabc44f597f1411ddba8829420dfc7ea36cedb",
+    ("professor", "individual"): "e2a1baba211e0ee9cd5dd21f06379a3b94eddc64408fabe1679262d565175ab1",
     ("professor", "coletiva"): "e76db195b98ba7c17a8662052d7efe5989c97541f84bec7c958f319cd6e5de03",
 }
 

@@ -34,8 +34,17 @@ Estende AJ18-E: ao avançar `Inscricao.data_entrada_oferta` para uma data com fr
 - `pytest -q tests/test_aj18f_remover_anteriores.py tests/test_aj18e_editar_entrada.py tests/test_aj6b3_snapshot_nao_professor.py "tests/test_aj6b6_matriz_rotas_professor.py::test_snapshot_nao_professor_inalterado"` reexecutado após F2: **41 passed**.
 - Ruff (`--select F821,F811,F841,F401`) limpo em `app/services/entrada_oferta.py app/registros/turmas.py tests/test_aj18f_remover_anteriores.py`.
 
-**Suíte completa (`pytest tests/ -q`, mesma env):** **1728 passed, 14 failed, 1081 warnings in 1119.45s (0:18:39)**. Falhas não relacionadas a AJ18/F2 (preexistentes/ambientais no estado atual do branch): `tests/test_aj5c_form_caracterizacao.py` (6, snapshots esperam `v0.2.0` enquanto app/snapshots de versão estão em `v0.2.2`), `tests/test_aj6b5_lista_turma_por_papel.py::test_snapshot_lista_gestores_identico` (1, mesmo drift de versão), `tests/test_aj7b_conselho_none.py::test_a5_varredura_get_nos_templates_conselho` (1, presença local de `app/templates/conselho/lancamento - Copia.html` não rastreado), `tests/test_aj7d_gravacao_conselho.py` (6 hashes dourados divergem por bump de versão em templates). Nenhuma dessas falhas envolve `entrada_oferta`, rota/modal de entrada ou casos AJ18.
+**Suíte completa (`pytest tests/ -q`, mesma env):** **1742 passed, 0 failed, 1081 warnings in 3076.12s (0:51:16)**. As 14 falhas anteriores (AJ5C/AJ6-B5/AJ7B/AJ7D) eram regressões de versão/goldens e do template órfão; foram resolvidas em AJ18-F3 (snapshots só-versão regenerados, hashes AJ7D corrigidos, template ausente).
+
+## Auditoria AJ18-F3 — versão, goldens e docs
+- **Origem do bump:** `git log -p --follow app/version.py` mostra que `5306fa9` ("feat(layout) — login Google + paginação do conselho individual") mudou `APP_VERSION` de `0.2.0` para `0.2.2`. Esse commit é o **head de `nova_feature`** (e de `origin/nova_feature`), não exclusivo desta branch; a branch o contém por ancestralidade.
+- **Versão mantida em `0.2.2`** (decisão padrão). O bump também alterou `base.html` (`v{{ app_version }}` → `v {{ app_version }}`), por isso o header aparece como `v 0.2.2` nos snapshots.
+- **AJ5C/AJ5E:** diff token a token contra `1efd820` é **somente versão** (`v0.2.0` → `v 0.2.2` no header e `pautaON v0.2.0` → `pautaON v0.2.2` no footer). Snapshot já atualizado em `86f0827`; regeneração válida.
+- **AJ6-B5:** diff de `aj6b5_lista_*.txt` também é **somente versão** no header/footer; já atualizado em `86f0827`.
+- **AJ7D (`test_aj7d_gravacao_conselho.py`):** o diff token a token **não é só versão** — inclui mudanças de UI de `5306fa9` (paginação/barra de progresso e estilos em `lancamento.html`) e de `ee24f7d` ("Alteração de layout", `turma_aval.html`: estilos, rótulos e `obs_turma`). Os hashes foram regenerados a partir do HTML atual; dois pares estavam trocados (`pedagogico/coletiva` e `professor/individual`) e foram corrigidos para os valores reais.
+- **Template órfão:** `app/templates/conselho/lancamento - Copia.html` já havia sido removido em `86f0827`; não existe na árvore de trabalho nem no índice.
+- **Docs:** MER (cabeçalho, §8.3 e demais menções), backlog e este relatório agora registram "produção em `1fdc7c03bdc2` (head) desde 11/11/2026; AJ18-F sem migration". Trava AJ18-F2 (conselho concluído) já estava registrada no MER §8.3 e no backlog.
 
 ## Pendências
-- Revisão/merge conforme fluxo do repositório; deploy segue dependente da migration `1fdc7c03bdc2` (produção em `f2a3b4c5d6e7`, uma revisão pendente — responsável aplica).
-- Falhas de suíte acima são externas a AJ18-F2 e exigem tratamento próprio (atualização de snapshots/goldens de versão e remoção/ignore do arquivo local `lancamento - Copia.html`).
+- Revisão/merge conforme fluxo do repositório; produção em `1fdc7c03bdc2` (head) desde 11/11/2026; AJ18-F sem migration.
+- Sem pendências de suíte: snapshots/goldens de versão e hashes AJ7D atualizados; template órfão ausente.
