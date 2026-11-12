@@ -213,7 +213,15 @@ def turma_tem_historico(turma_id: int) -> bool:
         )
     ).first():
         return True
-    if ConselhoClasse.query.filter_by(turma_id=turma_id).first():
+    # AJ20: casca de ConselhoClasse (linha do GET sem conteúdo) NÃO conta
+    # como histórico — se comporta como linha ausente.
+    from app.services.conselho_leitura import cond_conselho_sem_conteudo
+
+    if (
+        ConselhoClasse.query.filter_by(turma_id=turma_id)
+        .filter(~cond_conselho_sem_conteudo())
+        .first()
+    ):
         return True
     if Transferencia.query.filter(
         or_(
@@ -496,6 +504,7 @@ def oferta_tem_lancamentos(oferta_id: int) -> bool:
     na edição da turma).
     """
     from app.models import ConselhoClasse, Frequencia, RegistroAula
+    from app.services.conselho_leitura import cond_conselho_sem_conteudo
 
     return bool(
         db.session.query(Frequencia.id)
@@ -504,8 +513,12 @@ def oferta_tem_lancamentos(oferta_id: int) -> bool:
         or db.session.query(RegistroAula.id)
         .filter(RegistroAula.turma_curso_id == oferta_id)
         .first()
+        # AJ20: casca de ConselhoClasse (sem conteúdo) não é lançamento.
         or db.session.query(ConselhoClasse.id)
-        .filter(ConselhoClasse.turma_curso_id == oferta_id)
+        .filter(
+            ConselhoClasse.turma_curso_id == oferta_id,
+            ~cond_conselho_sem_conteudo(),
+        )
         .first()
     )
 
@@ -517,20 +530,21 @@ def ofertas_com_lancamentos(oferta_ids) -> set[int]:
     uma por linha da listagem.
     """
     from app.models import ConselhoClasse, Frequencia, RegistroAula
+    from app.services.conselho_leitura import cond_conselho_sem_conteudo
 
     ids = [int(id_oferta) for id_oferta in oferta_ids if id_oferta]
     if not ids:
         return set()
     com_lancamento: set[int] = set()
     for modelo in (Frequencia, RegistroAula, ConselhoClasse):
+        query = db.session.query(modelo.turma_curso_id).filter(
+            modelo.turma_curso_id.in_(ids)
+        )
+        # AJ20: casca de ConselhoClasse (sem conteúdo) não é lançamento.
+        if modelo is ConselhoClasse:
+            query = query.filter(~cond_conselho_sem_conteudo())
         com_lancamento.update(
-            id_oferta
-            for (id_oferta,) in (
-                db.session.query(modelo.turma_curso_id)
-                .filter(modelo.turma_curso_id.in_(ids))
-                .distinct()
-                .all()
-            )
+            id_oferta for (id_oferta,) in query.distinct().all()
         )
     return com_lancamento
 

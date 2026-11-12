@@ -142,6 +142,9 @@ def _seed(*, ofertas=1, com_inscrito=False, historico=None):
                 turma_id=turma.id, aluno_id=aluno_id,
                 turma_curso_id=oferta_ids[0],
                 etapa=EtapaConselho.INICIAL, unidade_id=u1.id,
+                # AJ20: casca sem conteúdo não é histórico — o conselho
+                # "real" da fixture precisa ter algum dado gravado.
+                observacao="Parecer do conselho",
             ))
 
         db.session.commit()

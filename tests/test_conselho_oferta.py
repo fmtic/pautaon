@@ -184,8 +184,21 @@ def test_lancamento_oferta_unica_usa_direto_e_vincula(client, app):
     _enturma(app, ids, "aluno_a")
     _loga(client, ids, unidade_id=ids["un_a"])
 
+    # AJ20: o GET não cria mais ConselhoClasse — a linha nasce no POST.
     r = client.get(f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL")
     assert r.status_code == 200
+    with app.app_context():
+        assert ConselhoClasse.query.count() == 0
+
+    # O POST de salvar cria a linha já vinculada à oferta.
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][0]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         conselhos = ConselhoClasse.query.filter_by(etapa=EtapaConselho.INICIAL).all()
         assert len(conselhos) == 1
@@ -206,12 +219,24 @@ def test_lancamento_duas_ofertas_exige_escolha(client, app):
     with app.app_context():
         assert ConselhoClasse.query.count() == 0
 
-    # Com escolha válida: cria conselho vinculado Àquela oferta.
+    # Com escolha válida: a tela abre; o POST vincula Àquela oferta
+    # (AJ20: o GET não cria mais a linha).
     r = client.get(
         f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL"
         f"&oferta_sel={ids['ofertas'][1]}"
     )
     assert r.status_code == 200
+    with app.app_context():
+        assert ConselhoClasse.query.count() == 0
+
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][1]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         conselhos = ConselhoClasse.query.all()
         assert len(conselhos) == 1
@@ -324,12 +349,21 @@ def test_aluno_em_duas_ofertas_tem_um_conselho_por_oferta(client, app):
     _enturma(app, ids, "aluno_a", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
 
+    p_aluno, _ = _perguntas(app)
     for idx in (0, 1):
+        # AJ20: o GET não cria linha; o POST em cada oferta cria a sua.
         r = client.get(
             f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL"
             f"&oferta_sel={ids['ofertas'][idx]}"
         )
         assert r.status_code == 200
+        r = client.post("/conselho/salvar", data={
+            "turma_id": str(ids["turma"]),
+            "etapa": "INICIAL",
+            "turma_curso_id": str(ids["ofertas"][idx]),
+            f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+        })
+        assert r.status_code == 302
     with app.app_context():
         do_aluno = ConselhoClasse.query.filter_by(aluno_id=ids["aluno_a"]).all()
         assert len(do_aluno) == 2
@@ -355,6 +389,19 @@ def test_conselho_sem_oferta_recusado_pelo_banco(client, app):
 
     _loga(client, ids, unidade_id=ids["un_a"])
     client.get(f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL")
+    with app.app_context():
+        # AJ20: o GET não cria mais a casca — continua 0 linhas.
+        assert ConselhoClasse.query.count() == 0
+
+    # O POST cria a linha já com turma_curso_id (nunca NULL).
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][0]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         linhas = ConselhoClasse.query.all()
         assert len(linhas) == 1

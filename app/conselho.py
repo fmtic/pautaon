@@ -59,6 +59,7 @@ from app.services.turma_curso import (
 )
 from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date
 from collections import OrderedDict
 from app.utils.autor import autor_do_lancamento
@@ -348,6 +349,61 @@ def _normalize_conselho_request(form_data) -> dict:
                 normalized["observacoes"][aluno_id] = texto.strip()
 
     return normalized
+
+
+# ---------------------------------------------------------------------------
+# AJ20 — ConselhoClasse só nasce na escrita (nunca no GET)
+# ---------------------------------------------------------------------------
+
+def _buscar_conselho(oferta_id: int, aluno_id: int, etapa):
+    """SELECT da linha (aluno, oferta, etapa) — extraído para o teste de
+    corrida do AJ20 poder simular "a linha apareceu entre o select e o
+    insert" devolvendo None na primeira chamada."""
+    return ConselhoClasse.query.filter_by(
+        turma_curso_id=oferta_id,
+        aluno_id=aluno_id,
+        etapa=etapa,
+    ).first()
+
+
+def get_or_create_conselho(
+    *, turma_id, oferta, aluno_id, etapa, unidade_id,
+    data_inicio=None, instrutor_id=None,
+) -> ConselhoClasse:
+    """ConselhoClasse de (aluno, oferta, etapa): devolve a existente ou cria.
+
+    Chamado SOMENTE por fluxos que vão gravar conteúdo (resposta,
+    observação ou fechamento) — o GET nunca cria mais cascas vazias.
+
+    O INSERT corre dentro de SAVEPOINT: se outra requisição criou a linha
+    entre o SELECT e o INSERT, a UNIQUE `uix_conselho_oferta` estoura
+    IntegrityError, o savepoint desfaz apenas o INSERT e a linha vencedora
+    é relida — nunca 500 em corrida. Compatível com SQLite (testes) e
+    PostgreSQL.
+    """
+    etapa_valor = getattr(etapa, "value", etapa)
+    existente = _buscar_conselho(oferta.id, aluno_id, etapa_valor)
+    if existente is not None:
+        return existente
+    try:
+        with db.session.begin_nested():
+            conselho = ConselhoClasse(
+                turma_id=turma_id,
+                turma_curso_id=oferta.id,
+                aluno_id=aluno_id,
+                etapa=etapa_valor,
+                unidade_id=unidade_id,
+                data_inicio=data_inicio,
+                instrutor_id=instrutor_id,
+            )
+            db.session.add(conselho)
+            db.session.flush()
+        return conselho
+    except IntegrityError:
+        vencedor = _buscar_conselho(oferta.id, aluno_id, etapa_valor)
+        if vencedor is None:
+            raise
+        return vencedor
 
 
 # ---------------------------------------------------------------------------
@@ -725,38 +781,17 @@ def lancamento_conselho():
                             etapa=etapa,
                             oferta_sel=oferta.id))
 
-    # Busca ou cria registros de conselho POR OFERTA para a etapa. Linhas
-    # legadas (turma_curso_id NULL) não são tocadas nem adotadas.
-    for aluno in alunos:
-        existe = ConselhoClasse.query.filter_by(
-            turma_curso_id=oferta.id,
-            aluno_id=aluno.id,
-            etapa=etapa
-        ).first()
-        if not existe:
-            db.session.add(ConselhoClasse(
-                turma_id=turma_obj.id,
-                turma_curso_id=oferta.id,
-                aluno_id=aluno.id,
-                etapa=etapa,
-                unidade_id=unidade_id
-            ))
-    try:
-        db.session.commit()
-    except Exception as e:
-        from app.utils.errors import flash_and_log
-
-        db.session.rollback()
-        flash_and_log(e, location='conselho.lancamento_conselho', hint='db')
-        return redirect(url_for('conselho.lancamento_conselho', etapa=etapa,
-                                oferta_sel=oferta.id))
-
-    # Usa o primeiro registro da oferta como referência de conselho_id
-    db.session.expire_all()
+    # AJ20: o GET NÃO escreve mais. Antes, cada abertura criava uma
+    # ConselhoClasse "casca" por aluno ativo da oferta/etapa e dava commit
+    # (GET com efeito colateral + risco de UNIQUE em aberturas simultâneas).
+    # Linha ausente = vazio: os mapas abaixo simplesmente não têm entrada
+    # para aquele aluno e o formulário volta em branco.
     conselhos_etapa = ConselhoClasse.query.filter_by(
         turma_curso_id=oferta.id, etapa=etapa
     ).order_by(ConselhoClasse.id).all()
-    conselho = conselhos_etapa[0] if conselhos_etapa else None
+    # A variável `conselho` era referência de conselho_id e não é usada pelo
+    # template; sem linha garantida, o valor neutro é None.
+    conselho = None
 
     perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).order_by(PerguntaConselho.id).all()
 
@@ -937,15 +972,15 @@ def salvar_conselho():
         if conselho is None:
             # Aluno matriculado na oferta sem conselho criado ainda: nasce já
             # vinculado à oferta (regra D5.2 — nada de linha sem turma_curso_id).
-            conselho = ConselhoClasse(
+            # AJ20: helper único com SAVEPOINT — corrida na UNIQUE
+            # `uix_conselho_oferta` relê a linha vencedora, nunca 500.
+            conselho = get_or_create_conselho(
                 turma_id=turma_obj.id,
-                turma_curso_id=oferta.id,
+                oferta=oferta,
                 aluno_id=aluno_id,
                 etapa=etapa,
                 unidade_id=unidade_id,
             )
-            db.session.add(conselho)
-            db.session.flush()
             conselho_map[aluno_id] = conselho
 
         resposta = respostas_por_chave.get((aluno_id, pergunta_id))
@@ -1027,15 +1062,15 @@ def salvar_conselho():
         if conselho is None:
             if not (value_obs or "").strip():
                 continue
-            conselho = ConselhoClasse(
+            # AJ20: observação com conteúdo é o único motivo para criar a
+            # linha aqui — obs vazia e sem linha existente não grava nada.
+            conselho = get_or_create_conselho(
                 turma_id=turma_obj.id,
-                turma_curso_id=oferta.id,
+                oferta=oferta,
                 aluno_id=aluno_id,
                 etapa=etapa,
                 unidade_id=unidade_id,
             )
-            db.session.add(conselho)
-            db.session.flush()
             conselho_map[aluno_id] = conselho
         if not _valor_conselho_mudou(conselho.observacao, value_obs):
             continue
@@ -1223,23 +1258,18 @@ def salvar_fechamento_data(turma_id):
             else:
                 p_turma_id = int(p_turma_id)
 
-            conselho = ConselhoClasse.query.filter_by(
-                turma_curso_id=oferta.id,
+            # AJ20: helper único com SAVEPOINT — o fechamento só cria a
+            # linha quando vai gravar situação/concluído, e uma corrida na
+            # UNIQUE `uix_conselho_oferta` relê a linha vencedora.
+            conselho = get_or_create_conselho(
+                turma_id=turma.id,
+                oferta=oferta,
                 aluno_id=aluno_id,
-                etapa=EtapaConselho.FINAL
-            ).first()
-
-            if not conselho:
-                conselho = ConselhoClasse(
-                    turma_id=turma.id,
-                    turma_curso_id=oferta.id,
-                    aluno_id=aluno_id,
-                    etapa=EtapaConselho.FINAL.value,
-                    data_inicio=date.today(),
-                    instrutor_id=current_user.id,
-                    unidade_id=unidade_id
-                )
-                db.session.add(conselho)
+                etapa=EtapaConselho.FINAL,
+                unidade_id=unidade_id,
+                data_inicio=date.today(),
+                instrutor_id=current_user.id,
+            )
 
             conselho.situacao_final         = situacao
             conselho.proxima_turma_id       = p_turma_id

@@ -24,7 +24,10 @@ from app.models import (
     Turma,
     TurmaCurso,
 )
-from app.services.conselho_leitura import rotulo_oferta
+from app.services.conselho_leitura import (
+    cond_conselho_sem_conteudo,
+    rotulo_oferta,
+)
 from app.services.turma_curso import ofertas_ativas
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
@@ -131,10 +134,12 @@ def resultado_conselho():
                     ofertas = []
 
                 oferta_ids = [o.id for o in ofertas]
+                # AJ20: casca FINAL sem conteúdo equivale a linha ausente.
                 conselhos = (
                     ConselhoClasse.query.filter(
                         ConselhoClasse.etapa == "FINAL",
                         ConselhoClasse.turma_curso_id.in_(oferta_ids),
+                        ~cond_conselho_sem_conteudo(),
                     ).all()
                     if oferta_ids
                     else []

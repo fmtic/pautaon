@@ -24,6 +24,29 @@ from app.models import ConselhoClasse, TurmaCurso
 from app.models.enums import EtapaConselho
 
 
+def cond_conselho_sem_conteudo():
+    """Condição SQL: ConselhoClasse "casca" — linha sem nenhum conteúdo.
+
+    AJ20: antes do lazy-create, o GET do lançamento gravava uma linha por
+    aluno/etapa/oferta sem nada dentro. Casca e linha ausente devem se
+    comportar de forma IDÊNTICA nos leitores — esta condição identifica a
+    casca para que guardas de histórico/lançamento a ignorem.
+
+    "Sem conteúdo" = não concluído, sem `situacao_final`, sem observação
+    (NULL ou '') e sem nenhuma `ConselhoResposta` filha. Linha com QUALQUER
+    um desses sinais é conteúdo real e continua contando.
+    """
+    return and_(
+        ConselhoClasse.concluido == False,  # noqa: E712 — coluna NOT NULL
+        ConselhoClasse.situacao_final.is_(None),
+        or_(
+            ConselhoClasse.observacao.is_(None),
+            ConselhoClasse.observacao == "",
+        ),
+        ~ConselhoClasse.respostas.any(),
+    )
+
+
 def _etapa_valor(etapa) -> str:
     """Normaliza a etapa para o VALOR gravado no banco ('INICIAL', ...)."""
     if isinstance(etapa, EtapaConselho):
@@ -55,11 +78,16 @@ def conselho_do_aluno(aluno_id: int, turma_curso_id: int | None, etapa) -> Conse
     """
     if aluno_id is None or turma_curso_id is None:
         return None
-    return ConselhoClasse.query.filter_by(
-        aluno_id=aluno_id,
-        turma_curso_id=turma_curso_id,
-        etapa=_etapa_valor(etapa),
-    ).first()
+    # AJ20: casca sem conteúdo equivale a linha ausente.
+    return (
+        ConselhoClasse.query.filter_by(
+            aluno_id=aluno_id,
+            turma_curso_id=turma_curso_id,
+            etapa=_etapa_valor(etapa),
+        )
+        .filter(~cond_conselho_sem_conteudo())
+        .first()
+    )
 
 
 def conselhos_por_oferta(pares_aluno_oferta, etapas=None) -> dict:
@@ -89,6 +117,8 @@ def conselhos_por_oferta(pares_aluno_oferta, etapas=None) -> dict:
         for aluno_id, turma_curso_id in pares
     ]
     query = ConselhoClasse.query.filter(or_(*condicoes))
+    # AJ20: casca sem conteúdo equivale a linha ausente.
+    query = query.filter(~cond_conselho_sem_conteudo())
     if etapas is not None:
         valores = [_etapa_valor(e) for e in etapas]
         if not valores:

@@ -18,8 +18,8 @@ Cobertura:
     T7 escape na exibição (lançamento e ficha 360°).
     T8 leitor da ficha: a observação geral aparece por etapa.
     T9 ``ConselhoResposta.observacao`` permanece NULL (coluna sem uso).
-    T10 caracterização do GET: ele cria as cascas de ``ConselhoClasse`` por
-        aluno sem salvar (comportamento existente; reportado no AJ19).
+    T10 caracterização AJ20: o GET NÃO cria mais cascas (inversão
+        intencional; a criação migrou para o POST — ver test_aj20).
 """
 
 import re
@@ -176,16 +176,18 @@ def test_t3_aluno_sem_observacao_fica_vazio_e_nao_afeta_o_outro(client, app):
     r = _post(client, ids, campos={f"obs_{ids['aluno_a']}": "Só a Ana tem texto"})
     assert r.status_code == 302
 
-    # O GET cria a casca do Beto; a observação dele fica vazia.
+    # AJ20: o GET não cria mais a casca do Beto — linha ausente = vazio.
     obs = _observacoes(_corpo(client.get(_url(ids))))
     assert obs[str(ids["aluno_a"])] == "Só a Ana tem texto"
     assert obs[str(ids["aluno_b"])] == ""
 
     with app.app_context():
-        b = ConselhoClasse.query.filter_by(
-            aluno_id=ids["aluno_b"], etapa=EtapaConselho.INICIAL,
-        ).one()
-        assert b.observacao in (None, "")
+        assert (
+            ConselhoClasse.query.filter_by(
+                aluno_id=ids["aluno_b"], etapa=EtapaConselho.INICIAL,
+            ).count()
+            == 0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -387,27 +389,26 @@ def test_t9_conselho_resposta_observacao_nao_e_escrita(client, app):
 
 
 # ---------------------------------------------------------------------------
-# T10 — caracterização: GET cria as cascas de ConselhoClasse
+# T10 — caracterização AJ20: o GET NÃO cria mais cascas de ConselhoClasse
 # ---------------------------------------------------------------------------
 
-def test_t10_get_cria_cascas_de_conselho_por_aluno(client, app):
+def test_t10_get_nao_cria_mais_cascas_de_conselho(client, app):
+    """Antes do AJ20 este teste caracterizava o efeito colateral do GET
+    (uma casca por aluno). O comportamento foi invertido de propósito: a
+    linha só nasce no POST — ver tests/test_aj20_conselho_lazy.py."""
     ids = _cenario(app)
     _login(client, ids, "admin")
 
     assert client.get(_url(ids)).status_code == 200
 
     with app.app_context():
-        linhas = ConselhoClasse.query.filter_by(
-            turma_curso_id=ids["ofertas"][0],
-            etapa=EtapaConselho.INICIAL,
-        ).all()
-        assert len(linhas) == 2
-        assert {linha.aluno_id for linha in linhas} == {
-            ids["aluno_a"], ids["aluno_b"],
-        }
-        # Efeito colateral atual: cascas vazias, gravadas sem conteúdo.
-        assert all(linha.observacao is None for linha in linhas)
-        assert ConselhoResposta.query.count() == 0
+        assert (
+            ConselhoClasse.query.filter_by(
+                turma_curso_id=ids["ofertas"][0],
+                etapa=EtapaConselho.INICIAL,
+            ).count()
+            == 0
+        )
 
 
 # ---------------------------------------------------------------------------

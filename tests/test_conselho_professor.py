@@ -217,9 +217,10 @@ def test_lancamento_abre_a_oferta_do_professor(client, app):
     assert "Aluno do X" in corpo
     assert "Como participa das aulas?" in corpo
     with app.app_context():
+        # AJ20: o GET não cria mais a linha — ela nasce no POST.
         assert ConselhoClasse.query.filter_by(
             turma_curso_id=ids["ox"]
-        ).count() == 1
+        ).count() == 0
 
 
 def test_lancamento_recusa_oferta_de_outro_professor(client, app):

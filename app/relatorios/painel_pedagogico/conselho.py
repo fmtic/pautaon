@@ -70,10 +70,17 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
     if not turmas_ids:
         return {}
 
-    conselhos = ConselhoClasse.query.filter(
-        ConselhoClasse.turma_id.in_(turmas_ids),
-        ConselhoClasse.turma_curso_id.is_not(None),
-    ).all()
+    # AJ20: casca sem conteúdo equivale a linha ausente — não deve fazer a
+    # turma/oferta aparecer no painel só por causa dela.
+    from app.services.conselho_leitura import cond_conselho_sem_conteudo
+
+    conselhos = (
+        ConselhoClasse.query.filter(
+            ConselhoClasse.turma_id.in_(turmas_ids),
+            ConselhoClasse.turma_curso_id.is_not(None),
+            ~cond_conselho_sem_conteudo(),
+        ).all()
+    )
     if not conselhos:
         return {}
 
