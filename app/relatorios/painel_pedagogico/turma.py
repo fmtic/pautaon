@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.models import Aluno, Inscricao, Turma
+from app.models.enums import ConceitoFrequencia
 
 from . import conselho, frequencia
 from .formatacao import (
@@ -179,7 +180,10 @@ def _alunos_da_turma(turma: Turma, freq: FrequenciaTurma) -> list[dict]:
             "maior_seq_faltas": maior_sequencia_faltas(lista),
             "faltas_atuais": faltas_atuais(lista),
             "aulas": [{"data": d, "conceito": c} for d, c in lista],
-            "conceitos_por_data": {d.isoformat(): c for d, c in lista},
+            "conceitos_por_data": {
+                d.isoformat(): c.value if isinstance(c, ConceitoFrequencia) else c
+                for d, c in lista
+            },
         })
     saida.sort(key=lambda d: d["pct"])
     return saida

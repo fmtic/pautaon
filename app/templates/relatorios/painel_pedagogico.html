@@ -424,7 +424,7 @@
             <tr>
               <th></th>
               {% for d in vt.alunos_por_aula.datas %}<th class="text-center" style="font-size:.62rem">{{ d.label }}</th>{% endfor %}
-              <th>Freq.</th><th>Seq.</th><th class="text-end pe-1">Ficha</th>
+              <th>Freq.</th><th class="text-center">Seq. Faltas</th><th class="text-end pe-1">Ficha</th>
             </tr>
           </thead>
           <tbody>
@@ -437,7 +437,7 @@
                 {% else %}<td class="pt-c text-muted">—</td>{% endif %}
               {% endfor %}
               <td><span class="badge bg-{{ a.faixa_meta.classe }}-subtle text-{{ a.faixa_meta.classe }}-emphasis pt-num">{{ a.pct_str }}</span></td>
-              <td class="pt-num {% if a.maior_seq_faltas >= 3 %}text-danger fw-bold{% endif %}">{{ a.maior_seq_faltas }}</td>
+              <td class="pt-num text-center {% if a.maior_seq_faltas >= 3 %}text-danger fw-bold{% endif %}">{{ a.maior_seq_faltas }}</td>
               <td class="text-end pe-1">
                 <a class="btn btn-outline-primary btn-sm py-0" href="{{ url_for('relatorios.ficha_aluno_view', aluno_id=a.id, turma_id=vt.turma.id) }}">Abrir <i class="bi bi-arrow-right"></i></a>
               </td>

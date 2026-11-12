@@ -206,6 +206,11 @@ def test_caracterizacao_visao_por_turma(app):
     assert viz["faixas"] == {"hi": 1, "mid": 0, "lo": 2, "total": 3}
     assert [a["nome"] for a in viz["alunos"]] == ["Beto", "Caia", "Ana"]
     assert [a["pct"] for a in viz["alunos"]] == [0.0, 33.3, 100.0]
+    alunos = {a["nome"]: a for a in viz["alunos"]}
+    assert alunos["Ana"]["conceitos_por_data"]["2026-03-02"] == "A"
+    assert type(alunos["Ana"]["conceitos_por_data"]["2026-03-02"]) is str
+    assert alunos["Beto"]["conceitos_por_data"]["2026-03-02"] == "F"
+    assert type(alunos["Beto"]["conceitos_por_data"]["2026-03-02"]) is str
 
 
 def test_caracterizacao_visao_por_periodo(app):
