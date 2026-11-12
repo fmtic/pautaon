@@ -177,11 +177,7 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list, oferta=None) -> dict
     else:
         filtro_aluno["turma_id"] = turma.id
 
-    rows = (
-        Frequencia.query.filter_by(**filtro_aluno)
-        .order_by(Frequencia.data)
-        .all()
-    )
+    rows = Frequencia.query.filter_by(**filtro_aluno).order_by(Frequencia.data).all()
 
     acum = _Acumulado()
     por_data: dict[date, ConceitoFrequencia] = {}
@@ -246,7 +242,12 @@ def _frequencia(aluno_id: int, turma: Turma, semanas: list, oferta=None) -> dict
             continue
 
         seg = _segunda_da(f.data)
-        if f.conceito in (ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D):
+        if f.conceito in (
+            ConceitoFrequencia.A,
+            ConceitoFrequencia.B,
+            ConceitoFrequencia.C,
+            ConceitoFrequencia.D,
+        ):
             por_semana_aluno[seg][0] += 1
         elif f.conceito == ConceitoFrequencia.F:
             por_semana_aluno[seg][1] += 1
@@ -487,7 +488,12 @@ def _sinais(freq: dict, conselho: dict, atendimentos_count: int) -> list[dict]:
 # Timeline
 # =============================================================================
 def _timeline(
-    freq: dict, conselho: dict, atendimentos: list, turma: Turma
+    freq: dict,
+    conselho: dict,
+    atendimentos: list,
+    turma: Turma,
+    inscricao: Inscricao | None = None,
+    oferta=None,
 ) -> list[dict]:
     ev: list[dict] = []
 
@@ -544,14 +550,22 @@ def _timeline(
             }
         )
 
-    # Início
-    if turma.data_inicio:
+        # Início: entrada do aluno na oferta (AJ18); NULL = desde o início da oferta
+    entrada = getattr(inscricao, "data_entrada_oferta", None)
+    if entrada:
+        data_ini, titulo_ini = entrada, "Entrada na turma"
+    else:
+        data_ini = (
+            oferta.data_inicio if oferta is not None else None
+        ) or turma.data_inicio
+        titulo_ini = "Início na turma"
+    if data_ini:
         ev.append(
             {
-                "data": turma.data_inicio,
+                "data": data_ini,
                 "tipo": "info",
                 "icone": "person-plus",
-                "titulo": "Início na turma",
+                "titulo": titulo_ini,
                 "detalhe": None,
             }
         )
@@ -589,9 +603,40 @@ def _percurso(aluno_id: int, turma_atual_id: int) -> list[dict]:
     freq_agg = (
         db.session.query(
             Turma.id,
-            func.count(Frequencia.id).label('total'),
-            func.sum(case((Frequencia.conceito.in_([ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D]), 1), else_=0)).label('presencas'),
-            func.sum(case((Frequencia.conceito.in_([ConceitoFrequencia.A, ConceitoFrequencia.B, ConceitoFrequencia.C, ConceitoFrequencia.D, ConceitoFrequencia.F]), 1), else_=0)).label('contaveis'),
+            func.count(Frequencia.id).label("total"),
+            func.sum(
+                case(
+                    (
+                        Frequencia.conceito.in_(
+                            [
+                                ConceitoFrequencia.A,
+                                ConceitoFrequencia.B,
+                                ConceitoFrequencia.C,
+                                ConceitoFrequencia.D,
+                            ]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("presencas"),
+            func.sum(
+                case(
+                    (
+                        Frequencia.conceito.in_(
+                            [
+                                ConceitoFrequencia.A,
+                                ConceitoFrequencia.B,
+                                ConceitoFrequencia.C,
+                                ConceitoFrequencia.D,
+                                ConceitoFrequencia.F,
+                            ]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("contaveis"),
         )
         .join(Frequencia, Frequencia.turma_id == Turma.id)
         .filter(Frequencia.aluno_id == aluno_id, Turma.id != turma_atual_id)
@@ -687,9 +732,9 @@ def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
 
     status = None
     if periodo is not None:
-        status = status_alunos(
-            periodo_id=periodo.id, aluno_ids=[aluno.id]
-        ).get(aluno.id)
+        status = status_alunos(periodo_id=periodo.id, aluno_ids=[aluno.id]).get(
+            aluno.id
+        )
 
     return {
         "aluno": aluno,
@@ -697,11 +742,15 @@ def montar(aluno: Aluno, turma: Turma, inscricao: Inscricao | None) -> dict:
         "inscricao": inscricao,
         "oferta": oferta,
         "periodo": periodo,
-        "identidade": _identidade(aluno, turma, inscricao, status=status, oferta=oferta),
+        "identidade": _identidade(
+            aluno, turma, inscricao, status=status, oferta=oferta
+        ),
         "frequencia": freq,
         "conselho": cons,
         "atendimentos": atendimentos,
-        "timeline": _timeline(freq, cons, atendimentos, turma),
+        "timeline": _timeline(
+            freq, cons, atendimentos, turma, inscricao=inscricao, oferta=oferta
+        ),
         "percurso": _percurso(aluno.id, turma.id),
         "sinais": _sinais(freq, cons, len(atendimentos)),
         "contexto_restrito": {
