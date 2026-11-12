@@ -5,20 +5,20 @@ lancamento` e o `9794165` (cor das perguntas / nome_exibicao fica no AJ2-E4),
 substituindo o placeholder do AJ2 pela cobertura real pedida no prompt AJ3:
 
     T1 GET: perguntas com opções renderizam o controle de resposta
-       `resp_<aluno>_<pergunta>` (input hidden + botões) e um
-       `textarea obs_<aluno>_<pergunta>` separado; nenhum valor de opção
-       aparece dentro do textarea de observação.
-    T2 POST `resp_` + `obs_` grava `resposta` (valor puro da opção) e
-       `observacao` (texto livre) em colunas distintas; o GET seguinte mostra
-       a alternativa marcada e o texto no textarea.
-    T3 `obs_` enviado vazio não recebe a alternativa.
-    T4 `obs_` ausente do POST preserva a observação gravada; `obs_` vazio
-       enviado de propósito limpa (comportamento do código atual).
+       `resp_<aluno>_<pergunta>` (input hidden + botões) e UM
+       `textarea obs_<aluno>` no fim do card; nenhum valor de opção aparece
+       dentro do textarea de observação.
+    T2 POST `resp_` + `obs_<aluno>` grava `resposta` (valor puro da opção) em
+       `ConselhoResposta` e a observação geral em `ConselhoClasse.observacao`;
+       o GET seguinte mostra a alternativa marcada e o texto no textarea.
+    T3 `obs_<aluno>` enviado vazio não recebe a alternativa.
+    T4 `obs_<aluno>` ausente do POST preserva a observação gravada; o campo
+       vazio enviado de propósito limpa (comportamento do código atual).
     T5 pergunta de texto livre continua gravando o texto em `resposta`
-       (sem regressão em relação ao que existed antes do `f3d2b15`).
+       (sem regressão em relação ao que existia antes do `f3d2b15`).
     T6 regressões do entorno: oferta encerrada bloqueia sem gravar, professor
-       de outra oferta leva 403, autor do lançamento (F1) só troca com mudança
-       de conteúdo e a avaliação coletiva abre/grava como antes.
+       de outra oferta leva 403, autor da resposta só troca com mudança de
+       conteúdo e a avaliação coletiva abre/grava como antes.
     T7 contraste WCAG da cor das perguntas (`--conselho-pergunta-cor`) contra
        branco, com a fórmula de luminância relativa.
     T8 o `conselho.js` e o handler inline do botão de alternativa não escrevem
@@ -72,7 +72,7 @@ JS_CONSELHO = RAIZ / "app" / "static" / "js" / "conselho" / "conselho.js"
 # então o valor do atributo é capturado com [^"]*).
 # ---------------------------------------------------------------------------
 _OBS_TA = re.compile(
-    r'<textarea\b[^>]*name="obs_(\d+)_(\d+)"[^>]*>(.*?)</textarea>', re.S,
+    r'<textarea\b[^>]*name="obs_(\d+)"[^>]*>(.*?)</textarea>', re.S,
 )
 _RESP_TA = re.compile(
     r'<textarea\b[^>]*name="resp_(\d+)_(\d+)"[^>]*>(.*?)</textarea>', re.S,
@@ -94,8 +94,8 @@ def _corpo(response):
 
 
 def _observadores(corpo):
-    """`{'<aluno>_<pergunta>': conteúdo do textarea obs_}`."""
-    return {f"{a}_{p}": texto for a, p, texto in _OBS_TA.findall(corpo)}
+    """`{'<aluno>': conteúdo do textarea obs_<aluno>}`."""
+    return {a: texto for a, texto in _OBS_TA.findall(corpo)}
 
 
 def _resp_hidden(corpo):
@@ -247,6 +247,12 @@ def _buscar_resposta(aluno_id, pergunta_id):
     ).one()
 
 
+def _buscar_conselho(aluno_id, etapa="INICIAL"):
+    return ConselhoClasse.query.filter_by(
+        aluno_id=aluno_id, etapa=etapa,
+    ).one()
+
+
 # ---------------------------------------------------------------------------
 # T1 — GET: controles de resposta e de observação separados
 # ---------------------------------------------------------------------------
@@ -259,10 +265,13 @@ def test_t1_get_renderiza_controle_de_resposta_e_textarea_de_observacao(client, 
     chave_opcoes = f"{ids['aluno_x']}_{ids['p_opcoes']}"
     chave_livre = f"{ids['aluno_x']}_{ids['p_livre']}"
 
-    # Toda pergunta do formulário ganhou UM textarea obs_<aluno>_<pergunta>.
+    # AJ19: UM textarea obs_<aluno> por aluno (não mais por pergunta).
     obs = _observadores(corpo)
-    assert set(obs) == {chave_opcoes, chave_livre}, (
-        "o lançamento precisa de um textarea obs_ por pergunta (aluno×pergunta)"
+    assert set(obs) == {str(ids["aluno_x"])}, (
+        "o lançamento precisa de UM textarea obs_<aluno> por aluno"
+    )
+    assert f'name="obs_{ids["aluno_x"]}_{ids["p_opcoes"]}"' not in corpo, (
+        "o textarea de observação por pergunta foi removido no AJ19"
     )
 
     # Pergunta com opções: a resposta é input hidden + botões, NÃO textarea.
@@ -273,17 +282,17 @@ def test_t1_get_renderiza_controle_de_resposta_e_textarea_de_observacao(client, 
     # Pergunta de texto livre: continua textarea resp_.
     assert chave_livre in _resp_textareas(corpo)
 
-    # Nenhum valor de opção aparece dentro de um textarea de observação.
+    # Nenhum valor de opção aparece dentro do textarea de observação.
     for chave, texto in obs.items():
         for opcao in OPCOES:
             assert opcao not in texto, (
                 f"a opção {opcao!r} vazou para o textarea obs_{chave}"
             )
-    assert obs[chave_opcoes].strip() == ""
-    assert obs[chave_livre].strip() == ""
+    assert obs[str(ids["aluno_x"])].strip() == ""
 
-    # Os rótulos distinguem os dois campos (não é o mesmo campo repetido).
-    assert 'placeholder="Digite sua observação..."' in corpo
+    # Os rótulos distinguem os campos (não é o mesmo campo repetido).
+    assert "Observações e informações adicionais" in corpo
+    assert 'placeholder="Digite observações gerais sobre o aluno..."' in corpo
     assert 'placeholder="Digite a resposta..."' in corpo
 
     # Os botões de alternativa existem, rotulados com letra e valor puro.
@@ -306,7 +315,7 @@ def test_t2_post_grava_resposta_e_observacao_sem_misturar(client, app):
 
     r = _post_salvar(client, ids, {
         f"resp_{chave}": TEXTO_OPCAO_MARCADA,
-        f"obs_{chave}": texto_livre,
+        f"obs_{ids['aluno_x']}": texto_livre,
     })
     assert r.status_code == 302
 
@@ -314,11 +323,13 @@ def test_t2_post_grava_resposta_e_observacao_sem_misturar(client, app):
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
         # `resposta` é o valor PURO da opção: sem letra, sem texto livre.
         assert resposta.resposta == TEXTO_OPCAO_MARCADA
-        assert resposta.observacao == texto_livre
+        # AJ19: a observação geral vive em ConselhoClasse, não na resposta.
+        assert _buscar_conselho(ids["aluno_x"]).observacao == texto_livre
+        assert resposta.observacao is None
 
     corpo = _corpo(client.get(_url_lancamento(ids)))
     assert _resp_hidden(corpo)[chave] == TEXTO_OPCAO_MARCADA
-    assert _observadores(corpo)[chave] == texto_livre
+    assert _observadores(corpo)[str(ids["aluno_x"])] == texto_livre
     # A alternativa gravada volta marcada no HTML (e só ela).
     marcadas = _alternativas_marcadas(corpo)
     assert set(marcadas) == set(OPCOES), (
@@ -339,7 +350,7 @@ def test_salvar_conselho_grava_e_completa_unidade_sem_trocar_autor(client, app):
     chave = f"{ids['aluno_x']}_{ids['p_opcoes']}"
     campos = {
         f"resp_{chave}": TEXTO_OPCAO_MARCADA,
-        f"obs_{chave}": "",
+        f"obs_{ids['aluno_x']}": "",
     }
 
     assert _post_salvar(client, ids, campos).status_code == 302
@@ -368,24 +379,25 @@ def test_t3_observacao_vazia_nao_recebe_a_alternativa(client, app):
 
     r = _post_salvar(client, ids, {
         f"resp_{chave}": TEXTO_OPCAO_MARCADA,
-        f"obs_{chave}": "",
+        f"obs_{ids['aluno_x']}": "",
     })
     assert r.status_code == 302
 
     with app.app_context():
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
         assert resposta.resposta == TEXTO_OPCAO_MARCADA
-        assert resposta.observacao in (None, ""), (
-            f"obs_ vazio gravou {resposta.observacao!r}"
+        conselho = _buscar_conselho(ids["aluno_x"])
+        assert conselho.observacao in (None, ""), (
+            f"obs_ vazio gravou {conselho.observacao!r}"
         )
 
-    # O textarea obs_ existe (é o controle novo) e aparece vazio.
+    # O textarea obs_<aluno> existe (é o controle novo) e aparece vazio.
     corpo = _corpo(client.get(_url_lancamento(ids)))
     obs = _observadores(corpo)
-    assert chave in obs, "sem textarea obs_ o teste não prova nada"
-    assert obs[chave] == ""
+    assert str(ids["aluno_x"]) in obs, "sem textarea obs_ o teste não prova nada"
+    assert obs[str(ids["aluno_x"])] == ""
     for opcao in OPCOES:
-        assert opcao not in obs[chave]
+        assert opcao not in obs[str(ids["aluno_x"])]
 
 
 # ---------------------------------------------------------------------------
@@ -396,9 +408,9 @@ def test_t4_obs_ausente_preserva_e_obs_vazio_limpa(client, app):
     """Comportamento do código atual (após o `f3d2b15`).
 
     `_normalize_conselho_request` só coloca na chave de observações o campo que
-    o formulário enviou, e o laço de gravação toca `observacao` apenas quando
-    `has_obs`. Consequência documentada: omitir o campo preserva o texto
-    anterior; enviá-lo vazio é uma ordem de limpeza explícita.
+    o formulário enviou, e o laço de gravação toca `ConselhoClasse.observacao`
+    apenas quando a chave existe. Consequência documentada: omitir o campo
+    preserva o texto anterior; enviá-lo vazio é uma ordem de limpeza explícita.
     """
     ids = _setup(app)
     login_as(client, ids["p1"], ids["un"])
@@ -407,10 +419,10 @@ def test_t4_obs_ausente_preserva_e_obs_vazio_limpa(client, app):
 
     _post_salvar(client, ids, {
         f"resp_{chave}": "Nunca",
-        f"obs_{chave}": primeiro_texto,
+        f"obs_{ids['aluno_x']}": primeiro_texto,
     })
     with app.app_context():
-        assert _buscar_resposta(ids["aluno_x"], ids["p_opcoes"]).observacao == primeiro_texto
+        assert _buscar_conselho(ids["aluno_x"]).observacao == primeiro_texto
 
     # POST que NÃO envia obs_ (só troca a alternativa): preserva o texto.
     r = _post_salvar(client, ids, {f"resp_{chave}": TEXTO_OPCAO_MARCADA})
@@ -418,18 +430,18 @@ def test_t4_obs_ausente_preserva_e_obs_vazio_limpa(client, app):
     with app.app_context():
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
         assert resposta.resposta == TEXTO_OPCAO_MARCADA
-        assert resposta.observacao == primeiro_texto, (
+        assert _buscar_conselho(ids["aluno_x"]).observacao == primeiro_texto, (
             "omitir obs_ não pode apagar a observação já gravada"
         )
 
     # POST que envia obs_ vazio DE PROPÓSITO: limpa.
     r = _post_salvar(client, ids, {f"resp_{chave}": TEXTO_OPCAO_MARCADA,
-                                   f"obs_{chave}": ""})
+                                   f"obs_{ids['aluno_x']}": ""})
     assert r.status_code == 302
     with app.app_context():
-        resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
-        assert resposta.observacao in (None, ""), (
-            f"obs_ vazio deveria limpar e ficou {resposta.observacao!r}"
+        conselho = _buscar_conselho(ids["aluno_x"])
+        assert conselho.observacao in (None, ""), (
+            f"obs_ vazio deveria limpar e ficou {conselho.observacao!r}"
         )
 
 
@@ -459,6 +471,7 @@ def test_t5_pergunta_texto_livre_continua_gravando_em_resposta(client, app):
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_livre"])
         assert resposta.resposta == dissertacao
         assert resposta.observacao is None
+        assert _buscar_conselho(ids["aluno_x"]).observacao in (None, "")
 
     corpo = _corpo(client.get(_url_lancamento(ids)))
     assert _resp_textareas(corpo)[chave] == dissertacao
@@ -488,7 +501,7 @@ def test_t6a_oferta_encerrada_bloqueia_get_e_post_sem_gravar(client, app):
     chave = f"{ids['aluno_x']}_{ids['p_opcoes']}"
     r = _post_salvar(client, ids, {
         f"resp_{chave}": TEXTO_OPCAO_MARCADA,
-        f"obs_{chave}": "Tentativa apos encerramento",
+        f"obs_{ids['aluno_x']}": "Tentativa apos encerramento",
     })
     assert r.status_code == 302
     with app.app_context():
@@ -504,7 +517,7 @@ def test_t6b_professor_de_outra_oferta_leva_403(client, app):
     chave = f"{ids['aluno_x']}_{ids['p_opcoes']}"
     r = _post_salvar(client, ids, {
         f"resp_{chave}": "Invasao",
-        f"obs_{chave}": "Invasao na observacao",
+        f"obs_{ids['aluno_x']}": "Invasao na observacao",
     })
     assert r.status_code == 403
     with app.app_context():
@@ -512,14 +525,14 @@ def test_t6b_professor_de_outra_oferta_leva_403(client, app):
         assert ConselhoClasse.query.count() == 0
 
 
-def test_t6c_autor_do_lancamento_so_troca_com_mudanca_de_conteudo(client, app):
+def test_t6c_autor_da_resposta_so_troca_com_mudanca_de_conteudo(client, app):
     ids = _setup(app)
     chave = f"{ids['aluno_x']}_{ids['p_opcoes']}"
 
     login_as(client, ids["p1"], ids["un"])
     _post_salvar(client, ids, {
         f"resp_{chave}": "Nunca",
-        f"obs_{chave}": "Observacao do primeiro professor",
+        f"obs_{ids['aluno_x']}": "Observacao do primeiro professor",
     })
     with app.app_context():
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
@@ -530,7 +543,7 @@ def test_t6c_autor_do_lancamento_so_troca_com_mudanca_de_conteudo(client, app):
     login_as(client, ids["admin"], ids["un"])
     _post_salvar(client, ids, {
         f"resp_{chave}": "Nunca",
-        f"obs_{chave}": "Observacao do primeiro professor",
+        f"obs_{ids['aluno_x']}": "Observacao do primeiro professor",
     })
     with app.app_context():
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
@@ -539,16 +552,27 @@ def test_t6c_autor_do_lancamento_so_troca_com_mudanca_de_conteudo(client, app):
         )
         assert resposta.autor_nome == "Professor Um"
 
-    # Mudar só a OBSERVAÇÃO: o autor passa a ser quem alterou (é a escrita que
-    # o f3d2b15 habilitou — antes o campo não era gravado e o autor nunca
-    # trocava por causa dele).
+    # Mudar só a OBSERVAÇÃO GERAL (ConselhoClasse): não mexe no autor da
+    # resposta — são registros distintos desde o AJ19.
     _post_salvar(client, ids, {
         f"resp_{chave}": "Nunca",
-        f"obs_{chave}": "Observacao reescrita pelo admin",
+        f"obs_{ids['aluno_x']}": "Observacao reescrita pelo admin",
     })
     with app.app_context():
         resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
-        assert resposta.observacao == "Observacao reescrita pelo admin"
+        assert resposta.autor_id == ids["p1"]
+        assert _buscar_conselho(ids["aluno_x"]).observacao == (
+            "Observacao reescrita pelo admin"
+        )
+
+    # Mudar a RESPOSTA: aí sim o autor da resposta passa a ser quem alterou.
+    _post_salvar(client, ids, {
+        f"resp_{chave}": TEXTO_OPCAO_MARCADA,
+        f"obs_{ids['aluno_x']}": "Observacao reescrita pelo admin",
+    })
+    with app.app_context():
+        resposta = _buscar_resposta(ids["aluno_x"], ids["p_opcoes"])
+        assert resposta.resposta == TEXTO_OPCAO_MARCADA
         assert resposta.autor_id == ids["admin"]
         assert resposta.autor_nome == "Admin AJ2"
 
@@ -707,7 +731,7 @@ def test_t8b_clique_na_alternativa_nao_altera_o_textarea(client, app, tmp_path):
     cfg = {
         "handler": handler,
         "resp_id": f"resp_{chave}",
-        "obs_id": f"obs_{chave}",
+        "obs_id": f"obs_{ids['aluno_x']}",
         "obs_inicial": texto_preexistente,
         "opcoes": OPCOES,
         "indice": indice,

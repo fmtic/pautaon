@@ -310,6 +310,8 @@ def _normalize_conselho_request(form_data) -> dict:
         "data_inicio": form_data.get("data_inicio", ""),
         "data_fim": form_data.get("data_fim", ""),
         "respostas": {},
+        # AJ19: UMA observação geral por aluno (não mais por pergunta),
+        # gravada em `ConselhoClasse.observacao`. Chave = aluno_id.
         "observacoes": {},
     }
 
@@ -332,13 +334,13 @@ def _normalize_conselho_request(form_data) -> dict:
                 pergunta_id = parts[2]
                 if aluno_id.isdigit() and pergunta_id.isdigit():
                     normalized["respostas"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
-        if key.startswith(("obs_", "observacao_")):
-            parts = key.split("_")
-            if len(parts) >= 3:
-                aluno_id = parts[1]
-                pergunta_id = parts[2]
-                if aluno_id.isdigit() and pergunta_id.isdigit():
-                    normalized["observacoes"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
+        # AJ19: `obs_<aluno_id>` — observação geral única do aluno. O antigo
+        # `obs_<aluno>_<pergunta>` (por pergunta) foi removido junto com a
+        # leitura/escrita de `ConselhoResposta.observacao`.
+        if key.startswith("obs_"):
+            aluno_id = key[len("obs_"):]
+            if aluno_id.isdigit():
+                normalized["observacoes"][aluno_id] = str(value).strip()
 
     return normalized
 
@@ -746,9 +748,10 @@ def lancamento_conselho():
 
     # Usa o primeiro registro da oferta como referência de conselho_id
     db.session.expire_all()
-    conselho = ConselhoClasse.query.filter_by(
+    conselhos_etapa = ConselhoClasse.query.filter_by(
         turma_curso_id=oferta.id, etapa=etapa
-    ).first()
+    ).order_by(ConselhoClasse.id).all()
+    conselho = conselhos_etapa[0] if conselhos_etapa else None
 
     perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).order_by(PerguntaConselho.id).all()
 
@@ -760,7 +763,9 @@ def lancamento_conselho():
     # devolve o None (o default '' do `.get` do template só vale p/ chave
     # ausente) e o Jinja imprimia "None" em todos os campos de texto.
     respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.resposta or '') for r in respostas_db}
-    observacoes_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.observacao or '') for r in respostas_db}
+    # AJ19: observação geral por aluno, lida de `ConselhoClasse.observacao`.
+    # A chave é o aluno_id (não mais aluno×pergunta) e `or ''` evita "None".
+    observacoes_map = {c.aluno_id: (c.observacao or '') for c in conselhos_etapa}
 
     return render_template('conselho/lancamento.html',
                            turma=turma_obj,
@@ -787,6 +792,17 @@ def salvar_conselho():
     if not turma_id or not etapa:
         flash("Dados insuficientes para salvar.", "warning")
         return redirect(url_for('conselho.lancamento_conselho'))
+
+    # AJ19: limite de 5000 caracteres validado ANTES de qualquer mutação —
+    # um pedido com excesso não grava nada (nem respostas, nem observações).
+    for texto in normalized["observacoes"].values():
+        if len(texto) > 5000:
+            flash(
+                "A observação de cada aluno deve ter no máximo 5000 caracteres.",
+                "warning",
+            )
+            return redirect(url_for('conselho.lancamento_conselho',
+                                    turma=turma_id, etapa=etapa))
 
     turma_obj = db.get_or_404(Turma, turma_id)
     unidade_id = get_unidade_id()
@@ -865,7 +881,7 @@ def salvar_conselho():
     # AJ7-A: estado anterior em lote. É a base da auditoria do gestor e da
     # decisão "preenchimento" (aluno ainda sem conteúdo) × "alteração".
     # NULL e '' contam como o mesmo vazio.
-    chaves = set(normalized["respostas"]) | set(normalized["observacoes"])
+    chaves = set(normalized["respostas"])
     respostas_existentes = (
         ConselhoResposta.query.filter(
             ConselhoResposta.conselho_id.in_([c.id for c in conselhos_turma])
@@ -877,8 +893,13 @@ def salvar_conselho():
     }
     havia_conteudo = {}
     for r in respostas_existentes:
-        if (r.resposta or "").strip() or (r.observacao or "").strip():
+        if (r.resposta or "").strip():
             havia_conteudo[r.aluno_id] = True
+    # AJ19: a observação geral também conta como conteúdo do aluno — um aluno
+    # que só tem observação não é "primeiro preenchimento" ao editá-la.
+    for c in conselhos_turma:
+        if (c.observacao or "").strip():
+            havia_conteudo[c.aluno_id] = True
 
     perguntas_ids = set()
     for key in chaves:
@@ -902,9 +923,7 @@ def salvar_conselho():
         pergunta_id = int(parts[1])
 
         value_resposta = normalized["respostas"].get(key)
-        value_obs = normalized["observacoes"].get(key)
         has_resposta = key in normalized["respostas"]
-        has_obs = key in normalized["observacoes"]
 
         if aluno_id not in alunos_oferta:
             continue
@@ -955,21 +974,6 @@ def salvar_conselho():
                         registro["novo_conteudo"] = True
                 resposta.resposta = value_resposta
                 changed = True
-            if has_obs and resposta.observacao != value_obs:
-                if _valor_conselho_mudou(resposta.observacao, value_obs):
-                    registro = alteracoes.setdefault(
-                        aluno_id,
-                        {"nomes": set(), "detalhes": [], "novo_conteudo": False},
-                    )
-                    registro["nomes"].add("observacao")
-                    # Observação é sempre texto livre.
-                    registro["detalhes"].append(
-                        f"observacao[p{pergunta_id}]: texto alterado"
-                    )
-                    if (value_obs or "").strip():
-                        registro["novo_conteudo"] = True
-                resposta.observacao = value_obs
-                changed = True
             if changed:
                 resposta.autor_id = autor_id
                 resposta.autor_nome = autor_nome
@@ -979,7 +983,6 @@ def salvar_conselho():
                 aluno_id=aluno_id,
                 pergunta_id=pergunta_id,
                 resposta=value_resposta if has_resposta else None,
-                observacao=value_obs if has_obs else None,
                 autor_id=autor_id,
                 autor_nome=autor_nome,
                 unidade_id=turma_obj.unidade_id,
@@ -1007,17 +1010,40 @@ def salvar_conselho():
                     )
                 if (value_resposta or "").strip():
                     registro["novo_conteudo"] = True
-            if has_obs and _valor_conselho_mudou(None, value_obs):
-                registro = alteracoes.setdefault(
-                    aluno_id,
-                    {"nomes": set(), "detalhes": [], "novo_conteudo": False},
-                )
-                registro["nomes"].add("observacao")
-                registro["detalhes"].append(
-                    f"observacao[p{pergunta_id}]: texto alterado"
-                )
-                if (value_obs or "").strip():
-                    registro["novo_conteudo"] = True
+
+    # AJ19: observação geral ÚNICA por aluno/etapa/oferta, gravada em
+    # `ConselhoClasse.observacao`. Só toca a linha quando o texto realmente
+    # muda (NULL e '' contam como o mesmo vazio).
+    for aluno_id_str, value_obs in normalized["observacoes"].items():
+        aluno_id = int(aluno_id_str)
+        if aluno_id not in alunos_oferta:
+            continue
+        conselho = conselho_map.get(aluno_id)
+        if conselho is None:
+            if not (value_obs or "").strip():
+                continue
+            conselho = ConselhoClasse(
+                turma_id=turma_obj.id,
+                turma_curso_id=oferta.id,
+                aluno_id=aluno_id,
+                etapa=etapa,
+                unidade_id=unidade_id,
+            )
+            db.session.add(conselho)
+            db.session.flush()
+            conselho_map[aluno_id] = conselho
+        if not _valor_conselho_mudou(conselho.observacao, value_obs):
+            continue
+        registro = alteracoes.setdefault(
+            aluno_id,
+            {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+        )
+        registro["nomes"].add("observacao")
+        # Observação é sempre texto livre: conteúdo NUNCA vai para o log.
+        registro["detalhes"].append("observacao: texto alterado")
+        if (value_obs or "").strip():
+            registro["novo_conteudo"] = True
+        conselho.observacao = value_obs
 
     # AJ7-A: UM log por aluno, na MESMA transação do salvamento. O helper
     # ignora o professor da oferta e não loga quando nada mudou.

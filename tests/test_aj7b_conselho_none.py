@@ -5,15 +5,17 @@ campos de texto opcionais alimentados por `respostas`/`observacoes`)
 apareciam com o texto literal "None" para todos os alunos.
 
 Causa (diagnóstico): `lancamento_conselho` monta os mapas com o valor cru da
-coluna (`r.resposta` / `r.observacao`, NULL para linhas anteriores ao
-`f3d2b15`); no template, `map.get(chave, '')` devolve o `None` da chave
-existente — o default '' só vale para chave AUSENTE — e o Jinja imprime
-"None". Irmão do mesmo padrão na rota: o `DISTINCT` de `Turma.programa` do
-filtro não descartava NULL, e o select ganhava `<option value="None">`.
+coluna (`r.resposta`, NULL para linhas anteriores ao `f3d2b15`; desde o AJ19
+a observação geral vem de `ConselhoClasse.observacao`); no template,
+`map.get(chave, '')` devolve o `None` da chave existente — o default '' só
+vale para chave AUSENTE — e o Jinja imprime "None". Irmão do mesmo padrão na
+rota: o `DISTINCT` de `Turma.programa` do filtro não descartava NULL, e o
+select ganhava `<option value="None">`.
 
-Cobertura pedida no prompt AJ7-B:
-    A1 NULL × vazio × preenchido: cada estado de `observacao`/`resposta`
-       renderiza '' (NULL), '' (vazio) e o texto (preenchido) — nunca "None".
+Cobertura pedida no prompt AJ7-B (adaptada ao AJ19):
+    A1 NULL × vazio × preenchido: cada estado de `ConselhoClasse.observacao`
+       e de `resposta` renderiza '' (NULL), '' (vazio) e o texto — nunca
+       "None".
     A2 round-trip de gravação: o que o HTML renderizado mostra é o que o
        navegador envia; salvar a página com observação NULL não pode gravar a
        string "None" no banco (comportamento anterior ao bug: '' ou NULL).
@@ -61,7 +63,7 @@ RESP_LIVRE = "Resposta de texto livre do conselho"
 # Expressões do HTML renderizado (mesma família do test_aj2_conselho_lancamento)
 # ---------------------------------------------------------------------------
 _OBS_TA = re.compile(
-    r'<textarea\b[^>]*name="obs_(\d+)_(\d+)"[^>]*>(.*?)</textarea>', re.S,
+    r'<textarea\b[^>]*name="obs_(\d+)"[^>]*>(.*?)</textarea>', re.S,
 )
 _RESP_TA = re.compile(
     r'<textarea\b[^>]*name="resp_(\d+)_(\d+)"[^>]*>(.*?)</textarea>', re.S,
@@ -80,7 +82,7 @@ def _corpo(response):
 
 
 def _observadores(corpo):
-    return {f"{a}_{p}": texto for a, p, texto in _OBS_TA.findall(corpo)}
+    return {a: texto for a, texto in _OBS_TA.findall(corpo)}
 
 
 def _resp_textareas(corpo):
@@ -184,18 +186,18 @@ def _seed(app):
         db.session.add_all([
             ConselhoResposta(
                 conselho_id=conselho.id, aluno_id=aluno.id,
-                pergunta_id=p_obs.id, resposta="Sempre", observacao=None,
+                pergunta_id=p_obs.id, resposta="Sempre",
                 unidade_id=unidade.id,
             ),
             ConselhoResposta(
                 conselho_id=conselho.id, aluno_id=aluno.id,
-                pergunta_id=p_livre.id, resposta=None, observacao="",
+                pergunta_id=p_livre.id, resposta=None,
                 unidade_id=unidade.id,
             ),
             ConselhoResposta(
                 conselho_id=conselho.id, aluno_id=aluno.id,
                 pergunta_id=p_cheia.id, resposta="Nunca",
-                observacao=OBS_PREENCHIDA, unidade_id=unidade.id,
+                unidade_id=unidade.id,
             ),
         ])
         db.session.commit()
@@ -226,6 +228,12 @@ def _buscar_resposta(aluno_id, pergunta_id):
     ).one()
 
 
+def _buscar_conselho(aluno_id):
+    return ConselhoClasse.query.filter_by(
+        aluno_id=aluno_id, etapa=EtapaConselho.INICIAL,
+    ).one()
+
+
 # ---------------------------------------------------------------------------
 # A1 — NULL / vazio / preenchido: nenhum "None" renderizado
 # ---------------------------------------------------------------------------
@@ -242,17 +250,27 @@ def test_a1_lancamento_nao_renderiza_none_em_campo_nulo(client, app):
     assert ">None<" not in corpo
     assert 'value="None"' not in corpo
 
+    chave_aluno = str(ids["aluno"])
     chave_obs = f"{ids['aluno']}_{ids['p_obs']}"
     chave_livre = f"{ids['aluno']}_{ids['p_livre']}"
-    chave_cheia = f"{ids['aluno']}_{ids['p_cheia']}"
 
     obs = _observadores(corpo)
-    # observacao NULL -> textarea vazio (não "None").
-    assert obs[chave_obs] == ""
+    # ConselhoClasse.observacao NULL -> textarea vazio (não "None").
+    assert obs[chave_aluno] == ""
+
     # observacao '' -> continua vazio.
-    assert obs[chave_livre] == ""
+    with app.app_context():
+        _buscar_conselho(ids["aluno"]).observacao = ""
+        db.session.commit()
+    obs = _observadores(_corpo(client.get(_url_lancamento(ids))))
+    assert obs[chave_aluno] == ""
+
     # observacao preenchida -> texto idêntico.
-    assert obs[chave_cheia] == OBS_PREENCHIDA
+    with app.app_context():
+        _buscar_conselho(ids["aluno"]).observacao = OBS_PREENCHIDA
+        db.session.commit()
+    obs = _observadores(_corpo(client.get(_url_lancamento(ids))))
+    assert obs[chave_aluno] == OBS_PREENCHIDA
 
     # resposta NULL em pergunta de texto livre -> textarea vazio.
     assert _resp_textareas(corpo)[chave_livre] == ""
@@ -293,19 +311,20 @@ def test_a2_roundtrip_salva_o_que_o_html_mostra_sem_none(client, app):
 
     with app.app_context():
         linha = _buscar_resposta(ids["aluno"], ids["p_obs"])
+        conselho = _buscar_conselho(ids["aluno"])
         # Antes do fix o textarea mostrava "None" e este POST gravava a
         # string literal. Contrato: NULL/vazio renderizam '' e salvam ''
         # (ou seguem NULL), nunca "None".
-        assert linha.observacao not in ("None", "None ", " None"), (
-            f"o salvamento gravou a string {linha.observacao!r} a partir do "
-            "HTML renderizado"
+        assert conselho.observacao not in ("None", "None ", " None"), (
+            f"o salvamento gravou a string {conselho.observacao!r} a partir "
+            "do HTML renderizado"
         )
-        assert linha.observacao in ("", None)
+        assert conselho.observacao in ("", None)
         # A resposta preenchida não é destruída pelo round-trip.
         assert linha.resposta == "Sempre"
 
         linha_cheia = _buscar_resposta(ids["aluno"], ids["p_cheia"])
-        assert linha_cheia.observacao == OBS_PREENCHIDA
+        assert linha_cheia.resposta == "Nunca"
 
 
 # ---------------------------------------------------------------------------
@@ -318,20 +337,19 @@ def test_a3_pagina_preenchida_renderiza_golden_inalterado(client, app):
 
     # Zera os NULLs da semente (cenário sem bug: tudo preenchido).
     with app.app_context():
-        _buscar_resposta(ids["aluno"], ids["p_obs"]).observacao = "Obs da opcao"
+        _buscar_conselho(ids["aluno"]).observacao = OBS_PREENCHIDA
         _buscar_resposta(ids["aluno"], ids["p_livre"]).resposta = RESP_LIVRE
         db.session.commit()
 
     corpo = _corpo(client.get(_url_lancamento(ids)))
+    chave_aluno = str(ids["aluno"])
     chave_obs = f"{ids['aluno']}_{ids['p_obs']}"
     chave_livre = f"{ids['aluno']}_{ids['p_livre']}"
     chave_cheia = f"{ids['aluno']}_{ids['p_cheia']}"
 
     # Conteúdo exato de cada campo preenchido — idêntico antes e depois do
     # fix (o fix só toca no caminho None -> ''; aqui não há None).
-    assert _observadores(corpo)[chave_obs] == "Obs da opcao"
-    assert _observadores(corpo)[chave_livre] == ""
-    assert _observadores(corpo)[chave_cheia] == OBS_PREENCHIDA
+    assert _observadores(corpo)[chave_aluno] == OBS_PREENCHIDA
     assert _resp_textareas(corpo)[chave_livre] == RESP_LIVRE
     assert _resp_hidden(corpo)[chave_obs] == "Sempre"
     assert _resp_hidden(corpo)[chave_cheia] == "Nunca"

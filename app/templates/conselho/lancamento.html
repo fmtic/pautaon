@@ -144,14 +144,19 @@
                                     class="form-control mb-2" rows="2"
                                     placeholder="Digite a resposta...">{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
                                 {% endif %}
-
-                                <label class="small text-muted mb-1" for="obs_{{ aluno.id }}_{{ pergunta.id }}">Observação (texto livre)</label>
-                                <textarea name="obs_{{ aluno.id }}_{{ pergunta.id }}"
-                                    id="obs_{{ aluno.id }}_{{ pergunta.id }}"
-                                    class="form-control" rows="2"
-                                    placeholder="Digite sua observação...">{{ observacoes.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
                             </div>
                             {% endfor %}
+                        </div>
+
+                        {# AJ19: observação geral ÚNICA por aluno, no fim do card
+                        (mesmo estilo da avaliação coletiva em turma_aval.html). #}
+                        <div class="p-3 bg-white rounded border shadow-sm mt-2">
+                            <label class="fw-bold mb-2 conselho-pergunta text-uppercase" for="obs_{{ aluno.id }}">
+                                Observações e informações adicionais
+                            </label>
+                            <textarea name="obs_{{ aluno.id }}" id="obs_{{ aluno.id }}"
+                                class="form-control" rows="4" maxlength="5000"
+                                placeholder="Digite observações gerais sobre o aluno...">{{ observacoes.get(aluno.id, '') }}</textarea>
                         </div>
                     </div>
                 </div>

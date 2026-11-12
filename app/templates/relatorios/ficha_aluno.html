@@ -5,22 +5,27 @@ endblock %} {% block styles %}
     background: #1b5e20;
     color: #fff;
   }
+
   .conceito-B {
     background: #2e7d32;
     color: #fff;
   }
+
   .conceito-C {
     background: #4caf50;
     color: #000;
   }
+
   .conceito-D {
     background: #81c784;
     color: #000;
   }
+
   .conceito-F {
     background: #d32f2f;
     color: #fff;
   }
+
   .conceito-J {
     background: #fbc02d;
     color: #000;
@@ -38,6 +43,7 @@ endblock %} {% block styles %}
     background: var(--bs-primary-bg-subtle);
     color: var(--bs-primary-text-emphasis);
   }
+
   .pt-label {
     font-size: 0.72rem;
     letter-spacing: 0.05em;
@@ -45,6 +51,7 @@ endblock %} {% block styles %}
     color: var(--bs-secondary-color);
     font-weight: 600;
   }
+
   .pt-num {
     font-variant-numeric: tabular-nums;
   }
@@ -53,23 +60,27 @@ endblock %} {% block styles %}
     overflow-x: auto;
     padding-bottom: 0.25rem;
   }
+
   .pt-heat {
     display: grid;
     gap: 0.25rem;
     align-items: center;
     min-width: 24rem;
   }
+
   .pt-h {
     font-size: 0.62rem;
     color: var(--bs-secondary-color);
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+
   .pt-rowlab {
     font-size: 0.72rem;
     color: var(--bs-secondary-color);
     font-weight: 600;
   }
+
   .pt-tile {
     aspect-ratio: 1/1;
     display: grid;
@@ -88,6 +99,7 @@ endblock %} {% block styles %}
     background: var(--bs-body-color);
     opacity: 0.55;
   }
+
   .pt-tick-lab {
     position: absolute;
     top: 0.65rem;
@@ -96,6 +108,7 @@ endblock %} {% block styles %}
     transform: translateX(-50%);
     font-variant-numeric: tabular-nums;
   }
+
   .pt-bar {
     position: relative;
     padding-bottom: 1rem;
@@ -107,16 +120,19 @@ endblock %} {% block styles %}
     margin: 0;
     padding: 0;
   }
+
   .pt-steps li,
   .pt-timeline li {
     position: relative;
     padding-left: 2.4rem;
     padding-bottom: 1.1rem;
   }
+
   .pt-steps li:last-child,
   .pt-timeline li:last-child {
     padding-bottom: 0;
   }
+
   .pt-steps li::before,
   .pt-timeline li::before {
     content: "";
@@ -127,10 +143,12 @@ endblock %} {% block styles %}
     width: 2px;
     background: var(--bs-border-color);
   }
+
   .pt-steps li:last-child::before,
   .pt-timeline li:last-child::before {
     display: none;
   }
+
   .pt-dot {
     position: absolute;
     left: 0;
@@ -142,18 +160,22 @@ endblock %} {% block styles %}
     place-items: center;
     font-size: 0.85rem;
   }
+
   .pt-dot.ok {
     background: var(--bs-success-bg-subtle);
     color: var(--bs-success-text-emphasis);
   }
+
   .pt-dot.warn {
     background: var(--bs-warning-bg-subtle);
     color: var(--bs-warning-text-emphasis);
   }
+
   .pt-dot.bad {
     background: var(--bs-danger-bg-subtle);
     color: var(--bs-danger-text-emphasis);
   }
+
   .pt-dot.info {
     background: var(--bs-primary-bg-subtle);
     color: var(--bs-primary-text-emphasis);
@@ -163,10 +185,12 @@ endblock %} {% block styles %}
     background: var(--bs-warning-bg-subtle);
     color: var(--bs-warning-text-emphasis);
   }
+
   .pt-chart {
     position: relative;
     height: 300px;
   }
+
   @media (max-width: 575.98px) {
     .pt-chart {
       height: 240px;
@@ -174,9 +198,7 @@ endblock %} {% block styles %}
   }
 </style>
 {% endblock %} {% block content %}
-<div
-  class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"
->
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
   <div>
     <h1 class="h3 fw-bold mb-1">
       <i class="bi bi-person-lines-fill text-primary me-2"></i>Ficha 360° do
@@ -187,16 +209,11 @@ endblock %} {% block styles %}
     </p>
   </div>
   <div class="d-flex flex-wrap gap-2 align-items-center">
-    <a
-      href="{{ url_for('relatorios.painel_pedagogico', periodo_letivo_id=periodo.id if periodo else None, turma_id=turma.id) }}"
-      class="btn btn-outline-secondary btn-sm"
-    >
+    <a href="{{ url_for('relatorios.painel_pedagogico', periodo_letivo_id=periodo.id if periodo else None, turma_id=turma.id) }}"
+      class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left me-1"></i>Voltar à turma
     </a>
-    <a
-      href="{{ url_for('relatorios.busca_alunos') }}"
-      class="btn btn-outline-secondary btn-sm"
-    >
+    <a href="{{ url_for('relatorios.busca_alunos') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-search me-1"></i>Buscar outro aluno
     </a>
   </div>
@@ -214,9 +231,7 @@ endblock %} {% block styles %}
           <div class="flex-grow-1" style="min-width: 0">
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <h2 class="h4 fw-bold mb-0">{{ identidade.nome }}</h2>
-              <span
-                class="badge bg-{{ identidade.status_classe }}-subtle text-{{ identidade.status_classe }}-emphasis"
-              >
+              <span class="badge bg-{{ identidade.status_classe }}-subtle text-{{ identidade.status_classe }}-emphasis">
                 {{ identidade.status_label }}
               </span>
               {% if identidade.menor_idade %}
@@ -235,7 +250,8 @@ endblock %} {% block styles %}
         <div class="row g-3 small">
           <div class="col-6 col-md-3">
             <div class="pt-label">Turma</div>
-            <div class="fw-semibold">{{ turma.nome }}{% if oferta and oferta.curso %} · {{ oferta.curso.nome }}{% endif %}</div>
+            <div class="fw-semibold">{{ turma.nome }}{% if oferta and oferta.curso %} · {{ oferta.curso.nome }}{% endif
+              %}</div>
           </div>
           <div class="col-6 col-md-3">
             <div class="pt-label">Professor</div>
@@ -257,20 +273,10 @@ endblock %} {% block styles %}
         <form method="get" class="mt-3 d-flex flex-wrap align-items-end gap-2">
           <input type="hidden" name="turma_id" value="{{ turma.id }}" />
           <div>
-            <label class="pt-label d-block" for="oferta_sel"
-              >Oferta retratada</label
-            >
-            <select
-              id="oferta_sel"
-              name="oferta_sel"
-              class="form-select form-select-sm"
-              onchange="this.form.submit()"
-            >
+            <label class="pt-label d-block" for="oferta_sel">Oferta retratada</label>
+            <select id="oferta_sel" name="oferta_sel" class="form-select form-select-sm" onchange="this.form.submit()">
               {% for o in ofertas_disponiveis %}
-              <option
-                value="{{ o.turma_curso_id }}"
-                {% if o.turma_curso_id == oferta_sel %}selected{% endif %}
-              >
+              <option value="{{ o.turma_curso_id }}" {% if o.turma_curso_id==oferta_sel %}selected{% endif %}>
                 {{ o.rotulo }}
               </option>
               {% endfor %}
@@ -293,9 +299,7 @@ endblock %} {% block styles %}
         <ul class="list-group list-group-flush mb-0">
           {% for s in sinais %}
           <li class="list-group-item d-flex gap-3 px-0 py-2">
-            <span class="pt-dot {{ s.nivel }} position-static flex-shrink-0"
-              ><i class="bi bi-{{ s.icone }}"></i
-            ></span>
+            <span class="pt-dot {{ s.nivel }} position-static flex-shrink-0"><i class="bi bi-{{ s.icone }}"></i></span>
             <div style="min-width: 0">
               <div class="fw-semibold small">{{ s.titulo }}</div>
               <div class="text-muted" style="font-size: 0.75rem">
@@ -321,23 +325,12 @@ endblock %} {% block styles %}
         <div class="pt-label mb-1">Frequência</div>
         <div class="d-flex align-items-baseline flex-wrap gap-2 mb-2">
           <span class="fs-2 fw-bold pt-num">{{ f.pct_str }}</span>
-          <span
-            class="badge bg-{{ f.faixa_meta.classe }}-subtle text-{{ f.faixa_meta.classe }}-emphasis"
-            >{{ f.faixa_meta.label }}</span
-          >
+          <span class="badge bg-{{ f.faixa_meta.classe }}-subtle text-{{ f.faixa_meta.classe }}-emphasis">{{
+            f.faixa_meta.label }}</span>
         </div>
         <div class="pt-bar mb-1">
-          <div
-            class="progress"
-            role="progressbar"
-            aria-valuenow="{{ f.pct }}"
-            aria-valuemin="0"
-            aria-valuemax="100"
-          >
-            <div
-              class="progress-bar bg-{{ f.faixa_meta.classe }}"
-              style="width:{{ f.pct }}%"
-            ></div>
+          <div class="progress" role="progressbar" aria-valuenow="{{ f.pct }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar bg-{{ f.faixa_meta.classe }}" style="width:{{ f.pct }}%"></div>
           </div>
           <span class="pt-tick" style="left: 75%"></span>
           <span class="pt-tick" style="left: 90%"></span>
@@ -358,10 +351,8 @@ endblock %} {% block styles %}
         <div class="pt-label mb-1">Média da turma</div>
         <div class="d-flex align-items-baseline flex-wrap gap-2 mb-2">
           <span class="fs-2 fw-bold pt-num">{{ f.pct_turma_str }}</span>
-          <span
-            class="badge bg-{{ f.diff_turma_classe }}-subtle text-{{ f.diff_turma_classe }}-emphasis pt-num"
-            >{{ f.diff_turma_str }}</span
-          >
+          <span class="badge bg-{{ f.diff_turma_classe }}-subtle text-{{ f.diff_turma_classe }}-emphasis pt-num">{{
+            f.diff_turma_str }}</span>
         </div>
         <div class="small text-muted">
           Diferença do aluno em pontos percentuais.
@@ -377,9 +368,8 @@ endblock %} {% block styles %}
         <div class="d-flex align-items-baseline flex-wrap gap-2 mb-2">
           <span class="fs-2 fw-bold pt-num">{{ f.acumulado.faltas }}</span>
           {% if f.acumulado.justificadas %}
-          <span class="badge bg-warning-subtle text-warning-emphasis"
-            >{{ f.acumulado.justificadas }} justificada(s)</span
-          >
+          <span class="badge bg-warning-subtle text-warning-emphasis">{{ f.acumulado.justificadas }}
+            justificada(s)</span>
           {% endif %}
         </div>
         <div class="small text-muted">
@@ -410,18 +400,12 @@ endblock %} {% block styles %}
     <div class="card shadow-sm border-0 h-100">
       <div class="card-header fw-semibold">
         <i class="bi bi-calendar3 text-primary me-2"></i>Aula a aula
-        <span class="text-muted fw-normal small"
-          >· cada quadrado é uma aula</span
-        >
+        <span class="text-muted fw-normal small">· cada quadrado é uma aula</span>
       </div>
       <div class="card-body">
         <div class="pt-heat-scroll">
-          <div
-            class="pt-heat"
-            role="group"
-            aria-label="Conceito de cada aula, por semana"
-            style="grid-template-columns: 2rem repeat({{ f.labels|length }}, minmax(1.9rem, 1fr))"
-          >
+          <div class="pt-heat" role="group" aria-label="Conceito de cada aula, por semana"
+            style="grid-template-columns: 2rem repeat({{ f.labels|length }}, minmax(1.9rem, 1fr))">
             <span class="pt-h"></span>
             {% for l in f.labels %}
             <span class="pt-h">{{ l }}</span>
@@ -431,10 +415,8 @@ endblock %} {% block styles %}
             {% for dia in dias_unicos %}
             <span class="pt-rowlab">{{ nomes_dias.get(dia, '—') }}</span>
             {% for item in f.mapa if item.dia_semana == dia %}
-            <span
-              class="pt-tile conceito-{{ item.conceito or 'X' }}"
-              title="{{ item.data.strftime('%d/%m') }} · {{ item.conceito or '—' }}"
-            >
+            <span class="pt-tile conceito-{{ item.conceito or 'X' }}"
+              title="{{ item.data.strftime('%d/%m') }} · {{ item.conceito or '—' }}">
               {{ item.conceito or '—' }}
             </span>
             {% endfor %}
@@ -442,15 +424,11 @@ endblock %} {% block styles %}
           </div>
         </div>
         <div class="d-flex flex-wrap gap-2 mt-3 small">
-          <span class="badge conceito-A">A</span
-          ><span class="badge conceito-B">B</span
-          ><span class="badge conceito-C">C</span
-          ><span class="badge conceito-D">D</span>
+          <span class="badge conceito-A">A</span><span class="badge conceito-B">B</span><span
+            class="badge conceito-C">C</span><span class="badge conceito-D">D</span>
           <span class="text-muted">presença</span>
-          <span class="badge conceito-F">F</span
-          ><span class="text-muted">falta</span>
-          <span class="badge conceito-J">J</span
-          ><span class="text-muted">justificada (fora do cálculo)</span>
+          <span class="badge conceito-F">F</span><span class="text-muted">falta</span>
+          <span class="badge conceito-J">J</span><span class="text-muted">justificada (fora do cálculo)</span>
         </div>
       </div>
     </div>
@@ -464,12 +442,8 @@ endblock %} {% block styles %}
       </div>
       <div class="card-body">
         <div class="pt-chart">
-          <canvas
-            id="chFreqFicha"
-            data-labels='{{ f.labels|tojson }}'
-            data-aluno='{{ f.serie_aluno|tojson }}'
-            data-turma='{{ f.serie_turma|tojson }}'
-          ></canvas>
+          <canvas id="chFreqFicha" data-labels='{{ f.labels|tojson }}' data-aluno='{{ f.serie_aluno|tojson }}'
+            data-turma='{{ f.serie_turma|tojson }}'></canvas>
         </div>
       </div>
     </div>
@@ -489,19 +463,19 @@ endblock %} {% block styles %}
           {% for e in conselho.etapas %}
           <li>
             <span class="pt-dot {{ 'ok' if e.concluido else '' }}">
-              <i
-                class="bi bi-{{ 'check-circle-fill' if e.concluido else 'hourglass-split' }}"
-              ></i>
+              <i class="bi bi-{{ 'check-circle-fill' if e.concluido else 'hourglass-split' }}"></i>
             </span>
             <div class="fw-semibold small">
-              {{ e.nome }} {% if e.data %}<span class="text-muted fw-normal"
-                >· {{ e.data.strftime('%d/%m') }}</span
-              >{% endif %}
+              {{ e.nome }} {% if e.data %}<span class="text-muted fw-normal">· {{ e.data.strftime('%d/%m') }}</span>{%
+              endif %}
             </div>
             {% if e.situacao_final %}
-            <span class="badge bg-success-subtle text-success-emphasis"
-              >{{ e.situacao_final }}</span
-            >
+            <span class="badge bg-success-subtle text-success-emphasis">{{ e.situacao_final }}</span>
+            {% endif %}
+            {% if e.observacao %}
+            <div class="small text-muted mt-1 pt-obs-conselho">
+              {{ e.observacao }}
+            </div>
             {% endif %}
           </li>
           {% endfor %}
@@ -558,13 +532,9 @@ endblock %} {% block styles %}
         <ol class="pt-timeline">
           {% for ev in timeline %}
           <li>
-            <span class="pt-dot {{ ev.tipo }}"
-              ><i class="bi bi-{{ ev.icone }}"></i
-            ></span>
+            <span class="pt-dot {{ ev.tipo }}"><i class="bi bi-{{ ev.icone }}"></i></span>
             <div class="small">
-              <span class="text-muted pt-num"
-                >{{ ev.data.strftime('%d/%m/%Y') }}</span
-              >
+              <span class="text-muted pt-num">{{ ev.data.strftime('%d/%m/%Y') }}</span>
               · <span class="fw-semibold">{{ ev.titulo }}</span>
             </div>
             {% if ev.detalhe %}
@@ -598,15 +568,14 @@ endblock %} {% block styles %}
             {% for p in percurso %}
             <tr>
               <td class="ps-3 pt-num">{{ p.periodo }}</td>
-              <td>{{ p.turma }}{% if p.curso and p.curso != '—' %}<br><small class="text-muted">{{ p.curso }}</small>{% endif %}</td>
+              <td>{{ p.turma }}{% if p.curso and p.curso != '—' %}<br><small class="text-muted">{{ p.curso }}</small>{%
+                endif %}</td>
               <td>{{ p.nivel }}</td>
               <td class="text-end pt-num">{{ p.aulas }}</td>
               <td class="text-end pt-num">{{ p.pct_str }}</td>
               <td class="pe-3">
-                <span
-                  class="badge bg-{{ p.situacao.classe }}-subtle text-{{ p.situacao.classe }}-emphasis"
-                  >{{ p.situacao.label }}</span
-                >
+                <span class="badge bg-{{ p.situacao.classe }}-subtle text-{{ p.situacao.classe }}-emphasis">{{
+                  p.situacao.label }}</span>
               </td>
             </tr>
             {% else %}
@@ -626,23 +595,13 @@ endblock %} {% block styles %}
 {# ---------------- Contexto restrito ---------------- #} {% if
 contexto_restrito.permitido %}
 <div class="card shadow-sm border-0 mb-3">
-  <div
-    class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2"
-  >
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
     <span class="fw-semibold">
       <i class="bi bi-lock-fill text-secondary me-2"></i>Contexto socioeconômico
-      <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
-        >Restrito</span
-      >
+      <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">Restrito</span>
     </span>
-    <button
-      class="btn btn-outline-secondary btn-sm"
-      type="button"
-      data-bs-toggle="collapse"
-      data-bs-target="#ctxRestrito"
-      aria-expanded="false"
-      aria-controls="ctxRestrito"
-    >
+    <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse"
+      data-bs-target="#ctxRestrito" aria-expanded="false" aria-controls="ctxRestrito">
       <i class="bi bi-eye me-1"></i>Exibir dados
     </button>
   </div>

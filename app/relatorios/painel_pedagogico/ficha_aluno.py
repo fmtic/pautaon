@@ -352,10 +352,9 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
     ids_pergunta = set()
     for c in conselhos:
         for r in c.respostas:
-            respostas[c.etapa][r.pergunta_id] = {
-                "resposta": r.resposta,
-                "observacao": r.observacao,
-            }
+            # AJ19: a observação do conselho deixou de ser por pergunta; a
+            # geral do aluno vem de `ConselhoClasse.observacao` (por etapa).
+            respostas[c.etapa][r.pergunta_id] = {"resposta": r.resposta}
             ids_pergunta.add(r.pergunta_id)
 
     perguntas = (
@@ -381,6 +380,7 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
                     "nome": e.value.capitalize(),
                     "data": None,
                     "concluido": False,
+                    "observacao": None,
                     "respostas": {},
                 }
             )
@@ -392,6 +392,8 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
                 "data": c.data_inicio,
                 "concluido": c.concluido,
                 "situacao_final": c.situacao_final,
+                # AJ19: observação geral do aluno naquela etapa/oferta.
+                "observacao": c.observacao,
                 "respostas": respostas.get(e, {}),
             }
         )
@@ -408,8 +410,6 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
                 "percurso": per.get("resposta") or "—",
                 "mudou": ini.get("resposta") != per.get("resposta")
                 and bool(ini or per),
-                "inicial_obs": ini.get("observacao"),
-                "percurso_obs": per.get("observacao"),
             }
         )
 
