@@ -354,7 +354,9 @@ def test_t8_ficha_mostra_observacao_geral_por_etapa(client, app):
         f"/relatorios/alunos/{ids['aluno_a']}/ficha"
         f"?turma_id={ids['turma']}&oferta_sel={ids['ofertas'][0]}"
     ))
-    assert corpo.count("pt-obs-conselho") == 2, (
+    # Conta só os divs renderizados — a regra CSS `.pt-obs-conselho`
+    # (AJ19-F2, white-space: pre-line) também aparece no <style> da página.
+    assert corpo.count('class="small text-muted mt-1 pt-obs-conselho"') == 2, (
         "a ficha deve renderizar a observação das duas etapas preenchidas"
     )
     assert "Parecer do inicial" in corpo
@@ -406,3 +408,91 @@ def test_t10_get_cria_cascas_de_conselho_por_aluno(client, app):
         # Efeito colateral atual: cascas vazias, gravadas sem conteúdo.
         assert all(linha.observacao is None for linha in linhas)
         assert ConselhoResposta.query.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# AJ19-F2 — normalização de quebras de linha e exibição na ficha
+# ---------------------------------------------------------------------------
+
+def test_t11_crlf_normalizado_antes_do_limite_e_gravado_com_n(client, app):
+    """4900 caracteres com 149 quebras CRLF no MEIO do texto: o POST cru
+    tem 5049 caracteres (cada quebra ocupa 2), mas após normalizar
+    \r\n → \n sobram 4900 — dentro do limite. O valor gravado usa só \n.
+    """
+    ids = _cenario(app)
+    _login(client, ids, "admin")
+
+    # 149 blocos "x*30 + quebra" + 250 'y' no meio + 31 'x' no fim:
+    # normalizado = 149*31 + 250 + 31 = 4900, sem espaço nas pontas
+    # (o strip não pode comer as quebras).
+    esperado = ("x" * 30 + "\n") * 149 + "y" * 250 + "x" * 31
+    assert len(esperado) == 4900
+    cru = esperado.replace("\n", "\r\n")
+    assert len(cru) == 5049  # CRLF dobra as quebras; não pode barrar
+    r = _post(client, ids, campos={f"obs_{ids['aluno_a']}": cru})
+    assert r.status_code == 302
+
+    with app.app_context():
+        linha = ConselhoClasse.query.filter_by(
+            aluno_id=ids["aluno_a"], etapa=EtapaConselho.INICIAL,
+        ).one()
+        assert "\r" not in linha.observacao
+        assert linha.observacao == esperado
+        assert len(linha.observacao) == 4900
+
+    # \r solto também normaliza.
+    r = _post(client, ids, campos={f"obs_{ids['aluno_a']}": "a\rb"})
+    assert r.status_code == 302
+    with app.app_context():
+        linha = ConselhoClasse.query.filter_by(
+            aluno_id=ids["aluno_a"], etapa=EtapaConselho.INICIAL,
+        ).one()
+        assert linha.observacao == "a\nb"
+
+
+def test_t11b_5001_reais_apos_normalizar_recusa_post_inteiro(client, app):
+    """5001 caracteres DE VERDADE após a normalização seguem recusando o
+    POST inteiro — a contagem é feita sobre o texto já normalizado."""
+    ids = _cenario(app)
+    _login(client, ids, "admin")
+
+    # 4951 'x' + CRLF + 50 'y': cru = 5003, normalizado = 5002 (> 5000)
+    # com a quebra no MEIO (o strip não a remove) → recusa.
+    chave = f"{ids['aluno_b']}_{ids['p_aluno']}"
+    r = _post(client, ids, campos={
+        f"obs_{ids['aluno_b']}": ("x" * 4951) + "\r\n" + ("y" * 50),
+        f"resp_{chave}": "Sempre",
+    })
+    assert r.status_code == 302
+    with app.app_context():
+        assert (
+            ConselhoClasse.query.filter_by(aluno_id=ids["aluno_b"]).count()
+            == 0
+        )
+        assert (
+            ConselhoResposta.query.filter_by(aluno_id=ids["aluno_b"]).count()
+            == 0
+        )
+
+
+def test_t12_ficha_exibe_quebra_de_linha_e_escapa_script(client, app):
+    """A observação com 2 linhas aparece em 2 linhas na ficha 360°
+    (white-space: pre-line) e <script> segue escapado pelo Jinja."""
+    ids = _cenario(app)
+    _login(client, ids, "admin")
+
+    texto = "Primeira linha\nSegunda linha <script>alert(1)</script>"
+    r = _post(client, ids, campos={f"obs_{ids['aluno_a']}": texto})
+    assert r.status_code == 302
+
+    ficha = _corpo(client.get(
+        f"/relatorios/alunos/{ids['aluno_a']}/ficha"
+        f"?turma_id={ids['turma']}&oferta_sel={ids['ofertas'][0]}"
+    ))
+    # O texto gravado sai escapado, com o \n preservado no HTML.
+    assert "Primeira linha\nSegunda linha" in ficha
+    assert "<script>alert(1)</script>" not in ficha
+    assert "&lt;script&gt;" in ficha
+    # A regra que preserva as quebras está na página.
+    assert "white-space: pre-line" in ficha
+    assert "pt-obs-conselho" in ficha

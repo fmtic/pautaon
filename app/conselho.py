@@ -340,7 +340,12 @@ def _normalize_conselho_request(form_data) -> dict:
         if key.startswith("obs_"):
             aluno_id = key[len("obs_"):]
             if aluno_id.isdigit():
-                normalized["observacoes"][aluno_id] = str(value).strip()
+                # AJ19-F2: normaliza quebras de linha ANTES do strip e da
+                # contagem do limite — \r\n e \r viram \n, então 150 CRLF
+                # contam como 150 caracteres, não 300, e o texto gravado já
+                # sai com \n (a ficha exibe com white-space: pre-line).
+                texto = str(value).replace("\r\n", "\n").replace("\r", "\n")
+                normalized["observacoes"][aluno_id] = texto.strip()
 
     return normalized
 

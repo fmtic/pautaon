@@ -24,7 +24,7 @@ Varredura em `nova_feature` (`git grep observacao` em `app/` e `app/templates/`)
 |---|---|---|
 | `conselho/lancamento.html` | textarea `obs_<aluno>_<pergunta>` por pergunta, preenchido de `observacoes_map` (`ConselhoResposta.observacao`) | UM `textarea obs_<aluno>` no fim do card, mesmo estilo de `turma_aval.html` (`obs_turma`); mapa chave = `aluno_id` vindo de `ConselhoClasse.observacao` |
 | `salvar_conselho` (`app/conselho.py`) | lia/gravava `ConselhoResposta.observacao` por par aluno×pergunta | grava `ConselhoClasse.observacao`; `ConselhoResposta.observacao` não é mais tocada (nem na criação da linha) |
-| Ficha 360° (`app/relatorios/painel_pedagogico/ficha_aluno.py` + `ficha_aluno.html`) | `inicial_obs`/`percurso_obs` por pergunta no dict (nunca renderizados) | `observacao` geral **por etapa** no dict e exibida no template (`pt-obs-conselho`, escapada pelo Jinja) |
+| Ficha 360° (`app/relatorios/painel_pedagogico/ficha_aluno.py` + `ficha_aluno.html`) | `inicial_obs`/`percurso_obs` por pergunta no dict (nunca renderizados) | `observacao` geral **por etapa** no dict e exibida no template (`pt-obs-conselho`, escapada pelo Jinja; **AJ19-F2:** `white-space: pre-line` preserva as quebras de linha) |
 | Fechamento (`fechamento.html`, `salvar_fechamento`) | não lia observação | sem alteração — continua sem exibir |
 | Painel do conselho (`painel.html`), resultado (`resultado_conselho.html`), impressão (`imprimir_formulario.html`), certificado, BI (`bi_alunos.py`), `conselho_leitura.py` | não liam observação | sem alteração — nenhum exibia observação, então nenhum precisou de ajuste |
 
@@ -53,6 +53,7 @@ O único leitor que **precisava** exibir a observação geral era a ficha 360° 
 ### Normalização (`_normalize_conselho_request`)
 
 - `obs_<aluno_id>` (sufixo integro) → `normalized["observacoes"][aluno_id] = texto.strip()`.
+- **AJ19-F2:** antes do `strip()`, as quebras de linha são normalizadas — `\r\n` e `\r` solto viram `\n`. A contagem do limite de 5000 (feita depois, sobre `normalized["observacoes"]`) e o valor gravado usam o texto já normalizado: 150 CRLF contam como 150 caracteres, não 300, e o banco recebe só `\n`.
 - O parser antigo `obs_<aluno>_<pergunta>` / `observacao_<aluno>_<pergunta>` foi removido — chaves no formato velho são ignoradas.
 
 ### Gravação (`salvar_conselho`)
@@ -88,7 +89,7 @@ Inalterados: `_exigir_gravacao_conselho()` + `professor_pode_acessar_oferta` + `
 
 ## 5. Testes
 
-`tests/test_aj19_observacao_aluno.py` (novo, 408 linhas, 10 testes):
+`tests/test_aj19_observacao_aluno.py` (novo; 13 funções de teste, 19 itens com a parametrização de perfis):
 
 - **T1** GET: exatamente um `obs_<aluno>` por aluno, nenhum `obs_<aluno>_<pergunta>`, rótulo e `maxlength=5000` presentes.
 - **T2** POST grava em `ConselhoClasse.observacao` e o GET devolve por aluno; `ConselhoResposta.observacao` permanece `NULL`.
@@ -100,6 +101,8 @@ Inalterados: `_exigir_gravacao_conselho()` + `professor_pode_acessar_oferta` + `
 - **T8** ficha 360° exibe a observação geral por etapa.
 - **T9** `ConselhoResposta.observacao` permanece `NULL` após gravações.
 - **T10** caracterização do GET criando as cascas (item 6).
+- **T11/T11b (AJ19-F2)** normalização CRLF: 4900 caracteres com 149 quebras `\r\n` no meio do texto (POST cru = 5049) é aceito e gravado só com `\n`; `\r` solto também normaliza; 5002 caracteres reais após normalizar (quebra no meio, fora do alcance do `strip`) recusa o POST inteiro sem gravar nada.
+- **T12 (AJ19-F2)** ficha 360°: observação de 2 linhas sai com `\n` no HTML dentro de `.pt-obs-conselho` (`white-space: pre-line` na `<style>` da página) e `<script>` segue escapado pelo Jinja. O T8 foi ajustado para contar só os divs renderizados (a regra CSS passou a conter a string `pt-obs-conselho`).
 
 Testes existentes ajustados ao novo contrato:
 
@@ -108,7 +111,7 @@ Testes existentes ajustados ao novo contrato:
 - `test_aj7b_conselho_none.py` — mesmos ajustes de campo.
 - `test_aj7d_gravacao_conselho.py` — **goldens do AJ7D**: somente os hashes das telas **individuais** mudaram (admin/pedagógico/professor); as **coletivas** permaneceram idênticas — diff confinado à região da observação.
 
-**Resultados:** direcionados (AJ19 + AJ2 + AJ7-A + AJ7-B + AJ7-D): **79 passed**. Suíte completa: **1758 passed, 0 failed** (22min25s). `ruff check` limpo no arquivo de teste novo; `app/conselho.py` mantém apenas os E712 pré-existentes do codebase (nenhum introduzido).
+**Resultados:** direcionados (AJ19 + AJ2 + AJ7-A + AJ7-B + AJ7-D + D5 leitores): **94 passed**. Suíte completa: **1761 passed, 0 failed** (~17min). `ruff check` limpo no arquivo de teste; `app/conselho.py` mantém apenas os E712 pré-existentes do codebase (nenhum introduzido). Goldens AJ7D **não mudaram** no F2 — a alteração é em `ficha_aluno.html`, fora das telas travadas por hash.
 
 ## 6. Documentação
 

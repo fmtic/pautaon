@@ -186,6 +186,12 @@ endblock %} {% block styles %}
     color: var(--bs-warning-text-emphasis);
   }
 
+  /* AJ19-F2: a observação do conselho é texto livre — as quebras de linha
+     gravadas (\n) voltam a aparecer na ficha; o escape do Jinja é mantido. */
+  .pt-obs-conselho {
+    white-space: pre-line;
+  }
+
   .pt-chart {
     position: relative;
     height: 300px;
