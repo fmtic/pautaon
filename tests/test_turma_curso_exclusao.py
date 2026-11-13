@@ -291,3 +291,69 @@ def test_exclusao_fisica_grava_log_acao():
         assert len(logs) == 1
         assert f"id={ids['turma']}" in (logs[0].detalhes or "")
         assert "T excl" in (logs[0].detalhes or "")
+
+
+# --- AJ20-F2: casca (ConselhoClasse sem conteúdo) não bloqueia exclusão física ---
+def test_exclusao_fisica_com_casca_nao_bloqueia():
+    """Turma com SOMENTE casca de ConselhoClasse (sem frequência, sem RegistroAula,
+    sem transferência, sem conselho com conteúdo): exclusão física deve suceder
+    sem IntegrityError/500 — casca é apagada na mesma transação."""
+    app, ids = _seed(ofertas=1, com_inscrito=True)
+    # Semeia uma casca real: linha sem conteúdo (como o GET antigo criava).
+    with app.app_context():
+        db.session.add(ConselhoClasse(
+            turma_id=ids["turma"],
+            aluno_id=ids["aluno"],
+            turma_curso_id=ids["ofertas"][0],
+            etapa=EtapaConselho.INICIAL,
+            unidade_id=ids["u1"],
+            # sem observacao, sem situacao_final, concluido=False → casca
+        ))
+        db.session.commit()
+
+    r = _excluir(app, ids["resp"], ids["turma"])
+    assert r.status_code == 302, f"Esperado 302, got {r.status_code}"
+    with app.app_context():
+        # Turma e oferta devem ter sido fisicamente removidas.
+        assert db.session.get(Turma, ids["turma"]) is None
+        assert db.session.get(TurmaCurso, ids["ofertas"][0]) is None
+        # Casca apagada junto.
+        assert ConselhoClasse.query.filter_by(turma_id=ids["turma"]).count() == 0
+
+
+# --- AJ20-F2: casca + conselho com conteúdo → exclusão lógica, nada apagado ---
+def test_casca_mais_conselho_com_conteudo_faz_exclusao_logica():
+    """Com 1 casca E 1 ConselhoClasse com conteúdo (observação), turma_tem_historico
+    retorna True → caminho lógico: turma desativada, conselho com conteúdo preservado,
+    nada apagado fisicamente — atomicidade garantida."""
+    app, ids = _seed(ofertas=1, com_inscrito=True)
+    with app.app_context():
+        # Casca (sem conteúdo)
+        db.session.add(ConselhoClasse(
+            turma_id=ids["turma"],
+            aluno_id=ids["aluno"],
+            turma_curso_id=ids["ofertas"][0],
+            etapa=EtapaConselho.INICIAL,
+            unidade_id=ids["u1"],
+        ))
+        # Conselho com conteúdo (conta como histórico)
+        db.session.add(ConselhoClasse(
+            turma_id=ids["turma"],
+            aluno_id=ids["aluno"],
+            turma_curso_id=ids["ofertas"][0],
+            etapa=EtapaConselho.FINAL,
+            unidade_id=ids["u1"],
+            observacao="Avaliação final do conselho",
+        ))
+        db.session.commit()
+
+    r = _excluir(app, ids["resp"], ids["turma"])
+    assert r.status_code == 302
+    with app.app_context():
+        # Exclusão LÓGICA: turma continua existindo, só desativada.
+        turma = db.session.get(Turma, ids["turma"])
+        assert turma is not None and turma.ativo is False
+        # Oferta também desativada (não removida).
+        assert db.session.get(TurmaCurso, ids["ofertas"][0]) is not None
+        # Ambos os conselhos preservados intactos.
+        assert ConselhoClasse.query.filter_by(turma_id=ids["turma"]).count() == 2

@@ -2751,7 +2751,7 @@ def excluir_turma(id):
     if not turma_obj:
         return redirect(url_for("registros.turma"))
 
-    from app.models import DiaBloqueadoTurma, TemaAula
+    from app.models import ConselhoClasse, DiaBloqueadoTurma, TemaAula
 
     assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
     nome = turma_obj.nome
@@ -2806,7 +2806,16 @@ def excluir_turma(id):
             DiaBloqueadoTurma.query.filter_by(turma_id=id).delete(
                 synchronize_session=False
             )
-            # Ofertas (TurmaCurso) — já sem inscrições que as referenciem.
+            # AJ20-F2: apaga cascas de ConselhoClasse (sem conteúdo) que apontam
+            # para as ofertas da turma. Conselho com conteúdo já bloqueou acima
+            # (turma_tem_historico → caminho lógico). ON DELETE RESTRICT em
+            # turma_curso_id impede deletar TurmaCurso com filhos.
+            from app.services.conselho_leitura import cond_conselho_sem_conteudo
+            ConselhoClasse.query.filter(
+                ConselhoClasse.turma_id == id,
+                cond_conselho_sem_conteudo(),
+            ).delete(synchronize_session=False)
+            # Ofertas (TurmaCurso) — já sem inscrições e cascas de conselho.
             TurmaCurso.query.filter_by(turma_id=id).delete(synchronize_session=False)
             # Por último a própria turma (delete em massa: sem cascata ORM).
             db.session.query(Turma).filter_by(id=id).delete(synchronize_session=False)
