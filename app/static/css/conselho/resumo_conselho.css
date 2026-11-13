@@ -1,0 +1,154 @@
+@page {
+    size: landscape;
+    margin: 0.7cm;
+  }
+
+  body {
+    background: #f5f6f8;
+    color: #212529;
+    font-family: Arial, sans-serif;
+  }
+
+  .print-page {
+    max-width: 1400px;
+    margin: 1.5rem auto;
+    padding: 1.5rem;
+    background: #fff;
+  }
+
+  .report-header {
+    border-bottom: 2px solid #343a40;
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .report-logo {
+    max-width: 130px;
+    max-height: 54px;
+    object-fit: contain;
+  }
+
+  .resumo-aluno,
+  .resumo-coletivo {
+    border: 1px solid #adb5bd;
+    border-radius: 0.4rem;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .marca-texto {
+    background: linear-gradient(104deg, rgba(255, 235, 59, 0.6) 0%, rgba(255, 235, 59, 0.8) 100%);
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.2rem;
+    color: #212529;
+  }
+
+  .resumo-aluno-header {
+    background: #e9ecef;
+    padding: 0.5rem 0.75rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .resumo-aluno-body,
+  .resumo-coletivo-body {
+    padding: 0.75rem;
+  }
+
+  .obs-box {
+    white-space: pre-line;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+  }
+
+  .resp-linha {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .resp-pergunta {
+    font-weight: 600;
+  }
+
+  .resp-resposta {
+    font-weight: 700;
+    color: #0e004e;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.2rem;
+  }
+
+  .inativo {
+    opacity: 0.65;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .sem-respostas {
+    color: #6c757d;
+    font-style: italic;
+  }
+
+  .atualizado-em {
+    font-size: 0.8rem;
+    color: #6c757d;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .seletor-etapa {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  @media print {
+    body {
+      background: #fff;
+    }
+
+    .print-page {
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .no-print,
+    .app-topbar,
+    .app-sidebar,
+    .app-footer {
+      display: none !important;
+    }
+
+    .app-main {
+      margin-left: 0 !important;
+    }
+
+    .resumo-aluno,
+    .resumo-coletivo {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+  }
