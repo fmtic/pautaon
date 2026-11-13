@@ -11,7 +11,17 @@ Cobre:
     - Disparo de e-mail para novo usuário e reset de senha
 """
 
-from flask import Blueprint, current_app, render_template, request, redirect, flash, url_for, abort, session
+from flask import (
+    Blueprint,
+    current_app,
+    render_template,
+    request,
+    redirect,
+    flash,
+    url_for,
+    abort,
+    session,
+)
 from flask_login import logout_user, login_required, current_user
 from sqlalchemy import select
 from datetime import datetime, timedelta
@@ -34,7 +44,7 @@ from app.services.auth_service import (
     generate_secure_random_password,
 )
 
-bp = Blueprint('auth', __name__)
+bp = Blueprint("auth", __name__)
 
 # Rate limit por conta e por IP (S1-11). Configuráveis por ambiente.
 from config import get_int
@@ -131,21 +141,35 @@ def _registrar_falha_conta(email: str):
     agora = _agora()
     reg = _obter_controle("conta", chave)
     if reg is None:
-        reg = LoginControle(escopo="conta", chave_hash=chave, falhas=1,
-                            janela_inicio=agora, nivel=0, atualizado_em=agora)
+        reg = LoginControle(
+            escopo="conta",
+            chave_hash=chave,
+            falhas=1,
+            janela_inicio=agora,
+            nivel=0,
+            atualizado_em=agora,
+        )
         db.session.add(reg)
         db.session.commit()
         return reg
     # janela de 15 min expirou -> nova janela
-    if reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= _CONTA_JANELA_SEGUNDOS:
+    if (
+        reg.janela_inicio is None
+        or (agora - reg.janela_inicio).total_seconds() >= _CONTA_JANELA_SEGUNDOS
+    ):
         # escalonamento dentro de 24h
-        if (reg.janela_inicio is not None
-                and (agora - reg.janela_inicio).total_seconds() < 86400
-                and reg.bloqueado_ate is not None):
+        if (
+            reg.janela_inicio is not None
+            and (agora - reg.janela_inicio).total_seconds() < 86400
+            and reg.bloqueado_ate is not None
+        ):
             reg.nivel = min((reg.nivel or 0) + 1, 3)
             if reg.nivel < 1:
                 reg.nivel = 1
-        elif reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= 86400:
+        elif (
+            reg.janela_inicio is None
+            or (agora - reg.janela_inicio).total_seconds() >= 86400
+        ):
             reg.nivel = 0
         reg.falhas = 1
         reg.janela_inicio = agora
@@ -168,18 +192,26 @@ def _registrar_falha_conta(email: str):
     return reg
 
 
-
 def _registrar_falha_ip(ip: str):
     chave = _chave_ip(ip)
     agora = _agora()
     reg = _obter_controle("ip", chave)
     if reg is None:
-        reg = LoginControle(escopo="ip", chave_hash=chave, falhas=1,
-                            janela_inicio=agora, nivel=0, atualizado_em=agora)
+        reg = LoginControle(
+            escopo="ip",
+            chave_hash=chave,
+            falhas=1,
+            janela_inicio=agora,
+            nivel=0,
+            atualizado_em=agora,
+        )
         db.session.add(reg)
         db.session.commit()
         return reg
-    if reg.janela_inicio is None or (agora - reg.janela_inicio).total_seconds() >= _IP_JANELA_SEGUNDOS:
+    if (
+        reg.janela_inicio is None
+        or (agora - reg.janela_inicio).total_seconds() >= _IP_JANELA_SEGUNDOS
+    ):
         reg.falhas = 1
         reg.janela_inicio = agora
         reg.bloqueado_ate = None
@@ -204,7 +236,7 @@ def _zerar_conta(email: str):
         db.session.commit()
 
 
-@bp.route('/aguardando-aprovacao')
+@bp.route("/aguardando-aprovacao")
 @login_required
 def aguardando_aprovacao():
     """Exibe a página de espera para usuários AD/LDAP recém-provisionados.
@@ -215,11 +247,11 @@ def aguardando_aprovacao():
     o perfil alcance áreas operacionais sem a devida classificação.
     """
     if current_user.role != UserRole.PENDENTE:
-        return redirect(url_for('main.painel'))
-    return render_template('aguardando.html')
+        return redirect(url_for("main.painel"))
+    return render_template("aguardando.html")
 
 
-@bp.route('/login', methods=['GET', 'POST'])
+@bp.route("/login", methods=["GET", "POST"])
 def login():
     """Controlador de login híbrido: local primeiro e LDAP/AD como fallback.
 
@@ -228,9 +260,9 @@ def login():
     são provisionados localmente apenas quando o servidor do domínio os
     valida e não precisam de senha local persistida.
     """
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '')
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
 
         ip_address = request.remote_addr or "unknown"
         try:
@@ -243,21 +275,24 @@ def login():
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao consultar rate limit de login.")
-            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
-            return redirect(url_for('auth.login'))
+            flash(
+                "Sistema temporariamente indisponível. Tente novamente em instantes.",
+                "danger",
+            )
+            return redirect(url_for("auth.login"))
         if bloqueado:
-            flash(f'Muitas tentativas. Tente novamente em {mins} minutos.', 'danger')
-            return redirect(url_for('auth.login'))
+            flash(f"Muitas tentativas. Tente novamente em {mins} minutos.", "danger")
+            return redirect(url_for("auth.login"))
 
         # Defensivo contra envio vazio
         if not email or not password:
-            flash('Informe Email e Senha.', 'warning')
+            flash("Informe Email e Senha.", "warning")
             try:
                 _registrar_falha_conta(email)
                 _registrar_falha_ip(ip_address)
             except Exception:
                 db.session.rollback()
-            return redirect(url_for('auth.login'))
+            return redirect(url_for("auth.login"))
 
         # Busca o usuário já registrado localmente. Para contas federadas,
         # a senha local pode estar ausente e o login é concluído pelo AD/LDAP.
@@ -273,13 +308,22 @@ def login():
         if lookup_candidates[0] != email:
             lookup_candidates.append(email)
         try:
-            user = db.session.execute(
-                select(User).where(User.email.in_(lookup_candidates))
-            ).scalars().first()
+            user = (
+                db.session.execute(
+                    select(User).where(User.email.in_(lookup_candidates))
+                )
+                .scalars()
+                .first()
+            )
         except Exception:
-            current_app.logger.exception("Falha ao consultar usuário no banco durante login.")
-            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
-            return redirect(url_for('auth.login'))
+            current_app.logger.exception(
+                "Falha ao consultar usuário no banco durante login."
+            )
+            flash(
+                "Sistema temporariamente indisponível. Tente novamente em instantes.",
+                "danger",
+            )
+            return redirect(url_for("auth.login"))
 
         login_ok = False
         ldap_identity = email
@@ -295,6 +339,7 @@ def login():
                 login_ok = True
         else:
             from werkzeug.security import check_password_hash
+
             check_password_hash(_DUMMY_HASH, password)
 
         # === 2. TENTATIVA DE AUTENTICAÇÃO NO DOMÍNIO AD/LDAP ===
@@ -307,10 +352,12 @@ def login():
                         from app.utils.logica import formatar_nome_proprio
 
                         user = User(
-                            name=formatar_nome_proprio(ldap_identity.split('@')[0].replace('.', ' ')),
+                            name=formatar_nome_proprio(
+                                ldap_identity.split("@")[0].replace(".", " ")
+                            ),
                             email=ldap_identity,
                             password="",
-                            role=UserRole.PENDENTE.value,   # trava de segurança total no sistema
+                            role=UserRole.PENDENTE.value,  # trava de segurança total no sistema
                             is_ad_user=True,
                             is_active=True,
                             first_login=False,
@@ -319,8 +366,12 @@ def login():
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
-                        current_app.logger.exception("Falha no aprovisionamento automático via LDAP.")
-                        flash("Erro no banco local ao registrar sua entrada AD.", "danger")
+                        current_app.logger.exception(
+                            "Falha no aprovisionamento automático via LDAP."
+                        )
+                        flash(
+                            "Erro no banco local ao registrar sua entrada AD.", "danger"
+                        )
                         login_ok = False
                 elif user.email != ldap_identity:
                     try:
@@ -329,7 +380,9 @@ def login():
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
-                        current_app.logger.exception("Falha ao normalizar o e-mail do usuário AD no banco local.")
+                        current_app.logger.exception(
+                            "Falha ao normalizar o e-mail do usuário AD no banco local."
+                        )
                         flash("Erro ao normalizar seu cadastro local do AD.", "danger")
                         login_ok = False
 
@@ -339,49 +392,68 @@ def login():
                 _zerar_conta(email)
             except Exception:
                 db.session.rollback()
-                current_app.logger.exception("Falha ao limpar rate limit após login válido.")
+                current_app.logger.exception(
+                    "Falha ao limpar rate limit após login válido."
+                )
             iniciar_sessao(user)
             if user.unidade_id:
                 session["unidade_id"] = user.unidade_id
             else:
                 session.pop("unidade_id", None)
 
-            register_security_log("Acesso Aprovado", f"Usuário {user.name} acessou o sistema.")
+            register_security_log(
+                "Acesso Aprovado", f"Usuário {user.name} acessou o sistema."
+            )
 
             # A troca obrigatória de senha deve ocorrer apenas para usuários
             # locais com senha persistida no banco. Usuários federados pelo AD
             # seguem para a fase de aprovação do perfil e não passam por senha local.
             if user.first_login and not user.is_ad_user:
-                flash('Bem-vindo! Por segurança, defina sua senha pessoal antes de continuar.', 'warning')
-                return redirect(url_for('auth.trocar_senha'))
+                flash(
+                    "Bem-vindo! Por segurança, defina sua senha pessoal antes de continuar.",
+                    "warning",
+                )
+                return redirect(url_for("auth.trocar_senha"))
 
-            return redirect(url_for('main.painel'))
+            return redirect(url_for("main.painel"))
 
         # Falha total ou Desabilitado
-        register_security_log("Aviso de Invasão/Falha", f"Login declinado para alvo hash: {hmac_identificador(email)[:12]}")
+        register_security_log(
+            "Aviso de Invasão/Falha",
+            f"Login declinado para alvo hash: {hmac_identificador(email)[:12]}",
+        )
         try:
             _registrar_falha_conta(email)
             _registrar_falha_ip(ip_address)
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao persistir rate limit de login.")
-            flash('Sistema temporariamente indisponível. Tente novamente em instantes.', 'danger')
-            return redirect(url_for('auth.login'))
+            flash(
+                "Sistema temporariamente indisponível. Tente novamente em instantes.",
+                "danger",
+            )
+            return redirect(url_for("auth.login"))
         # mensagem
         reg_c2 = _obter_controle("conta", _chave_conta(email))
-        msg = 'Credenciais recusadas pelo domínio e banco de dados.'
+        msg = "Credenciais recusadas pelo domínio e banco de dados."
         if reg_c2 and reg_c2.falhas == 4 and reg_c2.bloqueado_ate is None:
-            msg = 'Credenciais recusadas pelo domínio e banco de dados. Atenção: resta 1 tentativa antes do bloqueio temporário.'
+            msg = "Credenciais recusadas pelo domínio e banco de dados. Atenção: resta 1 tentativa antes do bloqueio temporário."
         if reg_c2 and reg_c2.bloqueado_ate is not None:
             mins = int((reg_c2.bloqueado_ate - _agora()).total_seconds() // 60) + 1
-            msg = f'Muitas tentativas. Tente novamente em {mins} minutos.'
-        flash(msg, 'danger')
-        return redirect(url_for('auth.login'))
+            msg = f"Muitas tentativas. Tente novamente em {mins} minutos."
+        flash(msg, "danger")
+        return redirect(url_for("auth.login"))
 
-    return render_template('login.html')
+    return render_template(
+        "login.html",
+        google_login_habilitado=bool(
+            current_app.config.get("GOOGLE_OAUTH_CLIENT_ID")
+            and current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
+        ),
+    )
 
 
-@bp.route('/logout', methods=['GET', 'POST'])
+@bp.route("/logout", methods=["GET", "POST"])
 def logout():
     """Encerra a sessão — só por POST (S1-16).
 
@@ -389,13 +461,13 @@ def logout():
     podem derrubar a sessão. Autenticado volta ao painel; anônimo, ao login.
     O POST exige CSRF (validação global do Flask-WTF).
     """
-    if request.method != 'POST':
+    if request.method != "POST":
         if current_user.is_authenticated:
-            return redirect(url_for('main.painel'))
-        return redirect(url_for('auth.login'))
+            return redirect(url_for("main.painel"))
+        return redirect(url_for("auth.login"))
 
     if not current_user.is_authenticated:
-        return redirect(url_for('auth.login'))
+        return redirect(url_for("auth.login"))
 
     register_security_log("Logoff", "Sessão encerrada voluntariamente.")
     # S1-06: revoga a geração atual — o cookie copiado para outro navegador
@@ -403,7 +475,7 @@ def logout():
     revogar_sessoes(current_user.id, "logout", registrar_log=False)
     logout_user()
     session.clear()
-    return redirect(url_for('auth.login'))
+    return redirect(url_for("auth.login"))
 
 
 # ====================== GOOGLE OAUTH2 ======================
@@ -414,7 +486,7 @@ _GOOGLE_USERINFO_URI = "https://openidconnect.googleapis.com/v1/userinfo"
 _GOOGLE_SCOPES = ["openid", "email", "profile"]
 
 
-@bp.route('/auth/google/login')
+@bp.route("/auth/google/login")
 def google_login():
     """Inicia o fluxo OAuth2 PKCE com o Google.
 
@@ -442,7 +514,9 @@ def google_login():
             {
                 "web": {
                     "client_id": client_id,
-                    "client_secret": current_app.config.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+                    "client_secret": current_app.config.get(
+                        "GOOGLE_OAUTH_CLIENT_SECRET"
+                    ),
                     "auth_uri": _GOOGLE_AUTH_URI,
                     "token_uri": _GOOGLE_TOKEN_URI,
                     "redirect_uris": [redirect_uri],
@@ -458,15 +532,19 @@ def google_login():
             include_granted_scopes="true",
             prompt="select_account",
         )
+        session["google_code_verifier"] = flow.code_verifier
         return redirect(authorization_url)
 
     except Exception:
         current_app.logger.exception("Falha ao iniciar fluxo OAuth Google.")
-        flash("Não foi possível iniciar o login com Google. Tente outra forma de acesso.", "danger")
+        flash(
+            "Não foi possível iniciar o login com Google. Tente outra forma de acesso.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
 
-@bp.route('/auth/google/callback')
+@bp.route("/auth/google/callback")
 def google_callback():
     """Processa o retorno do Google após a tela de consentimento.
 
@@ -479,7 +557,10 @@ def google_callback():
     state_esperado = session.get("google_oauth_state")
     if not state_esperado or state_retornado != state_esperado:
         session.pop("google_oauth_state", None)
-        flash("Falha de segurança na verificação do estado OAuth. Tente novamente.", "danger")
+        flash(
+            "Falha de segurança na verificação do estado OAuth. Tente novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
     session.pop("google_oauth_state", None)
 
@@ -511,6 +592,7 @@ def google_callback():
             state=state_retornado,
         )
         flow.redirect_uri = redirect_uri
+        flow.code_verifier = session.pop("google_code_verifier", None)
 
         # Troca o código de autorização pelos tokens de acesso
         flow.fetch_token(authorization_response=request.url)
@@ -538,8 +620,12 @@ def google_callback():
         flash("O Google não retornou um identificador de conta válido.", "danger")
         return redirect(url_for("auth.login"))
 
-    if current_app.config.get("GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True) and not userinfo.get("email_verified"):
-        flash("A conta Google precisa ter o e-mail verificado para continuar.", "danger")
+    if current_app.config.get(
+        "GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True
+    ) and not userinfo.get("email_verified"):
+        flash(
+            "A conta Google precisa ter o e-mail verificado para continuar.", "danger"
+        )
         return redirect(url_for("auth.login"))
 
     allowed_domains = current_app.config.get("GOOGLE_OAUTH_ALLOWED_DOMAINS") or []
@@ -553,14 +639,18 @@ def google_callback():
     # Prioridade: (a) conta já vinculada pelo google_id;
     #             (b) conta existente com mesmo e-mail -> exige senha local antes de vincular;
     #             (c) novo provisionamento com perfil pendente.
-    user = db.session.execute(
-        select(User).where(User.google_id == google_id)
-    ).scalars().first()
+    user = (
+        db.session.execute(select(User).where(User.google_id == google_id))
+        .scalars()
+        .first()
+    )
 
     if not user and google_email:
-        user = db.session.execute(
-            select(User).where(User.email == google_email)
-        ).scalars().first()
+        user = (
+            db.session.execute(select(User).where(User.email == google_email))
+            .scalars()
+            .first()
+        )
 
     if user and not user.google_id:
         session["google_link_pending"] = {
@@ -601,7 +691,9 @@ def google_callback():
         return redirect(url_for("auth.login"))
 
     if not user.is_active:
-        flash("Sua conta está desativada. Entre em contato com o administrador.", "danger")
+        flash(
+            "Sua conta está desativada. Entre em contato com o administrador.", "danger"
+        )
         return redirect(url_for("auth.login"))
 
     iniciar_sessao(user)
@@ -610,10 +702,16 @@ def google_callback():
     else:
         session.pop("unidade_id", None)
 
-    register_security_log("Acesso via Google", f"Usuário {user.name} ({google_email}) autenticado pelo Google OAuth.")
+    register_security_log(
+        "Acesso via Google",
+        f"Usuário {user.name} ({google_email}) autenticado pelo Google OAuth.",
+    )
 
     if user.role == UserRole.PENDENTE:
-        flash("Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.", "info")
+        flash(
+            "Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.",
+            "info",
+        )
         return redirect(url_for("auth.aguardando_aprovacao"))
 
     return redirect(url_for("main.painel"))
@@ -621,50 +719,67 @@ def google_callback():
 
 # ====================== ROTAS ADMINISTRAÇÃO ======================
 
-@bp.route('/admin/painel')
+
+@bp.route("/admin/painel")
 @login_required
 def painel_admin():
     if current_user.role != UserRole.ADMIN:
-        flash("Quebra de Hierarquia: O Painel administrativo está bloqueado para você.", "danger")
-        return redirect(url_for('main.painel'))
+        flash(
+            "Quebra de Hierarquia: O Painel administrativo está bloqueado para você.",
+            "danger",
+        )
+        return redirect(url_for("main.painel"))
 
     # Nota técnica: o painel administrativo só deve expor dados de usuários e unidades
     # para o perfil de administrador, preservando o modelo RBAC atual.
 
-    usuarios = db.session.execute(
-        select(User).order_by(User.name)
-    ).scalars().all()
+    usuarios = db.session.execute(select(User).order_by(User.name)).scalars().all()
 
-    unidades = db.session.execute(
-        select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
-    ).scalars().all()
+    unidades = (
+        db.session.execute(
+            select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
+        )
+        .scalars()
+        .all()
+    )
 
-    senha_gerada = session.pop('senha_gerada', None)
+    senha_gerada = session.pop("senha_gerada", None)
 
     # Bloqueios ativos (S1-11/S1-12, desbloqueio pelo admin D3)
     agora = _agora()
-    bloqueios_ativos = db.session.execute(
-        select(LoginControle)
-        .where(LoginControle.bloqueado_ate.isnot(None))
-        .where(LoginControle.bloqueado_ate > agora)
-        .order_by(LoginControle.bloqueado_ate.desc())
-        .limit(50)
-    ).scalars().all()
+    bloqueios_ativos = (
+        db.session.execute(
+            select(LoginControle)
+            .where(LoginControle.bloqueado_ate.isnot(None))
+            .where(LoginControle.bloqueado_ate > agora)
+            .order_by(LoginControle.bloqueado_ate.desc())
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
 
-    return render_template('admin/painel_admin.html', usuarios=usuarios, unidades=unidades, senha_gerada=senha_gerada, bloqueios_ativos=bloqueios_ativos, agora=agora)
+    return render_template(
+        "admin/painel_admin.html",
+        usuarios=usuarios,
+        unidades=unidades,
+        senha_gerada=senha_gerada,
+        bloqueios_ativos=bloqueios_ativos,
+        agora=agora,
+    )
 
 
-@bp.route('/admin/login-controle/desbloquear-conta', methods=['POST'])
+@bp.route("/admin/login-controle/desbloquear-conta", methods=["POST"])
 @login_required
 def desbloquear_conta():
     if current_user.role != UserRole.ADMIN:
         abort(403)
-    email = request.form.get('email', '').strip()
+    email = request.form.get("email", "").strip()
     if not email or len(email) > 254:
-        flash('Informe um e-mail válido.', 'danger')
-        return redirect(url_for('auth.painel_admin'))
+        flash("Informe um e-mail válido.", "danger")
+        return redirect(url_for("auth.painel_admin"))
     chave = chave_conta(email)
-    reg = LoginControle.query.filter_by(escopo='conta', chave_hash=chave).first()
+    reg = LoginControle.query.filter_by(escopo="conta", chave_hash=chave).first()
     encontrado = reg is not None
     if reg:
         reg.falhas = 0
@@ -673,36 +788,36 @@ def desbloquear_conta():
         reg.nivel = 0
         reg.atualizado_em = _agora()
         db.session.commit()
-        flash('Conta desbloqueada.', 'success')
+        flash("Conta desbloqueada.", "success")
     else:
-        flash('Nenhum bloqueio encontrado para esse identificador.', 'warning')
+        flash("Nenhum bloqueio encontrado para esse identificador.", "warning")
     # auditoria
     log = LogAcao(
         usuario_id=current_user.id,
         usuario_nome=current_user.name,
-        acao='Desbloqueio de login',
+        acao="Desbloqueio de login",
         detalhes=f'escopo=conta chave={chave[:8]} por_usuario_id={current_user.id} encontrado={"sim" if encontrado else "nao"}',
         ip=request.remote_addr,
         unidade_id=current_user.unidade_id,
     )
     db.session.add(log)
     db.session.commit()
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/admin/login-controle/desbloquear-ip', methods=['POST'])
+@bp.route("/admin/login-controle/desbloquear-ip", methods=["POST"])
 @login_required
 def desbloquear_ip():
     if current_user.role != UserRole.ADMIN:
         abort(403)
-    valor = request.form.get('ip', '').strip()
+    valor = request.form.get("ip", "").strip()
     try:
         ip_norm = str(ipaddress.ip_address(valor))
     except ValueError:
-        flash('Informe um IP válido.', 'danger')
-        return redirect(url_for('auth.painel_admin'))
+        flash("Informe um IP válido.", "danger")
+        return redirect(url_for("auth.painel_admin"))
     chave = chave_ip(ip_norm)
-    reg = LoginControle.query.filter_by(escopo='ip', chave_hash=chave).first()
+    reg = LoginControle.query.filter_by(escopo="ip", chave_hash=chave).first()
     encontrado = reg is not None
     if reg:
         reg.falhas = 0
@@ -711,40 +826,45 @@ def desbloquear_ip():
         reg.nivel = 0
         reg.atualizado_em = _agora()
         db.session.commit()
-        flash('IP desbloqueado.', 'success')
+        flash("IP desbloqueado.", "success")
     else:
-        flash('Nenhum bloqueio encontrado para esse identificador.', 'warning')
+        flash("Nenhum bloqueio encontrado para esse identificador.", "warning")
     log = LogAcao(
         usuario_id=current_user.id,
         usuario_nome=current_user.name,
-        acao='Desbloqueio de login',
+        acao="Desbloqueio de login",
         detalhes=f'escopo=ip chave={chave[:8]} por_usuario_id={current_user.id} encontrado={"sim" if encontrado else "nao"}',
         ip=request.remote_addr,
         unidade_id=current_user.unidade_id,
     )
     db.session.add(log)
     db.session.commit()
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/admin/cadastrar', methods=['POST'])
+@bp.route("/admin/cadastrar", methods=["POST"])
 @login_required
 def cadastrar_usuario():
     if current_user.role != UserRole.ADMIN:
         abort(403)
 
-    email = request.form.get('email', '').strip()
+    email = request.form.get("email", "").strip()
     if db.session.execute(select(User).where(User.email == email)).scalar():
         flash("Este correio eletrônico corporativo já existe localmente!", "danger")
-        return redirect(url_for('auth.painel_admin'))
+        return redirect(url_for("auth.painel_admin"))
 
-    nome = (request.form.get('nome') or '').strip()
-    senha = (request.form.get('password') or '').strip()
-    gerar_senha_inicial = request.form.get('gerar_senha_inicial') in ('1', 'true', 'on', 'yes')
+    nome = (request.form.get("nome") or "").strip()
+    senha = (request.form.get("password") or "").strip()
+    gerar_senha_inicial = request.form.get("gerar_senha_inicial") in (
+        "1",
+        "true",
+        "on",
+        "yes",
+    )
 
     if not nome:
         flash("Preencha todos os dados corretamente.", "warning")
-        return redirect(url_for('auth.painel_admin'))
+        return redirect(url_for("auth.painel_admin"))
 
     foi_gerada = False
     if gerar_senha_inicial or not senha:
@@ -755,14 +875,19 @@ def cadastrar_usuario():
         if erros:
             for erro in erros:
                 flash(erro, "danger")
-            return redirect(url_for('auth.painel_admin'))
+            return redirect(url_for("auth.painel_admin"))
 
     try:
-        unidade_id = request.form.get('unidade_id')
+        unidade_id = request.form.get("unidade_id")
         unidade_id = int(unidade_id) if unidade_id and unidade_id.isdigit() else None
 
-        novo = User(name=nome, email=email, role=request.form.get('role'),
-                    unidade_id=unidade_id, first_login=True)
+        novo = User(
+            name=nome,
+            email=email,
+            role=request.form.get("role"),
+            unidade_id=unidade_id,
+            first_login=True,
+        )
         novo.set_password(senha)
         db.session.add(novo)
         db.session.commit()
@@ -770,27 +895,27 @@ def cadastrar_usuario():
         # --- DISPARO DE E-MAIL ASSÍNCRONO ---
         # 1. Renderiza o HTML passando os dados dinâmicos para o Jinja2
         html_content = render_template(
-            "emails/novo_usuario.html",
-            nome=nome,
-            email=email,
-            senha=senha
+            "emails/novo_usuario.html", nome=nome, email=email, senha=senha
         )
 
         # 2. Dispara o e-mail assíncrono com o HTML renderizado
         send_email(
             subject="[pautaON] Sua conta foi criada com sucesso",
             recipients=[email],
-            body_html=html_content
+            body_html=html_content,
         )
         # -------------------------------------
         if foi_gerada:
-            session['senha_gerada'] = {
-                'nome': nome,
-                'email': email,
-                'senha': senha,
-                'tipo': 'cadastro',
+            session["senha_gerada"] = {
+                "nome": nome,
+                "email": email,
+                "senha": senha,
+                "tipo": "cadastro",
             }
-            flash(f"Conta para {nome} criada com sucesso! Senha inicial gerada: {senha}", "success")
+            flash(
+                f"Conta para {nome} criada com sucesso! Senha inicial gerada: {senha}",
+                "success",
+            )
         else:
             flash(f"Conta para {nome} criada com sucesso!", "success")
     except Exception:
@@ -798,10 +923,10 @@ def cadastrar_usuario():
         current_app.logger.exception("Falha ao cadastrar usuário manualmente.")
         flash("Não foi possível gravar o novo usuário.", "danger")
 
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/usuarios/editar/<int:id>', methods=['POST'])
+@bp.route("/usuarios/editar/<int:id>", methods=["POST"])
 @login_required
 def editar_usuario(id):
     if current_user.role != UserRole.ADMIN:
@@ -811,24 +936,24 @@ def editar_usuario(id):
     if usuario:
         try:
             # S1-22: valida role contra UserRole e e-mail (formato + unicidade).
-            nome = (request.form.get('nome') or '').strip()
-            email = (request.form.get('email') or '').strip()
-            role = request.form.get('role')
+            nome = (request.form.get("nome") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            role = request.form.get("role")
             if not nome:
                 flash("Nome é obrigatório.", "danger")
-                return redirect(url_for('auth.painel_admin'))
-            if not email or '@' not in email:
+                return redirect(url_for("auth.painel_admin"))
+            if not email or "@" not in email:
                 flash("E-mail inválido.", "danger")
-                return redirect(url_for('auth.painel_admin'))
+                return redirect(url_for("auth.painel_admin"))
             if role not in {r.value for r in UserRole}:
                 flash("Perfil de acesso inválido.", "danger")
-                return redirect(url_for('auth.painel_admin'))
+                return redirect(url_for("auth.painel_admin"))
             existente = db.session.execute(
                 select(User).where(User.email == email, User.id != id)
             ).scalar()
             if existente:
                 flash("Este e-mail já está em uso por outro usuário.", "danger")
-                return redirect(url_for('auth.painel_admin'))
+                return redirect(url_for("auth.painel_admin"))
 
             # S1-06: mudar papel ou unidade muda o que a pessoa pode fazer; as
             # sessões abertas com o perfil antigo precisam cair.
@@ -838,22 +963,26 @@ def editar_usuario(id):
             usuario.name = nome
             usuario.email = email
             usuario.role = role
-            unidade_id = request.form.get('unidade_id')
-            usuario.unidade_id = int(unidade_id) if unidade_id and unidade_id.isdigit() else None
+            unidade_id = request.form.get("unidade_id")
+            usuario.unidade_id = (
+                int(unidade_id) if unidade_id and unidade_id.isdigit() else None
+            )
             db.session.commit()
             if (usuario.role, usuario.unidade_id) != (papel_antes, unidade_antes):
                 revogar_sessoes(alvo_id, "papel_ou_unidade")
-            register_security_log("Alteração de Cadastros", f"Admin alterou {usuario.email}.")
+            register_security_log(
+                "Alteração de Cadastros", f"Admin alterou {usuario.email}."
+            )
             flash(f"Dados atualizados no perfil de {usuario.name}!", "success")
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao editar usuário.")
             flash("Falha ao salvar edição.", "danger")
 
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/usuarios/resetar/<int:id>', methods=['POST'])
+@bp.route("/usuarios/resetar/<int:id>", methods=["POST"])
 @login_required
 def resetar_senha(id):
     if current_user.role != UserRole.ADMIN:
@@ -862,8 +991,11 @@ def resetar_senha(id):
     usuario = db.session.get(User, id)
     if usuario:
         if usuario.is_ad_user:
-            flash("Usuários federados pelo LDAP não possuem senha local para resetar no banco.", "warning")
-            return redirect(url_for('auth.painel_admin'))
+            flash(
+                "Usuários federados pelo LDAP não possuem senha local para resetar no banco.",
+                "warning",
+            )
+            return redirect(url_for("auth.painel_admin"))
 
         try:
             nova_senha = generate_secure_random_password()
@@ -873,36 +1005,39 @@ def resetar_senha(id):
             db.session.commit()
             # S1-06: reset pelo admin derruba qualquer sessão aberta da conta.
             revogar_sessoes(alvo_id, "reset_senha_admin")
-            register_security_log("Reset de Senha", f"Senha de {usuario.email} resetada pelo admin.")
+            register_security_log(
+                "Reset de Senha", f"Senha de {usuario.email} resetada pelo admin."
+            )
             # --- DISPARO DE E-MAIL ASSÍNCRONO ---
             html_content = render_template(
-                "emails/senha_redefinida.html",
-                nome=usuario.name,
-                nova_senha=nova_senha
+                "emails/senha_redefinida.html", nome=usuario.name, nova_senha=nova_senha
             )
 
             send_email(
                 subject="[pautaON] Sua senha foi redefinida pelo administrador",
                 recipients=[usuario.email],
-                body_html=html_content
+                body_html=html_content,
             )
             # -------------------------------------
-            session['senha_gerada'] = {
-                'nome': usuario.name,
-                'email': usuario.email,
-                'senha': nova_senha,
-                'tipo': 'reset',
+            session["senha_gerada"] = {
+                "nome": usuario.name,
+                "email": usuario.email,
+                "senha": nova_senha,
+                "tipo": "reset",
             }
-            flash(f"Senha de {usuario.name} resetada com sucesso! Nova senha temporária gerada: {nova_senha}", "success")
+            flash(
+                f"Senha de {usuario.name} resetada com sucesso! Nova senha temporária gerada: {nova_senha}",
+                "success",
+            )
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao resetar senha de usuário.")
             flash("Erro ao resetar senha.", "warning")
 
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/usuarios/excluir/<int:id>', methods=['POST'])
+@bp.route("/usuarios/excluir/<int:id>", methods=["POST"])
 @login_required
 def excluir_usuario(id):
     if current_user.role != UserRole.ADMIN:
@@ -922,19 +1057,24 @@ def excluir_usuario(id):
             register_security_log(
                 "Sessões revogadas", f"motivo=exclusao usuario_id={alvo_id}"
             )
-            register_security_log("Remoção Grave", f"O perfil de {email_alvo} foi apagado.")
+            register_security_log(
+                "Remoção Grave", f"O perfil de {email_alvo} foi apagado."
+            )
             flash(f"Usuário deletado de forma definitiva.", "success")
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao excluir usuário.")
-            flash("O banco recusou a deleção, provavelmente existem relatórios amarrados ao perfil.", "danger")
+            flash(
+                "O banco recusou a deleção, provavelmente existem relatórios amarrados ao perfil.",
+                "danger",
+            )
     else:
         flash("Política de suicídio de perfil barrada. Peça a outro Admin.", "danger")
 
-    return redirect(url_for('auth.painel_admin'))
+    return redirect(url_for("auth.painel_admin"))
 
 
-@bp.route('/admin/unidades')
+@bp.route("/admin/unidades")
 @login_required
 def admin_unidades():
     """Lista todas as unidades para gestão administrativa."""
@@ -942,33 +1082,35 @@ def admin_unidades():
         abort(403)
 
     unidades = Unidade.query.order_by(Unidade.nome).all()
-    return render_template('admin/unidades.html', unidades=unidades)
+    return render_template("admin/unidades.html", unidades=unidades)
 
 
-@bp.route('/admin/unidades/cadastrar', methods=['POST'])
+@bp.route("/admin/unidades/cadastrar", methods=["POST"])
 @login_required
 def cadastrar_unidade():
     """Cria uma nova unidade organizacional."""
     if current_user.role != UserRole.ADMIN:
         abort(403)
 
-    nome = request.form.get('nome')
+    nome = request.form.get("nome")
     if nome:
         try:
             nova = Unidade(nome=nome, ativo=True)
             db.session.add(nova)
             db.session.commit()
-            register_security_log("Gestão de Unidade", f"Cadastrada nova unidade: {nome}")
+            register_security_log(
+                "Gestão de Unidade", f"Cadastrada nova unidade: {nome}"
+            )
             flash(f"Unidade '{nome}' criada com sucesso!", "success")
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao criar unidade.")
             flash("Erro ao criar unidade.", "danger")
 
-    return redirect(url_for('auth.admin_unidades'))
+    return redirect(url_for("auth.admin_unidades"))
 
 
-@bp.route('/admin/unidades/editar/<int:id>', methods=['POST'])
+@bp.route("/admin/unidades/editar/<int:id>", methods=["POST"])
 @login_required
 def editar_unidade(id):
     """Atualiza dados de uma unidade existente."""
@@ -977,23 +1119,25 @@ def editar_unidade(id):
 
     unidade = db.get_or_404(Unidade, id)
     nome_antigo = unidade.nome
-    novo_nome = request.form.get('nome')
+    novo_nome = request.form.get("nome")
 
     if novo_nome:
         try:
             unidade.nome = novo_nome
             db.session.commit()
-            register_security_log("Gestão de Unidade", f"Renomeada unidade: {nome_antigo} -> {novo_nome}")
+            register_security_log(
+                "Gestão de Unidade", f"Renomeada unidade: {nome_antigo} -> {novo_nome}"
+            )
             flash(f"Unidade atualizada para '{novo_nome}'!", "success")
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao editar unidade.")
             flash("Erro ao atualizar unidade.", "danger")
 
-    return redirect(url_for('auth.admin_unidades'))
+    return redirect(url_for("auth.admin_unidades"))
 
 
-@bp.route('/admin/unidades/alternar/<int:id>', methods=['POST'])
+@bp.route("/admin/unidades/alternar/<int:id>", methods=["POST"])
 @login_required
 def alternar_unidade_status(id):
     """Ativa ou Inativa uma unidade (Exclusão Lógica)."""
@@ -1006,20 +1150,21 @@ def alternar_unidade_status(id):
     try:
         db.session.commit()
         status = "ativada" if unidade.ativo else "inativada"
-        register_security_log("Gestão de Unidade", f"Unidade {unidade.nome} foi {status}.")
+        register_security_log(
+            "Gestão de Unidade", f"Unidade {unidade.nome} foi {status}."
+        )
         flash(f"Unidade {unidade.nome} {status} com sucesso!", "info")
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao alternar status da unidade.")
         flash("Erro ao alterar status da unidade.", "danger")
 
-    return redirect(url_for('auth.admin_unidades'))
+    return redirect(url_for("auth.admin_unidades"))
 
 
 # ====================== ROTAS AUDITORIA DE USO ======================
 
 from unidecode import unidecode
-
 
 #: Prefixos (em minúsculo) que definem cada categoria de ação de auditoria.
 #: Fonte ÚNICA do `categoria_acao` e do filtro por categoria de `ver_logs`: as
@@ -1028,8 +1173,14 @@ from unidecode import unidecode
 #: gravada por `registros/turmas.py`, que ficava fora de `exclusao`).
 _CATEGORIAS_ACAO = {
     "login": (
-        "login", "logoff", "logout", "cadastro local", "reset de senha",
-        "desbloqueio de login", "acesso aprovado", "aviso de invas",
+        "login",
+        "logoff",
+        "logout",
+        "cadastro local",
+        "reset de senha",
+        "desbloqueio de login",
+        "acesso aprovado",
+        "aviso de invas",
     ),
     "criacao": ("criar",),
     "edicao": ("alterar", "alteração", "editar", "trocar", "troca"),
@@ -1054,55 +1205,61 @@ def categoria_acao(acao: str | None) -> str:
     return _CATEGORIA_OUTRAS
 
 
-@bp.route('/admin/logs')
+@bp.route("/admin/logs")
 @login_required
 def ver_logs():
     if current_user.role != UserRole.ADMIN:
         abort(403)
 
-    page = request.args.get('page', 1, type=int)
-    usuario_busca = request.args.get('usuario', '').strip()
-    acao_busca = request.args.get('acao', '').strip()
-    data_busca = request.args.get('data', '').strip()
+    page = request.args.get("page", 1, type=int)
+    usuario_busca = request.args.get("usuario", "").strip()
+    acao_busca = request.args.get("acao", "").strip()
+    data_busca = request.args.get("data", "").strip()
 
     query = LogAcao.query
 
     if usuario_busca:
-        query = query.filter(LogAcao.usuario_nome.ilike(f'%{usuario_busca}%'))
+        query = query.filter(LogAcao.usuario_nome.ilike(f"%{usuario_busca}%"))
 
     if data_busca:
         try:
-            data_inicio = datetime.strptime(data_busca, '%Y-%m-%d').date()
+            data_inicio = datetime.strptime(data_busca, "%Y-%m-%d").date()
             data_fim = data_inicio + timedelta(days=1)
-            query = query.filter(LogAcao.data_hora >= data_inicio, LogAcao.data_hora < data_fim)
+            query = query.filter(
+                LogAcao.data_hora >= data_inicio, LogAcao.data_hora < data_fim
+            )
         except ValueError:
             pass
 
     # Filtro por categoria de ação (no banco, com parâmetro; nunca f-string SQL).
     # Os prefixos vêm de `_CATEGORIAS_ACAO` — o mesmo dicionário que
     # `categoria_acao` usa, para a listagem e a classificação não divergirem.
-    categoria = acao_busca.lower() if acao_busca else ''
+    categoria = acao_busca.lower() if acao_busca else ""
     if categoria not in set(_CATEGORIAS_ACAO) | {_CATEGORIA_OUTRAS}:
-        categoria = ''
+        categoria = ""
 
     if categoria and categoria != _CATEGORIA_OUTRAS:
         from sqlalchemy import or_ as _or
-        condicoes = [LogAcao.acao.ilike(f'{p}%') for p in _CATEGORIAS_ACAO[categoria]]
+
+        condicoes = [LogAcao.acao.ilike(f"{p}%") for p in _CATEGORIAS_ACAO[categoria]]
         query = query.filter(_or(*condicoes))
     elif categoria == _CATEGORIA_OUTRAS:
         from sqlalchemy import or_ as _or
+
         condicoes = [
-            LogAcao.acao.ilike(f'{p}%')
+            LogAcao.acao.ilike(f"{p}%")
             for prefixos in _CATEGORIAS_ACAO.values()
             for p in prefixos
         ]
         query = query.filter(~_or(*condicoes))
 
     # Paginação
-    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(page=page, per_page=20, error_out=False)
+    pagination = query.order_by(LogAcao.data_hora.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
 
     return render_template(
-        'admin/logs.html',
+        "admin/logs.html",
         logs=pagination.items,
         pagination=pagination,
         manutencao_ativa=is_maintenance_enabled(),
@@ -1112,7 +1269,7 @@ def ver_logs():
     )
 
 
-@bp.route('/admin/manutencao/toggle', methods=['POST'])
+@bp.route("/admin/manutencao/toggle", methods=["POST"])
 @login_required
 def manutencao_toggle():
     if current_user.role != UserRole.ADMIN:
@@ -1139,10 +1296,12 @@ def manutencao_toggle():
         flash("Não foi possível alterar o modo de manutenção.", "danger")
     else:
         status = "ativado" if manutencao_ativa else "desativado"
-        current_app.logger.info("Modo de manutenção %s por %s.", status, current_user.id)
+        current_app.logger.info(
+            "Modo de manutenção %s por %s.", status, current_user.id
+        )
         flash(f"Modo de manutenção {status} com sucesso.", "success")
 
-    return redirect(url_for('auth.ver_logs'))
+    return redirect(url_for("auth.ver_logs"))
 
 
 def _executar_limpar_logs(automatico=False):
@@ -1152,15 +1311,17 @@ def _executar_limpar_logs(automatico=False):
 
         # Controle para execução automática (evita rodar várias vezes no mesmo dia)
         if automatico:
-            ultima_limpeza = ConfiguracaoSistema.query.filter_by(chave='ultima_limpeza_logs').first()
+            ultima_limpeza = ConfiguracaoSistema.query.filter_by(
+                chave="ultima_limpeza_logs"
+            ).first()
             hoje = datetime.now().date()
             if ultima_limpeza and ultima_limpeza.valor == str(hoje):
                 return 0
             if not ultima_limpeza:
                 ultima_limpeza = ConfiguracaoSistema(
-                    chave='ultima_limpeza_logs',
+                    chave="ultima_limpeza_logs",
                     valor=str(hoje),
-                    descricao="Data da última execução automática de limpeza de logs"
+                    descricao="Data da última execução automática de limpeza de logs",
                 )
                 db.session.add(ultima_limpeza)
             else:
@@ -1170,7 +1331,9 @@ def _executar_limpar_logs(automatico=False):
         # Executa a exclusão
         qtd = LogAcao.query.filter(LogAcao.data_hora < data_limite).count()
         if qtd:
-            LogAcao.query.filter(LogAcao.data_hora < data_limite).delete(synchronize_session=False)
+            LogAcao.query.filter(LogAcao.data_hora < data_limite).delete(
+                synchronize_session=False
+            )
             db.session.commit()
         return qtd
     except Exception:
@@ -1179,7 +1342,7 @@ def _executar_limpar_logs(automatico=False):
         return -1
 
 
-@bp.route('/admin/logs/limpar-antigos', methods=['POST'])
+@bp.route("/admin/logs/limpar-antigos", methods=["POST"])
 @login_required
 def limpar_logs_antigos():
     """Remove logs com mais de 30 dias para evitar inchaço do SQLite DB local."""
@@ -1189,14 +1352,14 @@ def limpar_logs_antigos():
     qtd = _executar_limpar_logs(automatico=False)
 
     if qtd >= 0:
-        flash(f'Limpeza de Logs: {qtd} logs removidos!', 'success')
+        flash(f"Limpeza de Logs: {qtd} logs removidos!", "success")
     else:
-        flash(f'Falha técnica ao tentar limpar logs antigos.', 'danger')
+        flash(f"Falha técnica ao tentar limpar logs antigos.", "danger")
 
-    return redirect(url_for('auth.ver_logs'))
+    return redirect(url_for("auth.ver_logs"))
 
 
-@bp.route('/auth/google/confirmar-vinculo', methods=['GET', 'POST'])
+@bp.route("/auth/google/confirmar-vinculo", methods=["GET", "POST"])
 def google_confirmar_vinculo():
     """Confirma com senha local o vínculo de uma conta Google existente."""
     pending = session.get("google_link_pending")
@@ -1209,7 +1372,10 @@ def google_confirmar_vinculo():
         or created_at > now
     ):
         session.pop("google_link_pending", None)
-        flash("A confirmação do vínculo expirou. Inicie novamente o login Google.", "warning")
+        flash(
+            "A confirmação do vínculo expirou. Inicie novamente o login Google.",
+            "warning",
+        )
         return redirect(url_for("auth.login"))
 
     user = db.session.get(User, pending.get("user_id"))
@@ -1222,7 +1388,10 @@ def google_confirmar_vinculo():
         action = request.form.get("acao")
         if action == "recusar":
             session.pop("google_link_pending", None)
-            flash("Vínculo cancelado. Você pode entrar com suas credenciais normais.", "info")
+            flash(
+                "Vínculo cancelado. Você pode entrar com suas credenciais normais.",
+                "info",
+            )
             return redirect(url_for("auth.login"))
         if action != "confirmar":
             abort(400)
@@ -1248,7 +1417,9 @@ def google_confirmar_vinculo():
             session["unidade_id"] = user.unidade_id
         else:
             session.pop("unidade_id", None)
-        register_security_log("Vínculo Google", f"Vínculo Google confirmado por {user.name}.")
+        register_security_log(
+            "Vínculo Google", f"Vínculo Google confirmado por {user.name}."
+        )
         return redirect(url_for("main.painel"))
 
     return render_template(
@@ -1261,44 +1432,51 @@ def google_confirmar_vinculo():
 
 # ====================== ROTAS DO PERFIL PESSOAL ======================
 
-@bp.route('/trocar-senha', methods=['GET', 'POST'])
+
+@bp.route("/trocar-senha", methods=["GET", "POST"])
 @login_required
 def trocar_senha():
     if current_user.is_ad_user:
-        flash('Usuários federados pelo LDAP não precisam alterar uma senha local no banco.', 'info')
-        return redirect(url_for('main.painel'))
+        flash(
+            "Usuários federados pelo LDAP não precisam alterar uma senha local no banco.",
+            "info",
+        )
+        return redirect(url_for("main.painel"))
 
-    if request.method == 'POST':
-        nova = request.form.get('nova_senha', '')
-        confirma = request.form.get('confirma_senha', '')
-        senha_atual = request.form.get('senha_atual', '')
+    if request.method == "POST":
+        nova = request.form.get("nova_senha", "")
+        confirma = request.form.get("confirma_senha", "")
+        senha_atual = request.form.get("senha_atual", "")
 
         if not current_user.first_login and not current_user.is_ad_user:
             if not senha_atual or not current_user.check_password(senha_atual):
-                flash('Senha atual incorreta. Digite a senha vigente para continuar.', 'danger')
-                return redirect(url_for('auth.trocar_senha'))
+                flash(
+                    "Senha atual incorreta. Digite a senha vigente para continuar.",
+                    "danger",
+                )
+                return redirect(url_for("auth.trocar_senha"))
 
         # ── Validação de complexidade ──────────────────────────────────────
         erros = validate_password_strength(nova)
         if erros:
             for e in erros:
-                flash(e, 'danger')
-            return redirect(url_for('auth.trocar_senha'))
+                flash(e, "danger")
+            return redirect(url_for("auth.trocar_senha"))
 
         if nova != confirma:
-            flash('As senhas não coincidem.', 'danger')
-            return redirect(url_for('auth.trocar_senha'))
+            flash("As senhas não coincidem.", "danger")
+            return redirect(url_for("auth.trocar_senha"))
 
         # Impede reutilizar a própria senha atual
         if current_user.check_password(nova):
-            flash('A nova senha não pode ser igual à senha atual.', 'danger')
-            return redirect(url_for('auth.trocar_senha'))
+            flash("A nova senha não pode ser igual à senha atual.", "danger")
+            return redirect(url_for("auth.trocar_senha"))
 
         try:
             usuario = current_user._get_current_object()
             nome = usuario.name
             usuario.set_password(nova)
-            usuario.first_login = False   # libera acesso normal após troca
+            usuario.first_login = False  # libera acesso normal após troca
             db.session.commit()
             # S1-06: as outras sessões do mesmo usuário caem (o cookie antigo
             # carrega o `sv` velho); esta continua, com o carimbo renovado.
@@ -1306,11 +1484,11 @@ def trocar_senha():
                 usuario.id, "troca_senha", registrar_log=False
             )
             register_security_log("Troca de Senha", f"{nome} definiu nova senha.")
-            flash('Senha atualizada com sucesso!', 'success')
-            return redirect(url_for('main.painel'))
+            flash("Senha atualizada com sucesso!", "success")
+            return redirect(url_for("main.painel"))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao trocar senha do usuário atual.")
-            flash('Erro ao salvar a nova senha. Tente novamente.', 'warning')
+            flash("Erro ao salvar a nova senha. Tente novamente.", "warning")
 
-    return render_template('trocar_senha.html', first_login=current_user.first_login)
+    return render_template("trocar_senha.html", first_login=current_user.first_login)

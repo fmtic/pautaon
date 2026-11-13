@@ -32,7 +32,7 @@
       background: #162a50;
       transform: translateY(-2px);
     }
-    
+
     .btn-google {
       background-color: #fff;
       color: #3c4043;
@@ -41,11 +41,11 @@
       font-weight: 500;
       transition: all 0.3s;
     }
-    
+
     .btn-google:hover {
       background-color: #f8f9fa;
       border-color: #d2e3fc;
-      box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+      box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
     }
 
     .text-primary {
@@ -72,25 +72,25 @@
       box-shadow: 0 0 0 0.25rem rgba(30, 60, 114, 0.25);
       border-radius: 0.375rem;
     }
-    
+
     .divider {
       display: flex;
       align-items: center;
       text-align: center;
       margin: 1.5rem 0;
     }
-    
+
     .divider::before,
     .divider::after {
       content: '';
       flex: 1;
       border-bottom: 1px solid #dee2e6;
     }
-    
+
     .divider:not(:empty)::before {
       margin-right: .25em;
     }
-    
+
     .divider:not(:empty)::after {
       margin-left: .25em;
     }
@@ -143,14 +143,17 @@
               ACESSAR
             </button>
           </form>
-          
+
+          {% if google_login_habilitado %}
           <!-- Separador e Botão Google -->
           <div class="divider text-muted small">OU</div>
-          
-          <a href="/login/google" class="btn btn-google w-100 d-flex align-items-center justify-content-center shadow-sm rounded-3">
-            <img class="report-logo" src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" style="width: 80px; margin-right: 5px;">
+
+          <a href="{{ url_for('auth.google_login') }}"
+            class="btn btn-google w-100 d-flex align-items-center justify-content-center shadow-sm rounded-3">
+            <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="" style="width: 80px; margin-right: 5px;">
             E-mail Institucional
           </a>
+          {% endif %}
 
           <!-- Termos -->
           <div class="text-center mt-4">
