@@ -4,8 +4,10 @@
 {# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
 continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}">
+
 <div class="container mt-4">
-    <style>
+   <!-- <style>
         :root {
             --conselho-pergunta-cor: #0a3d62;
         }
@@ -24,7 +26,7 @@ continua sendo apenas o texto da opção, sem a letra. #}
             outline: 2px solid #0a3d62;
             outline-offset: 2px;
         }
-    </style>
+    </style> -->
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>

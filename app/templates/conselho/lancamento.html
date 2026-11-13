@@ -2,13 +2,15 @@
 {% block content %}
 {# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}">
+
 <div class="container-fluid mt-4">
-    <style>
+    <!-- <style>
         :root { --conselho-pergunta-cor: #0a3d62; }
         .conselho-pergunta { color: var(--conselho-pergunta-cor); }
         .conselho-opcao.active { border-color: #0a3d62; background-color: #e7f1ff; font-weight: 700; }
         .conselho-opcao:focus-visible { outline: 2px solid #0a3d62; outline-offset: 2px; }
-    </style>
+    </style> -->
 
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body">
