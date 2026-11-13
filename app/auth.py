@@ -483,7 +483,11 @@ def logout():
 _GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URI = "https://openidconnect.googleapis.com/v1/userinfo"
-_GOOGLE_SCOPES = ["openid", "email", "profile"]
+_GOOGLE_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+]
 
 
 @bp.route("/auth/google/login")
