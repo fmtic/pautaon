@@ -300,6 +300,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let currentIndex = 0;
     const total = alunos.length;
+
+    // AJ21: o resumo abre "Editar" com #aluno-<id>. Seleciona o card do
+    // aluno na paginação em vez de deixar sempre o primeiro visível.
+    const alunoAncora = (window.location.hash || '').match(/^#aluno-(\d+)$/);
+    if (alunoAncora) {
+        const indiceAncora = Array.from(alunos).findIndex(
+            card => card.dataset.alunoId === alunoAncora[1]
+        );
+        if (indiceAncora >= 0) currentIndex = indiceAncora;
+    }
     
     const btnPrev = document.getElementById('btnPrev');
     const btnNext = document.getElementById('btnNext');

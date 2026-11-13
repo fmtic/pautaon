@@ -10,12 +10,14 @@ lista de conferência prévia ficou registrada em
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from typing import Iterable
 
 from sqlalchemy.orm import joinedload
 
 from app.models import ConselhoClasse, ConselhoResposta, PerguntaConselho, TurmaCurso
+from app.models.enums import EtapaConselho, ETAPA_PARA_CAMPO_AVALIACAO
 from app.services.conselho_leitura import rotulo_oferta
 
 
@@ -25,7 +27,11 @@ def _bloco_vazio() -> dict:
         "percurso": {"total": 0, "respondidos": 0},
         "final": {"total": 0, "respondidos": 0},
         "respostas": defaultdict(
-            lambda: {"inicial": defaultdict(int), "percurso": defaultdict(int)}
+            lambda: {
+                "inicial": defaultdict(int),
+                "percurso": defaultdict(int),
+                "final": defaultdict(int),
+            }
         ),
         "perguntas": {},
     }
@@ -45,7 +51,7 @@ def _aplicar(bloco: dict, cons, respostas: list, perguntas: dict[str, str]) -> N
             r.pergunta_id, f"Pergunta {r.pergunta_id}"
         )
         opcao = (r.resposta or "").strip() or "—"
-        if etapa in ("inicial", "percurso"):
+        if etapa in ("inicial", "percurso", "final"):
             bloco["respostas"][r.pergunta_id][etapa][opcao] += 1
 
 
@@ -58,6 +64,7 @@ def _serializar(bloco: dict) -> dict:
             pid: {
                 "inicial": dict(etapas["inicial"]),
                 "percurso": dict(etapas["percurso"]),
+                "final": dict(etapas["final"]),
             }
             for pid, etapas in bloco["respostas"].items()
         },
@@ -175,6 +182,45 @@ def agregar_respostas(cons: dict) -> list[dict]:
             "pergunta": cons.get("perguntas", {}).get(pid, f"Pergunta {pid}"),
             "inicial": _dist_com_pct(etapas_["inicial"]),
             "percurso": _dist_com_pct(etapas_["percurso"]),
+            "final": _dist_com_pct(etapas_["final"]),
         }
         for pid, etapas_ in cons.get("respostas", {}).items()
     ]
+
+
+def carregar_avaliacoes_coletivas(oferta_ids: Iterable[int]) -> dict[int, dict]:
+    """Carrega `avaliacao_<etapa>` (JSON) das ofertas em UMA consulta.
+
+    Devolve `{turma_curso_id: {etapa: {pergunta_id_str: resposta}}}` com as
+    chaves de etapa em minúsculas (`inicial`, `percurso`, `final`) — o mesmo
+    formato de `respostas` usado pelo restante do painel.
+    Ofertas sem avaliação gravada mapeiam para dicionários de etapa vazios.
+    """
+    ids = [i for i in oferta_ids if i is not None]
+    if not ids:
+        return {}
+    linhas = (
+        TurmaCurso.query.options(joinedload(TurmaCurso.curso))
+        .filter(TurmaCurso.id.in_(ids))
+        .all()
+    )
+    saida: dict[int, dict] = {}
+    for o in linhas:
+        etapa_dados: dict[str, dict] = {}
+        for etapa, campo in ETAPA_PARA_CAMPO_AVALIACAO.items():
+            bruto = getattr(o, campo) or ""
+            dados: dict[str, str] = {}
+            if bruto:
+                try:
+                    carregado = json.loads(bruto)
+                except (TypeError, json.JSONDecodeError):
+                    carregado = {}
+                if isinstance(carregado, dict):
+                    dados = {
+                        str(k): str(v)
+                        for k, v in carregado.items()
+                        if v and k != '_obs'
+                    }
+            etapa_dados[etapa.value.lower()] = dados
+        saida[o.id] = etapa_dados
+    return saida

@@ -61,9 +61,10 @@ from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from app.utils.autor import autor_do_lancamento
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+from app.utils.timezone import get_local_now
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
@@ -271,6 +272,12 @@ def _build_turma_avaliacao_payload(form_data, perguntas) -> str:
         valor_limpo = str(valor).strip()
         if valor_limpo:
             respostas[str(pergunta.id)] = valor_limpo
+    # Observação geral da turma (AJ21-B): mesma codificação JSON, chave
+    # reservada `_obs`; vazia não entra e, como o payload substitui o campo,
+    # limpar a observação remove a chave.
+    observacao = form_data.get('obs_turma')
+    if observacao is not None and str(observacao).strip():
+        respostas['_obs'] = str(observacao).strip()
     return json.dumps(respostas, ensure_ascii=False)
 
 
@@ -1375,7 +1382,8 @@ def avaliar_turma(turma_id):
                            exigir_escolha=False,
                            etapa_atual=etapa_selecionada,
                            perguntas=perguntas,
-                           respostas=respostas)
+                           respostas=respostas,
+                           observacao=respostas.get('_obs', ''))
 
 
 # ---------------------------------------------------------------------------
@@ -1507,3 +1515,270 @@ def deletar_periodo_conselho(conselho_id):
         logger.exception("Erro ao deletar período de conselho.")
         return jsonify({"success": False, "msg": "Erro interno ao excluir. Tente novamente."}), 500
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# RESUMO DE RESPOSTAS DO CONSELHO (AJ21)
+# Leitura apenas — nunca cria ConselhoClasse nem escreve.
+# ---------------------------------------------------------------------------
+
+_ROLES_RESUMO_CONSELHO = (
+    UserRole.ADMIN,
+    UserRole.PEDAGOGICO,
+    UserRole.SECRETARIA,
+)
+
+
+def _exigir_resumo_conselho() -> None:
+    """Recusa (403) perfis que não podem ler o resumo de respostas.
+
+    Apenas admin, pedagogico e secretaria. Professor e demais recebem 403.
+    """
+    if current_user.role not in _ROLES_RESUMO_CONSELHO:
+        abort(403)
+
+
+def _turma_do_contexto(turma_id: int) -> Turma:
+    """Turma do resumo respeitando o isolamento por unidade.
+
+    Usuários com unidade no contexto (todos os perfis operacionais) só
+    alcançam a própria unidade; admin/gerência sem unidade mantêm a visão
+    global de leitura. A busca já filtra a unidade — não há IDOR por id.
+    """
+    unidade_id = get_unidade_id()
+    query = Turma.query.filter_by(id=turma_id)
+    if unidade_id is not None:
+        query = query.filter_by(unidade_id=unidade_id)
+    turma_obj = query.first_or_404()
+    if unidade_id is not None:
+        assert_unidade_context(turma_obj.unidade_id, unidade_id)
+    return turma_obj
+
+
+def _oferta_do_resumo(turma_obj: Turma):
+    """Resolve a oferta do resumo com a mesma política 0/1/2+ do conselho.
+
+    1 ativa = uso direto; 2+ exige `turma_curso_id` válido; id inativo,
+    inexistente ou de outra turma é recusado com 404 (nada é escrito).
+    """
+    oferta_id = request.args.get('turma_curso_id', type=int)
+    oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
+        turma_obj, oferta_id
+    )
+    if exigir_escolha or not ativas:
+        abort(404)
+    if _escolha_fora_das_ativas(oferta_id, oferta):
+        abort(404)
+    # A guarda de role já restringiu o resumo aos 3 perfis de leitura; esta
+    # chamada mantém a regra central de acesso à oferta em um único lugar.
+    if not professor_pode_acessar_oferta(current_user, oferta):
+        abort(403)
+    return oferta
+
+
+def _etapa_do_resumo() -> EtapaConselho:
+    """Etapa da querystring; inválida/ausente cai em INICIAL (404 se lixo)."""
+    etapa_raw = request.args.get('etapa', EtapaConselho.INICIAL.value)
+    try:
+        return EtapaConselho(etapa_raw)
+    except (TypeError, ValueError):
+        abort(404)
+
+
+_LETRAS_RESUMO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+
+def _resposta_escolhida(pergunta, valor: str) -> str:
+    """Formata a resposta salva para o resumo.
+
+    Com opções, devolve a letra + texto da alternativa escolhida (ex.:
+    ``B) Às vezes``); sem opções, devolve o texto dissertativo. Nunca lista
+    as alternativas não escolhidas.
+    """
+    valor = (valor or '').strip()
+    if not valor:
+        return ''
+    if pergunta is not None and pergunta.opcoes:
+        opcoes = [opcao.strip() for opcao in pergunta.opcoes.split(' | ')]
+        for indice, opcao in enumerate(opcoes):
+            if opcao == valor:
+                letra = (
+                    _LETRAS_RESUMO[indice]
+                    if indice < len(_LETRAS_RESUMO)
+                    else str(indice + 1)
+                )
+                return f'{letra}) {valor}'
+    return valor
+
+
+@bp.route('/conselho/resumo/<int:turma_id>')
+@login_required
+def resumo_conselho(turma_id):
+    """Resumo único (individual + coletivo) do conselho da oferta/etapa.
+
+    GET nunca escreve nem cria ConselhoClasse (AJ20). Todo aluno ativo da
+    oferta aparece; aluno sem linha/conteúdo = "Sem respostas registradas".
+    Pergunta hoje inativa com resposta salva continua aparecendo (não filtra
+    `ativo`). A seção coletiva lê `TurmaCurso.avaliacao_<etapa>` (JSON) e
+    mostra a observação geral em `_obs`.
+    """
+    _exigir_resumo_conselho()
+    etapa = _etapa_do_resumo()
+    etapa_valor = etapa.value
+    turma_obj = _turma_do_contexto(turma_id)
+    oferta = _oferta_do_resumo(turma_obj)
+    aluno_id = request.args.get('aluno_id', type=int)
+
+    # Alunos ATIVOS da oferta (mesma regra do lançamento) — a lista é a
+    # espinha do resumo: quem não tem ConselhoClasse também aparece.
+    alunos_query = (
+        Aluno.query.join(Inscricao)
+        .filter(
+            Inscricao.turma_curso_id == oferta.id,
+            Inscricao.ativo == True,  # noqa: E712 — coluna booleana
+            Aluno.ativo == True,  # noqa: E712 — coluna booleana
+        )
+        .distinct()
+        .order_by(Aluno.nome)
+    )
+    if aluno_id is not None:
+        alunos_query = alunos_query.filter(Aluno.id == aluno_id)
+    alunos = alunos_query.all()
+    if aluno_id is not None and not alunos:
+        # `aluno_id` de fora da oferta não revela dados de outro aluno.
+        abort(404)
+
+    aluno_ids = [a.id for a in alunos]
+
+    conselhos = (
+        ConselhoClasse.query.filter_by(
+            turma_curso_id=oferta.id, etapa=etapa_valor
+        )
+        .filter(ConselhoClasse.aluno_id.in_(aluno_ids))
+        .all()
+        if aluno_ids
+        else []
+    )
+    conselho_por_aluno = {c.aluno_id: c for c in conselhos}
+    conselho_ids = [c.id for c in conselhos]
+
+    # UMA consulta para todas as respostas da oferta/etapa (sem N+1 por
+    # aluno). Só respostas com texto entram no resumo.
+    respostas = (
+        ConselhoResposta.query.filter(
+            ConselhoResposta.conselho_id.in_(conselho_ids)
+        ).all()
+        if conselho_ids
+        else []
+    )
+    respostas_por_conselho: dict[int, list] = defaultdict(list)
+    for r in respostas:
+        if (r.resposta or '').strip():
+            respostas_por_conselho[r.conselho_id].append(r)
+
+    perguntas_ids = {
+        r.pergunta_id
+        for lst in respostas_por_conselho.values()
+        for r in lst
+        if r.pergunta_id
+    }
+    perguntas = (
+        {
+            p.id: p
+            for p in PerguntaConselho.query.filter(
+                PerguntaConselho.id.in_(perguntas_ids)
+            ).all()
+        }
+        if perguntas_ids
+        else {}
+    )
+    # Numeração estável no conjunto respondido (não depende do aluno).
+    numero_por_pergunta = {
+        pid: indice + 1
+        for indice, pid in enumerate(sorted(perguntas_ids))
+    }
+
+    alunos_resumo = []
+    for aluno in alunos:
+        conselho = conselho_por_aluno.get(aluno.id)
+        resp_aluno = (
+            respostas_por_conselho.get(conselho.id, []) if conselho else []
+        )
+        resp_lista = []
+        for r in sorted(resp_aluno, key=lambda item: item.pergunta_id or 0):
+            p = perguntas.get(r.pergunta_id) if r.pergunta_id else None
+            resposta_exibicao = _resposta_escolhida(p, r.resposta)
+            if not resposta_exibicao:
+                continue
+            resp_lista.append(
+                {
+                    'pergunta_id': r.pergunta_id,
+                    'numero': numero_por_pergunta.get(r.pergunta_id, ''),
+                    'pergunta_texto': (
+                        p.texto if p else f'Pergunta {r.pergunta_id}'
+                    ),
+                    'resposta_exibicao': resposta_exibicao,
+                    'ativo': bool(p.ativo) if p else False,
+                }
+            )
+
+        autor_nome = None
+        if resp_aluno:
+            # F1: cada resposta guarda o último autor; a de maior id é a
+            # última gravação daquele aluno/etapa.
+            autor_nome = max(resp_aluno, key=lambda item: item.id).autor_nome
+
+        observacao = (conselho.observacao or '') if conselho else ''
+        alunos_resumo.append(
+            {
+                'aluno': aluno,
+                'nome_exibicao': aluno.nome_social or aluno.nome,
+                'conselho': conselho,
+                'observacao': observacao,
+                'autor_nome': autor_nome,
+                'respostas': resp_lista,
+                'tem_conteudo': bool(resp_lista or observacao),
+            }
+        )
+
+    # Seção coletiva: mesmo parser da avaliação da turma, sem filtrar a etapa
+    # no modelo (o mapa etapa→campo é a fonte única).
+    dados_coletivos = _get_turma_avaliacao_respostas(oferta, etapa_valor)
+    observacao_coletiva = dados_coletivos.pop('_obs', '')
+    perguntas_coletivas = (
+        PerguntaConselho.query.filter_by(
+            tipo='TURMA', etapa=etapa_valor
+        )
+        .order_by(PerguntaConselho.id)
+        .all()
+    )
+    coletivo_respostas = []
+    for indice, pergunta in enumerate(perguntas_coletivas, start=1):
+        resposta_exibicao = _resposta_escolhida(
+            pergunta, dados_coletivos.get(str(pergunta.id), '')
+        )
+        if not resposta_exibicao:
+            continue
+        coletivo_respostas.append(
+            {
+                'pergunta_id': pergunta.id,
+                'numero': indice,
+                'pergunta_texto': pergunta.texto,
+                'resposta_exibicao': resposta_exibicao,
+                'ativo': bool(pergunta.ativo),
+            }
+        )
+
+    return render_template(
+        'conselho/resumo_conselho.html',
+        turma=turma_obj,
+        oferta=oferta,
+        etapa=etapa,
+        etapa_valor=etapa_valor,
+        alunos_resumo=alunos_resumo,
+        coletivo_respostas=coletivo_respostas,
+        observacao_coletiva=observacao_coletiva,
+        now=get_local_now(),
+        aluno_id=aluno_id,
+        total_alunos=len(alunos_resumo),
+    )

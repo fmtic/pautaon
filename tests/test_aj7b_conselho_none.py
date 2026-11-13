@@ -424,9 +424,11 @@ def test_a7_painel_sem_none_na_ordenacao(client, app):
 def test_a5_varredura_get_nos_templates_conselho(app):
     """Trava: os `.get(` de mapa de texto (`respostas`/`observacoes`) nos
     templates do conselho ficam só nos pontos cobertos pelos testes A1–A4
-    (lancamento e turma_aval). Um ponto novo neste padrão precisa de teste
-    novo antes de entrar. Os demais `.get(` (lista de perguntas, mapa de
-    grade protegido por `{% if %}`) não renderizam campo de texto cru."""
+    (lancamento e turma_aval). O resumo do AJ21-B não usa `.get(` de mapa
+    bruto: o parser do coletivo é feito na rota. Um ponto
+    novo neste padrão precisa de teste novo antes de entrar. Os demais `.get(`
+    (lista de perguntas, mapa de grade protegido por `{% if %}`) não
+    renderizam campo de texto cru."""
     from pathlib import Path
 
     padrao = re.compile(r"\b(?:respostas|observacoes)\.get\(")
@@ -436,7 +438,10 @@ def test_a5_varredura_get_nos_templates_conselho(app):
         texto = tpl.read_text(encoding="utf-8")
         if padrao.search(texto):
             achados.add(tpl.name)
-    assert achados == {"lancamento.html", "turma_aval.html"}, (
+    assert achados == {
+        "lancamento.html",
+        "turma_aval.html",
+    }, (
         f"novos usos de mapa.get() de campo de texto em templates do "
         f"conselho: {achados}; cada ponto exige teste de NULL/vazio/"
         "preenchido antes de entrar"

@@ -69,6 +69,13 @@
                 href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}{% if oferta %}?oferta_sel={{ oferta.id }}{% endif %}">
                 <i class="bi bi-chat-left-text-fill me-1"></i> Avaliação da Turma
             </a>
+            {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] and oferta %}
+            <a class="btn btn-info btn-sm shadow-sm ms-2"
+                href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa=etapa, turma_curso_id=oferta.id) }}"
+                target="_blank" rel="noopener">
+                <i class="bi bi-journal-text me-1"></i> Ver respostas
+            </a>
+            {% endif %}
         </div>
     </div>
 
@@ -111,7 +118,7 @@
 
             {# LOOP DOS ALUNOS COM CLASSE 'aluno-card' #}
             {% for aluno in alunos %}
-            <div class="col-12 mb-4 aluno-card" id="aluno-step-{{ loop.index0 }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+            <div class="col-12 mb-4 aluno-card" id="aluno-step-{{ loop.index0 }}" data-aluno-id="{{ aluno.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
                 <div class="card shadow-sm border-0">
                     <div class="card-header bg-light py-2">
                         <h6 class="mb-0 fw-bold text-primary">

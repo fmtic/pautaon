@@ -17,16 +17,20 @@ _ACAO_LOG_GESTOR = "Alteração de conselho (gestor)"
 # SHA-256 do HTML completo antes da alteração, após normalizar só os tokens
 # CSRF. Um hash por papel e tela trava a preservação do HTML autorizado.
 _GOLDEN_HTML = {
-    # Updated golden HTML hashes after UI changes
+    # Updated golden HTML hashes after UI changes.
+    # AJ21: "Ver respostas" (admin/pedagogico/secretaria) e data-aluno-id
+    # mudaram lancamento/turma_aval; hashes regravados com so o CSRF trocado.
+    # AJ21-B: o "Ver respostas" da avaliacao coletiva passou a apontar para a
+    # rota unica; so os hashes de admin/pedagogico na coletiva mudaram.
     # AJ19: hashes do individual mudaram SÓ na região da observação (o
     # textarea por pergunta virou UM `obs_<aluno>` no fim do card). A
     # coletiva permaneceu idêntica.
-    ("admin", "individual"): "5deabb8eea24019af93a1262c93d4eef2cbc2639eae085a30dcae9415fbd1dfd",
-    ("admin", "coletiva"): "f5460658bbd639e35ecfb72d6d706838189b00ff527f5a487cf6c9845c32a11c",
-    ("pedagogico", "individual"): "6586a513fa4112c3a1eb2bb921c85b63b79241f52668143e4db116a545bdace2",
-    ("pedagogico", "coletiva"): "30ab34d0a7d268db4b2c63efbdbabc44f597f1411ddba8829420dfc7ea36cedb",
-    ("professor", "individual"): "aa6aa03eb7d19353e844c248866ecf82678f1f291a3bad9e671c3d96958e0b91",
-    ("professor", "coletiva"): "e76db195b98ba7c17a8662052d7efe5989c97541f84bec7c958f319cd6e5de03",
+    ("admin", "individual"): "1c4f24b029c43c26713f3254e521bf4eb72a228ccef4b59208f9aeeb017f6844",
+    ("admin", "coletiva"): "9bb491a1ba6a86b7b0d9ee36ee35c0c8f8824b3e2811680c8a2659271ae4a496",
+    ("pedagogico", "individual"): "805c6c8877192309ebde2f8e3833a49e7f34d8c05e8ed32588a09cd662008cfe",
+    ("pedagogico", "coletiva"): "46e25a80ea80f50665b65c4d491248e782575bc833f66bd1261c6db66abe2817",
+    ("professor", "individual"): "e0e2f376de3388148b5fe98883ff6308a16aee24c80aa8a38cd47a61df754d44",
+    ("professor", "coletiva"): "3ff0346bb7031c036e75d42ddeb6ca30938afed774a6c5e2317916e26e7a862c",
 }
 
 _ROTAS = ("individual", "coletiva")

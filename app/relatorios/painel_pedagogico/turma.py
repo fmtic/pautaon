@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from app.models import Aluno, Inscricao, Turma
+from sqlalchemy.orm import joinedload
+
+from app.models import Aluno, Inscricao, PerguntaConselho, Turma, TurmaCurso
 from app.models.enums import ConceitoFrequencia
+from app.services.conselho_leitura import rotulo_oferta
+from app.services.turma_curso import ofertas_ativas
 
 from . import conselho, frequencia
 from .formatacao import (
@@ -69,6 +73,33 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
         turma.id, FrequenciaTurma()
     )
     cons = conselho.por_turma([turma.id]).get(turma.id, {})
+
+    # Blocos individuais por oferta + ofertas ativas que só têm avaliação
+    # coletiva (TurmaCurso.avaliacao_<etapa>), tudo em UMA consulta.
+    ofertas_blocos = {
+        bloco["turma_curso_id"]: bloco for bloco in cons.get("ofertas", [])
+    }
+    ativas = ofertas_ativas(turma.id)
+    avaliacoes_coletivas = conselho.carregar_avaliacoes_coletivas(
+        set(ofertas_blocos) | {oferta.id for oferta in ativas}
+    )
+    for oferta in ativas:
+        if oferta.id in ofertas_blocos:
+            continue
+        coletivas = avaliacoes_coletivas.get(oferta.id) or {}
+        if not any(coletivas.get(chave) for chave in ("inicial", "percurso", "final")):
+            continue
+        ofertas_blocos[oferta.id] = {
+            "turma_curso_id": oferta.id,
+            "rotulo": rotulo_oferta(oferta),
+            **_bloco_conselho_vazio(),
+        }
+
+    # Mapa id -> texto das perguntas do conselho (para exibir avaliação coletiva).
+    perguntas_conselho = {
+        p.id: p.texto
+        for p in PerguntaConselho.query.all()
+    }
 
     alunos_dados = _alunos_da_turma(turma, freq)
     fx = faixas_alunos(freq.por_aluno_pct)
@@ -136,11 +167,30 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
         "conselho_ofertas": [
             {
                 "rotulo": oferta_bloco["rotulo"],
+                "turma_curso_id": oferta_bloco["turma_curso_id"],
                 "etapas": conselho.etapas(oferta_bloco),
                 "agregado": conselho.agregar_respostas(oferta_bloco),
+                "avaliacoes": avaliacoes_coletivas.get(
+                    oferta_bloco["turma_curso_id"], {}
+                ),
             }
-            for oferta_bloco in cons.get("ofertas", [])
+            for oferta_bloco in sorted(
+                ofertas_blocos.values(),
+                key=lambda bloco: (bloco["rotulo"], bloco["turma_curso_id"]),
+            )
         ],
+        "perguntas_conselho": perguntas_conselho,
+    }
+
+
+def _bloco_conselho_vazio() -> dict:
+    """Bloco no formato de `conselho.por_turma` para oferta só com coletiva."""
+    return {
+        "inicial": {"total": 0, "respondidos": 0},
+        "percurso": {"total": 0, "respondidos": 0},
+        "final": {"total": 0, "respondidos": 0},
+        "respostas": {},
+        "perguntas": {},
     }
 
 
