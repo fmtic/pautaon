@@ -17,7 +17,7 @@
     <div class="text-end small">
       <div class="fw-bold">{{ turma.nome }}</div>
       {% if oferta %}
-        <div><strong>Oferta:</strong> {{ oferta.curso.nome if oferta.curso else 'Curso' }}</div>
+        <div><strong>Curso:</strong> {{ oferta.curso.nome if oferta.curso else 'Curso' }}</div>
         <div><strong>Professor:</strong> {{ oferta.professor.name if oferta.professor else '—' }}</div>
       {% endif %}
       <div><strong>Etapa do conselho:</strong> {{ etapa.value }}</div>

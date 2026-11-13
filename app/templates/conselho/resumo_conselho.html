@@ -33,7 +33,7 @@
   <section class="mb-4">
     <h2 class="h5 fw-bold mb-2">Avaliação individual dos alunos</h2>
     {% if not alunos_resumo %}
-    <div class="alert alert-info">Sem alunos ativos na oferta.</div>
+    <div class="alert alert-info">Sem alunos ativos no curso.</div>
     {% else %}
     {% for item in alunos_resumo %}
     <div class="resumo-aluno" id="aluno-{{ item.aluno.id }}">
