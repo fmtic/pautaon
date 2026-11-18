@@ -118,11 +118,17 @@ class OpcaoProximaTurma(SoftDeleteMixin, db.Model):
     """
     Catálogo de destinos possíveis após o conselho final.
     Ex.: 'Aprovado para Avançado', 'Reencaminhado para Básico', 'Egresso'.
+
+    AJ22: `programa` (texto, nullable) marca o programa de curso ao qual a
+    opção se refere. Opção sem programa (NULL/vazio) não permite escolher
+    nível no fechamento; com programa, o nível só pode ser escolhido se
+    existir nível ativo daquele programa na unidade da turma.
     """
     __tablename__ = 'opcao_proxima_turma'
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
+    programa: str = db.Column(db.String(50))
 
 
 class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
@@ -201,6 +207,16 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
         db.Integer, db.ForeignKey('opcao_proxima_turma.id')
     )
     proxima_turma_obj = db.relationship('OpcaoProximaTurma')
+
+    # AJ22: nível de destino do próximo curso (FK → nivel, RESTRICT).
+    # NULL = "Não se aplica". Vínculo por referência: renomear o nível
+    # reflete no histórico; inativar não apaga a escolha já gravada.
+    proximo_nivel_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey('nivel.id', ondelete='RESTRICT'),
+        nullable=True,
+    )
+    proximo_nivel_obj = db.relationship('Nivel')
 
     unidade = db.relationship('Unidade', backref='conselhos_unidade')
 

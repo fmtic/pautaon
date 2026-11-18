@@ -156,6 +156,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Inicializa a sincronização de spans se estiver na tela de impressão
     sincronizarSpans();
+
+    // AJ22: habilita/popula os selects de nível do fechamento (inicia já
+    // com a pré-seleção do servidor, se houver).
+    ligarNiveisFechamento();
 });
 
 // -------------------------------------------------------------------------
@@ -178,6 +182,87 @@ function sincronizarSpans() {
             span.innerText = sel.options[sel.selectedIndex]?.text || '';
             sel.addEventListener('change', () => { span.innerText = sel.options[sel.selectedIndex].text; });
         }
+    });
+
+    document.querySelectorAll('.nivel-select').forEach(sel => {
+        const span = sel.closest('td').querySelector('.nivel-texto');
+        if (span) {
+            span.innerText = sel.options[sel.selectedIndex]?.text || '';
+            sel.addEventListener('change', () => { span.innerText = sel.options[sel.selectedIndex].text; });
+        }
+    });
+}
+
+// -------------------------------------------------------------------------
+// AJ22 — Nível de destino do próximo curso (fechamento)
+// -------------------------------------------------------------------------
+// NIVEL_DATA ({programa: [{id, nome, ativo}]}) e OPCAO_PROGRAMA
+// ({opcao_id: programa}) são embutidos pela página de fechamento; nas
+// demais telas do conselho não existem e a lógica fica inerte.
+
+function temDadosNivel() {
+    return typeof NIVEL_DATA !== 'undefined' && typeof OPCAO_PROGRAMA !== 'undefined';
+}
+
+// Reconstrói as opções do select de nível da linha conforme o curso
+// escolhido: só níveis do programa da opção; o nível já gravado inativo
+// permanece visível com etiqueta "(inativo)" (D3). Sem níveis ativos no
+// programa → select desabilitado + mensagem explicativa.
+function atualizarNivelDaLinha(row) {
+    const proxima = row.querySelector('.proxima-select');
+    const nivelSel = row.querySelector('.nivel-select');
+    if (!proxima || !nivelSel || !temDadosNivel()) return;
+
+    const msg = nivelSel.closest('td').querySelector('.nivel-msg');
+    const cursoId = proxima.value;
+    const programa = cursoId ? (OPCAO_PROGRAMA[cursoId] || '') : '';
+    const nivelAtual = nivelSel.getAttribute('data-nivel-atual') || '';
+
+    // Trocar/limpar o curso limpa o nível.
+    nivelSel.innerHTML = '<option value="">Não se aplica</option>';
+    nivelSel.disabled = true;
+    if (msg) { msg.classList.add('d-none'); msg.innerText = ''; }
+    sincronizarSpanNivel(nivelSel);
+    if (!cursoId || !programa) return;
+
+    const niveis = (NIVEL_DATA[programa] || []);
+    const ativos = niveis.filter(n => n.ativo);
+
+    if (!ativos.length) {
+        if (msg) {
+            msg.innerText = 'Nenhum nível cadastrado para o programa ' + programa + '.';
+            msg.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const opcoes = niveis.filter(n => n.ativo || String(n.id) === String(nivelAtual));
+    opcoes.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n.id;
+        opt.innerText = n.nome + (n.ativo ? '' : ' (inativo)');
+        if (String(n.id) === String(nivelAtual)) opt.selected = true;
+        nivelSel.appendChild(opt);
+    });
+    nivelSel.disabled = false;
+    sincronizarSpanNivel(nivelSel);
+}
+
+function sincronizarSpanNivel(nivelSel) {
+    const span = nivelSel.closest('td').querySelector('.nivel-texto');
+    if (span) span.innerText = nivelSel.options[nivelSel.selectedIndex]?.text || '';
+}
+
+function ligarNiveisFechamento() {
+    const tabela = document.getElementById('tabelaFechamento');
+    if (!tabela || !temDadosNivel()) return;
+    tabela.querySelectorAll('tbody tr').forEach(row => {
+        const proxima = row.querySelector('.proxima-select');
+        if (proxima) {
+            proxima.addEventListener('change', () => atualizarNivelDaLinha(row));
+        }
+        // Respeita a pré-seleção vinda do servidor (edição de fechamento).
+        atualizarNivelDaLinha(row);
     });
 }
 
@@ -251,11 +336,15 @@ function salvarFechamento() {
         if (alunoId && selects.length >= 2) {
             const situacao = selects[0].value;
             const proximaTurmaId = selects[1].value;
+            // AJ22: 3º select = nível de destino (pode estar desabilitado;
+            // .value continua legível). Vazio → "Não se aplica" (NULL).
+            const proximoNivelId = selects[2] ? selects[2].value : '';
 
             dadosParaSalvar.push({
                 aluno_id: alunoId,
                 situacao: situacao,
-                proxima_turma_id: proximaTurmaId || null
+                proxima_turma_id: proximaTurmaId || null,
+                proximo_nivel_id: proximoNivelId || null
             });
         }
     });

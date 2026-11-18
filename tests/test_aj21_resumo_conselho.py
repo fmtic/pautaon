@@ -470,7 +470,12 @@ def test_r4_observacao_individual_escapada_e_com_quebras(client, app):
     assert "<b>forte</b>" not in html
     assert "&lt;b&gt;forte&lt;/b&gt;" in html
     assert "linha 2" in html
-    assert "white-space: pre-line" in html
+    # O CSS do resumo é externalizado (commit b77b72d): `pre-line` vive em
+    # css/conselho/resumo_conselho.css, não mais inline no HTML.
+    assert "obs-box" in html
+    css = client.get("/static/css/conselho/resumo_conselho.css")
+    assert css.status_code == 200
+    assert "white-space: pre-line" in css.data.decode("utf-8")
 
 
 def test_r4_observacao_coletiva_escapada_e_com_quebras(client, app):

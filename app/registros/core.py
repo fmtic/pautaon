@@ -60,7 +60,7 @@ from .shared import assert_unidade_context
 # ---------------------------------------------------------------------------
 # ABAS DO PLANEJAMENTO — preservar a aba (e os filtros) após uma escrita
 # ---------------------------------------------------------------------------
-_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis')
+_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis', 'proximos')
 
 
 def _aba_planejamento(valor) -> str | None:
@@ -1125,33 +1125,77 @@ def planejamento():
 
         if tipo_post == 'nivel':
             from app.models import Nivel
+            from app.services.proximo_curso import PROGRAMAS_CURSO
             nome_nivel = request.form.get('nome_nivel', '').strip()
+            # AJ22: programa do nível ('' → NULL/legado). A unicidade é por
+            # (nome, unidade, COALESCE(programa,'')) — o mesmo nome pode
+            # repetir entre programas.
+            programa_nivel = request.form.get('programa_nivel', '').strip() or None
+            if programa_nivel and programa_nivel not in PROGRAMAS_CURSO:
+                flash("Programa de nível inválido.", 'warning')
+                return _voltar_planejamento()
             if nome_nivel:
                 nivel_unidade_id = get_unidade_id()
                 # ETAPA B6: criar nível exige unidade efetiva na sessão; a
                 # Visão Global (unidade None) é somente leitura, como nos
                 # demais ramos de escrita do planejamento.
                 assert_unidade_context(nivel_unidade_id, nivel_unidade_id)
-                existente = Nivel.query.filter_by(
+                candidatos = Nivel.query.filter_by(
                     nome=nome_nivel,
                     unidade_id=nivel_unidade_id,
-                ).first()
-                if existente:
-                    flash("Já existe um nível com esse nome nesta unidade.", 'warning')
+                ).all()
+                if any(
+                    ((n.programa or '').strip() or None) == programa_nivel
+                    for n in candidatos
+                ):
+                    flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
                 else:
                     try:
                         db.session.add(Nivel(
                             nome=nome_nivel,
                             ativo=True,
                             unidade_id=nivel_unidade_id,
+                            programa=programa_nivel,
                         ))
                         db.session.commit()
                         flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
+                    except IntegrityError:
+                        db.session.rollback()
+                        flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
                     except Exception:
                         db.session.rollback()
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
+            return _voltar_planejamento()
+
+        if tipo_post == 'proxima_opcao':
+            # AJ22: catálogo GLOBAL de opções de próximo curso. O campo
+            # Programa só é gravado para ADMIN (D5); para os demais perfis
+            # o valor enviado é ignorado.
+            from app.models import OpcaoProximaTurma
+            from app.services.proximo_curso import PROGRAMAS_CURSO
+            nome_opcao = request.form.get('nome_opcao', '').strip()
+            programa_opcao = None
+            if current_user.role == UserRole.ADMIN:
+                programa_opcao = request.form.get('programa_opcao', '').strip() or None
+                if programa_opcao and programa_opcao not in PROGRAMAS_CURSO:
+                    flash("Programa de próximo curso inválido.", 'warning')
+                    return _voltar_planejamento()
+            if nome_opcao:
+                try:
+                    db.session.add(OpcaoProximaTurma(
+                        nome=nome_opcao,
+                        programa=programa_opcao,
+                        ativo=True,
+                    ))
+                    db.session.commit()
+                    flash(f"Opção de próximo curso '{nome_opcao}' adicionada com sucesso!", 'success')
+                except Exception:
+                    db.session.rollback()
+                    flash("Erro ao salvar opção de próximo curso.", 'danger')
+            else:
+                flash("Informe o nome da opção de próximo curso.", 'warning')
             return _voltar_planejamento()
 
         if tipo_post == 'valor':
@@ -1294,6 +1338,19 @@ def planejamento():
         q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
     valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
 
+    # AJ22: catálogo global de opções de próximo curso + programas que já
+    # têm ao menos um nível ativo (aviso "programa sem nível").
+    from app.models import Nivel, OpcaoProximaTurma
+    from app.services.proximo_curso import PROGRAMAS_CURSO
+    proximas_opcoes = OpcaoProximaTurma.query.order_by(
+        OpcaoProximaTurma.nome
+    ).all()
+    programas_com_nivel = {
+        (n.programa or '').strip()
+        for n in Nivel.query.filter(Nivel.ativo == True).all()  # noqa: E712
+        if (n.programa or '').strip()
+    }
+
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
     aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
 
@@ -1319,6 +1376,10 @@ def planejamento():
                            filtro_curso=filtro_curso,
                            niveis=niveis,
                            valores_esportista=valores_esportista,
+                           proximas_opcoes=proximas_opcoes,
+                           programas_curso=PROGRAMAS_CURSO,
+                           programas_com_nivel=programas_com_nivel,
+                           is_admin=(current_user.role == UserRole.ADMIN),
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
@@ -1425,11 +1486,23 @@ def editar_nivel(id):
     assert_unidade_context(nivel.unidade_id, unidade_id)
 
     novo_nome = request.form.get('nome_nivel', '').strip()
+    # AJ22: programa do nível ('' → NULL/legado). Mantidos os perfis atuais
+    # do cadastro de níveis — a restrição a admin vale só para o campo
+    # Programa da OPÇÃO de próximo curso (D5).
+    from app.services.proximo_curso import PROGRAMAS_CURSO
+    programa_nivel = request.form.get('programa_nivel', '').strip() or None
+    if programa_nivel and programa_nivel not in PROGRAMAS_CURSO:
+        flash("Programa de nível inválido.", 'warning')
+        return _voltar_planejamento()
     if novo_nome:
         try:
             nivel.nome = novo_nome
+            nivel.programa = programa_nivel
             db.session.commit()
             flash("Nível atualizado com sucesso!", 'success')
+        except IntegrityError:
+            db.session.rollback()
+            flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
         except Exception:
             db.session.rollback()
             flash("Erro ao atualizar nível.", 'danger')
@@ -1458,6 +1531,55 @@ def inativar_nivel(id):
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
     return _voltar_planejamento()
+
+
+# ---------------------------------------------------------------------------
+# OPÇÕES DE PRÓXIMO CURSO (AJ22) — catálogo GLOBAL, sem unidade
+# ---------------------------------------------------------------------------
+
+@bp.route('/planejamento/proxima-opcao/<int:id>/programa', methods=['POST'])
+@login_required
+def editar_programa_proxima_opcao(id):
+    """AJ22/D5: o campo Programa da opção de próximo curso é restrito a
+    ADMIN — o catálogo é global e o programa condiciona a escolha de nível
+    no fechamento do conselho."""
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+    from app.models import OpcaoProximaTurma
+    from app.services.proximo_curso import PROGRAMAS_CURSO
+    opcao = db.get_or_404(OpcaoProximaTurma, id)
+    programa = request.form.get('programa_opcao', '').strip() or None
+    if programa and programa not in PROGRAMAS_CURSO:
+        flash("Programa de próximo curso inválido.", 'warning')
+        return _voltar_planejamento('proximos')
+    try:
+        opcao.programa = programa
+        db.session.commit()
+        flash(f"Programa da opção '{opcao.nome}' atualizado.", 'success')
+    except Exception:
+        db.session.rollback()
+        flash("Erro ao atualizar programa da opção.", 'danger')
+    return _voltar_planejamento('proximos')
+
+
+@bp.route('/planejamento/proxima-opcao/<int:id>/inativar', methods=['POST'])
+@login_required
+def inativar_proxima_opcao(id):
+    """Ativa/inativa a opção de próximo curso (mesmos perfis do
+    planejamento). Inativar NÃO apaga escolhas já gravadas no conselho."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
+        abort(403)
+    from app.models import OpcaoProximaTurma
+    opcao = db.get_or_404(OpcaoProximaTurma, id)
+    try:
+        opcao.ativo = not opcao.ativo
+        db.session.commit()
+        status = 'ativada' if opcao.ativo else 'inativada'
+        flash(f"Opção '{opcao.nome}' {status}!", 'success')
+    except Exception:
+        db.session.rollback()
+        flash("Erro ao alterar status da opção.", 'warning')
+    return _voltar_planejamento('proximos')
 
 
 # ---------------------------------------------------------------------------

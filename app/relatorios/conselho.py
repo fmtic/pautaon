@@ -192,6 +192,31 @@ def resultado_conselho():
                             freq.conceito
                         )
 
+                # AJ22: próximo curso (opção) e nível em LOTE — sem N+1 por
+                # linha do relatório.
+                from app.models import Nivel, OpcaoProximaTurma
+
+                opcao_ids = {
+                    cons.proxima_turma_id for cons in conselhos
+                    if cons.proxima_turma_id
+                }
+                nivel_ids = {
+                    cons.proximo_nivel_id for cons in conselhos
+                    if cons.proximo_nivel_id
+                }
+                opcoes_map = (
+                    {o.id: o for o in OpcaoProximaTurma.query.filter(
+                        OpcaoProximaTurma.id.in_(opcao_ids)
+                    ).all()}
+                    if opcao_ids else {}
+                )
+                niveis_map = (
+                    {n.id: n for n in Nivel.query.filter(
+                        Nivel.id.in_(nivel_ids)
+                    ).all()}
+                    if nivel_ids else {}
+                )
+
                 for cons in conselhos:
                     aluno = alunos_map.get(cons.aluno_id)
                     oferta = ofertas_map.get(cons.turma_curso_id)
@@ -211,9 +236,14 @@ def resultado_conselho():
                     )
                     presenca_pct = estatisticas.get("presenca_percentual", 0)
 
-                    proxima = (
-                        cons.proxima_turma_obj.nome if cons.proxima_turma_obj else "-"
-                    )
+                    opcao = opcoes_map.get(cons.proxima_turma_id)
+                    nivel_destino = niveis_map.get(cons.proximo_nivel_id)
+                    partes_proximo = []
+                    if opcao is not None:
+                        partes_proximo.append(opcao.nome)
+                    if nivel_destino is not None:
+                        partes_proximo.append(nivel_destino.nome)
+                    proxima = " · ".join(partes_proximo) if partes_proximo else "-"
 
                     registros.append({
                         "turma": turma.nome,

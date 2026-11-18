@@ -1168,6 +1168,27 @@ def fechamento_turma(turma_id):
 
     # D5.2 (Passo 5): a lista hardcoded de "próximas turmas" sai de cena —
     # o catálogo OpcaoProximaTurma (ativos) é a fonte das opções.
+    # AJ22: conselhos FINAL já gravados na oferta — preenchem os selects
+    # (situação, próximo curso e nível). O nível inativo já gravado segue
+    # visível com etiqueta "inativo" no front.
+    aluno_ids_fechamento = [a.id for a in alunos]
+    conselhos_finais = (
+        ConselhoClasse.query.filter_by(
+            turma_curso_id=oferta.id, etapa=EtapaConselho.FINAL
+        )
+        .filter(ConselhoClasse.aluno_id.in_(aluno_ids_fechamento))
+        .all()
+        if aluno_ids_fechamento
+        else []
+    )
+    conselhos_por_aluno = {c.aluno_id: c for c in conselhos_finais}
+
+    # AJ22: mapa programa → níveis da unidade da turma (ativos e inativos;
+    # o JS filtra/etiqueta). Nível sem programa não entra (D2).
+    from app.services.proximo_curso import niveis_por_programa
+
+    niveis_programa = niveis_por_programa(turma.unidade_id)
+
     proximas_opcoes = OpcaoProximaTurma.query.filter_by(ativo=True).order_by(
         OpcaoProximaTurma.nome
     ).all()
@@ -1195,6 +1216,7 @@ def fechamento_turma(turma_id):
             'presenca': estatisticas['presenca_percentual'],
             'falta':    estatisticas['falta_percentual'],
             'justificadas': estatisticas['justificadas'],
+            'conselho': conselhos_por_aluno.get(aluno.id),
         })
 
     return render_template('conselho/fechamento.html',
@@ -1204,7 +1226,12 @@ def fechamento_turma(turma_id):
                            ofertas=ofertas_turma,
                            exigir_escolha=False,
                            dados=dados_alunos,
-                           opcoes_turma=proximas_opcoes)
+                           opcoes_turma=proximas_opcoes,
+                           niveis_programa=niveis_programa,
+                           opcao_programas={
+                               opt.id: (opt.programa or "")
+                               for opt in proximas_opcoes
+                           })
 
 
 @bp.route('/conselho/fechamento/<int:turma_id>/salvar', methods=['POST'])
@@ -1250,21 +1277,107 @@ def salvar_fechamento_data(turma_id):
     }
 
     try:
-        # Valida situações ANTES de mutar qualquer linha (pedido atômico).
+        from app.models import Nivel
+        from app.services.proximo_curso import (
+            nivel_compativel,
+            nivel_elegivel,
+            opcao_da_escolha,
+            programa_tem_niveis,
+        )
+
+        # AJ22: conselhos FINAL já gravados (somente leitura) — necessários
+        # para a exceção "nível inativo já gravado, inalterado". NÃO cria
+        # linhas; a criação segue no helper do loop de mutação.
+        ids_validos = [
+            int(item['aluno_id'])
+            for item in registros
+            if str(item.get('aluno_id') or '').isdigit()
+            and int(item['aluno_id']) in alunos_oferta
+        ]
+        existentes = {
+            c.aluno_id: c
+            for c in ConselhoClasse.query.filter(
+                ConselhoClasse.turma_curso_id == oferta.id,
+                ConselhoClasse.etapa == EtapaConselho.FINAL,
+                ConselhoClasse.aluno_id.in_(ids_validos),
+            ).all()
+        } if ids_validos else {}
+
+        # Valida situações E próximo curso/nível ANTES de mutar qualquer
+        # linha (pedido atômico). Qualquer recusa → rollback, nada gravado.
         validados = []
         for item in registros:
             aluno_id = int(item['aluno_id'])
             if aluno_id not in alunos_oferta:
                 continue
             situacao = _normalizar_situacao_final(item.get('situacao'))
-            validados.append((aluno_id, situacao, item.get('proxima_turma_id')))
 
-        for aluno_id, situacao, p_turma_id in validados:
-            if p_turma_id in ("", "None", None):
+            if item.get('proxima_turma_id') in ("", "None", None):
                 p_turma_id = None
             else:
-                p_turma_id = int(p_turma_id)
+                p_turma_id = int(item['proxima_turma_id'])
 
+            if item.get('proximo_nivel_id') in ("", "None", None):
+                nivel_id = None
+            else:
+                nivel_id = int(item['proximo_nivel_id'])
+
+            if nivel_id is not None and p_turma_id is None:
+                raise ValueError(
+                    "O nível de destino exige a escolha do próximo curso."
+                )
+
+            if p_turma_id is None:
+                # Limpar o curso zera o nível (mesmo que venha no payload).
+                nivel_efetivo = None
+            elif nivel_id is not None:
+                opcao = opcao_da_escolha(p_turma_id)
+                programa_opcao = (opcao.programa if opcao else "") or ""
+                if not programa_opcao.strip():
+                    raise ValueError(
+                        "O próximo curso escolhido não tem programa "
+                        "cadastrado; não é possível definir nível."
+                    )
+                nivel = nivel_elegivel(
+                    nivel_id,
+                    programa_opcao=programa_opcao,
+                    unidade_id=turma.unidade_id,
+                )
+                if nivel is None:
+                    # Exceção AJ22: aceita o valor já gravado mesmo inativo,
+                    # desde que inalterado e ainda compatível (programa e
+                    # unidade da turma) — avaliada ANTES da regra "programa
+                    # sem níveis", para não punir o histórico já gravado.
+                    existente = existentes.get(aluno_id)
+                    gravado = getattr(existente, "proximo_nivel_id", None)
+                    candidato = Nivel.query.get(nivel_id)
+                    if (
+                        candidato is not None
+                        and gravado == nivel_id
+                        and nivel_compativel(
+                            candidato, programa_opcao, turma.unidade_id
+                        )
+                    ):
+                        nivel = candidato
+                if nivel is None:
+                    if not programa_tem_niveis(
+                        programa_opcao, turma.unidade_id
+                    ):
+                        raise ValueError(
+                            f"Não há nível ativo cadastrado para o programa "
+                            f"'{programa_opcao}' nesta unidade."
+                        )
+                    raise ValueError(
+                        "O nível informado não é válido para o programa do "
+                        "próximo curso e a unidade desta turma."
+                    )
+                nivel_efetivo = nivel.id
+            else:
+                nivel_efetivo = None
+
+            validados.append((aluno_id, situacao, p_turma_id, nivel_efetivo))
+
+        for aluno_id, situacao, p_turma_id, nivel_efetivo in validados:
             # AJ20: helper único com SAVEPOINT — o fechamento só cria a
             # linha quando vai gravar situação/concluído, e uma corrida na
             # UNIQUE `uix_conselho_oferta` relê a linha vencedora.
@@ -1280,6 +1393,7 @@ def salvar_fechamento_data(turma_id):
 
             conselho.situacao_final         = situacao
             conselho.proxima_turma_id       = p_turma_id
+            conselho.proximo_nivel_id       = nivel_efetivo
             conselho.concluido              = True
             conselho.data_fim               = date.today()
 

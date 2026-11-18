@@ -175,7 +175,7 @@ Regras:
 2. `Unidade` **não** é apagada se houver registros dependentes (integridade).
 3. `User.email` é único **globalmente** (não por unidade).
 4. `ConfiguracaoSistema.unidade_id = NULL` significa configuração **global**.
-5. `Nivel.nome` é único **por unidade** (`uq_nivel_nome_unidade`: `nome` + `unidade_id`).
+5. `Nivel.nome` é único **por unidade e programa** (`uq_nivel_nome_unidade_programa`: `nome` + `unidade_id` + `COALESCE(programa,'')`, AJ22/D8 — substituiu `uq_nivel_nome_unidade`).
 6. As tabelas de perfil do aluno (`endereco_aluno`, `responsavel_aluno`, `perfil_socioeconomico`, `perfil_diversidade`) herdam `unidade_id` do aluno no momento da criação.
 7. `TenantMixin.unidade_id` é **nullable** por padrão (compatibilidade com registros globais/legados). Tabelas que o tornam NOT NULL: `curso`, `transferencia`, `dia_bloqueado` e `periodo_conselho`.
 8. Tabelas **sem** `unidade_id`: `inscricoes`, `conselho_pergunta`, `opcao_proxima_turma`, `agenda_servico_social` e `respostas_formulario`. Quando necessário, o escopo é derivado por join (ex.: `inscricoes.turma_id → turma.unidade_id`).
@@ -408,18 +408,19 @@ As cinco primeiras relações vêm do `AuditoriaMixin` (`ON DELETE SET NULL`, co
 
 **Arquivo:** fica **fora** do `static`, em `UPLOAD_FOLDER/certificados/<periodo_letivo_id>/` (padrão `instance/uploads`), com nome `p<periodo>_c<centro>_<epoch>_<uuid6>.<ext>`; só é servido pela rota autenticada `registros.arquivo_modelo_certificado` (pré-visualização inline e `?download=1` como anexo).
 
-**Migration:** `e1f2a3b4c5d6`. **Aplicada em produção** — a produção está em `1fdc7c03bdc2` (head) desde 11/11/2026, que inclui esta migration; AJ18-F sem migration; ensaio até `c1d2e3f4a5b6` provado em AJ9-B/AJ9-C/AJ13; head atual do código `1fdc7c03bdc2`.
+**Migration:** `e1f2a3b4c5d6`. **Aplicada em produção** — a produção segue em `1fdc7c03bdc2` (head de produção) desde 11/11/2026; o head do código passou a `a7b8c9d0e1f2` (AJ22, **pendente de deploy** — protocolo em `docs/Relatórios/AJ22_ProximoCursoNivel.md`); AJ18-F sem migration; ensaio até `c1d2e3f4a5b6` provado em AJ9-B/AJ9-C/AJ13.
 
 ### 7.5 `nivel`
 
 | Coluna     | Tipo         | Nulo | Default | Descrição         |
 |------------|--------------|------|---------|-------------------|
 | id         | int          | não  | auto    | PK                |
-| nome       | varchar(100) | não  | —       | Único por unidade |
+| nome       | varchar(100) | não  | —       | —                 |
 | ativo      | bool         | não  | true    | Soft delete       |
 | unidade_id | int          | sim  | —       | FK → unidade      |
+| programa   | varchar(50)  | sim  | —       | Programa de curso (AJ22; NULL = legado, nunca aparece no fechamento) |
 
-**UNIQUE:** (`nome`, `unidade_id`) via `uq_nivel_nome_unidade`. Níveis de unidades diferentes podem ter o mesmo nome; níveis legados sem unidade mantêm `unidade_id = NULL`. No PostgreSQL, `NULL` não colide em UNIQUE; logo a restrição não impede nomes duplicados entre níveis legados sem unidade.
+**UNIQUE funcional (AJ22, D8):** índice único `uq_nivel_nome_unidade_programa` em (`nome`, `unidade_id`, `COALESCE(programa, '')`) — o mesmo nome pode repetir entre programas diferentes na mesma unidade; níveis legados sem programa (`NULL`) mantêm a unicidade anterior de (`nome`, `unidade_id`). Substituiu `uq_nivel_nome_unidade` (migration `a7b8c9d0e1f2`; o downgrade tem guarda que recusa duplicatas de (nome, unidade) entre programas). Níveis de unidades diferentes podem ter o mesmo nome; níveis legados sem unidade mantêm `unidade_id = NULL`. No PostgreSQL, `NULL` não colide em UNIQUE; logo a restrição não impede nomes duplicados entre níveis legados sem unidade.
 
 ### 7.5a `valor_esportista` (A1)
 
@@ -872,11 +873,14 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 **Mixins:** `SoftDeleteMixin`. A tabela **não possui** `unidade_id`.
 
-| Coluna | Tipo         | Nulo | Default | Descrição |
-|--------|--------------|------|---------|-----------|
-| id     | int          | não  | auto    | PK        |
-| nome   | varchar(100) | não  | —       | —         |
-| ativo  | bool         | não  | true    | —         |
+| Coluna    | Tipo         | Nulo | Default | Descrição |
+|-----------|--------------|------|---------|-----------|
+| id        | int          | não  | auto    | PK        |
+| nome      | varchar(100) | não  | —       | —         |
+| ativo     | bool         | não  | true    | —         |
+| programa  | varchar(50)  | sim  | —       | Programa de curso (AJ22; NULL/vazio = "sem programa", não permite nível no fechamento) |
+
+**AJ22:** `programa` vem da lista central `PROGRAMAS_CURSO` (`app/services/proximo_curso.py`). O catálogo é **global** (sem `unidade_id`); a edição do campo Programa é restrita a **admin** (D5). Com programa preenchido, o fechamento só aceita nível ativo da unidade da turma com o mesmo programa, e somente se existir ao menos um nível ativo daquele programa na unidade ("programa com níveis" é derivado — D4). Cadastro/edição na aba "Próximos Cursos" do planejamento.
 
 ### 7.24 `conselho_classe`
 
@@ -895,7 +899,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 | instrutor_id        | int              | sim  | —            | FK → user                                        |
 | observacao          | text             | sim  | —            | Observação geral única do aluno na etapa/oferta (AJ19, `obs_<aluno>`; máx. 5000 caracteres) |
 | situacao_final      | varchar(30)      | sim  | —            | Valor canônico em `SituacaoFinal`                |
-| proxima_turma_id    | int              | sim  | —            | FK → opcao_proxima_turma                         |
+| proxima_turma_id    | int              | sim  | —            | FK → opcao_proxima_turma (rótulo "Próximo curso") |
+| proximo_nivel_id    | int              | sim  | —            | FK → nivel, `ON DELETE RESTRICT` (AJ22; NULL = "Não se aplica") |
 | unidade_id          | int              | sim  | —            | FK → unidade                                     |
 | **updated_by_id**   | **int**          | sim  | —            | FK → user, `ON DELETE SET NULL` (AuditoriaMixin) |
 | **updated_by_name** | **varchar(100)** | sim  | —            | Snapshot do editor (AuditoriaMixin)              |
@@ -1116,7 +1121,8 @@ serviço e só é mantido enquanto `saude_laudo = true`.
 
 - **Lançamento** (`/conselho/lancamento`, `/conselho/salvar`): a oferta vem de `oferta_sel`/`turma_curso_id`, validada contra `ofertas_ativas(turma)`. **1 oferta ativa** é usada direto; **2+** exigem escolha e recusam id inválido/inativo/de outra turma; **0** ofertas recusa com aviso (turma sem oferta ativa não abre conselho). Aluno sem inscrição ativa na oferta não gera conselho; as respostas tipo ALUNO vivem em `conselho_resposta`. **Observação geral por aluno (AJ19, 12/11/2026):** o lançamento individual tem UM campo `obs_<aluno>` ("Observações e informações adicionais", `maxlength=5000`) por aluno, gravado em `conselho_classe.observacao` — uma observação por aluno/etapa/oferta. O POST valida o limite de 5000 caracteres **antes de qualquer mutação** (excesso recusa o lote inteiro), contando sobre o texto já normalizado: `\r\n` e `\r` viram `\n` em `_normalize_conselho_request` (AJ19-F2) e a ficha 360° exibe a observação com `white-space: pre-line` (quebras preservadas, escape do Jinja mantido). `conselho_resposta.observacao` não é mais lida nem escrita (coluna preservada, sem migration). A observação conta como conteúdo do aluno na auditoria do gestor ("primeiro preenchimento" × "alteração"), com o mesmo cuidado de nunca logar o texto.
 - **Nascimento preguiçoso da linha (AJ20, 12/11/2026):** o GET do lançamento **não escreve mais** — `ConselhoClasse` só é criada por `get_or_create_conselho` (`app/conselho.py`) no POST, quando há conteúdo a gravar (resposta, observação com texto ou fechamento FINAL). O helper usa `db.session.begin_nested()` (savepoint): `IntegrityError` na `uix_conselho_oferta` relê a linha vencedora — corrida nunca gera 500. **Casca ≡ ausente:** `cond_conselho_sem_conteudo()` (`app/services/conselho_leitura.py`) identifica linha sem `concluido`/`situacao_final`/observação/respostas; os leitores de histórico (`oferta_tem_lancamentos`, `ofertas_com_lancamentos`, guarda de exclusão de turma), painel pedagógico e resultado do conselho a ignoram. Casos que já produzem saída idêntica sem filtro (ficha 360°, certificado do período, BI) não foram alterados. Sem migration; as cascas existentes em produção não são apagadas nem migradas.
-- **Fechamento** (`/conselho/fechamento/<turma>` e `/conselho/fechamento/<turma>/salvar`): lista apenas os alunos da oferta e grava, por aluno DA OFERTA e etapa FINAL, `situacao_final` (normalizada) e `proxima_turma_id` vindo do catálogo `OpcaoProximaTurma`; validação atômica (situação inválida → rollback, nada é gravado). O POST é JSON e **exige token CSRF** (`<meta name="csrf-token">` do `base.html` + `X-CSRFToken`, ver `static/js/conselho/conselho.js`).
+- **Fechamento** (`/conselho/fechamento/<turma>` e `/conselho/fechamento/<turma>/salvar`): lista apenas os alunos da oferta e grava, por aluno DA OFERTA e etapa FINAL, `situacao_final` (normalizada), `proxima_turma_id` vindo do catálogo `OpcaoProximaTurma` e `proximo_nivel_id` (AJ22, §7.24); validação atômica (situação inválida → rollback, nada é gravado). O POST é JSON e **exige token CSRF** (`<meta name="csrf-token">` do `base.html` + `X-CSRFToken`, ver `static/js/conselho/conselho.js`).
+- **Próximo curso + nível (AJ22, 17/11/2026, migration `a7b8c9d0e1f2`):** a coluna "Próxima Turma" virou "**Próximo Curso**" e há a coluna "**Nível**" com "Não se aplica" (NULL) por padrão. A regra fica em `app/services/proximo_curso.py` (fonte única): `PROGRAMAS_CURSO` é a lista central de programas; "programa com níveis" é derivado (≥1 nível ativo da unidade da turma com aquele programa — D4); nível elegível = ativo, programa igual ao da opção e unidade da turma (ou global `unidade_id IS NULL`). O select de nível só habilita quando o curso escolhido tem programa com níveis; dados (`NIVEL_DATA`/`OPCAO_PROGRAMA`) são embutidos via `tojson`, sem requisição extra; trocar o curso limpa o nível. **Validação atômica no POST:** nível exige próximo curso; opção sem programa ou programa sem níveis recusa; nível de outro programa/unidade/inativo/legado (programa NULL) recusa — **exceção:** o valor já gravado é aceito inalterado mesmo inativo (desde que ainda compatível); limpar o curso zera o nível. Nível inativo já gravado aparece na edição com etiqueta "(inativo)". O GET pré-seleciona situação/curso/nível já gravados. Catálogo: aba "Próximos Cursos" do planejamento (global; campo Programa só admin — D5); cadastro de níveis ganhou Programa e a lista "Níveis sem programa" (legado nunca aparece no fechamento — D2); opção com programa sem nível ganha selo "SEM NÍVEL". Leitor: resultado do conselho exibe "Próximo curso / Nível" carregado em lote (sem N+1). Sem alteração em `Inscricao.nivel` (D6).
 - **Avaliação coletiva** (`/turma/<id>/avaliacao`): pareceres coletivos (perguntas tipo TURMA) ficam em **`turma_curso.avaliacao_inicial/percurso/final`** (JSON), nunca em `Turma.avaliacao_*`; a mesma política 0/1/2+ escolhe a oferta.
 - **Encerramento MANUAL por oferta** (`POST /turma/<id>/alternar-conselho`, `app/planejamento.py`): alterna `TurmaCurso.conselho_concluido` e **não escreve na turma** (a coluna `turma.conselho_concluido` não existe mais desde a D5.5). Exige oferta ativa da própria turma e isolamento por unidade (B4).
 
@@ -1214,7 +1220,7 @@ serviço e só é mantido enquanto `saude_laudo = true`.
   Radios sem `name` também não são enviados pelo navegador.
 - **Migration:** `1fdc7c03bdc2` (`down_revision = f2a3b4c5d6e7`), aditiva,
   idempotente por inspeção de coluna e com downgrade que remove só a coluna.
-  **Head atual: `1fdc7c03bdc2`.**
+  **Head do código: `a7b8c9d0e1f2`** (AJ22; head de produção: `1fdc7c03bdc2`).
 - **Edição posterior da entrada (AJ18-E/AJ18-F, 11/11/2026):** corrige
   `Inscricao.data_entrada_oferta` de um aluno **já enturmado**, sem desenturmar
   e sem tocar em nenhuma outra coluna. A regra fica no serviço
@@ -1865,9 +1871,10 @@ Notas de **semântica e acesso** fechando o ciclo AJ7–AJ13. Nenhuma coluna, ti
 | `b5c6d7e8f9a0` | `c9d0e1f2a3b4` | **S1-06 — versão de sessão**: coluna `user.session_version` (int, NOT NULL `DEFAULT 0`); logout/troca de senha/papel/unidade/exclusão revogam sessões emitidas antes; aditiva e idempotente por inspeção, sem backfill (§12.29) | ✅       |
 | `c1d2e3f4a5b6` | `b5c6d7e8f9a0` | **S1-11/S1-12 — `login_controle`**: tabela de rate limit por conta e por IP (`escopo`, `chave_hash` SHA-256, `falhas`, `janela_inicio`, `bloqueado_ate`, `nivel`, `atualizado_em`; UNIQUE (`escopo`, `chave_hash`)); aditiva e idempotente por inspeção de tabela (§12.28) | ✅       |
 | `f2a3b4c5d6e7` | `c1d2e3f4a5b6` | **AJ16-B — Valor do Esportista na AULA**: cria `registro_aula_valor_esportista` (PK composta; FK `registro_aula` CASCADE; FK `valor_esportista` RESTRICT; índice reverso), guardas read-only (valor sem oferta / par sem `registro_aula`) que abortam sem alterar nada, backfill do conjunto por oferta+data (diário canônico `MIN(id)`), verificação interna 0/0 e drop de `frequencia.valor_esportista_id` (índice/FK/coluna). Downgrade recria a coluna nullable com FK/índice e dropa a tabela, **sem restaurar** o vínculo aluno↔valor (§7.19, §7.20.2, §8.1, §8.13) | ✅       |
-| `1fdc7c03bdc2` | `f2a3b4c5d6e7` | **AJ18-B — data de entrada do aluno na oferta** (**head atual**): `inscricoes.data_entrada_oferta` (Date, nullable; `NULL` = desde o início), aditiva **sem backfill**, idempotente por inspeção de coluna; downgrade remove só a coluna (§7.15, §8.3) | ✅       |
+| `1fdc7c03bdc2` | `f2a3b4c5d6e7` | **AJ18-B — data de entrada do aluno na oferta**: `inscricoes.data_entrada_oferta` (Date, nullable; `NULL` = desde o início), aditiva **sem backfill**, idempotente por inspeção de coluna; downgrade remove só a coluna (§7.15, §8.3) | ✅       |
+| `a7b8c9d0e1f2` | `1fdc7c03bdc2` | **AJ22 — Próximo curso + nível no fechamento** (**head do código; pendente de deploy**): `opcao_proxima_turma.programa` e `nivel.programa` (varchar(50) NULL, sem backfill); `conselho_classe.proximo_nivel_id` int NULL FK → `nivel` `ON DELETE RESTRICT`; unicidade do nível de `uq_nivel_nome_unidade` para o índice funcional `uq_nivel_nome_unidade_programa` (`nome`, `unidade_id`, `COALESCE(programa,'')`); downgrade com guarda D8 (recusa duplicatas de nome+unidade entre programas); aditiva e idempotente por inspeção (§7.5, §7.23, §7.24, §8.2) | ✅       |
 
-> **Head atual:** `1fdc7c03bdc2` (AJ18-B — data de entrada do aluno na oferta). `flask db heads` devolve apenas esse hash. A **produção está em `1fdc7c03bdc2`** (head) desde 11/11/2026; AJ18-F sem migration. Antecessoras diretas do head: `f2a3b4c5d6e7` (AJ16-B), `c1d2e3f4a5b6` (S1-11/S1-12), `b5c6d7e8f9a0` (S1-06), `c9d0e1f2a3b4` (F1), `d6e7f8a9b0c1` (G1/P2), `e1f2a3b4c5d6` (certificado), `c8d9e0f1a2b3`/`b7c8d9e0f1a2` (A1), `8d2e3f4a5b6c`/`7c1d2e3f4a5b` (H5b) e `5730d7c594ba` (H1).
+> **Head do código:** `a7b8c9d0e1f2` (AJ22). **Head de produção:** `1fdc7c03bdc2` (AJ18-B) — a migration AJ22 aguarda deploy (protocolo em `docs/Relatórios/AJ22_ProximoCursoNivel.md`). `flask db heads` devolve apenas `a7b8c9d0e1f2`. Antecessoras diretas do head: `1fdc7c03bdc2` (AJ18-B), `f2a3b4c5d6e7` (AJ16-B), `c1d2e3f4a5b6` (S1-11/S1-12), `b5c6d7e8f9a0` (S1-06), `c9d0e1f2a3b4` (F1), `d6e7f8a9b0c1` (G1/P2), `e1f2a3b4c5d6` (certificado), `c8d9e0f1a2b3`/`b7c8d9e0f1a2` (A1), `8d2e3f4a5b6c`/`7c1d2e3f4a5b` (H5b) e `5730d7c594ba` (H1).
 
 > **Estado:** ✅ = registrada em `migrations/versions/` sem ressalvas; ⚠️ *n* = registrada com a ressalva *n* de §11.1. O estado reflete os arquivos, não o `alembic_version` de cada banco.
 

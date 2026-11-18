@@ -50,14 +50,33 @@ class CentroCusto(db.Model):
 
 
 class Nivel(db.Model):
-    """Nivel pedagogico."""
+    """Nivel pedagogico.
+
+    AJ22: `programa` (texto, nullable) vincula o nível a um programa de
+    curso ('Profissionalizante', 'Esporte', 'Meio Ambiente', 'Outros').
+    Nível sem programa (NULL, legado) NUNCA aparece como opção de nível no
+    fechamento do conselho. A unicidade passou de
+    `uq_nivel_nome_unidade` (nome+unidade) para o índice funcional
+    `uq_nivel_nome_unidade_programa` (nome, unidade_id,
+    COALESCE(programa,'')) — o mesmo nome pode repetir entre programas;
+    legados sem programa mantêm a unicidade anterior.
+    """
     __tablename__ = 'nivel'
-    __table_args__ = (UniqueConstraint('nome', 'unidade_id', name='uq_nivel_nome_unidade'),)
+    __table_args__ = (
+        db.Index(
+            'uq_nivel_nome_unidade_programa',
+            'nome',
+            'unidade_id',
+            db.text("COALESCE(programa, '')"),
+            unique=True,
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
     ativo = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id = db.Column(db.Integer, db.ForeignKey('unidade.id'))
+    programa = db.Column(db.String(50))
 
 
 class ValorEsportista(db.Model):
