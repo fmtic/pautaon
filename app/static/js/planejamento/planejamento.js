@@ -99,14 +99,12 @@
     const modal = document.getElementById('modalCursos');
 
     const nomeInput   = document.getElementById('cursoNomeInput');
-    const programaInput = document.getElementById('cursoProgramaInput');
     const descInput   = document.getElementById('cursoDescInput');
     const btnNovo     = document.getElementById('btnNovoCurso');
     const formMsg     = document.getElementById('cursoFormMsg');
     const painelEdit  = document.getElementById('painelEditCurso');
     const editId      = document.getElementById('editCursoId');
     const editNome    = document.getElementById('editCursoNome');
-    const editPrograma = document.getElementById('editCursoPrograma');
     const editDesc    = document.getElementById('editCursoDesc');
     const btnSalvarEd = document.getElementById('btnSalvarEditCurso');
     const btnCancelar = document.getElementById('btnCancelarEditCurso');
@@ -140,27 +138,12 @@
       return data;
     }
 
-    function buildProgramaCell(c) {
-      const programa = document.createElement('td');
-      if (c.programa) {
-        const badge = document.createElement('span');
-        badge.className = 'badge bg-info-subtle text-info border';
-        badge.textContent = c.programa;
-        programa.appendChild(badge);
-      } else {
-        programa.className = 'text-muted small';
-        programa.textContent = 'Sem programa';
-      }
-      return programa;
-    }
-
     function buildRow(c) {
       const tr = document.createElement('tr');
       tr.dataset.id = c.id;
       const nome = document.createElement('td');
       nome.className = 'ps-3 fw-semibold';
       nome.textContent = c.nome;
-      const programa = buildProgramaCell(c);
       const descricao = document.createElement('td');
       descricao.className = 'text-muted small';
       descricao.textContent = c.descricao || '—';
@@ -176,7 +159,7 @@
         buildButton('btn-outline-primary', 'btn-editar-curso', 'Editar curso', 'pencil', c),
         buildButton('btn-outline-secondary', 'btn-inativar-curso', 'Inativar curso', 'archive', c),
       );
-      tr.append(nome, programa, descricao, status, acoes);
+      tr.append(nome, descricao, status, acoes);
       return tr;
     }
 
@@ -186,7 +169,6 @@
       const nome = document.createElement('td');
       nome.className = 'ps-3 fw-semibold';
       nome.textContent = c.nome;
-      const programa = buildProgramaCell(c);
       const descricao = document.createElement('td');
       descricao.className = 'text-muted small';
       descricao.textContent = c.descricao || '—';
@@ -201,7 +183,7 @@
       acoes.appendChild(
         buildButton('btn-outline-success', 'btn-reativar-curso', 'Reativar curso', 'arrow-counterclockwise', c),
       );
-      tr.append(nome, programa, descricao, status, acoes);
+      tr.append(nome, descricao, status, acoes);
       return tr;
     }
 
@@ -214,7 +196,6 @@
       button.dataset.nome = curso.nome;
       if (action === 'btn-editar-curso') {
         button.dataset.desc = curso.descricao || '';
-        button.dataset.programa = curso.programa || '';
       }
       const iconElement = document.createElement('i');
       iconElement.className = `bi bi-${icon}`;
@@ -296,7 +277,6 @@
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({
               nome,
-              programa: programaInput.value || '',
               descricao: descInput.value.trim(),
             }),
           });
@@ -305,7 +285,6 @@
           tbody.appendChild(buildRow(data));
           sincronizarSelects(data);
           nomeInput.value = '';
-          programaInput.value = '';
           descInput.value = '';
           showMsg('Curso adicionado!', 'success');
         } catch (error) {
@@ -321,7 +300,6 @@
         editId.value    = btnEd.dataset.id;
         editNome.value  = btnEd.dataset.nome;
         editNome.dataset.nomeOriginal = btnEd.dataset.nome;
-        editPrograma.value = btnEd.dataset.programa || '';
         editDesc.value  = btnEd.dataset.desc;
         painelEdit.classList.remove('d-none');
         editNome.focus();
@@ -348,15 +326,12 @@
         tbodyInativos?.appendChild(buildInactiveRow({
           id: btnInativar.dataset.id,
           nome: btnInativar.dataset.nome,
-          programa: row?.children[1]?.textContent?.trim() === 'Sem programa'
-            ? ''
-            : row?.children[1]?.textContent?.trim() || '',
-          descricao: row?.children[2]?.textContent === '—' ? '' : row?.children[2]?.textContent || '',
+          descricao: row?.children[1]?.textContent === '—' ? '' : row?.children[1]?.textContent || '',
         }));
         sincronizarSelects({ id: btnInativar.dataset.id }, true);
         if (!tbody.querySelector('tr[data-id]')) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="5" class="text-center text-muted py-4">
+            <td colspan="4" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
               Nenhum curso ativo para esta unidade.
             </td></tr>`;
@@ -386,7 +361,7 @@
         sincronizarSelects(curso);
         if (!tbodyInativos.querySelector('tr[data-id]')) {
           tbodyInativos.innerHTML = `<tr id="cursosInativosVazio">
-            <td colspan="5" class="text-center text-muted py-3">Nenhum curso inativo.</td>
+            <td colspan="4" class="text-center text-muted py-3">Nenhum curso inativo.</td>
           </tr>`;
         }
         showMsg('Curso reativado. Os temas preservados voltaram a ficar disponíveis.', 'success');
@@ -414,7 +389,6 @@
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({
               nome,
-              programa: editPrograma.value || '',
               descricao: editDesc.value.trim(),
             }),
           });

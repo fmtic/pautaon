@@ -14,6 +14,7 @@ from flask import current_app, flash, render_template, url_for, request, redirec
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
 
@@ -919,7 +920,6 @@ def listar_cursos():
             'id': c.id,
             'nome': c.nome,
             'descricao': c.descricao or '',
-            'programa': c.programa or '',
         }
         for c in cursos
     ])
@@ -942,30 +942,9 @@ def listar_cursos_inativos():
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'programa': curso.programa or '',
         }
         for curso in cursos
     ])
-
-
-def _ler_programa_curso(data):
-    """Extrai/valida `programa` de um payload JSON de curso.
-
-    Devolve ``(programa, erro)``. `programa` só é considerado enviado quando
-    a chave existe no JSON (compatibilidade com clientes antigos que não
-    mandam o campo); `None`/'' limpam o valor.
-    """
-    from app.services.proximo_curso import PROGRAMAS_CURSO
-
-    if 'programa' not in data:
-        return False, None  # sentinela: campo não enviado
-    programa = data.get('programa')
-    if programa is not None and not isinstance(programa, str):
-        return None, 'Programa inválido.'
-    programa = (programa or '').strip() or None
-    if programa and programa not in PROGRAMAS_CURSO:
-        return None, 'Programa inválido.'
-    return programa, None
 
 
 @bp.route('/cursos/novo', methods=['POST'])
@@ -986,16 +965,10 @@ def novo_curso():
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
-    programa, erro_programa = _ler_programa_curso(data)
-    if erro_programa:
-        return jsonify({'success': False, 'message': erro_programa}), 400
-    if programa is False:  # campo não enviado
-        programa = None
 
     curso = Curso(
         nome=nome,
         descricao=descricao or None,
-        programa=programa,
         unidade_id=unidade_id
     )
     try:
@@ -1006,7 +979,6 @@ def novo_curso():
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'programa': curso.programa or '',
             'dias_aula': 0,
             # Curso recém-criado não tem turmas ainda.
             'carga_total_fmt': '—',
@@ -1045,16 +1017,9 @@ def editar_curso(curso_id):
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
-    programa, erro_programa = _ler_programa_curso(data)
-    if erro_programa:
-        return jsonify({'success': False, 'message': erro_programa}), 400
 
     curso.nome = nome
     curso.descricao = descricao or None
-    # `programa` só muda quando veio no JSON (clientes antigos preservam o
-    # valor atual); enviado vazio/None limpa.
-    if programa is not False:
-        curso.programa = programa
     try:
         db.session.commit()
         dias = sum(calcular_dias_aula_turma(t) for t in curso.turmas if t.ativo)
@@ -1067,7 +1032,6 @@ def editar_curso(curso_id):
         return jsonify({
             'success': True, 'id': curso.id, 'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'programa': curso.programa or '',
             'dias_aula': dias,
             'carga_total_fmt': carga_fmt,
         })
@@ -1132,7 +1096,6 @@ def reativar_curso(curso_id):
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
-            'programa': curso.programa or '',
             'dias_aula': 0,
             'carga_total_fmt': '—',
         })
@@ -1163,43 +1126,51 @@ def planejamento():
 
         if tipo_post == 'nivel':
             from app.models import Nivel
-            from app.services.proximo_curso import PROGRAMAS_CURSO
             nome_nivel = request.form.get('nome_nivel', '').strip()
-            # AJ22: programa do nível ('' → NULL/legado). A unicidade é por
-            # (nome, unidade, COALESCE(programa,'')) — o mesmo nome pode
-            # repetir entre programas.
-            programa_nivel = request.form.get('programa_nivel', '').strip() or None
-            if programa_nivel and programa_nivel not in PROGRAMAS_CURSO:
-                flash("Programa de nível inválido.", 'warning')
+            # AJ22-C: o nível pertence a um CURSO da unidade; vazio = "sem
+            # curso" (legado, não aparece no fechamento). A unicidade é por
+            # (nome, unidade, COALESCE(curso_id,0)) — o mesmo nome pode
+            # repetir entre cursos.
+            curso_nivel_id = request.form.get('curso_nivel', '').strip()
+            if curso_nivel_id and not curso_nivel_id.isdigit():
+                flash("Curso do nível inválido.", 'warning')
                 return _voltar_planejamento()
+            curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
             if nome_nivel:
                 nivel_unidade_id = get_unidade_id()
                 # ETAPA B6: criar nível exige unidade efetiva na sessão; a
                 # Visão Global (unidade None) é somente leitura, como nos
                 # demais ramos de escrita do planejamento.
                 assert_unidade_context(nivel_unidade_id, nivel_unidade_id)
+                if curso_nivel_id is not None:
+                    curso_nivel = db.session.get(Curso, curso_nivel_id)
+                    if (
+                        curso_nivel is None
+                        or curso_nivel.unidade_id != nivel_unidade_id
+                        or not curso_nivel.ativo
+                    ):
+                        flash("Curso do nível inválido.", 'warning')
+                        return _voltar_planejamento()
                 candidatos = Nivel.query.filter_by(
                     nome=nome_nivel,
                     unidade_id=nivel_unidade_id,
+                    curso_id=curso_nivel_id,
                 ).all()
-                if any(
-                    ((n.programa or '').strip() or None) == programa_nivel
-                    for n in candidatos
-                ):
-                    flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
+                if candidatos:
+                    flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
                 else:
                     try:
                         db.session.add(Nivel(
                             nome=nome_nivel,
                             ativo=True,
                             unidade_id=nivel_unidade_id,
-                            programa=programa_nivel,
+                            curso_id=curso_nivel_id,
                         ))
                         db.session.commit()
                         flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
                     except IntegrityError:
                         db.session.rollback()
-                        flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
+                        flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
                     except Exception:
                         db.session.rollback()
                         flash("Erro ao salvar nível.", 'danger')
@@ -1336,7 +1307,7 @@ def planejamento():
             TemaAula.curso_id, TemaAula.ordem, TemaAula.id
         ).paginate(page=pagina_temas, per_page=25, error_out=False)
     from app.models import Nivel
-    niveis = Nivel.query.order_by(Nivel.nome).all()
+    niveis = Nivel.query.options(joinedload(Nivel.curso)).order_by(Nivel.nome).all()
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
 
@@ -1347,17 +1318,9 @@ def planejamento():
         q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
     valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
 
-    # AJ22-B: programas que já têm ao menos um nível ATIVO na unidade
-    # (aviso "programa sem nível"). `niveis` já respeita o escopo da unidade.
-    from app.services.proximo_curso import PROGRAMAS_CURSO
-    programas_com_nivel = {
-        (n.programa or '').strip()
-        for n in niveis
-        if n.ativo and (n.programa or '').strip()
-    }
-    programas_sem_nivel = [
-        p for p in PROGRAMAS_CURSO if p not in programas_com_nivel
-    ]
+    # AJ22-C: níveis sem curso (legado) NUNCA aparecem no fechamento do
+    # conselho até serem vinculados — listados no topo do cadastro.
+    niveis_sem_curso = [n for n in niveis if n.curso_id is None]
 
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
     aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
@@ -1373,11 +1336,6 @@ def planejamento():
             ativo=True, unidade_id=unidade_id
         ).order_by(Curso.nome).all()
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
-    # AJ22-B: cursos ativos sem programa não oferecem nível no fechamento do
-    # conselho ("Não se aplica") — listados como aviso no modal de cursos.
-    cursos_sem_programa = [
-        c for c in cursos if not (c.programa or '').strip()
-    ]
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
@@ -1388,11 +1346,8 @@ def planejamento():
                            prog_filtro=prog_filtro,
                            filtro_curso=filtro_curso,
                            niveis=niveis,
+                           niveis_sem_curso=niveis_sem_curso,
                            valores_esportista=valores_esportista,
-                           programas_curso=PROGRAMAS_CURSO,
-                           programas_com_nivel=programas_com_nivel,
-                           programas_sem_nivel=programas_sem_nivel,
-                           cursos_sem_programa=cursos_sem_programa,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
@@ -1499,23 +1454,31 @@ def editar_nivel(id):
     assert_unidade_context(nivel.unidade_id, unidade_id)
 
     novo_nome = request.form.get('nome_nivel', '').strip()
-    # AJ22: programa do nível ('' → NULL/legado). Mantidos os perfis atuais
-    # do cadastro de níveis — a restrição a admin vale só para o campo
-    # Programa da OPÇÃO de próximo curso (D5).
-    from app.services.proximo_curso import PROGRAMAS_CURSO
-    programa_nivel = request.form.get('programa_nivel', '').strip() or None
-    if programa_nivel and programa_nivel not in PROGRAMAS_CURSO:
-        flash("Programa de nível inválido.", 'warning')
+    # AJ22-C: curso do nível; vazio = sem curso (legado). Mantidos os perfis
+    # atuais do cadastro de níveis.
+    curso_nivel_id = request.form.get('curso_nivel', '').strip()
+    if curso_nivel_id and not curso_nivel_id.isdigit():
+        flash("Curso do nível inválido.", 'warning')
         return _voltar_planejamento()
+    curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
+    if curso_nivel_id is not None:
+        curso_nivel = db.session.get(Curso, curso_nivel_id)
+        if (
+            curso_nivel is None
+            or curso_nivel.unidade_id != unidade_id
+            or not curso_nivel.ativo
+        ):
+            flash("Curso do nível inválido.", 'warning')
+            return _voltar_planejamento()
     if novo_nome:
         try:
             nivel.nome = novo_nome
-            nivel.programa = programa_nivel
+            nivel.curso_id = curso_nivel_id
             db.session.commit()
             flash("Nível atualizado com sucesso!", 'success')
         except IntegrityError:
             db.session.rollback()
-            flash("Já existe um nível com esse nome e programa nesta unidade.", 'warning')
+            flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
         except Exception:
             db.session.rollback()
             flash("Erro ao atualizar nível.", 'danger')

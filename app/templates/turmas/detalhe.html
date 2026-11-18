@@ -221,7 +221,7 @@
                       <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
                         <option value="Não se aplica" {% if not aluno.nivel or aluno.nivel == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
                         {% for nv in niveis_cadastrados %}
-                        <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>{{ nv.nome }}</option>
+                        <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>{{ nv.nome }}{% if nv.curso %} — {{ nv.curso.nome }}{% endif %}</option>
                         {% endfor %}
                       </select>
                     </form>
@@ -384,7 +384,7 @@
                     </option>
                     {# Níveis cadastrados pelo usuário em Planejamento #} {% for
                     nivel in niveis_cadastrados %}
-                    <option value="{{ nivel.nome }}">{{ nivel.nome }}</option>
+                    <option value="{{ nivel.nome }}">{{ nivel.nome }}{% if nivel.curso %} — {{ nivel.curso.nome }}{% endif %}</option>
                     {% endfor %}
                   </select>
                 </td>

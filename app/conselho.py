@@ -1183,19 +1183,15 @@ def fechamento_turma(turma_id):
     from app.services.proximo_curso import (
         cursos_da_unidade,
         destinos_por_conselho,
-        niveis_por_programa,
+        mapa_niveis_por_curso,
     )
 
     destinos = destinos_por_conselho(conselhos_finais)
     cursos_ativos = cursos_da_unidade(turma.unidade_id)
     cursos_ativos_ids = {c.id for c in cursos_ativos}
-    curso_programas = {
-        c.id: (c.programa or "").strip() for c in cursos_ativos
-    }
-
-    # AJ22: mapa programa → níveis da unidade da turma (ativos e inativos;
-    # o JS filtra/etiqueta). Nível sem programa não entra (D2).
-    niveis_programa = niveis_por_programa(turma.unidade_id)
+    # Cursos que precisam de mapa de níveis: os ativos da unidade + os já
+    # gravados que ficaram inativos (entram só na linha do aluno).
+    cursos_mapa = {c.id: c for c in cursos_ativos}
 
     dados_alunos = []
     for aluno in alunos:
@@ -1212,14 +1208,11 @@ def fechamento_turma(turma_id):
         destino = destinos.get(conselho.id) if conselho else None
         curso_atual = destino.get("curso") if destino else None
         cursos_opcoes = list(cursos_ativos)
-        if curso_atual is not None:
+        if curso_atual is not None and curso_atual.id not in cursos_ativos_ids:
             # Curso já gravado que ficou inativo/fora da lista ativa entra
             # só na linha do aluno e com etiqueta "(inativo)" (E1).
-            curso_programas[curso_atual.id] = (
-                curso_atual.programa or ""
-            ).strip()
-            if curso_atual.id not in cursos_ativos_ids:
-                cursos_opcoes.append(curso_atual)
+            cursos_opcoes.append(curso_atual)
+            cursos_mapa[curso_atual.id] = curso_atual
         legado_nome = None
         if (
             conselho is not None
@@ -1255,8 +1248,9 @@ def fechamento_turma(turma_id):
                            exigir_escolha=False,
                            dados=dados_alunos,
                            cursos_ativos=cursos_ativos,
-                           niveis_programa=niveis_programa,
-                           curso_programas=curso_programas)
+                           niveis_curso=mapa_niveis_por_curso(
+                               cursos_mapa.values(), turma.unidade_id
+                           ))
 
 
 @bp.route('/conselho/fechamento/<int:turma_id>/salvar', methods=['POST'])
@@ -1305,10 +1299,9 @@ def salvar_fechamento_data(turma_id):
         from app.models import Nivel
         from app.services.proximo_curso import (
             curso_da_escolha,
+            curso_tem_niveis,
             nivel_compativel,
             nivel_elegivel,
-            programa_do_curso,
-            programa_tem_niveis,
         )
 
         # AJ22: conselhos FINAL já gravados (somente leitura) — necessários
@@ -1386,22 +1379,17 @@ def salvar_fechamento_data(turma_id):
                 if proximo_nivel_id is None:
                     nivel_efetivo = None
                 else:
-                    programa_curso = programa_do_curso(curso)
-                    if not programa_curso:
-                        raise ValueError(
-                            "O próximo curso escolhido não tem programa "
-                            "cadastrado; não é possível definir nível."
-                        )
+                    # AJ22-C: o nível pertence ao CURSO escolhido.
                     nivel = nivel_elegivel(
                         proximo_nivel_id,
-                        programa_curso=programa_curso,
+                        curso_id=curso.id,
                         unidade_id=turma.unidade_id,
                     )
                     if nivel is None:
                         # Exceção AJ22: aceita o nível já gravado mesmo
                         # inativo, desde que inalterado e ainda compatível
-                        # (programa e unidade da turma) — avaliada ANTES da
-                        # regra "programa sem níveis", para não punir o
+                        # (curso e unidade da turma) — avaliada ANTES da
+                        # regra "curso sem níveis", para não punir o
                         # histórico já gravado.
                         gravado = getattr(existente, "proximo_nivel_id", None)
                         candidato = Nivel.query.get(proximo_nivel_id)
@@ -1409,21 +1397,21 @@ def salvar_fechamento_data(turma_id):
                             candidato is not None
                             and gravado == proximo_nivel_id
                             and nivel_compativel(
-                                candidato, programa_curso, turma.unidade_id
+                                candidato, curso.id, turma.unidade_id
                             )
                         ):
                             nivel = candidato
                     if nivel is None:
-                        if not programa_tem_niveis(
-                            programa_curso, turma.unidade_id
+                        if not curso_tem_niveis(
+                            curso.id, turma.unidade_id
                         ):
                             raise ValueError(
-                                f"Não há nível ativo cadastrado para o "
-                                f"programa '{programa_curso}' nesta unidade."
+                                "Não há nível ativo cadastrado para o "
+                                "próximo curso nesta unidade."
                             )
                         raise ValueError(
-                            "O nível informado não é válido para o programa "
-                            "do próximo curso e a unidade desta turma."
+                            "O nível informado não é válido para o próximo "
+                            "curso e a unidade desta turma."
                         )
                     nivel_efetivo = nivel.id
 

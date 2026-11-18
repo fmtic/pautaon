@@ -1,23 +1,28 @@
-"""AJ22-B — Próximo curso (curso) + nível no fechamento do conselho.
+"""AJ22-C — Próximo curso (curso) + nível no fechamento do conselho.
 
-Cobre as decisões da AJ22-B:
-    - `curso.programa` e `nivel.programa` (colunas novas, sem backfill;
-      nível sem programa nunca aparece no fechamento).
+Cobre as decisões da AJ22-C (substitui o vínculo por programa do AJ22-B):
+    - `nivel.curso_id` FK → `curso` (RESTRICT, nullable): cada curso tem
+      sua nomenclatura de níveis; nível sem curso (NULL, legado) NUNCA
+      aparece no fechamento.
+    - `curso.programa` e `nivel.programa` NÃO existem (o AJ22-B foi
+      substituído antes do deploy).
     - `conselho_classe.proximo_curso_id` FK → `curso` (RESTRICT) e
       `proximo_nivel_id` FK → `nivel` (RESTRICT); NULL = "Não se aplica".
     - `opcao_proxima_turma`/`proxima_turma_id` são LEGADO: sem UI, sem
       novas escritas, usados apenas como fallback de leitura.
-    - Unicidade do nível por (nome, unidade, COALESCE(programa,'')):
-      mesmo nome repete entre programas; duplicata no mesmo
-      programa/legado recusa.
+    - Unicidade do nível por (nome, unidade, COALESCE(curso_id,0)):
+      mesmo nome repete entre cursos; duplicata no mesmo curso/legado
+      recusa.
     - Validação atômica do `salvar_fechamento_data`: qualquer erro →
       rollback, nada gravado, mensagem em português.
     - Tela de fechamento: "Próximo Curso" (curso) + coluna "Nível" com
-      "Não se aplica" default, select habilitado só com programa com
-      níveis, dados embutidos via tojson (sem requisição extra).
-    - Cadastro: `curso.programa` editável no modal de cursos; cadastro de
-      níveis ganha Programa; avisos "cursos sem programa" e "programas sem
-      nível"; aba/rotas legadas de "Próximos Cursos" removidas (404).
+      "Não se aplica" default; curso sem níveis → "Nível não cadastrado";
+      dados embutidos via tojson (sem requisição extra).
+    - Cadastro de níveis ganha Curso (select de cursos ativos da
+      unidade); modal de Cursos SEM campo programa; aviso "Níveis sem
+      curso"; aba/rotas legadas de "Próximos Cursos" removidas (404).
+    - Selects de nível fora do fechamento ganham o curso no rótulo
+      ("Nome — Curso").
     - Leitores: resultado do conselho, ficha, resumo e painel mostram
       curso + nível em lote (sem N+1), com fallback legado.
 
@@ -75,8 +80,8 @@ mig = _carregar_migration()
 def _setup(app, *, role="admin", alunos=2, unidade="A"):
     """Unidade + usuário + turma com 1 oferta ativa + N alunos inscritos.
 
-    O curso da oferta já nasce com programa "Esporte" (destino padrão dos
-    testes de nível).
+    O curso da oferta ("Curso AJ22") nasce ativo na unidade e é um destino
+    válido de próximo curso.
     """
     with app.app_context():
         un = Unidade(nome=f"Unidade {unidade}", ativo=True)
@@ -93,7 +98,6 @@ def _setup(app, *, role="admin", alunos=2, unidade="A"):
         )
         curso = Curso(
             nome="Curso AJ22", unidade_id=un.id, ativo=True,
-            programa="Esporte",
         )
         db.session.add_all([usuario, periodo, curso])
         db.session.flush()
@@ -148,10 +152,10 @@ def _item(aluno_id, situacao="APROVADO", curso=None, nivel=None):
     }
 
 
-def _curso(app, nome="Avançado", unidade_id=None, programa=None, ativo=True):
+def _curso(app, nome="Avançado", unidade_id=None, ativo=True):
     with app.app_context():
         c = Curso(
-            nome=nome, unidade_id=unidade_id, programa=programa, ativo=ativo,
+            nome=nome, unidade_id=unidade_id, ativo=ativo,
         )
         db.session.add(c)
         db.session.commit()
@@ -166,10 +170,10 @@ def _opcao_legado(app, nome="Avançado"):
         return o.id
 
 
-def _nivel(app, nome, programa=None, unidade_id=None, ativo=True):
+def _nivel(app, nome, curso_id=None, unidade_id=None, ativo=True):
     with app.app_context():
         n = Nivel(
-            nome=nome, programa=programa, unidade_id=unidade_id,
+            nome=nome, curso_id=curso_id, unidade_id=unidade_id,
             ativo=ativo,
         )
         db.session.add(n)
@@ -194,15 +198,17 @@ def test_migration_heads_e_schema_pos_create_all(app):
         cols_conselho = {
             c["name"] for c in inspect(db.engine).get_columns("conselho_classe")
         }
-        assert "programa" in cols_curso
-        assert "programa" in cols_nivel
+        # AJ22-C: não existe mais `programa` em curso nem em nivel.
+        assert "programa" not in cols_curso
+        assert "programa" not in cols_nivel
+        assert "curso_id" in cols_nivel
         assert "programa" not in cols_opcao  # legado, sem coluna nova
         assert "proximo_curso_id" in cols_conselho
         assert "proximo_nivel_id" in cols_conselho
         # Unicidade funcional presente como índice (expressão não reflete
         # nome em alguns dialetos — o modelo a declara em __table_args__).
         assert any(
-            "uq_nivel_nome_unidade_programa" in str(i)
+            "uq_nivel_nome_unidade_curso" in str(i)
             for i in Nivel.__table_args__
         )
 
@@ -211,25 +217,15 @@ def test_migration_upgrade_idempotente_no_sqlite(app):
     """Rodar o upgrade duas vezes não falha nem duplica (inspeção)."""
     with app.app_context():
         bind = db.session.connection()
-        mig._add_coluna(bind, mig.T_CURSO, mig.COL_CURSO, "VARCHAR(50)")
-        mig._add_coluna(bind, mig.T_NIVEL, mig.COL_NIVEL, "VARCHAR(50)")
-        mig._add_coluna(
-            bind, mig.T_CONSELHO, mig.COL_CONSELHO_CURSO, "INTEGER"
-        )
-        mig._add_coluna(
-            bind, mig.T_CONSELHO, mig.COL_CONSELHO_NIVEL, "INTEGER"
-        )
-        mig._trocar_unicidade_nivel(bind, "upgrade")
-        # Segunda passada: nada muda.
-        mig._add_coluna(bind, mig.T_CURSO, mig.COL_CURSO, "VARCHAR(50)")
-        mig._add_coluna(bind, mig.T_NIVEL, mig.COL_NIVEL, "VARCHAR(50)")
-        mig._add_coluna(
-            bind, mig.T_CONSELHO, mig.COL_CONSELHO_CURSO, "INTEGER"
-        )
-        mig._add_coluna(
-            bind, mig.T_CONSELHO, mig.COL_CONSELHO_NIVEL, "INTEGER"
-        )
-        mig._trocar_unicidade_nivel(bind, "upgrade")
+        for _ in range(2):
+            mig._add_coluna(bind, mig.T_NIVEL, mig.COL_NIVEL_CURSO, "INTEGER")
+            mig._add_coluna(
+                bind, mig.T_CONSELHO, mig.COL_CONSELHO_CURSO, "INTEGER"
+            )
+            mig._add_coluna(
+                bind, mig.T_CONSELHO, mig.COL_CONSELHO_NIVEL, "INTEGER"
+            )
+            mig._trocar_unicidade_nivel(bind, "upgrade")
         db.session.commit()
 
         constraints = {
@@ -240,12 +236,14 @@ def test_migration_upgrade_idempotente_no_sqlite(app):
 
 
 def test_migration_guarda_downgrade_recusa_duplicata(app):
-    """D8: (nome, unidade) duplicado entre programas → downgrade aborta."""
+    """D8/F3: (nome, unidade) duplicado entre cursos → downgrade aborta."""
     with app.app_context():
         bind = db.session.connection()
+        c1 = _curso(app, "Curso Um", unidade_id=1)
+        c2 = _curso(app, "Curso Dois", unidade_id=1)
         db.session.add_all([
-            Nivel(nome="Infantil", unidade_id=1, programa="Esporte"),
-            Nivel(nome="Infantil", unidade_id=1, programa="Meio Ambiente"),
+            Nivel(nome="Infantil", unidade_id=1, curso_id=c1),
+            Nivel(nome="Infantil", unidade_id=1, curso_id=c2),
         ])
         db.session.flush()
         with pytest.raises(RuntimeError, match="AJ22"):
@@ -256,7 +254,8 @@ def test_migration_guarda_downgrade_recusa_duplicata(app):
 def test_migration_guarda_downgrade_passa_sem_duplicata(app):
     with app.app_context():
         bind = db.session.connection()
-        db.session.add(Nivel(nome="Único", unidade_id=1, programa="Esporte"))
+        c1 = _curso(app, "Curso Um", unidade_id=1)
+        db.session.add(Nivel(nome="Único", unidade_id=1, curso_id=c1))
         db.session.flush()
         mig._guarda_downgrade(bind)  # não levanta
         db.session.rollback()
@@ -264,14 +263,16 @@ def test_migration_guarda_downgrade_passa_sem_duplicata(app):
 
 def test_migration_downgrade_restaura_unicidade_antiga(app):
     """Após downgrade, (nome, unidade) volta a ser único — duplicata
-    entre programas é recusada pelo banco."""
+    entre cursos é recusada pelo banco."""
     with app.app_context():
         bind = db.session.connection()
+        c1 = _curso(app, "Curso Um", unidade_id=9)
+        c2 = _curso(app, "Curso Dois", unidade_id=9)
         mig._trocar_unicidade_nivel(bind, "downgrade")
         db.session.commit()
-        db.session.add(Nivel(nome="Dup", unidade_id=9, programa="Esporte"))
+        db.session.add(Nivel(nome="Dup", unidade_id=9, curso_id=c1))
         db.session.flush()
-        db.session.add(Nivel(nome="Dup", unidade_id=9, programa="Outros"))
+        db.session.add(Nivel(nome="Dup", unidade_id=9, curso_id=c2))
         with pytest.raises(Exception):
             db.session.flush()
         db.session.rollback()
@@ -284,7 +285,7 @@ def test_migration_downgrade_restaura_unicidade_antiga(app):
 def test_regra_nivel_exige_proximo_curso(client, app):
     ids = _setup(app)
     _login(client, ids)
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=ids["curso"], unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=None, nivel=nid),
@@ -296,24 +297,13 @@ def test_regra_nivel_exige_proximo_curso(client, app):
         assert ConselhoClasse.query.count() == 0
 
 
-def test_regra_curso_sem_programa_recusa_nivel(client, app):
+def test_regra_curso_sem_niveis_recusa(client, app):
+    """Curso sem nenhum nível ativo não aceita nível (mensagem curta)."""
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Egresso", ids["unidade"], programa=None)
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
-
-    r = _salvar(client, ids["turma"], ids["oferta"], [
-        _item(ids["alunos"][0], curso=cid, nivel=nid),
-    ])
-    assert r.get_json()["success"] is False
-    assert "programa" in r.get_json()["message"].lower()
-
-
-def test_regra_programa_sem_niveis_recusa(client, app):
-    ids = _setup(app)
-    _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Meio Ambiente")
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    cid = _curso(app, "Sem níveis", ids["unidade"])
+    outro = _curso(app, "Com nível", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=outro, unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
@@ -322,27 +312,33 @@ def test_regra_programa_sem_niveis_recusa(client, app):
     assert "nível ativo" in r.get_json()["message"].lower()
 
 
-def test_regra_nivel_outro_programa_recusa(client, app):
+def test_regra_nivel_outro_curso_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Outros", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    outro = _curso(app, "Básico", ids["unidade"])
+    # O curso escolhido TEM nível próprio (mensagem genérica de inválido).
+    _nivel(app, "Sub-10", curso_id=cid, unidade_id=ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=outro, unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
     ])
     assert r.get_json()["success"] is False
+    assert "não é válido" in r.get_json()["message"].lower()
 
 
 def test_regra_nivel_outra_unidade_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
+    cid = _curso(app, "Avançado", ids["unidade"])
     with app.app_context():
         outra = Unidade(nome="Unidade B", ativo=True)
         db.session.add(outra)
         db.session.flush()
-        nid = Nivel(nome="Sub-12", programa="Esporte", unidade_id=outra.id)
+        nid = Nivel(
+            nome="Sub-12", curso_id=cid, unidade_id=outra.id,
+        )
         db.session.add(nid)
         db.session.commit()
         nid = nid.id
@@ -356,8 +352,8 @@ def test_regra_nivel_outra_unidade_recusa(client, app):
 def test_regra_nivel_inativo_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Esporte",
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=cid,
                  unidade_id=ids["unidade"], ativo=False)
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
@@ -366,11 +362,11 @@ def test_regra_nivel_inativo_recusa(client, app):
     assert r.get_json()["success"] is False
 
 
-def test_regra_nivel_legado_sem_programa_nunca_aceito(client, app):
+def test_regra_nivel_legado_sem_curso_nunca_aceito(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Legado", programa=None, unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Legado", curso_id=None, unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
@@ -381,7 +377,7 @@ def test_regra_nivel_legado_sem_programa_nunca_aceito(client, app):
 def test_regra_curso_inativo_novo_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Antigo", ids["unidade"], programa="Esporte", ativo=False)
+    cid = _curso(app, "Antigo", ids["unidade"], ativo=False)
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid),
@@ -397,7 +393,7 @@ def test_regra_curso_outra_unidade_recusa(client, app):
         outra = Unidade(nome="Unidade B", ativo=True)
         db.session.add(outra)
         db.session.flush()
-        cid = _curso(app, "Externo", outra.id, programa="Esporte")
+        cid = _curso(app, "Externo", outra.id)
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid),
@@ -408,8 +404,8 @@ def test_regra_curso_outra_unidade_recusa(client, app):
 def test_regra_valido_grava_proximo_curso(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
@@ -430,7 +426,7 @@ def test_regra_curso_inativo_ja_gravado_inalterado_aceito(client, app):
     """E1: curso inativado depois da escolha continua aceito inalterado."""
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
+    cid = _curso(app, "Avançado", ids["unidade"])
 
     ok = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid),
@@ -454,8 +450,9 @@ def test_regra_recusa_atomica_nao_grava_nada(client, app):
     """Um item inválido no lote → rollback de TODOS os alunos."""
     ids = _setup(app, alunos=2)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid_outro = _nivel(app, "X", programa="Outros", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    outro = _curso(app, "Básico", ids["unidade"])
+    nid_outro = _nivel(app, "X", curso_id=outro, unidade_id=ids["unidade"])
 
     r = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid_outro),  # inválido
@@ -469,8 +466,8 @@ def test_regra_recusa_atomica_nao_grava_nada(client, app):
 def test_regra_limpar_curso_zera_nivel(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
 
     ok = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
@@ -489,12 +486,12 @@ def test_regra_limpar_curso_zera_nivel(client, app):
 
 
 def test_regra_nivel_inativo_ja_gravado_inalterado_aceito(client, app):
-    """Exceção AJ22: nível inativado depois da escolha continua valendo se
-    reenviado inalterado."""
+    """Exceção AJ22-C: nível inativado depois da escolha continua valendo
+    se reenviado inalterado (e aparece com "(inativo)")."""
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
 
     ok = _salvar(client, ids["turma"], ids["oferta"], [
         _item(ids["alunos"][0], curso=cid, nivel=nid),
@@ -521,9 +518,9 @@ def test_regra_nivel_inativo_trocado_recusa(client, app):
     continua recusado."""
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid_ok = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
-    nid_inativo = _nivel(app, "Sub-14", programa="Esporte",
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid_ok = _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
+    nid_inativo = _nivel(app, "Sub-14", curso_id=cid,
                          unidade_id=ids["unidade"], ativo=False)
 
     _salvar(client, ids["turma"], ids["oferta"], [
@@ -536,36 +533,39 @@ def test_regra_nivel_inativo_trocado_recusa(client, app):
 
 
 # ---------------------------------------------------------------------------
-# Unicidade do nível (D8)
+# Unicidade do nível (F3)
 # ---------------------------------------------------------------------------
 
-def test_unicidade_mesmo_nome_programas_diferentes_ok(app):
+def test_unicidade_mesmo_nome_cursos_diferentes_ok(app):
     with app.app_context():
+        c1 = _curso(app, "Curso Um", unidade_id=5)
+        c2 = _curso(app, "Curso Dois", unidade_id=5)
         db.session.add_all([
-            Nivel(nome="Infantil", unidade_id=5, programa="Esporte"),
-            Nivel(nome="Infantil", unidade_id=5, programa="Outros"),
-            Nivel(nome="Infantil", unidade_id=5, programa=None),
+            Nivel(nome="Infantil", unidade_id=5, curso_id=c1),
+            Nivel(nome="Infantil", unidade_id=5, curso_id=c2),
+            Nivel(nome="Infantil", unidade_id=5, curso_id=None),
         ])
         db.session.commit()  # não levanta
 
 
-def test_unicidade_duplicata_mesmo_programa_recusa(app):
+def test_unicidade_duplicata_mesmo_curso_recusa(app):
     with app.app_context():
-        db.session.add(Nivel(nome="Infantil", unidade_id=5, programa="Esporte"))
+        c1 = _curso(app, "Curso Um", unidade_id=5)
+        db.session.add(Nivel(nome="Infantil", unidade_id=5, curso_id=c1))
         db.session.flush()
-        db.session.add(Nivel(nome="Infantil", unidade_id=5, programa="Esporte"))
+        db.session.add(Nivel(nome="Infantil", unidade_id=5, curso_id=c1))
         with pytest.raises(Exception):
             db.session.flush()
         db.session.rollback()
 
 
 def test_unicidade_duplicata_legado_recusa(app):
-    """Dois níveis sem programa com mesmo nome+unidade → recusa (mantém a
+    """Dois níveis sem curso com mesmo nome+unidade → recusa (mantém a
     unicidade anterior para legados)."""
     with app.app_context():
-        db.session.add(Nivel(nome="Infantil", unidade_id=5, programa=None))
+        db.session.add(Nivel(nome="Infantil", unidade_id=5, curso_id=None))
         db.session.flush()
-        db.session.add(Nivel(nome="Infantil", unidade_id=5, programa=None))
+        db.session.add(Nivel(nome="Infantil", unidade_id=5, curso_id=None))
         with pytest.raises(Exception):
             db.session.flush()
         db.session.rollback()
@@ -578,7 +578,7 @@ def test_unicidade_duplicata_legado_recusa(app):
 def test_tela_rotulos_e_defaults(client, app):
     ids = _setup(app)
     _login(client, ids)
-    _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    _nivel(app, "Sub-12", curso_id=ids["curso"], unidade_id=ids["unidade"])
 
     r = client.get(f"/conselho/fechamento/{ids['turma']}?oferta_sel={ids['oferta']}")
     body = r.data.decode("utf-8")
@@ -589,25 +589,36 @@ def test_tela_rotulos_e_defaults(client, app):
     # Select de nível nasce desabilitado ("Não se aplica" default).
     assert 'class="form-select form-select-sm border-info d-print-none nivel-select"' in body
     assert "disabled" in body
-    # Dados embutidos via tojson (sem requisição extra).
-    assert "NIVEL_DATA" in body and "CURSO_PROGRAMA" in body
+    # Dados embutidos via tojson (sem requisição extra), por CURSO.
+    assert "NIVEL_DATA" in body
+    assert "CURSO_PROGRAMA" not in body
     # O curso da unidade aparece no select de próximo curso.
     assert "Curso AJ22" in body
 
-    # Nível legado (programa NULL) NUNCA entra no mapa do fechamento (D2).
-    _nivel(app, "Legado Sem Programa", programa=None, unidade_id=ids["unidade"])
+    # Nível legado (curso NULL) NUNCA entra no mapa do fechamento (F2).
+    _nivel(app, "Legado Sem Curso", curso_id=None, unidade_id=ids["unidade"])
     r = client.get(f"/conselho/fechamento/{ids['turma']}?oferta_sel={ids['oferta']}")
     body = r.data.decode("utf-8")
     m = re.search(r"const NIVEL_DATA = (\{.*?\});", body, re.S)
     assert m, "NIVEL_DATA não embutido"
-    assert "Legado Sem Programa" not in m.group(1)
+    assert "Legado Sem Curso" not in m.group(1)
+
+
+def test_tela_js_textos_curto_nao_cadastrado():
+    """F4: textos curtos do JS — 'Nível não cadastrado' / 'Não se aplica'."""
+    js = (RAIZ / "app" / "static" / "js" / "conselho" / "conselho.js") \
+        .read_text(encoding="utf-8")
+    assert "Nível não cadastrado" in js
+    assert "Não se aplica" in js
+    # Mensagens longas com nome de programa foram removidas.
+    assert "Nenhum nível cadastrado para o programa" not in js
 
 
 def test_tela_pre_seleciona_conselho_gravado(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
     with app.app_context():
         db.session.add(ConselhoClasse(
             aluno_id=ids["alunos"][0], turma_id=ids["turma"],
@@ -646,7 +657,7 @@ def test_tela_fallback_legado_sem_nivel(client, app):
 
 
 # ---------------------------------------------------------------------------
-# Cadastro — cursos (programa) e níveis
+# Cadastro — cursos (sem programa) e níveis (com curso)
 # ---------------------------------------------------------------------------
 
 def test_rotas_e_aba_legadas_removidas(client, app):
@@ -668,7 +679,18 @@ def test_rotas_e_aba_legadas_removidas(client, app):
     assert "proxima_opcao" not in body
 
 
-def test_cadastro_curso_com_programa(client, app):
+def test_modal_cursos_sem_campo_programa(client, app):
+    """F6: o modal de Cursos voltou ao que era antes do AJ22-B."""
+    ids = _setup(app)
+    _login(client, ids)
+    body = client.get("/planejamento").data.decode("utf-8")
+    assert 'id="cursoProgramaInput"' not in body
+    assert 'id="editCursoPrograma"' not in body
+    assert 'name="curso_nivel"' in body  # mas o select de curso do nível fica
+
+
+def test_cadastro_curso_ignora_programa(client, app):
+    """Payload com `programa` é ignorado — a coluna não existe mais."""
     ids = _setup(app)
     _login(client, ids)
     r = client.post("/cursos/novo", json={
@@ -676,100 +698,162 @@ def test_cadastro_curso_com_programa(client, app):
     })
     assert r.status_code == 200
     assert r.get_json()["success"] is True
-    assert r.get_json()["programa"] == "Outros"
+    assert "programa" not in r.get_json()
     with app.app_context():
         c = Curso.query.filter_by(nome="Curso novo").one()
-        assert c.programa == "Outros"
+        assert not hasattr(c, "programa")
 
 
-def test_cadastro_curso_programa_invalido(client, app):
+def test_editar_curso_ignora_programa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    r = client.post("/cursos/novo", json={
-        "nome": "Curso novo", "programa": "Inexistente",
-    })
-    assert r.status_code == 400
-    with app.app_context():
-        assert Curso.query.filter_by(nome="Curso novo").count() == 0
-
-
-def test_editar_curso_programa_e_preservar_quando_omitido(client, app):
-    ids = _setup(app)
-    _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"], programa="Esporte")
+    cid = _curso(app, "Avançado", ids["unidade"])
 
     r = client.post(f"/cursos/{cid}/editar", json={
-        "nome": "Avançado", "descricao": "", "programa": "Outros",
+        "nome": "Avançado 2", "descricao": "", "programa": "Outros",
     })
     assert r.status_code == 200
-    assert r.get_json()["programa"] == "Outros"
-
-    # Payload sem `programa` (cliente antigo) preserva o valor atual.
-    r = client.post(f"/cursos/{cid}/editar", json={
-        "nome": "Avançado 2", "descricao": "",
-    })
-    assert r.status_code == 200
+    assert "programa" not in r.get_json()
     with app.app_context():
         c = db.session.get(Curso, cid)
         assert c.nome == "Avançado 2"
-        assert c.programa == "Outros"
+        assert not hasattr(c, "programa")
 
 
-def test_cadastro_nivel_com_programa(client, app):
+def test_cadastro_nivel_com_curso(client, app):
+    ids = _setup(app)
+    _login(client, ids)
+    cid = _curso(app, "Avançado", ids["unidade"])
+    client.post("/planejamento", data={
+        "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
+        "nome_nivel": "Sub-12", "curso_nivel": str(cid),
+    })
+    with app.app_context():
+        n = Nivel.query.filter_by(nome="Sub-12").one()
+        assert n.curso_id == cid
+        assert n.unidade_id == ids["unidade"]
+
+
+def test_cadastro_nivel_sem_curso_legado(client, app):
     ids = _setup(app)
     _login(client, ids)
     client.post("/planejamento", data={
         "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
-        "nome_nivel": "Sub-12", "programa_nivel": "Esporte",
+        "nome_nivel": "Legado", "curso_nivel": "",
     })
     with app.app_context():
-        n = Nivel.query.filter_by(nome="Sub-12").one()
-        assert n.programa == "Esporte"
-        assert n.unidade_id == ids["unidade"]
+        n = Nivel.query.filter_by(nome="Legado").one()
+        assert n.curso_id is None
 
 
-def test_cadastro_nivel_mesmo_nome_outro_programa_ok(client, app):
+def test_cadastro_nivel_mesmo_nome_outro_curso_ok(client, app):
     ids = _setup(app)
     _login(client, ids)
-    for prog in ("Esporte", "Outros"):
+    c1 = _curso(app, "Curso Um", ids["unidade"])
+    c2 = _curso(app, "Curso Dois", ids["unidade"])
+    for cid in (c1, c2):
         client.post("/planejamento", data={
             "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
-            "nome_nivel": "Infantil", "programa_nivel": prog,
+            "nome_nivel": "Infantil", "curso_nivel": str(cid),
         })
     with app.app_context():
         assert Nivel.query.filter_by(nome="Infantil").count() == 2
 
 
-def test_cadastro_nivel_duplicata_mesmo_programa_recusa(client, app):
+def test_cadastro_nivel_duplicata_mesmo_curso_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
+    cid = _curso(app, "Avançado", ids["unidade"])
     for _ in range(2):
         client.post("/planejamento", data={
             "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
-            "nome_nivel": "Infantil", "programa_nivel": "Esporte",
+            "nome_nivel": "Infantil", "curso_nivel": str(cid),
         })
     with app.app_context():
         assert Nivel.query.filter_by(nome="Infantil").count() == 1
 
 
-def test_tela_planejamento_cursos_programa_e_avisos(client, app):
+def test_cadastro_nivel_curso_outra_unidade_recusa(client, app):
     ids = _setup(app)
     _login(client, ids)
-    # Curso sem programa (aviso) e nenhum nível ativo na unidade.
-    _curso(app, "Sem programa", ids["unidade"], programa=None)
-    r = client.get("/planejamento")
+    with app.app_context():
+        outra = Unidade(nome="Unidade B", ativo=True)
+        db.session.add(outra)
+        db.session.flush()
+        cid = _curso(app, "Externo", outra.id)
+
+    client.post("/planejamento", data={
+        "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
+        "nome_nivel": "Sub-12", "curso_nivel": str(cid),
+    })
+    with app.app_context():
+        assert Nivel.query.filter_by(nome="Sub-12").count() == 0
+
+
+def test_cadastro_nivel_curso_inativo_recusa(client, app):
+    ids = _setup(app)
+    _login(client, ids)
+    cid = _curso(app, "Antigo", ids["unidade"], ativo=False)
+
+    client.post("/planejamento", data={
+        "csrf_token": "", "tipo_post": "nivel", "aba": "niveis",
+        "nome_nivel": "Sub-12", "curso_nivel": str(cid),
+    })
+    with app.app_context():
+        assert Nivel.query.filter_by(nome="Sub-12").count() == 0
+
+
+def test_editar_nivel_vincula_curso(client, app):
+    ids = _setup(app)
+    _login(client, ids)
+    cid = _curso(app, "Avançado", ids["unidade"])
+    nid = _nivel(app, "Sub-12", unidade_id=ids["unidade"])
+
+    client.post(f"/planejamento/nivel/editar/{nid}", data={
+        "csrf_token": "", "nome_nivel": "Sub-12", "curso_nivel": str(cid),
+    })
+    with app.app_context():
+        assert db.session.get(Nivel, nid).curso_id == cid
+
+
+def test_tela_planejamento_niveis_sem_curso_e_sem_programa(client, app):
+    ids = _setup(app)
+    _login(client, ids)
+    cid = _curso(app, "Avançado", ids["unidade"])
+    _nivel(app, "Legado", curso_id=None, unidade_id=ids["unidade"])
+    _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
+
+    r = client.get("/planejamento?aba=niveis")
     body = r.data.decode("utf-8")
     assert r.status_code == 200
-    assert 'id="cursoProgramaInput"' in body
-    assert 'id="editCursoPrograma"' in body
-    assert "Cursos sem programa" in body
-    assert "Sem programa" in body
-    assert "Programas sem nível ativo" in body
+    assert "Níveis sem curso" in body
+    assert "curso_nivel" in body
+    assert "programa_nivel" not in body
+    assert "Sem curso" in body
+    # Modal de cursos sem vestígio de programa.
+    body_cursos = client.get("/planejamento").data.decode("utf-8")
+    assert "cursoProgramaInput" not in body_cursos
+    assert "editCursoPrograma" not in body_cursos
 
-    _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
-    body = client.get("/planejamento?aba=niveis").data.decode("utf-8")
-    assert "programa_nivel" in body
-    assert "Níveis sem programa" not in body  # nível criado já tem programa
+
+# ---------------------------------------------------------------------------
+# F8 — rótulo "Nome — Curso" nos selects de nível fora do fechamento
+# ---------------------------------------------------------------------------
+
+def test_turma_detalhe_rotulo_nome_curso(client, app):
+    ids = _setup(app)
+    _login(client, ids)
+    cid = _curso(app, "Avançado", ids["unidade"])
+    _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
+    _nivel(app, "Legado", curso_id=None, unidade_id=ids["unidade"])
+
+    r = client.get(f"/turma/{ids['turma']}")
+    body = r.data.decode("utf-8")
+    assert r.status_code == 200
+    # Nível com curso mostra "Nome — Curso"; legado fica só com o nome.
+    assert "Sub-12 — Avançado" in body
+    assert re.search(r">Legado<", body)
+    assert "Legado —" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -795,7 +879,8 @@ def _fechar_com_dados(app, ids, nivel_id=None):
 def test_leitor_resultado_mostra_curso_e_nivel(client, app):
     ids = _setup(app)
     _login(client, ids)
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=ids["curso"],
+                 unidade_id=ids["unidade"])
     _fechar_com_dados(app, ids, nivel_id=nid)
 
     r = client.get(
@@ -834,7 +919,8 @@ def test_leitor_resultado_fallback_legado(client, app):
 def test_ficha_e_resumo_mostram_destino(client, app):
     ids = _setup(app)
     _login(client, ids)
-    nid = _nivel(app, "Sub-12", programa="Esporte", unidade_id=ids["unidade"])
+    nid = _nivel(app, "Sub-12", curso_id=ids["curso"],
+                 unidade_id=ids["unidade"])
     _fechar_com_dados(app, ids, nivel_id=nid)
 
     resumo = client.get(
@@ -870,7 +956,7 @@ def test_leitor_resultado_queries_constantes_com_2x_alunos(client, app):
     """N+1: o relatório não cresce em queries com o dobro de alunos."""
     ids7 = _setup(app, alunos=7)
     _login(client, ids7)
-    nid = _nivel(app, "Sub-12", programa="Esporte",
+    nid = _nivel(app, "Sub-12", curso_id=ids7["curso"],
                  unidade_id=ids7["unidade"])
     _fechar_com_dados(app, ids7, nivel_id=nid)
     pid = _periodo(app, ids7)

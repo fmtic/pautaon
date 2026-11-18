@@ -1509,6 +1509,7 @@ def ver_turma(id):
     # Inclui níveis legados sem unidade (unidade_id IS NULL) para compatibilidade.
     niveis_cadastrados = (
         Nivel.query
+        .options(joinedload(Nivel.curso))
         .filter(
             (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
             Nivel.ativo == True,

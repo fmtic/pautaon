@@ -4,28 +4,27 @@ Revision ID: a7b8c9d0e1f2
 Revises: 1fdc7c03bdc2
 Create Date: 2026-11-17
 
-Contexto (AJ22-B): o "próximo curso" do fechamento é um CURSO já cadastrado
-(`curso`), não um catálogo paralelo. A opção `opcao_proxima_turma` passa a
-ser LEGADO (tabela e coluna preservadas, sem novas escritas e sem UI). Esta
-revisão é ADITIVA, não faz backfill e cria apenas:
+Contexto (AJ22-C): o "próximo curso" do fechamento é um CURSO já cadastrado
+(`curso`) e cada CURSO tem sua própria nomenclatura de níveis. A opção
+`opcao_proxima_turma` permanece LEGADA (tabela e coluna preservadas, sem
+novas escritas e sem UI). Esta revisão é ADITIVA, não faz backfill e cria
+apenas:
 
-    1. `curso.programa` VARCHAR(50) NULL — programa de curso (lista central
-       `PROGRAMAS_CURSO`). Sem backfill: curso sem programa não habilita
-       nível no fechamento.
-    2. `nivel.programa` VARCHAR(50) NULL — nível sem programa (legado,
-       NULL) NUNCA aparece como opção no fechamento.
-    3. `conselho_classe.proximo_curso_id` INTEGER NULL FK → `curso.id`
+    1. `nivel.curso_id` INTEGER NULL FK → `curso.id` ON DELETE RESTRICT —
+       NULL = nível sem curso (legado), que NUNCA aparece como opção no
+       fechamento.
+    2. `conselho_classe.proximo_curso_id` INTEGER NULL FK → `curso.id`
        ON DELETE RESTRICT — NULL = "Não se aplica".
-    4. `conselho_classe.proximo_nivel_id` INTEGER NULL FK → `nivel.id`
+    3. `conselho_classe.proximo_nivel_id` INTEGER NULL FK → `nivel.id`
        ON DELETE RESTRICT — NULL = "Não se aplica".
-    5. Unicidade do nível: `uq_nivel_nome_unidade` (nome, unidade_id) é
-       substituída pelo índice funcional
-       `uq_nivel_nome_unidade_programa` (nome, unidade_id,
-       COALESCE(programa, '')) — o mesmo nome pode repetir entre
-       programas; níveis legados sem programa mantêm a unicidade de antes.
+    4. Unicidade do nível: `uq_nivel_nome_unidade` (nome, unidade_id) é
+       substituída pelo índice funcional `uq_nivel_nome_unidade_curso`
+       (nome, unidade_id, COALESCE(curso_id, 0)) — o mesmo nome pode
+       repetir entre cursos; níveis legados sem curso mantêm a unicidade
+       de antes.
 
-`opcao_proxima_turma.programa` NÃO é criada (o AJ22 original foi revertido
-antes desta etapa; a tabela permanece apenas com `nome` e `ativo`).
+Não existem mais `curso.programa` nem `nivel.programa` (o AJ22-B foi
+substituído antes do deploy): o vínculo do nível é diretamente com o curso.
 
 Portabilidade e idempotência: cada passo é precedido de inspeção do bind
 (`_colunas`, `_tem_constraint`, `_tem_indice`) — rodar duas vezes não
@@ -35,20 +34,20 @@ comandos.
 
 Particularidades por dialeto:
 - SQLite não aceita `ALTER TABLE ... ADD CONSTRAINT` nem
-  `DROP CONSTRAINT` de UNIQUE de tabela: as FKs de `proximo_curso_id` e
-  `proximo_nivel_id` são puladas no SQLite (o schema dos testes nasce de
-  `db.create_all`, que já cria as FKs) e a troca da unicidade do nível é
-  feita reconstruindo a tabela `nivel` com `PRAGMA foreign_keys=OFF` +
-  `legacy_alter_table=ON` (as FKs das outras tabelas referenciam `nivel`
-  pelo nome e continuam válidas após o rename+recreate).
+  `DROP CONSTRAINT` de UNIQUE de tabela: as FKs de `nivel.curso_id`,
+  `proximo_curso_id` e `proximo_nivel_id` são puladas no SQLite (o schema
+  dos testes nasce de `db.create_all`, que já cria as FKs) e a troca da
+  unicidade do nível é feita reconstruindo a tabela `nivel` com
+  `PRAGMA foreign_keys=OFF` + `legacy_alter_table=ON` (as FKs das outras
+  tabelas referenciam `nivel` pelo nome e continuam válidas após o
+  rename+recreate).
 - PostgreSQL recebe `ALTER TABLE ... ADD/DROP CONSTRAINT` e
   `CREATE/DROP INDEX` diretos.
 
-Downgrade: remove as duas FKs/colunas de destino, `nivel.programa`,
-`curso.programa` e o índice funcional, recriando `uq_nivel_nome_unidade`.
-GUARDA (D8): recusa o downgrade se existir duplicata de (nome, unidade_id)
-— recriar a constraint antiga fundiria ou falharia com níveis de programas
-diferentes.
+Downgrade: remove as FKs/colunas de destino, `nivel.curso_id` e o índice
+funcional, recriando `uq_nivel_nome_unidade`. GUARDA (D8): recusa o
+downgrade se existir duplicata de (nome, unidade_id) — recriar a
+constraint antiga fundiria ou falharia com níveis de cursos diferentes.
 """
 from __future__ import annotations
 
@@ -64,15 +63,15 @@ T_NIVEL = "nivel"
 T_CURSO = "curso"
 T_CONSELHO = "conselho_classe"
 
-COL_NIVEL = "programa"
-COL_CURSO = "programa"
+COL_NIVEL_CURSO = "curso_id"
 COL_CONSELHO_CURSO = "proximo_curso_id"
 COL_CONSELHO_NIVEL = "proximo_nivel_id"
 
 UNQ_ANTIGA = "uq_nivel_nome_unidade"
-IDX_NOVA = "uq_nivel_nome_unidade_programa"
+IDX_NOVA = "uq_nivel_nome_unidade_curso"
 FK_CURSO = "fk_conselho_classe_proximo_curso"
 FK_NIVEL = "fk_conselho_classe_proximo_nivel"
+FK_NIVEL_CURSO = "fk_nivel_curso"
 
 
 def _eh_postgres(bind) -> bool:
@@ -164,7 +163,7 @@ def _colunas_nivel(bind) -> list[dict]:
 def _recriar_nivel_sqlite(bind, *, unica_antiga: bool) -> None:
     """Reconstrói `nivel` no SQLite (única forma de trocar a unicidade de
     tabela). Preserva exatamente as colunas presentes no momento — o
-    caller decide se `programa` já foi removida (downgrade) ou não
+    caller decide se `curso_id` já foi removida (downgrade) ou não
     (upgrade)."""
     cols = _colunas_nivel(bind)
     nomes = [c["name"] for c in cols]
@@ -219,7 +218,7 @@ def _trocar_unicidade_nivel(bind, direcao: str) -> None:
             # expressão — a idempotência não pode depender disso.
             bind.execute(sa.text(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS {IDX_NOVA} ON {T_NIVEL} "
-                "(nome, unidade_id, COALESCE(programa, ''))"
+                "(nome, unidade_id, COALESCE(curso_id, 0))"
             ))
         else:
             bind.execute(sa.text(f"DROP INDEX IF EXISTS {IDX_NOVA}"))
@@ -238,7 +237,7 @@ def _trocar_unicidade_nivel(bind, direcao: str) -> None:
             _recriar_nivel_sqlite(bind, unica_antiga=False)
         bind.execute(sa.text(
             f"CREATE UNIQUE INDEX IF NOT EXISTS {IDX_NOVA} ON {T_NIVEL} "
-            "(nome, unidade_id, COALESCE(programa, ''))"
+            "(nome, unidade_id, COALESCE(curso_id, 0))"
         ))
     else:
         if tem_idx:
@@ -251,7 +250,7 @@ def _trocar_unicidade_nivel(bind, direcao: str) -> None:
 
 def _guarda_downgrade(bind) -> None:
     """D8: recusa restaurar (nome, unidade_id) único se houver duplicata
-    entre programas diferentes (ou programa × legado NULL)."""
+    entre cursos diferentes (ou curso × legado NULL)."""
     duplicatas = bind.execute(sa.text(
         "SELECT nome, unidade_id, COUNT(*) AS qtd FROM nivel "
         "GROUP BY nome, unidade_id HAVING COUNT(*) > 1"
@@ -262,7 +261,7 @@ def _guarda_downgrade(bind) -> None:
         )
         raise RuntimeError(
             "Downgrade de a7b8c9d0e1f2 (AJ22) recusado: há nível(s) com o "
-            f"mesmo nome na mesma unidade em programas diferentes: {amostra}. "
+            f"mesmo nome na mesma unidade em cursos diferentes: {amostra}. "
             "Restaurar uq_nivel_nome_unidade fundiria ou falharia. "
             "Renomeie os níveis duplicados antes de reverter. "
             "Nada foi alterado."
@@ -272,17 +271,17 @@ def _guarda_downgrade(bind) -> None:
 def upgrade() -> None:
     bind = op.get_bind()
 
-    # 1-2. Colunas de programa (idempotente por inspeção).
-    _add_coluna(bind, T_CURSO, COL_CURSO, "VARCHAR(50)")
-    _add_coluna(bind, T_NIVEL, COL_NIVEL, "VARCHAR(50)")
+    # 1. Curso do nível (idempotente por inspeção) + FK.
+    _add_coluna(bind, T_NIVEL, COL_NIVEL_CURSO, "INTEGER")
+    _criar_fk(bind, T_NIVEL, COL_NIVEL_CURSO, T_CURSO, FK_NIVEL_CURSO)
 
-    # 3-4. Colunas + FKs de destino no conselho (curso e nível).
+    # 2-3. Colunas + FKs de destino no conselho (curso e nível).
     _add_coluna(bind, T_CONSELHO, COL_CONSELHO_CURSO, "INTEGER")
     _add_coluna(bind, T_CONSELHO, COL_CONSELHO_NIVEL, "INTEGER")
     _criar_fk(bind, T_CONSELHO, COL_CONSELHO_CURSO, T_CURSO, FK_CURSO)
     _criar_fk(bind, T_CONSELHO, COL_CONSELHO_NIVEL, T_NIVEL, FK_NIVEL)
 
-    # 5. Unicidade funcional do nível.
+    # 4. Unicidade funcional do nível.
     _trocar_unicidade_nivel(bind, "upgrade")
 
 
@@ -297,12 +296,12 @@ def downgrade() -> None:
     _drop_coluna(bind, T_CONSELHO, COL_CONSELHO_CURSO)
     _drop_coluna(bind, T_CONSELHO, COL_CONSELHO_NIVEL)
 
-    # O índice funcional referencia nivel.programa: some antes da coluna.
+    # O índice funcional referencia nivel.curso_id: some antes da coluna.
     if _eh_postgres(bind):
         bind.execute(sa.text(f"DROP INDEX IF EXISTS {IDX_NOVA}"))
     else:
         if _tem_indice(bind, T_NIVEL, IDX_NOVA):
             bind.execute(sa.text(f"DROP INDEX IF EXISTS {IDX_NOVA}"))
     _trocar_unicidade_nivel(bind, "downgrade")
-    _drop_coluna(bind, T_NIVEL, COL_NIVEL)
-    _drop_coluna(bind, T_CURSO, COL_CURSO)
+    _drop_fk(bind, T_NIVEL, FK_NIVEL_CURSO)
+    _drop_coluna(bind, T_NIVEL, COL_NIVEL_CURSO)

@@ -470,7 +470,6 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     with app.app_context():
         curso = Curso(
             nome="Avançado", unidade_id=ids["un_a"], ativo=True,
-            programa="Esporte",
         )
         db.session.add(curso)
         db.session.commit()
@@ -482,7 +481,7 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     assert "Aluno Ana" in body
     assert "Aluno Beto" not in body
     assert f'data-oferta-id="{ids["ofertas"][0]}"' in body
-    # Próximo curso usa o id do CURSO (AJ22-B), não o catálogo legado.
+    # Próximo curso usa o id do CURSO (AJ22-C), não o catálogo legado.
     assert f'<option value="{curso_id}">Avançado</option>' in body
 
 
@@ -520,7 +519,6 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
     with app.app_context():
         curso = Curso(
             nome="Avançado", unidade_id=ids["un_a"], ativo=True,
-            programa="Esporte",
         )
         db.session.add(curso)
         db.session.commit()

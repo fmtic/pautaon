@@ -1,31 +1,24 @@
 """AJ22 — Regra de "próximo curso + nível" no fechamento do conselho.
 
-Fonte única da regra (E1–E4 do AJ22-B):
+Fonte única da regra (AJ22-C):
 
 - O próximo curso é um `Curso` JÁ CADASTRADO da unidade da turma
   (`curso.ativo=True`), a mesma fonte/escopo dos selects de curso de
-  turma/oferta. Não existe mais catálogo paralelo: `opcao_proxima_turma`
-  é LEGADO (somente leitura histórica, sem novas escritas).
-- `PROGRAMAS_CURSO`: lista central dos programas de curso, gravada em
-  `curso.programa` (o campo de `turma_curso.programa` segue intocado e
-  sem vínculo com esta coluna).
-- "Programa com níveis" é DERIVADO (D4): existe ao menos um nível ATIVO
-  da unidade da turma com aquele programa. Nível sem programa (NULL,
-  legado) nunca entra (D2).
+  turma/oferta. Não existe catálogo paralelo: `opcao_proxima_turma` é
+  LEGADO (somente leitura histórica, sem novas escritas).
+- O nível pertence a um CURSO (`nivel.curso_id`): cada curso tem sua
+  nomenclatura de níveis. Nível sem curso (NULL, legado) nunca entra.
 - O nível é elegível quando: existe, está ativo (salvo a exceção de
-  "inalterado" tratada no chamador), pertence à unidade da turma (ou é
-  global `unidade_id IS NULL`, mesmo critério dos demais leitores de
-  nível) e tem `programa` igual ao do curso escolhido.
+  "inalterado" tratada no chamador), pertence ao curso escolhido e à
+  unidade da turma (ou é global `unidade_id IS NULL`, mesmo critério dos
+  demais leitores de nível).
 """
 
 from __future__ import annotations
 
-from app.models import Curso, Nivel, OpcaoProximaTurma
+from sqlalchemy import or_
 
-# Lista ÚNICA de programas de curso (AJ22). Mantida aqui para os selects
-# de curso e nível; `_PROGRAMAS_OFERTA` (registros/turmas.py) não foi
-# refatorado.
-PROGRAMAS_CURSO = ("Profissionalizante", "Esporte", "Meio Ambiente", "Outros")
+from app.models import Curso, Nivel, OpcaoProximaTurma
 
 
 def cursos_da_unidade(unidade_id: int, apenas_ativos: bool = True):
@@ -40,8 +33,6 @@ def cursos_da_unidade(unidade_id: int, apenas_ativos: bool = True):
 def _niveis_da_unidade(unidade_id: int, apenas_ativos: bool = False):
     """Níveis elegíveis à unidade da turma: os da unidade + os globais
     (`unidade_id IS NULL`), mesmo critério de `registros/turmas.py`."""
-    from sqlalchemy import or_
-
     query = Nivel.query.filter(
         or_(Nivel.unidade_id == unidade_id, Nivel.unidade_id.is_(None))
     )
@@ -50,64 +41,87 @@ def _niveis_da_unidade(unidade_id: int, apenas_ativos: bool = False):
     return query.all()
 
 
-def niveis_por_programa(unidade_id: int) -> dict:
-    """Mapa ``{programa: [nivel, ...]}`` para embutir no fechamento.
+def _serializar_nivel(nivel: Nivel) -> dict:
+    return {
+        "id": nivel.id,
+        "nome": nivel.nome,
+        "ativo": bool(nivel.ativo),
+    }
+
+
+def niveis_por_curso(curso_id: int, unidade_id: int) -> list[dict]:
+    """Níveis de UM curso na unidade da turma (ou globais).
 
     Inclui ativos E inativos (o inativo já gravado continua aparecendo na
-    edição com etiqueta); níveis sem programa (NULL) NÃO entram (D2).
+    edição com etiqueta); níveis sem curso NÃO entram.
     Cada item: ``{'id', 'nome', 'ativo'}``.
     """
-    mapa: dict[str, list] = {}
+    if not curso_id:
+        return []
+    itens = [
+        _serializar_nivel(nivel)
+        for nivel in _niveis_da_unidade(unidade_id)
+        if nivel.curso_id == curso_id
+    ]
+    itens.sort(key=lambda item: item["nome"].lower())
+    return itens
+
+
+def mapa_niveis_por_curso(cursos, unidade_id: int) -> dict:
+    """Mapa ``{curso_id: [nivel, ...]}`` em LOTE (1 consulta).
+
+    Inclui todos os cursos pedidos (mesmo sem níveis, com lista vazia),
+    ativos e inativos, para embutir no fechamento sem N+1.
+    """
+    ids = {
+        getattr(curso, "id", curso)
+        for curso in cursos or []
+        if getattr(curso, "id", curso)
+    }
+    mapa = {curso_id: [] for curso_id in ids}
+    if not ids:
+        return mapa
     for nivel in _niveis_da_unidade(unidade_id):
-        programa = (nivel.programa or "").strip()
-        if not programa:
-            continue
-        mapa.setdefault(programa, []).append(
-            {"id": nivel.id, "nome": nivel.nome, "ativo": bool(nivel.ativo)}
-        )
+        if nivel.curso_id in mapa:
+            mapa[nivel.curso_id].append(_serializar_nivel(nivel))
     for itens in mapa.values():
         itens.sort(key=lambda item: item["nome"].lower())
     return mapa
 
 
-def programa_tem_niveis(programa: str | None, unidade_id: int) -> bool:
-    """D4: "programa com níveis" = existe nível ATIVO da unidade da turma
-    com aquele programa."""
-    programa = (programa or "").strip()
-    if not programa:
+def curso_tem_niveis(curso_id: int, unidade_id: int) -> bool:
+    """Existe ao menos um nível ATIVO da unidade da turma no curso?"""
+    if not curso_id:
         return False
     return any(
-        (n.programa or "").strip() == programa and n.ativo
-        for n in _niveis_da_unidade(unidade_id, apenas_ativos=True)
+        nivel.curso_id == curso_id
+        for nivel in _niveis_da_unidade(unidade_id, apenas_ativos=True)
     )
 
 
 def nivel_elegivel(
     nivel_id: int,
     *,
-    programa_curso: str | None,
+    curso_id: int,
     unidade_id: int,
 ) -> Nivel | None:
     """Devolve o `Nivel` se ele pode ser escolhido para o curso, senão None.
 
-    Elegível = existe, ativo, programa igual ao do curso e unidade da
-    turma (ou global). Nível sem programa (NULL) nunca é elegível (D2).
+    Elegível = existe, ativo, do curso escolhido e unidade da turma (ou
+    global). Nível sem curso (NULL) nunca é elegível.
     """
     nivel = Nivel.query.get(nivel_id)
     if nivel is None or not nivel.ativo:
         return None
-    return nivel if nivel_compativel(nivel, programa_curso, unidade_id) else None
+    return nivel if nivel_compativel(nivel, curso_id, unidade_id) else None
 
 
 def nivel_compativel(
-    nivel: Nivel, programa_curso: str | None, unidade_id: int
+    nivel: Nivel, curso_id: int, unidade_id: int
 ) -> bool:
     """Mesma regra de elegibilidade sem exigir `ativo` (a exceção de
     "inalterado" do AJ22 é decidida pelo chamador, que já checou o ativo)."""
-    programa = (programa_curso or "").strip()
-    if not programa:
-        return False
-    if (nivel.programa or "").strip() != programa:
+    if not curso_id or nivel.curso_id != curso_id:
         return False
     if nivel.unidade_id is not None and nivel.unidade_id != unidade_id:
         return False
@@ -124,16 +138,11 @@ def curso_da_escolha(proximo_curso_id) -> Curso | None:
         return None
 
 
-def programa_do_curso(curso: Curso | None) -> str:
-    """Programa normalizado do curso ('' quando não há)."""
-    return (getattr(curso, "programa", None) or "").strip()
-
-
 def destinos_por_conselho(conselhos) -> dict:
     """Resolve, EM LOTE, o destino exibido por conselho.
 
     Devolve ``{conselho_id: {'curso', 'nivel', 'legado', 'texto',
-    'curso_inativo'}}``. Regras do AJ22-B:
+    'curso_inativo'}}``. Regras do AJ22-B/C:
 
     - `proximo_curso_id` presente → mostra `curso.nome` (e o nível, se
       houver). Curso hoje inativo continua sendo exibido (histórico).

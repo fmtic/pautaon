@@ -203,47 +203,38 @@ function sincronizarSpans() {
 // -------------------------------------------------------------------------
 // AJ22 — Nível de destino do próximo curso (fechamento)
 // -------------------------------------------------------------------------
-// NIVEL_DATA ({programa: [{id, nome, ativo}]}) e CURSO_PROGRAMA
-// ({curso_id: programa}) são embutidos pela página de fechamento; nas
-// demais telas do conselho não existem e a lógica fica inerte.
+// NIVEL_DATA ({curso_id: [{id, nome, ativo}]}) é embutido pela página de
+// fechamento; nas demais telas do conselho não existe e a lógica fica
+// inerte.
 
 function temDadosNivel() {
-    return typeof NIVEL_DATA !== 'undefined' && typeof CURSO_PROGRAMA !== 'undefined';
+    return typeof NIVEL_DATA !== 'undefined';
 }
 
-// Reconstrói as opções do select de nível da linha conforme o curso
-// escolhido: só níveis do programa do curso; o nível já gravado inativo
-// permanece visível com etiqueta "(inativo)" (D3). Sem níveis ativos no
-// programa → select desabilitado + mensagem explicativa (exceto o valor
-// já gravado, que continua visível para ser aceito inalterado).
+// Reconstrói as opções do select de nível da linha conforme o CURSO
+// escolhido: só níveis daquele curso; o nível já gravado inativo permanece
+// visível com etiqueta "(inativo)" (F2). Curso sem níveis → select
+// desabilitado com "Nível não cadastrado"; sem curso → "Não se aplica".
 function atualizarNivelDaLinha(row) {
     const proxima = row.querySelector('.proxima-select');
     const nivelSel = row.querySelector('.nivel-select');
     if (!proxima || !nivelSel || !temDadosNivel()) return;
 
-    const msg = nivelSel.closest('td').querySelector('.nivel-msg');
     const cursoId = proxima.value;
-    const programa = cursoId ? (CURSO_PROGRAMA[cursoId] || '') : '';
     const nivelAtual = nivelSel.getAttribute('data-nivel-atual') || '';
 
     // Trocar/limpar o curso limpa o nível.
     nivelSel.innerHTML = '<option value="">Não se aplica</option>';
     nivelSel.disabled = true;
-    if (msg) { msg.classList.add('d-none'); msg.innerText = ''; }
     sincronizarSpanNivel(nivelSel);
-    if (!cursoId || !programa) return;
+    if (!cursoId) return;
 
-    const niveis = (NIVEL_DATA[programa] || []);
-    const ativos = niveis.filter(n => n.ativo);
+    const niveis = (NIVEL_DATA[cursoId] || []);
     const opcoes = niveis.filter(n => n.ativo || String(n.id) === String(nivelAtual));
 
     if (!opcoes.length) {
-        if (msg) {
-            msg.innerText = ativos.length
-                ? ''
-                : 'Nenhum nível cadastrado para o programa ' + programa + '.';
-            if (msg.innerText) msg.classList.remove('d-none');
-        }
+        nivelSel.options[0].text = 'Nível não cadastrado';
+        sincronizarSpanNivel(nivelSel);
         return;
     }
 

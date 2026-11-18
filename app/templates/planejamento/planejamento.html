@@ -401,15 +401,14 @@ Config para o JS (lida do data-*)
           </h6>
         </div>
         <div class="card-body p-3">
-          {# AJ22: níveis sem programa (legado) NUNCA aparecem no fechamento
-          do conselho até receberem um programa — listados no topo. #}
-          {% set niveis_sem_programa = niveis|selectattr('programa', 'none')|list %}
-          {% if niveis_sem_programa %}
+          {# AJ22-C: níveis sem curso (legado) NUNCA aparecem no fechamento
+          do conselho até serem vinculados a um curso — listados no topo. #}
+          {% if niveis_sem_curso %}
           <div class="alert alert-warning py-2 small mb-3">
             <i class="bi bi-exclamation-triangle me-1"></i>
-            <strong>Níveis sem programa</strong> — estes níveis não aparecem
-            como opção de nível no fechamento do conselho até receberem um
-            programa: {% for n in niveis_sem_programa %}{{ n.nome }}{{ ", " if not loop.last }}{% endfor %}
+            <strong>Níveis sem curso</strong> — estes níveis não aparecem
+            como opção de nível no fechamento do conselho até serem
+            vinculados a um curso: {% for n in niveis_sem_curso %}{{ n.nome }}{{ ", " if not loop.last }}{% endfor %}
           </div>
           {% endif %}
 
@@ -421,10 +420,10 @@ Config para o JS (lida do data-*)
             <div class="input-group shadow-sm">
               <input type="text" name="nome_nivel" class="form-control border-end-0"
                 placeholder="Ex: Nível 1 - Iniciante" required>
-              <select name="programa_nivel" class="form-select" style="max-width:220px;" title="Programa do nível">
-                <option value="">Sem programa</option>
-                {% for p in programas_curso %}
-                <option value="{{ p }}">{{ p }}</option>
+              <select name="curso_nivel" class="form-select" style="max-width:220px;" title="Curso do nível">
+                <option value="">Sem curso</option>
+                {% for c in cursos %}
+                <option value="{{ c.id }}">{{ c.nome }}</option>
                 {% endfor %}
               </select>
               <button class="btn btn-success px-3" type="submit" title="Adicionar Nível">
@@ -438,7 +437,7 @@ Config para o JS (lida do data-*)
               <thead class="table-light text-muted small text-uppercase">
                 <tr>
                   <th class="ps-2">Nível</th>
-                  <th>Programa</th>
+                  <th>Curso</th>
                   <th class="text-end pe-2" style="width:80px;">Ação</th>
                 </tr>
               </thead>
@@ -453,10 +452,10 @@ Config para o JS (lida do data-*)
                     {% endif %}
                   </td>
                   <td>
-                    {% if nivel.programa %}
-                    <span class="badge bg-info-subtle text-info border">{{ nivel.programa }}</span>
+                    {% if nivel.curso %}
+                    <span class="badge bg-info-subtle text-info border">{{ nivel.curso.nome }}</span>
                     {% else %}
-                    <span class="text-muted small">Sem programa</span>
+                    <span class="text-muted small">Sem curso</span>
                     {% endif %}
                   </td>
                   <td class="text-end pe-2">
@@ -511,14 +510,14 @@ Config para o JS (lida do data-*)
                       <input type="text" name="nome_nivel" class="form-control" value="{{ nivel.nome }}" required>
                     </div>
                     <div class="mb-1">
-                      <label class="form-label small fw-bold text-muted text-uppercase">Programa</label>
-                      <select name="programa_nivel" class="form-select">
-                        <option value="">Sem programa</option>
-                        {% for p in programas_curso %}
-                        <option value="{{ p }}" {% if nivel.programa==p %}selected{% endif %}>{{ p }}</option>
+                      <label class="form-label small fw-bold text-muted text-uppercase">Curso</label>
+                      <select name="curso_nivel" class="form-select">
+                        <option value="">Sem curso</option>
+                        {% for c in cursos %}
+                        <option value="{{ c.id }}" {% if nivel.curso_id==c.id %}selected{% endif %}>{{ c.nome }}</option>
                         {% endfor %}
                       </select>
-                      <small class="text-muted">Nível sem programa não aparece no fechamento do conselho.</small>
+                      <small class="text-muted">Nível sem curso não aparece no fechamento do conselho.</small>
                     </div>
                   </div>
                   <div class="modal-footer bg-light border-0">
@@ -677,19 +676,11 @@ MODAL — Cursos
             <i class="bi bi-plus-circle me-1"></i>Novo Curso
           </h6>
           <div class="row g-2">
-            <div class="col-md-4">
+            <div class="col-md-6">
               <input type="text" id="cursoNomeInput" class="form-control form-control-sm" placeholder="Nome do curso *"
                 maxlength="150">
             </div>
-            <div class="col-md-3">
-              <select id="cursoProgramaInput" class="form-select form-select-sm" title="Programa do curso">
-                <option value="">Sem programa</option>
-                {% for p in programas_curso %}
-                <option value="{{ p }}">{{ p }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
               <input type="text" id="cursoDescInput" class="form-control form-control-sm"
                 placeholder="Descrição (opcional)" maxlength="300">
             </div>
@@ -700,32 +691,12 @@ MODAL — Cursos
             </div>
           </div>
           <div id="cursoFormMsg" class="mt-2 small"></div>
-
-          {# AJ22-B: avisos do vínculo curso → programa → nível usados no
-          fechamento do conselho. #}
-          {% if cursos_sem_programa %}
-          <div class="alert alert-warning py-2 small mt-2 mb-0">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            <strong>Cursos sem programa</strong> — estes cursos não oferecem
-            nível no fechamento do conselho (apenas “Não se aplica”):
-            {% for c in cursos_sem_programa %}{{ c.nome }}{{ ", " if not loop.last }}{% endfor %}
-          </div>
-          {% endif %}
-          {% if programas_sem_nivel %}
-          <div class="alert alert-warning py-2 small mt-2 mb-0">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            <strong>Programas sem nível ativo</strong> — cursos destes
-            programas não podem receber nível no fechamento:
-            {{ programas_sem_nivel|join(', ') }}
-          </div>
-          {% endif %}
         </div>
 
         <table class="table table-hover table-sm align-middle" id="tabelaCursos">
           <thead class="table-light text-muted small text-uppercase">
             <tr>
               <th class="ps-3">Curso</th>
-              <th>Programa</th>
               <th>Descrição</th>
               <th class="text-center" style="width:100px">Status</th>
               <th class="text-center" style="width:100px">Ações</th>
@@ -742,13 +713,6 @@ MODAL — Cursos
                   <i class="bi bi-box-arrow-up-right ms-1 small opacity-50"></i>
                 </a>
               </td>
-              <td>
-                {% if c.programa %}
-                <span class="badge bg-info-subtle text-info border">{{ c.programa }}</span>
-                {% else %}
-                <span class="text-muted small">Sem programa</span>
-                {% endif %}
-              </td>
               <td class="text-muted small">{{ c.descricao or '—' }}</td>
               <td class="text-center">
                 <span class="badge bg-success-subtle text-success-emphasis">Ativo</span>
@@ -756,7 +720,7 @@ MODAL — Cursos
               <td class="text-center">
                 <button class="btn btn-sm btn-outline-primary border-0 btn-editar-curso" data-id="{{ c.id }}"
                   data-nome="{{ c.nome }}" data-desc="{{ c.descricao or '' }}"
-                  data-programa="{{ c.programa or '' }}" title="Editar curso">
+                  title="Editar curso">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-secondary border-0 btn-inativar-curso" data-id="{{ c.id }}"
@@ -767,7 +731,7 @@ MODAL — Cursos
             </tr>
             {% else %}
             <tr id="cursoVazio">
-              <td colspan="5" class="text-center text-muted py-4">
+              <td colspan="4" class="text-center text-muted py-4">
                 <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
                 Nenhum curso cadastrado para esta unidade.
               </td>
@@ -788,7 +752,6 @@ MODAL — Cursos
             <thead class="table-light text-muted small text-uppercase">
               <tr>
                 <th class="ps-3">Curso</th>
-                <th>Programa</th>
                 <th>Descrição</th>
                 <th class="text-center" style="width:100px">Status</th>
                 <th class="text-center" style="width:100px">Ações</th>
@@ -796,7 +759,7 @@ MODAL — Cursos
             </thead>
             <tbody id="cursosInativosTbody">
               <tr id="cursosInativosVazio">
-                <td colspan="5" class="text-center text-muted py-3">
+                <td colspan="4" class="text-center text-muted py-3">
                   Nenhum curso inativo.
                 </td>
               </tr>
@@ -810,19 +773,11 @@ MODAL — Cursos
           </h6>
           <div class="row g-2">
             <input type="hidden" id="editCursoId">
-            <div class="col-md-4">
+            <div class="col-md-5">
               <input type="text" id="editCursoNome" class="form-control form-control-sm" placeholder="Nome *"
                 maxlength="150">
             </div>
-            <div class="col-md-3">
-              <select id="editCursoPrograma" class="form-select form-select-sm" title="Programa do curso">
-                <option value="">Sem programa</option>
-                {% for p in programas_curso %}
-                <option value="{{ p }}">{{ p }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-5">
               <input type="text" id="editCursoDesc" class="form-control form-control-sm" placeholder="Descrição"
                 maxlength="300">
             </div>
@@ -838,7 +793,6 @@ MODAL — Cursos
           <div class="form-text mt-2">
             Alterar o nome atualiza sua exibição em todas as turmas vinculadas,
             inclusive nas de períodos encerrados e em futuras emissões de certificados.
-            O programa define quais níveis aparecem no fechamento do conselho.
           </div>
         </div>
 
