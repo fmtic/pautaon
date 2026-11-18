@@ -179,8 +179,15 @@ function sincronizarSpans() {
     document.querySelectorAll('.proxima-select').forEach(sel => {
         const span = sel.closest('td').querySelector('.proxima-texto');
         if (span) {
-            span.innerText = sel.options[sel.selectedIndex]?.text || '';
-            sel.addEventListener('change', () => { span.innerText = sel.options[sel.selectedIndex].text; });
+            // AJ22-B: quando nada está gravado no novo campo, a linha pode
+            // ter um valor LEGADO (opcao_proxima_turma) vindo de data-legado;
+            // ele aparece na impressão sem nível.
+            const textoAtual = () => {
+                if (sel.value) return sel.options[sel.selectedIndex]?.text || '';
+                return sel.dataset.legado || '';
+            };
+            span.innerText = textoAtual();
+            sel.addEventListener('change', () => { span.innerText = textoAtual(); });
         }
     });
 
@@ -196,18 +203,19 @@ function sincronizarSpans() {
 // -------------------------------------------------------------------------
 // AJ22 — Nível de destino do próximo curso (fechamento)
 // -------------------------------------------------------------------------
-// NIVEL_DATA ({programa: [{id, nome, ativo}]}) e OPCAO_PROGRAMA
-// ({opcao_id: programa}) são embutidos pela página de fechamento; nas
+// NIVEL_DATA ({programa: [{id, nome, ativo}]}) e CURSO_PROGRAMA
+// ({curso_id: programa}) são embutidos pela página de fechamento; nas
 // demais telas do conselho não existem e a lógica fica inerte.
 
 function temDadosNivel() {
-    return typeof NIVEL_DATA !== 'undefined' && typeof OPCAO_PROGRAMA !== 'undefined';
+    return typeof NIVEL_DATA !== 'undefined' && typeof CURSO_PROGRAMA !== 'undefined';
 }
 
 // Reconstrói as opções do select de nível da linha conforme o curso
-// escolhido: só níveis do programa da opção; o nível já gravado inativo
+// escolhido: só níveis do programa do curso; o nível já gravado inativo
 // permanece visível com etiqueta "(inativo)" (D3). Sem níveis ativos no
-// programa → select desabilitado + mensagem explicativa.
+// programa → select desabilitado + mensagem explicativa (exceto o valor
+// já gravado, que continua visível para ser aceito inalterado).
 function atualizarNivelDaLinha(row) {
     const proxima = row.querySelector('.proxima-select');
     const nivelSel = row.querySelector('.nivel-select');
@@ -215,7 +223,7 @@ function atualizarNivelDaLinha(row) {
 
     const msg = nivelSel.closest('td').querySelector('.nivel-msg');
     const cursoId = proxima.value;
-    const programa = cursoId ? (OPCAO_PROGRAMA[cursoId] || '') : '';
+    const programa = cursoId ? (CURSO_PROGRAMA[cursoId] || '') : '';
     const nivelAtual = nivelSel.getAttribute('data-nivel-atual') || '';
 
     // Trocar/limpar o curso limpa o nível.
@@ -227,16 +235,18 @@ function atualizarNivelDaLinha(row) {
 
     const niveis = (NIVEL_DATA[programa] || []);
     const ativos = niveis.filter(n => n.ativo);
+    const opcoes = niveis.filter(n => n.ativo || String(n.id) === String(nivelAtual));
 
-    if (!ativos.length) {
+    if (!opcoes.length) {
         if (msg) {
-            msg.innerText = 'Nenhum nível cadastrado para o programa ' + programa + '.';
-            msg.classList.remove('d-none');
+            msg.innerText = ativos.length
+                ? ''
+                : 'Nenhum nível cadastrado para o programa ' + programa + '.';
+            if (msg.innerText) msg.classList.remove('d-none');
         }
         return;
     }
 
-    const opcoes = niveis.filter(n => n.ativo || String(n.id) === String(nivelAtual));
     opcoes.forEach(n => {
         const opt = document.createElement('option');
         opt.value = n.id;
@@ -335,15 +345,17 @@ function salvarFechamento() {
 
         if (alunoId && selects.length >= 2) {
             const situacao = selects[0].value;
-            const proximaTurmaId = selects[1].value;
-            // AJ22: 3º select = nível de destino (pode estar desabilitado;
-            // .value continua legível). Vazio → "Não se aplica" (NULL).
+            // AJ22-B: 2º select = CURSO de destino (curso.id, não mais a
+            // opção do catálogo legado). Vazio → NULL.
+            const proximoCursoId = selects[1].value;
+            // 3º select = nível de destino (pode estar desabilitado; .value
+            // continua legível). Vazio → "Não se aplica" (NULL).
             const proximoNivelId = selects[2] ? selects[2].value : '';
 
             dadosParaSalvar.push({
                 aluno_id: alunoId,
                 situacao: situacao,
-                proxima_turma_id: proximaTurmaId || null,
+                proximo_curso_id: proximoCursoId || null,
                 proximo_nivel_id: proximoNivelId || null
             });
         }

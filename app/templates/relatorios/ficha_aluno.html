@@ -478,6 +478,11 @@ endblock %} {% block styles %}
             {% if e.situacao_final %}
             <span class="badge bg-success-subtle text-success-emphasis">{{ e.situacao_final }}</span>
             {% endif %}
+            {% if e.destino %}
+            <div class="small text-muted mt-1">
+              <i class="bi bi-signpost-split me-1"></i>Próximo curso: {{ e.destino }}
+            </div>
+            {% endif %}
             {% if e.observacao %}
             <div class="small text-muted mt-1 pt-obs-conselho">
               {{ e.observacao }}

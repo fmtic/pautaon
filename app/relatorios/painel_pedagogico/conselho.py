@@ -126,6 +126,15 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
     turma_map: dict[int, dict] = defaultdict(_bloco_vazio)
     por_oferta: dict[tuple[int, int], dict] = defaultdict(_bloco_vazio)
 
+    # AJ22-B: destino (curso + nível) do conselho FINAL, por oferta. Leitura
+    # em lote; a opção legada (sem curso) entra apenas como fallback textual.
+    from app.services.proximo_curso import destinos_por_conselho
+
+    destinos = destinos_por_conselho(conselhos)
+    destinos_por_oferta: dict[tuple[int, int], dict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+
     for cons in conselhos:
         respostas = respostas_por_conselho.get(cons.id, [])
         _aplicar(turma_map[cons.turma_id], cons, respostas, perguntas)
@@ -135,6 +144,10 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
             respostas,
             perguntas,
         )
+        if (cons.etapa or "").lower() == "final":
+            texto = (destinos.get(cons.id) or {}).get("texto") or ""
+            if texto:
+                destinos_por_oferta[(cons.turma_id, cons.turma_curso_id)][texto] += 1
 
     saida: dict[int, dict] = {}
     for tid, bloco in turma_map.items():
@@ -147,6 +160,14 @@ def por_turma(turmas_ids: Iterable[int]) -> dict[int, dict]:
                 {
                     "turma_curso_id": oferta_id,
                     "rotulo": rotulo_oferta(oferta),
+                    "destinos": [
+                        {"texto": texto, "qtd": qtd}
+                        for texto, qtd in sorted(
+                            destinos_por_oferta.get(
+                                (tid, oferta_id), {}
+                            ).items()
+                        )
+                    ],
                     **_serializar(bloco_oferta),
                 }
             )

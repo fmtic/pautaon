@@ -1,27 +1,40 @@
 """AJ22 — Regra de "próximo curso + nível" no fechamento do conselho.
 
-Fonte única da regra (D1–D8 do AJ22):
+Fonte única da regra (E1–E4 do AJ22-B):
 
-- `PROGRAMAS_CURSO`: lista central dos programas de curso (texto livre na
-  oferta `turma_curso.programa`). Os novos selects (opção de próximo
-  curso e nível) usam ESTA lista; `_PROGRAMAS_OFERTA` de
-  `registros/turmas.py` segue intacto (não foi refatorado).
+- O próximo curso é um `Curso` JÁ CADASTRADO da unidade da turma
+  (`curso.ativo=True`), a mesma fonte/escopo dos selects de curso de
+  turma/oferta. Não existe mais catálogo paralelo: `opcao_proxima_turma`
+  é LEGADO (somente leitura histórica, sem novas escritas).
+- `PROGRAMAS_CURSO`: lista central dos programas de curso, gravada em
+  `curso.programa` (o campo de `turma_curso.programa` segue intocado e
+  sem vínculo com esta coluna).
 - "Programa com níveis" é DERIVADO (D4): existe ao menos um nível ATIVO
   da unidade da turma com aquele programa. Nível sem programa (NULL,
   legado) nunca entra (D2).
 - O nível é elegível quando: existe, está ativo (salvo a exceção de
   "inalterado" tratada no chamador), pertence à unidade da turma (ou é
   global `unidade_id IS NULL`, mesmo critério dos demais leitores de
-  nível) e tem `programa` igual ao da opção escolhida.
+  nível) e tem `programa` igual ao do curso escolhido.
 """
 
 from __future__ import annotations
 
-from app.models import Nivel, OpcaoProximaTurma
+from app.models import Curso, Nivel, OpcaoProximaTurma
 
-# Lista ÚNICA de programas de curso (AJ22). Mantida aqui para os novos
-# selects; `_PROGRAMAS_OFERTA` (registros/turmas.py) não foi refatorado.
+# Lista ÚNICA de programas de curso (AJ22). Mantida aqui para os selects
+# de curso e nível; `_PROGRAMAS_OFERTA` (registros/turmas.py) não foi
+# refatorado.
 PROGRAMAS_CURSO = ("Profissionalizante", "Esporte", "Meio Ambiente", "Outros")
+
+
+def cursos_da_unidade(unidade_id: int, apenas_ativos: bool = True):
+    """Cursos da unidade da turma — mesma fonte/escopo dos selects de curso
+    de turma/oferta (`registros/turmas.py`)."""
+    query = Curso.query.filter(Curso.unidade_id == unidade_id)
+    if apenas_ativos:
+        query = query.filter(Curso.ativo == True)  # noqa: E712
+    return query.order_by(Curso.nome).all()
 
 
 def _niveis_da_unidade(unidade_id: int, apenas_ativos: bool = False):
@@ -72,24 +85,26 @@ def programa_tem_niveis(programa: str | None, unidade_id: int) -> bool:
 def nivel_elegivel(
     nivel_id: int,
     *,
-    programa_opcao: str | None,
+    programa_curso: str | None,
     unidade_id: int,
 ) -> Nivel | None:
-    """Devolve o `Nivel` se ele pode ser escolhido para a opção, senão None.
+    """Devolve o `Nivel` se ele pode ser escolhido para o curso, senão None.
 
-    Elegível = existe, ativo, programa igual ao da opção e unidade da
+    Elegível = existe, ativo, programa igual ao do curso e unidade da
     turma (ou global). Nível sem programa (NULL) nunca é elegível (D2).
     """
     nivel = Nivel.query.get(nivel_id)
     if nivel is None or not nivel.ativo:
         return None
-    return nivel if nivel_compativel(nivel, programa_opcao, unidade_id) else None
+    return nivel if nivel_compativel(nivel, programa_curso, unidade_id) else None
 
 
-def nivel_compativel(nivel: Nivel, programa_opcao: str | None, unidade_id: int) -> bool:
+def nivel_compativel(
+    nivel: Nivel, programa_curso: str | None, unidade_id: int
+) -> bool:
     """Mesma regra de elegibilidade sem exigir `ativo` (a exceção de
     "inalterado" do AJ22 é decidida pelo chamador, que já checou o ativo)."""
-    programa = (programa_opcao or "").strip()
+    programa = (programa_curso or "").strip()
     if not programa:
         return False
     if (nivel.programa or "").strip() != programa:
@@ -99,11 +114,95 @@ def nivel_compativel(nivel: Nivel, programa_opcao: str | None, unidade_id: int) 
     return True
 
 
-def opcao_da_escolha(proxima_turma_id) -> OpcaoProximaTurma | None:
-    """Opção do catálogo por id; ids inválidos/None viram None."""
-    if proxima_turma_id in (None, "", "None"):
+def curso_da_escolha(proximo_curso_id) -> Curso | None:
+    """Curso por id; ids inválidos/None viram None."""
+    if proximo_curso_id in (None, "", "None"):
         return None
     try:
-        return OpcaoProximaTurma.query.get(int(proxima_turma_id))
+        return Curso.query.get(int(proximo_curso_id))
     except (TypeError, ValueError):
         return None
+
+
+def programa_do_curso(curso: Curso | None) -> str:
+    """Programa normalizado do curso ('' quando não há)."""
+    return (getattr(curso, "programa", None) or "").strip()
+
+
+def destinos_por_conselho(conselhos) -> dict:
+    """Resolve, EM LOTE, o destino exibido por conselho.
+
+    Devolve ``{conselho_id: {'curso', 'nivel', 'legado', 'texto',
+    'curso_inativo'}}``. Regras do AJ22-B:
+
+    - `proximo_curso_id` presente → mostra `curso.nome` (e o nível, se
+      houver). Curso hoje inativo continua sendo exibido (histórico).
+    - `proximo_curso_id` NULL e `proxima_turma_id` presente → fallback
+      LEGADO com o nome da opção, sem nível.
+    - Nada gravado → texto vazio (os leitores exibem "—").
+
+    1 consulta por tabela de destino, independente do número de linhas.
+    """
+    conselhos = list(conselhos)
+    cursos_ids = {
+        c.proximo_curso_id for c in conselhos if c.proximo_curso_id
+    }
+    niveis_ids = {
+        c.proximo_nivel_id for c in conselhos if c.proximo_nivel_id
+    }
+    legados_ids = {
+        c.proxima_turma_id
+        for c in conselhos
+        if not c.proximo_curso_id and c.proxima_turma_id
+    }
+
+    cursos = (
+        {
+            c.id: c
+            for c in Curso.query.filter(Curso.id.in_(cursos_ids)).all()
+        }
+        if cursos_ids
+        else {}
+    )
+    niveis = (
+        {
+            n.id: n
+            for n in Nivel.query.filter(Nivel.id.in_(niveis_ids)).all()
+        }
+        if niveis_ids
+        else {}
+    )
+    legados = (
+        {
+            o.id: o
+            for o in OpcaoProximaTurma.query.filter(
+                OpcaoProximaTurma.id.in_(legados_ids)
+            ).all()
+        }
+        if legados_ids
+        else {}
+    )
+
+    destinos = {}
+    for cons in conselhos:
+        curso = cursos.get(cons.proximo_curso_id)
+        nivel = niveis.get(cons.proximo_nivel_id)
+        legado = None
+        if cons.proximo_curso_id:
+            partes = []
+            if curso is not None:
+                partes.append(curso.nome)
+            if nivel is not None:
+                partes.append(nivel.nome)
+            texto = " · ".join(partes)
+        else:
+            legado = legados.get(cons.proxima_turma_id)
+            texto = legado.nome if legado is not None else ""
+        destinos[cons.id] = {
+            "curso": curso,
+            "nivel": nivel,
+            "legado": legado,
+            "texto": texto,
+            "curso_inativo": bool(curso is not None and not curso.ativo),
+        }
+    return destinos

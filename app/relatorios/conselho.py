@@ -192,30 +192,12 @@ def resultado_conselho():
                             freq.conceito
                         )
 
-                # AJ22: próximo curso (opção) e nível em LOTE — sem N+1 por
-                # linha do relatório.
-                from app.models import Nivel, OpcaoProximaTurma
+                # AJ22-B: curso + nível de destino em LOTE (sem N+1), com
+                # fallback para a opção legada quando `proximo_curso_id` é
+                # NULL.
+                from app.services.proximo_curso import destinos_por_conselho
 
-                opcao_ids = {
-                    cons.proxima_turma_id for cons in conselhos
-                    if cons.proxima_turma_id
-                }
-                nivel_ids = {
-                    cons.proximo_nivel_id for cons in conselhos
-                    if cons.proximo_nivel_id
-                }
-                opcoes_map = (
-                    {o.id: o for o in OpcaoProximaTurma.query.filter(
-                        OpcaoProximaTurma.id.in_(opcao_ids)
-                    ).all()}
-                    if opcao_ids else {}
-                )
-                niveis_map = (
-                    {n.id: n for n in Nivel.query.filter(
-                        Nivel.id.in_(nivel_ids)
-                    ).all()}
-                    if nivel_ids else {}
-                )
+                destinos = destinos_por_conselho(conselhos)
 
                 for cons in conselhos:
                     aluno = alunos_map.get(cons.aluno_id)
@@ -236,14 +218,8 @@ def resultado_conselho():
                     )
                     presenca_pct = estatisticas.get("presenca_percentual", 0)
 
-                    opcao = opcoes_map.get(cons.proxima_turma_id)
-                    nivel_destino = niveis_map.get(cons.proximo_nivel_id)
-                    partes_proximo = []
-                    if opcao is not None:
-                        partes_proximo.append(opcao.nome)
-                    if nivel_destino is not None:
-                        partes_proximo.append(nivel_destino.nome)
-                    proxima = " · ".join(partes_proximo) if partes_proximo else "-"
+                    destino = destinos.get(cons.id) or {}
+                    proxima = destino.get("texto") or "-"
 
                     registros.append({
                         "turma": turma.nome,

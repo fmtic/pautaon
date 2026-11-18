@@ -9,9 +9,9 @@ Regras cobertas (docs/D5_0_desenho.md D5.2 + decisões Q1/Q4/Q5):
       D5.5 o banco recusa conselho sem oferta (o ramo legado NULL saiu).
     - Respostas tipo TURMA saem de ConselhoResposta e passam a viver em
       `TurmaCurso.avaliacao_*` (JSON da avaliação coletiva da oferta).
-    - Fechamento por oferta: situacao_final/proxima_turma_id no conselho da
-      oferta, próximas turmas via catálogo OpcaoProximaTurma e frequência
-      filtrada por `Frequencia.turma_curso_id`.
+    - Fechamento por oferta: situacao_final/proximo_curso_id no conselho da
+      oferta, próximo curso via catálogo `Curso` e frequência filtrada por
+      `Frequencia.turma_curso_id`.
     - `alternar_conselho` alterna SÓ a oferta (D5.5: a ponte que escrevia
       `Turma.conselho_concluido` foi removida junto com a coluna).
     - Isolamento por unidade (B3/B4) vale para todos os perfis.
@@ -34,7 +34,6 @@ from app.models import (
     ConselhoResposta,
     Curso,
     Frequencia,
-    OpcaoProximaTurma,
     PerguntaConselho,
     PeriodoLetivo,
     Turma,
@@ -469,10 +468,13 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     _enturma(app, ids, "aluno_b", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
     with app.app_context():
-        opt = OpcaoProximaTurma(nome="Avançado", ativo=True)
-        db.session.add(opt)
+        curso = Curso(
+            nome="Avançado", unidade_id=ids["un_a"], ativo=True,
+            programa="Esporte",
+        )
+        db.session.add(curso)
         db.session.commit()
-        opt_id = opt.id
+        curso_id = curso.id
 
     r = client.get(f"/conselho/fechamento/{ids['turma']}?oferta_sel={ids['ofertas'][0]}")
     assert r.status_code == 200
@@ -480,8 +482,8 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     assert "Aluno Ana" in body
     assert "Aluno Beto" not in body
     assert f'data-oferta-id="{ids["ofertas"][0]}"' in body
-    # Catálogo (Passo 5): a opção próxima usa o id do catálogo, não o nome.
-    assert f'<option value="{opt_id}">Avançado</option>' in body
+    # Próximo curso usa o id do CURSO (AJ22-B), não o catálogo legado.
+    assert f'<option value="{curso_id}">Avançado</option>' in body
 
 
 def test_fechar_frequencia_filtrada_pela_oferta(client, app):
@@ -516,10 +518,13 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
     _enturma(app, ids, "aluno_b", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
     with app.app_context():
-        opt = OpcaoProximaTurma(nome="Avançado", ativo=True)
-        db.session.add(opt)
+        curso = Curso(
+            nome="Avançado", unidade_id=ids["un_a"], ativo=True,
+            programa="Esporte",
+        )
+        db.session.add(curso)
         db.session.commit()
-        opt_id = opt.id
+        curso_id = curso.id
 
     r = client.post(
         f"/conselho/fechamento/{ids['turma']}/salvar",
@@ -527,10 +532,10 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
             "oferta_id": ids["ofertas"][0],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "APROVADO",
-                 "proxima_turma_id": str(opt_id)},
+                 "proximo_curso_id": str(curso_id)},
                 # aluno_b é matriculado só na OUTRA oferta → ignorado
                 {"aluno_id": ids["aluno_b"], "situacao": "EVADIDO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )
@@ -542,7 +547,8 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
         ).one()
         assert c.aluno_id == ids["aluno_a"]
         assert c.situacao_final == "Aprovado"  # normalizado para o CHECK
-        assert c.proxima_turma_id == opt_id
+        assert c.proximo_curso_id == curso_id
+        assert c.proxima_turma_id is None  # legado não é escrito
         assert c.concluido is True
         assert ConselhoClasse.query.filter_by(
             aluno_id=ids["aluno_b"]
@@ -560,7 +566,7 @@ def test_fechar_salvar_situacao_invalida_recusa_tudo(client, app):
             "oferta_id": ids["ofertas"][0],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "EMPREGADO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )
@@ -581,7 +587,7 @@ def test_fechar_salvar_sem_oferta_valida_recusa(client, app):
             "oferta_id": ids["oferta_inativa"],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "APROVADO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )

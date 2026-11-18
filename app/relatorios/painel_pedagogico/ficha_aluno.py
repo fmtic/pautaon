@@ -43,6 +43,7 @@ from app.models.enums import (
 from app.services import aluno_perfil
 from app.services.aluno_status import status_alunos
 from app.services.conselho_leitura import conselho_do_aluno
+from app.services.proximo_curso import destinos_por_conselho
 from app.services.frequencia_oferta import agregar_por_oferta, agregar_por_turma
 from app.services.turma_curso_horario import grades_para_exibicao
 
@@ -348,6 +349,8 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
         else []
     )
     por_etapa = {c.etapa: c for c in conselhos}
+    # AJ22-B: destino (curso + nível) por etapa, resolvido em lote.
+    destinos = destinos_por_conselho(conselhos)
 
     respostas: dict[EtapaConselho, dict[int, dict]] = defaultdict(dict)
     ids_pergunta = set()
@@ -393,6 +396,9 @@ def _conselho(aluno_id: int, oferta=None) -> dict:
                 "data": c.data_inicio,
                 "concluido": c.concluido,
                 "situacao_final": c.situacao_final,
+                # AJ22-B: curso + nível escolhidos no fechamento desta etapa
+                # ("" quando nada foi gravado).
+                "destino": (destinos.get(c.id) or {}).get("texto") or "",
                 # AJ19: observação geral do aluno naquela etapa/oferta.
                 "observacao": c.observacao,
                 "respostas": respostas.get(e, {}),

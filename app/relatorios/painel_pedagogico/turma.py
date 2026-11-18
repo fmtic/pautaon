@@ -170,6 +170,7 @@ def montar(turma: Turma, unidade_id: int | None) -> dict:
                 "turma_curso_id": oferta_bloco["turma_curso_id"],
                 "etapas": conselho.etapas(oferta_bloco),
                 "agregado": conselho.agregar_respostas(oferta_bloco),
+                "destinos": oferta_bloco.get("destinos", []),
                 "avaliacoes": avaliacoes_coletivas.get(
                     oferta_bloco["turma_curso_id"], {}
                 ),

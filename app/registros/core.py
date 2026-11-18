@@ -60,7 +60,7 @@ from .shared import assert_unidade_context
 # ---------------------------------------------------------------------------
 # ABAS DO PLANEJAMENTO — preservar a aba (e os filtros) após uma escrita
 # ---------------------------------------------------------------------------
-_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis', 'proximos')
+_ABAS_PLANEJAMENTO = ('temas', 'valores', 'niveis')
 
 
 def _aba_planejamento(valor) -> str | None:
@@ -919,6 +919,7 @@ def listar_cursos():
             'id': c.id,
             'nome': c.nome,
             'descricao': c.descricao or '',
+            'programa': c.programa or '',
         }
         for c in cursos
     ])
@@ -941,9 +942,30 @@ def listar_cursos_inativos():
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
+            'programa': curso.programa or '',
         }
         for curso in cursos
     ])
+
+
+def _ler_programa_curso(data):
+    """Extrai/valida `programa` de um payload JSON de curso.
+
+    Devolve ``(programa, erro)``. `programa` só é considerado enviado quando
+    a chave existe no JSON (compatibilidade com clientes antigos que não
+    mandam o campo); `None`/'' limpam o valor.
+    """
+    from app.services.proximo_curso import PROGRAMAS_CURSO
+
+    if 'programa' not in data:
+        return False, None  # sentinela: campo não enviado
+    programa = data.get('programa')
+    if programa is not None and not isinstance(programa, str):
+        return None, 'Programa inválido.'
+    programa = (programa or '').strip() or None
+    if programa and programa not in PROGRAMAS_CURSO:
+        return None, 'Programa inválido.'
+    return programa, None
 
 
 @bp.route('/cursos/novo', methods=['POST'])
@@ -964,10 +986,16 @@ def novo_curso():
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
+    programa, erro_programa = _ler_programa_curso(data)
+    if erro_programa:
+        return jsonify({'success': False, 'message': erro_programa}), 400
+    if programa is False:  # campo não enviado
+        programa = None
 
     curso = Curso(
         nome=nome,
         descricao=descricao or None,
+        programa=programa,
         unidade_id=unidade_id
     )
     try:
@@ -978,6 +1006,7 @@ def novo_curso():
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
+            'programa': curso.programa or '',
             'dias_aula': 0,
             # Curso recém-criado não tem turmas ainda.
             'carga_total_fmt': '—',
@@ -1016,9 +1045,16 @@ def editar_curso(curso_id):
     nome = nome.strip()
     descricao = data.get('descricao')
     descricao = descricao.strip() if isinstance(descricao, str) else ''
+    programa, erro_programa = _ler_programa_curso(data)
+    if erro_programa:
+        return jsonify({'success': False, 'message': erro_programa}), 400
 
     curso.nome = nome
     curso.descricao = descricao or None
+    # `programa` só muda quando veio no JSON (clientes antigos preservam o
+    # valor atual); enviado vazio/None limpa.
+    if programa is not False:
+        curso.programa = programa
     try:
         db.session.commit()
         dias = sum(calcular_dias_aula_turma(t) for t in curso.turmas if t.ativo)
@@ -1031,6 +1067,7 @@ def editar_curso(curso_id):
         return jsonify({
             'success': True, 'id': curso.id, 'nome': curso.nome,
             'descricao': curso.descricao or '',
+            'programa': curso.programa or '',
             'dias_aula': dias,
             'carga_total_fmt': carga_fmt,
         })
@@ -1095,6 +1132,7 @@ def reativar_curso(curso_id):
             'id': curso.id,
             'nome': curso.nome,
             'descricao': curso.descricao or '',
+            'programa': curso.programa or '',
             'dias_aula': 0,
             'carga_total_fmt': '—',
         })
@@ -1167,35 +1205,6 @@ def planejamento():
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
-            return _voltar_planejamento()
-
-        if tipo_post == 'proxima_opcao':
-            # AJ22: catálogo GLOBAL de opções de próximo curso. O campo
-            # Programa só é gravado para ADMIN (D5); para os demais perfis
-            # o valor enviado é ignorado.
-            from app.models import OpcaoProximaTurma
-            from app.services.proximo_curso import PROGRAMAS_CURSO
-            nome_opcao = request.form.get('nome_opcao', '').strip()
-            programa_opcao = None
-            if current_user.role == UserRole.ADMIN:
-                programa_opcao = request.form.get('programa_opcao', '').strip() or None
-                if programa_opcao and programa_opcao not in PROGRAMAS_CURSO:
-                    flash("Programa de próximo curso inválido.", 'warning')
-                    return _voltar_planejamento()
-            if nome_opcao:
-                try:
-                    db.session.add(OpcaoProximaTurma(
-                        nome=nome_opcao,
-                        programa=programa_opcao,
-                        ativo=True,
-                    ))
-                    db.session.commit()
-                    flash(f"Opção de próximo curso '{nome_opcao}' adicionada com sucesso!", 'success')
-                except Exception:
-                    db.session.rollback()
-                    flash("Erro ao salvar opção de próximo curso.", 'danger')
-            else:
-                flash("Informe o nome da opção de próximo curso.", 'warning')
             return _voltar_planejamento()
 
         if tipo_post == 'valor':
@@ -1338,18 +1347,17 @@ def planejamento():
         q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
     valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
 
-    # AJ22: catálogo global de opções de próximo curso + programas que já
-    # têm ao menos um nível ativo (aviso "programa sem nível").
-    from app.models import Nivel, OpcaoProximaTurma
+    # AJ22-B: programas que já têm ao menos um nível ATIVO na unidade
+    # (aviso "programa sem nível"). `niveis` já respeita o escopo da unidade.
     from app.services.proximo_curso import PROGRAMAS_CURSO
-    proximas_opcoes = OpcaoProximaTurma.query.order_by(
-        OpcaoProximaTurma.nome
-    ).all()
     programas_com_nivel = {
         (n.programa or '').strip()
-        for n in Nivel.query.filter(Nivel.ativo == True).all()  # noqa: E712
-        if (n.programa or '').strip()
+        for n in niveis
+        if n.ativo and (n.programa or '').strip()
     }
+    programas_sem_nivel = [
+        p for p in PROGRAMAS_CURSO if p not in programas_com_nivel
+    ]
 
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
     aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
@@ -1365,6 +1373,11 @@ def planejamento():
             ativo=True, unidade_id=unidade_id
         ).order_by(Curso.nome).all()
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
+    # AJ22-B: cursos ativos sem programa não oferecem nível no fechamento do
+    # conselho ("Não se aplica") — listados como aviso no modal de cursos.
+    cursos_sem_programa = [
+        c for c in cursos if not (c.programa or '').strip()
+    ]
 
     return render_template('planejamento/planejamento.html',
                            turmas=turmas,
@@ -1376,10 +1389,10 @@ def planejamento():
                            filtro_curso=filtro_curso,
                            niveis=niveis,
                            valores_esportista=valores_esportista,
-                           proximas_opcoes=proximas_opcoes,
                            programas_curso=PROGRAMAS_CURSO,
                            programas_com_nivel=programas_com_nivel,
-                           is_admin=(current_user.role == UserRole.ADMIN),
+                           programas_sem_nivel=programas_sem_nivel,
+                           cursos_sem_programa=cursos_sem_programa,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
@@ -1531,55 +1544,6 @@ def inativar_nivel(id):
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
     return _voltar_planejamento()
-
-
-# ---------------------------------------------------------------------------
-# OPÇÕES DE PRÓXIMO CURSO (AJ22) — catálogo GLOBAL, sem unidade
-# ---------------------------------------------------------------------------
-
-@bp.route('/planejamento/proxima-opcao/<int:id>/programa', methods=['POST'])
-@login_required
-def editar_programa_proxima_opcao(id):
-    """AJ22/D5: o campo Programa da opção de próximo curso é restrito a
-    ADMIN — o catálogo é global e o programa condiciona a escolha de nível
-    no fechamento do conselho."""
-    if current_user.role != UserRole.ADMIN:
-        abort(403)
-    from app.models import OpcaoProximaTurma
-    from app.services.proximo_curso import PROGRAMAS_CURSO
-    opcao = db.get_or_404(OpcaoProximaTurma, id)
-    programa = request.form.get('programa_opcao', '').strip() or None
-    if programa and programa not in PROGRAMAS_CURSO:
-        flash("Programa de próximo curso inválido.", 'warning')
-        return _voltar_planejamento('proximos')
-    try:
-        opcao.programa = programa
-        db.session.commit()
-        flash(f"Programa da opção '{opcao.nome}' atualizado.", 'success')
-    except Exception:
-        db.session.rollback()
-        flash("Erro ao atualizar programa da opção.", 'danger')
-    return _voltar_planejamento('proximos')
-
-
-@bp.route('/planejamento/proxima-opcao/<int:id>/inativar', methods=['POST'])
-@login_required
-def inativar_proxima_opcao(id):
-    """Ativa/inativa a opção de próximo curso (mesmos perfis do
-    planejamento). Inativar NÃO apaga escolhas já gravadas no conselho."""
-    if current_user.role not in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.SECRETARIA):
-        abort(403)
-    from app.models import OpcaoProximaTurma
-    opcao = db.get_or_404(OpcaoProximaTurma, id)
-    try:
-        opcao.ativo = not opcao.ativo
-        db.session.commit()
-        status = 'ativada' if opcao.ativo else 'inativada'
-        flash(f"Opção '{opcao.nome}' {status}!", 'success')
-    except Exception:
-        db.session.rollback()
-        flash("Erro ao alterar status da opção.", 'warning')
-    return _voltar_planejamento('proximos')
 
 
 # ---------------------------------------------------------------------------

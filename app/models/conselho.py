@@ -116,19 +116,19 @@ class PerguntaConselho(SoftDeleteMixin, db.Model):
 
 class OpcaoProximaTurma(SoftDeleteMixin, db.Model):
     """
-    Catálogo de destinos possíveis após o conselho final.
-    Ex.: 'Aprovado para Avançado', 'Reencaminhado para Básico', 'Egresso'.
+    Catálogo LEGADO de destinos após o conselho final (AJ22-B).
 
-    AJ22: `programa` (texto, nullable) marca o programa de curso ao qual a
-    opção se refere. Opção sem programa (NULL/vazio) não permite escolher
-    nível no fechamento; com programa, o nível só pode ser escolhido se
-    existir nível ativo daquele programa na unidade da turma.
+    Preservado apenas para leitura histórica: `conselho_classe.
+    proxima_turma_id` pode apontar para uma linha daqui. Desde o AJ22-B o
+    fechamento grava `proximo_curso_id` (FK → `curso`) e NÃO escreve mais
+    neste catálogo; a aba "Próximos Cursos" e as rotas de edição/inativação
+    foram removidas. A coluna `programa` do AJ22 original foi descartada
+    (nunca chegou a produção) — o programa agora é do curso.
     """
     __tablename__ = 'opcao_proxima_turma'
 
     id: int = db.Column(db.Integer, primary_key=True)
     nome: str = db.Column(db.String(100), nullable=False)
-    programa: str = db.Column(db.String(50))
 
 
 class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
@@ -144,7 +144,10 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
         - `etapa`: INICIAL, PERCURSO ou FINAL (enum nativo).
         - `situacao_final`: Aprovado, Reprovado por Falta, Desistente, Evadido,
           Participação, Concluído (VARCHAR + CHECK).
-        - `proxima_turma_id`: destino sugerido após conselho final.
+        - `proximo_curso_id`: curso de destino (AJ22-B, FK → curso RESTRICT);
+          `proximo_nivel_id`: nível desse curso (FK → nivel RESTRICT).
+        - `proxima_turma_id`: LEGADO do catálogo OpcaoProximaTurma, somente
+          leitura histórica — o fechamento não escreve mais nessa coluna.
         - `concluido=True` indica que o conselho foi fechado.
 
     Constraints (D5.5):
@@ -203,10 +206,22 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
     # Continua VARCHAR; a CHECK constraint garante os valores válidos.
     situacao_final: str = db.Column(db.String(30))
 
+    # LEGADO (AJ22-B): destino antigo do catálogo OpcaoProximaTurma. A coluna
+    # permanece para leitura histórica; o fechamento não escreve mais nela.
     proxima_turma_id: int = db.Column(
         db.Integer, db.ForeignKey('opcao_proxima_turma.id')
     )
     proxima_turma_obj = db.relationship('OpcaoProximaTurma')
+
+    # AJ22-B: próximo curso (FK → curso, RESTRICT). NULL = "Não se aplica".
+    # O nível de destino abaixo só existe quando o curso escolhido tem
+    # programa com níveis elegíveis.
+    proximo_curso_id: int = db.Column(
+        db.Integer,
+        db.ForeignKey('curso.id', ondelete='RESTRICT'),
+        nullable=True,
+    )
+    proximo_curso_obj = db.relationship('Curso')
 
     # AJ22: nível de destino do próximo curso (FK → nivel, RESTRICT).
     # NULL = "Não se aplica". Vínculo por referência: renomear o nível
