@@ -843,16 +843,20 @@ def test_tela_planejamento_niveis_sem_curso_e_sem_programa(client, app):
 def test_turma_detalhe_rotulo_nome_curso(client, app):
     ids = _setup(app)
     _login(client, ids)
-    cid = _curso(app, "Avançado", ids["unidade"])
-    _nivel(app, "Sub-12", curso_id=cid, unidade_id=ids["unidade"])
+    # AJ22-E: a ficha mostra somente os níveis do curso da oferta. Para
+    # continuar exercitando o rótulo "Nome — Curso" do AJ22-C, criamos outro
+    # curso ("Avançado") e um nível nele — que não deve aparecer na ficha.
+    _curso(app, "Avançado", ids["unidade"])
+    _nivel(app, "Sub-12", curso_id=ids["curso"], unidade_id=ids["unidade"])
     _nivel(app, "Legado", curso_id=None, unidade_id=ids["unidade"])
 
     r = client.get(f"/turma/{ids['turma']}")
     body = r.data.decode("utf-8")
     assert r.status_code == 200
-    # Nível com curso mostra "Nome — Curso"; legado fica só com o nome.
-    assert "Sub-12 — Avançado" in body
-    assert re.search(r">Legado<", body)
+    # AJ22-C/E: nível do curso da oferta aparece só com o nome no select.
+    assert re.search(r'value="Sub-12"[^>]*>Sub-12<', body)
+    # Níveis de outros cursos e legados sem curso ficam de fora da ficha.
+    assert "Sub-12 — Avançado" not in body
     assert "Legado —" not in body
 
 

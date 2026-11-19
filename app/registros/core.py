@@ -75,18 +75,26 @@ def _aba_planejamento(valor) -> str | None:
     return aba if aba in _ABAS_PLANEJAMENTO else None
 
 
-def _voltar_planejamento(aba=None):
+def _voltar_planejamento(aba=None, nivel_grupo=None):
     """Redirect pós-escrita mantendo a aba e os filtros da aba Temas.
 
     A aba vem do `hidden` `aba` (ou do argumento) e os filtros do contexto em
     que o formulário foi aberto (`filtro_curso`, `filtro_q`, `filtro_page`).
     Tudo passa por whitelist/validação: valor inválido cai na aba padrão
     (Temas) sem querystring, como o redirect antigo fazia.
+
+    AJ22-F: `nivel_grupo` (id do curso do nível gravado) reabre o bloco
+    recolhível correspondente já no HTML do redirect — sem depender de JS.
+    Níveis legados (sem curso) não geram parâmetro: o aviso já fica aberto.
     """
     aba = _aba_planejamento(aba) or _aba_planejamento(request.form.get('aba'))
     params = {}
     if aba and aba != 'temas':
         params['aba'] = aba
+
+    grupo = (str(nivel_grupo) if nivel_grupo is not None else '').strip()
+    if grupo.isdigit():
+        params['nivel_grupo'] = int(grupo)
 
     curso_id = (request.form.get('filtro_curso') or '').strip()
     if curso_id.isdigit():
@@ -1141,6 +1149,8 @@ def planejamento():
                 flash("Curso do nível inválido.", 'warning')
                 return _voltar_planejamento()
             curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
+            # AJ22-F: reabre (no redirect) o bloco do curso do nível gravado.
+            nivel_grupo_aberto = curso_nivel_id
             if nome_nivel:
                 nivel_unidade_id = get_unidade_id()
                 # ETAPA B6: criar nível exige unidade efetiva na sessão; a
@@ -1181,7 +1191,7 @@ def planejamento():
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
-            return _voltar_planejamento()
+            return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
 
         if tipo_post == 'valor':
             # A1 — Valores do Esportista: catálogo usado no lançamento de
@@ -1335,6 +1345,12 @@ def planejamento():
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
     aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
 
+    # AJ22-F: bloco de nível reaberto após uma escrita (whitelist: só id de
+    # curso). O estado vem do servidor no HTML do redirect, não de JS.
+    nivel_grupo_aberto = (request.args.get('nivel_grupo') or '').strip()
+    if not nivel_grupo_aberto.isdigit():
+        nivel_grupo_aberto = ''
+
     q_periodos = PeriodoLetivo.query.filter_by(ativo=True)
     if unidade_id:
         q_periodos = q_periodos.filter_by(unidade_id=unidade_id)
@@ -1369,6 +1385,7 @@ def planejamento():
                            curso_cores=curso_cores,
                            unidade_id=unidade_id,
                            aba_ativa=aba_ativa,
+                           nivel_grupo_aberto=nivel_grupo_aberto,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
@@ -1477,6 +1494,8 @@ def editar_nivel(id):
         flash("Curso do nível inválido.", 'warning')
         return _voltar_planejamento()
     curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
+    # AJ22-F: o bloco reaberto é o do curso RESULTANTE da edição.
+    nivel_grupo_aberto = curso_nivel_id
     if curso_nivel_id is not None:
         curso_nivel = db.session.get(Curso, curso_nivel_id)
         if (
@@ -1485,7 +1504,7 @@ def editar_nivel(id):
             or not curso_nivel.ativo
         ):
             flash("Curso do nível inválido.", 'warning')
-            return _voltar_planejamento()
+            return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
     if novo_nome:
         try:
             nivel.nome = novo_nome
@@ -1500,7 +1519,7 @@ def editar_nivel(id):
             flash("Erro ao atualizar nível.", 'danger')
     else:
         flash("O nome do nível não pode ser vazio.", 'warning')
-    return _voltar_planejamento()
+    return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
 
 
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
@@ -1522,7 +1541,8 @@ def inativar_nivel(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
-    return _voltar_planejamento()
+    # AJ22-F: reabre o bloco do curso deste nível após ativar/inativar.
+    return _voltar_planejamento(nivel_grupo=nivel.curso_id)
 
 
 # ---------------------------------------------------------------------------

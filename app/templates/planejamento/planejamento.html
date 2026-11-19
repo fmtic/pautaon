@@ -433,6 +433,24 @@ Config para o JS (lida do data-*)
             </div>
           </form>
 
+          {# AJ22-F: controles do collapse dos blocos de curso (a ação é só JS;
+             sem JS o <noscript> abaixo mantém todo o conteúdo visível). #}
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <button type="button" id="btnExpandirNiveis" class="btn btn-sm btn-outline-secondary js-nivel-collapse">
+              <i class="bi bi-chevron-double-down me-1" aria-hidden="true"></i>Expandir todos
+            </button>
+            <button type="button" id="btnRecolherNiveis" class="btn btn-sm btn-outline-secondary js-nivel-collapse">
+              <i class="bi bi-chevron-double-up me-1" aria-hidden="true"></i>Recolher todos
+            </button>
+          </div>
+          <noscript>
+            <style>
+              /* Progressive enhancement: sem JS o collapse não é acionado. */
+              #tabNiveis .grupo-nivel-membros.collapse:not(.show) { display: table-row-group !important; }
+              #tabNiveis .js-nivel-collapse { display: none !important; }
+            </style>
+          </noscript>
+
           <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
               <thead class="table-light text-muted small text-uppercase">
@@ -442,21 +460,38 @@ Config para o JS (lida do data-*)
                   <th class="text-end pe-2" style="width:80px;">Ação</th>
                 </tr>
               </thead>
-              <tbody>
                 {# AJ22-D: "Sem curso" no topo e um bloco por curso (A-Z),
                 cada um com a contagem de níveis no cabeçalho. Cursos sem
-                nível não geram bloco; inativos vão no fim do bloco. #}
+                nível não geram bloco; inativos vão no fim do bloco.
+                AJ22-F: cada bloco de CURSO é um collapse do Bootstrap,
+                recolhido por padrão; "sem curso" fica sempre aberto.
+                Cabeçalho e linhas ficam em <tbody> distintos para o collapse
+                não esconder o próprio cabeçalho. #}
                 {% for grupo in grupos_niveis %}
-                <tr class="grupo-nivel-header bg-light"
-                  data-grupo-nivel="{{ 'sem-curso' if not grupo.curso else grupo.curso.id }}">
+                {% set chave = 'sem-curso' if not grupo.curso else grupo.curso.id|string %}
+                {% set aberto = not grupo.curso or nivel_grupo_aberto == chave %}
+                <tbody class="grupo-nivel-cabecalho-tbody">
+                <tr class="grupo-nivel-header bg-light" id="cabecalho-nivel-grupo-{{ chave }}"
+                  data-grupo-nivel="{{ chave }}"
+                  aria-controls="nivel-grupo-{{ chave }}"
+                  aria-expanded="{{ 'true' if aberto else 'false' }}"
+                  {% if grupo.curso %}
+                  role="button" tabindex="0" data-bs-toggle="collapse"
+                  data-bs-target="#nivel-grupo-{{ chave }}"
+                  {% endif %}>
                   <td colspan="3" class="py-2">
                     <div class="d-flex align-items-center gap-2">
+                      {% if grupo.curso %}
+                      <i class="bi bi-chevron-right grupo-nivel-chevron" aria-hidden="true"></i>
+                      {% endif %}
                       <i class="bi bi-bar-chart-fill text-info me-1 small"></i>
                       <span class="fw-semibold text-dark">{{ grupo.curso.nome if grupo.curso else 'Sem curso' }}</span>
                       <span class="badge bg-secondary">{{ grupo.total }} {{ 'nível' if grupo.total == 1 else 'níveis' }}</span>
                     </div>
                   </td>
                 </tr>
+                </tbody>
+                <tbody id="nivel-grupo-{{ chave }}" class="grupo-nivel-membros collapse{{ ' show' if aberto }}">
                 {% for nivel in grupo.niveis %}
                 <tr class="{{ 'opacity-50 bg-light' if not nivel.ativo }}">
                   <td class="fw-semibold text-secondary ps-2">
@@ -494,7 +529,9 @@ Config para o JS (lida do data-*)
                   </td>
                 </tr>
                 {% endfor %}
+                </tbody>
                 {% endfor %}
+                <tbody>
                 {% if not grupos_niveis %}
                 <tr>
                   <td colspan="3" class="text-center text-muted py-5">
@@ -503,7 +540,7 @@ Config para o JS (lida do data-*)
                   </td>
                 </tr>
                 {% endif %}
-              </tbody>
+                </tbody>
             </table>
           </div>
 

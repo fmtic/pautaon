@@ -306,3 +306,40 @@ O usuário solicitou que apenas os níveis do curso da oferta em que o aluno est
 
 - `tests/test_aj22e_nivel_enturmar.py`: **6 passed** (filtro por oferta A/B, curso sem níveis, turma de oferta única, gravação válida no aluno e inscrição, sanitização de nível de outro curso e opção "Não se aplica").
 - Regressões: `tests/test_aj22d_ordenacao_niveis.py` (**7 passed**) e `tests/test_aj22_proximo_curso_nivel.py` (**43 passed**). Total de 56 testes AJ22 verdes.
+
+---
+
+## Adendo AJ22-F — Níveis recolhíveis por curso + nível atual do aluno enturmado
+
+**Data:** 19/11/2026 · **Branch:** `nova_feature` · **Migration:** nenhuma · **Schema:** inalterado
+
+### Motivação
+
+Com o catálogo de níveis por curso (AJ22-C) e a ordenação/agrupamento A-Z (AJ22-D), a aba "Níveis" do planejamento passou a acumular um bloco por curso. A listagem longa dificultava a localização de um nível. Em paralelo, o select da ficha do aluno enturmado (AJ22-E) filtrava corretamente por curso da oferta, mas valores antigos de texto livre — ou de outro curso — não tinham opção correspondente: abrir e salvar o select acabava apagando o dado.
+
+### Implementação
+
+1. **Blocos recolhíveis (`app/templates/planejamento/planejamento.html`, CSS e JS):**
+   - Cada bloco de curso usa o `collapse` do Bootstrap 5.3.8 já carregado em `base.html`: cabeçalho com `role="button"`, `tabindex="0"`, `data-bs-toggle="collapse"`, `data-bs-target`, `aria-expanded`, `aria-controls` e chevron; as linhas ficam em um `<tbody id="nivel-grupo-<curso>">` separado do cabeçalho.
+   - Estado inicial recolhido; "sem curso" (aviso e bloco) sempre aberto. Botões **Expandir todos** / **Recolher todos** acima da tabela; o JS também trata Enter/Espaço no cabeçalho.
+   - Progressive enhancement: todas as linhas estão no HTML e um `<noscript>` força `display: table-row-group` nos blocos recolhidos (e esconde os botões que dependem de JS).
+   - Ordenação A-Z, contagens, inativos no fim e agrupamento do AJ22-D preservados.
+
+2. **Reabertura sem JS (`app/registros/core.py`):** `_voltar_planejamento` ganhou `nivel_grupo` (whitelist: só id numérico). Criação, edição (curso resultante) e ativação/inativação passam o curso do nível; o GET valida o parâmetro e o template já renderiza `collapse show` + `aria-expanded="true"` naquele bloco. Nível sem curso não gera parâmetro — o aviso já fica aberto.
+
+3. **Select do aluno enturmado (`app/templates/turmas/detalhe.html`, `app/registros/alunos.py`):** o valor de `inscricao_aluno.nivel or aluno.nivel` é renderizado como primeira opção `valor (atual)` (mesmo fora do catálogo/de outro curso); a listagem restante continua sendo apenas `niveis_por_curso_id.get(oferta.curso_id, [])`. `atualizar_nivel_aluno` consulta a inscrição antes da sanitização e aceita o valor enviado quando ele é igual ao valor atual; qualquer valor **novo** fora do curso continua sendo sanitizado para `None`, como em `enturmar_alunos`. `Inscricao.nivel` permanece `String(30)` de texto livre.
+
+### Arquivos tocados (AJ22-F)
+
+- `app/templates/planejamento/planejamento.html`, `app/static/js/planejamento/planejamento.js`, `app/static/css/planejamento/planejamento.css`
+- `app/registros/core.py`, `app/registros/alunos.py`, `app/templates/turmas/detalhe.html`
+- `tests/test_aj22f_niveis_colapsiveis.py`, `tests/test_aj22f_nivel_aluno_enturmado.py` (novos)
+- `tests/test_aj22_proximo_curso_nivel.py` e `tests/test_aj22d_ordenacao_niveis.py` (testes de select ajustados ao contrato AJ22-E)
+- `tests/snapshots/aj6b3_*.txt` e `tests/snapshots/aj6b6_admin_registros_ver_turma.txt` (golden do HTML de `/turma` regenerado: AJ22-E acrescentou o hidden `turma_curso_id` ao form do nível)
+- `backlog_desenvolvimento.md`, `app/models/MER.md`, este relatório
+
+### Verificação (AJ22-F)
+
+- Novos testes: **18 passed** (9 de collapse/ARIA/reabertura/N+1 de níveis e 9 de nível atual do aluno/preservação no POST/N+1 de alunos).
+- Regressões: AJ22 (**43**), AJ22-D (**7**) e AJ22-E (**11**) verdes.
+- Suíte completa: **1893 passed, 0 failed** (base 1875 — já com os 11 do AJ22-E — + 18 novos). `ruff --select F821,F811,F841`, `git diff --check` limpos; nenhuma migration/head alterado.

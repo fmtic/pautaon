@@ -90,6 +90,44 @@
   })();
 
   /* ─────────────────────────────────────────────
+     4b. Blocos de níveis por curso (AJ22-F)
+     Colapso via Bootstrap; teclado e "expandir/recolher todos".
+     ───────────────────────────────────────────── */
+  (function initGruposNiveis() {
+    const headers = document.querySelectorAll(
+      '.grupo-nivel-header[data-bs-toggle="collapse"]'
+    );
+    if (!headers.length) return;
+
+    const collapseDe = (header) => {
+      const alvo = document.querySelector(header.dataset.bsTarget);
+      if (!alvo || !window.bootstrap?.Collapse) return null;
+      return window.bootstrap.Collapse.getOrCreateInstance(alvo, { toggle: false });
+    };
+
+    // O clique já é tratado pelo data-bs-toggle; o teclado precisa de handler.
+    headers.forEach((header) => {
+      header.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        collapseDe(header)?.toggle();
+      });
+    });
+
+    const todos = (expandir) => {
+      headers.forEach((header) => {
+        const collapse = collapseDe(header);
+        if (!collapse) return;
+        if (expandir) collapse.show();
+        else collapse.hide();
+        header.setAttribute('aria-expanded', String(expandir));
+      });
+    };
+    document.getElementById('btnExpandirNiveis')?.addEventListener('click', () => todos(true));
+    document.getElementById('btnRecolherNiveis')?.addEventListener('click', () => todos(false));
+  })();
+
+  /* ─────────────────────────────────────────────
      5. Gestão de Cursos (AJAX)
      ───────────────────────────────────────────── */
   (function initCursos() {

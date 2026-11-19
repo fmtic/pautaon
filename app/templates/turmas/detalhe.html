@@ -221,10 +221,18 @@
                       <input type="hidden" name="turma_id" value="{{ turma.id }}" />
                       <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}" />
                       <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
+                        {# AJ22-F: o valor já gravado (texto livre/legado/de outro curso) vem
+                           primeiro e marcado como "(atual)". Reenviar o select sem mudar
+                           não apaga o dado: o POST aceita o valor atual. #}
+                        {% if nivel_atual and nivel_atual != 'Não se aplica' %}
+                        <option value="{{ nivel_atual }}" selected>{{ nivel_atual }} (atual)</option>
+                        {% endif %}
                         <option value="Não se aplica" {% if not nivel_atual or nivel_atual == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
                         {# AJ22-E: exibe apenas os níveis do curso desta oferta específica #}
                         {% for nv in niveis_por_curso_id.get(oferta.curso_id, []) %}
-                        <option value="{{ nv.nome }}" {% if nivel_atual == nv.nome %}selected{% endif %}>{{ nv.nome }}</option>
+                        {% if nv.nome != nivel_atual %}
+                        <option value="{{ nv.nome }}">{{ nv.nome }}</option>
+                        {% endif %}
                         {% endfor %}
                       </select>
                     </form>

@@ -1,3 +1,9 @@
+### Alterações do dia — 19/11/2026 (AJ22-F — blocos de nível recolhíveis + nível atual do aluno enturmado)
+
+Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.
+
+**AJ22-F.** (1) Aba "Níveis" do planejamento: cada bloco de curso virou um `collapse` do Bootstrap, **recolhido por padrão**, com cabeçalho clicável/teclável (`role="button"`, `tabindex="0"`, chevron, `aria-expanded`/`aria-controls`) e botões **Expandir todos** / **Recolher todos**. O aviso "Níveis sem curso" (e seu bloco) permanece sempre aberto; sem JS um `<noscript>` mantém todo o conteúdo visível (progressive enhancement). Agrupamento A-Z e contagem do AJ22-D inalterados. Após criar/editar/inativar um nível, `_voltar_planejamento` inclui `nivel_grupo=<curso>` e o servidor já renderiza aquele bloco com `show`/`aria-expanded="true"` — o redirect funciona sem JS. (2) Ficha do aluno enturmado em `turmas/detalhe.html`: o valor já gravado na inscrição (texto livre, legado ou de outro curso) aparece como **primeira opção `(atual)`**; a lista continua restrita aos níveis ativos do curso da oferta (AJ22-E). `atualizar_nivel_aluno` sanitiza valores novos fora do curso para `None`, com exceção do valor atual, para que salvar sem mudar não apague o dado; `Inscricao.nivel` segue texto livre. Testes: `tests/test_aj22f_niveis_colapsiveis.py` e `tests/test_aj22f_nivel_aluno_enturmado.py`. MER §8.2 e relatório `docs/Relatórios/AJ22_ProximoCursoNivel.md` atualizados (adendo AJ22-F). Os testes de select do AJ22-C/D foram ajustados ao contrato do AJ22-E (a ficha mostra só os níveis do curso da oferta) e os snapshots golden do HTML de `/turma` foram regenerados para incluir o hidden `turma_curso_id` introduzido pelo AJ22-E.
+
 ### Alterações do dia — 19/11/2026 (AJ22-E — select de nível na enturmação restrito ao curso)
 
 Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.

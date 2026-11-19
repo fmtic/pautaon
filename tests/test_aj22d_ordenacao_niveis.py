@@ -210,8 +210,12 @@ def test_selects_da_turma_ordenados_por_curso_e_nivel(client, app):
     _login(client, ids)
     zeta = _curso(app, "Zeta", ids["unidade"])
     alfa = _curso(app, "Alfa", ids["unidade"])
-    _nivel(app, "Básico", alfa, ids["unidade"])
-    _nivel(app, "Álgebra", zeta, ids["unidade"])
+    # AJ22-E: a ficha mostra somente os níveis do curso DA OFERTA do aluno;
+    # a ordem A-Z continua valendo dentro desse conjunto (AJ22-D).
+    _nivel(app, "Básico", ids["curso_base"], ids["unidade"])
+    _nivel(app, "Álgebra", ids["curso_base"], ids["unidade"])
+    _nivel(app, "Intermediário", alfa, ids["unidade"])
+    _nivel(app, "Zeta Nível", zeta, ids["unidade"])
     _nivel(app, "Avulso", None, ids["unidade"])
 
     body = client.get(f"/turma/{ids['turma']}").get_data(as_text=True)
@@ -222,13 +226,16 @@ def test_selects_da_turma_ordenados_por_curso_e_nivel(client, app):
     opcoes = re.findall(
         r'<option value="([^"]*)"[^>]*>([^<]*)</option>', selects[0]
     )
-    # Valores inalterados (só o nome); rótulo "Nome — Curso" do AJ22-C.
+    # Valores e rótulos continuam sendo apenas o nome do nível (AJ22-E).
     assert [valor for valor, _ in opcoes] == [
-        "Não se aplica", "Avulso", "Básico", "Álgebra",
+        "Não se aplica", "Álgebra", "Básico",
     ]
     assert [texto for _, texto in opcoes] == [
-        "Não se aplica", "Avulso", "Básico — Alfa", "Álgebra — Zeta",
+        "Não se aplica", "Álgebra", "Básico",
     ]
+    # Níveis de outros cursos e o legado sem curso ficam de fora.
+    for nome in ("Intermediário", "Zeta Nível", "Avulso"):
+        assert nome not in [valor for valor, _ in opcoes]
 
 
 # ---------------------------------------------------------------------------

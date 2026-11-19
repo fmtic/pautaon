@@ -353,11 +353,27 @@ def atualizar_nivel_aluno(aluno_id):
         except (ValueError, TypeError):
             turma_curso = None
 
+    inscricao = None
+    if turma_curso:
+        inscricao = Inscricao.query.filter_by(
+            turma_curso_id=turma_curso.id,
+            aluno_id=aluno.id,
+            ativo=True,
+        ).first()
+    # AJ22-F: mesmo critério da ficha (`inscricao.nivel or aluno.nivel`) para
+    # reconhecer o valor já gravado — um texto livre/de outro curso continua
+    # sendo aceito quando o usuário apenas reenvia o select sem mudança.
+    nivel_atual = (
+        inscricao.nivel if inscricao and inscricao.nivel else None
+    ) or aluno.nivel
+
     if nivel == "Não se aplica":
         aluno.nivel = None
     elif nivel:
         # AJ22-E: se turma_curso_id foi informada, sanitização defensiva
         # garante que o nível pertence ao curso da oferta correspondente.
+        # AJ22-F: exceção para o valor atual, exibido como "(atual)" na ficha
+        # mesmo fora do catálogo/do curso — salvar sem mudar não apaga o dado.
         if turma_curso:
             niveis_validos = {
                 n.nome
@@ -367,21 +383,15 @@ def atualizar_nivel_aluno(aluno_id):
                     Nivel.ativo == True,
                 ).all()
             }
-            if nivel in niveis_validos:
+            if nivel in niveis_validos or nivel == nivel_atual:
                 aluno.nivel = nivel
             else:
                 aluno.nivel = None
         else:
             aluno.nivel = nivel
 
-    if turma_curso:
-        inscricao = Inscricao.query.filter_by(
-            turma_curso_id=turma_curso.id,
-            aluno_id=aluno.id,
-            ativo=True,
-        ).first()
-        if inscricao:
-            inscricao.nivel = aluno.nivel
+    if inscricao:
+        inscricao.nivel = aluno.nivel
 
     try:
         db.session.commit()
