@@ -401,8 +401,9 @@ Config para o JS (lida do data-*)
           </h6>
         </div>
         <div class="card-body p-3">
-          {# AJ22-C: níveis sem curso (legado) NUNCA aparecem no fechamento
-          do conselho até serem vinculados a um curso — listados no topo. #}
+          {# AJ22-C/D: níveis sem curso (legado) NUNCA aparecem no fechamento
+          do conselho até serem vinculados a um curso — listados no topo,
+          em A-Z (AJ22-D), inativos ao fim. #}
           {% if niveis_sem_curso %}
           <div class="alert alert-warning py-2 small mb-3">
             <i class="bi bi-exclamation-triangle me-1"></i>
@@ -442,7 +443,21 @@ Config para o JS (lida do data-*)
                 </tr>
               </thead>
               <tbody>
-                {% for nivel in niveis %}
+                {# AJ22-D: "Sem curso" no topo e um bloco por curso (A-Z),
+                cada um com a contagem de níveis no cabeçalho. Cursos sem
+                nível não geram bloco; inativos vão no fim do bloco. #}
+                {% for grupo in grupos_niveis %}
+                <tr class="grupo-nivel-header bg-light"
+                  data-grupo-nivel="{{ 'sem-curso' if not grupo.curso else grupo.curso.id }}">
+                  <td colspan="3" class="py-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <i class="bi bi-bar-chart-fill text-info me-1 small"></i>
+                      <span class="fw-semibold text-dark">{{ grupo.curso.nome if grupo.curso else 'Sem curso' }}</span>
+                      <span class="badge bg-secondary">{{ grupo.total }} {{ 'nível' if grupo.total == 1 else 'níveis' }}</span>
+                    </div>
+                  </td>
+                </tr>
+                {% for nivel in grupo.niveis %}
                 <tr class="{{ 'opacity-50 bg-light' if not nivel.ativo }}">
                   <td class="fw-semibold text-secondary ps-2">
                     <i class="bi bi-bar-chart-fill me-2 small opacity-50"></i>{{ nivel.nome }}
@@ -478,14 +493,16 @@ Config para o JS (lida do data-*)
                     </div>
                   </td>
                 </tr>
-                {% else %}
+                {% endfor %}
+                {% endfor %}
+                {% if not grupos_niveis %}
                 <tr>
                   <td colspan="3" class="text-center text-muted py-5">
                     <i class="bi bi-info-circle d-block mb-2 opacity-25 fs-3"></i>
                     <small>Nenhum nível cadastrado ainda.</small>
                   </td>
                 </tr>
-                {% endfor %}
+                {% endif %}
               </tbody>
             </table>
           </div>

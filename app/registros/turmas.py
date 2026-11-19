@@ -63,6 +63,7 @@ from app.utils.dias_semana import (
     weekday_para_nome,
 )
 from app.utils.formatters import formatar_ch
+from app.utils.ordenacao import ordenar_niveis
 from app.utils.logica import (
     _blocked_dates_str,
     calcular_idades,
@@ -1507,14 +1508,16 @@ def ver_turma(id):
     )
     # Busca os níveis cadastrados pela unidade para o modal de enturmação.
     # Inclui níveis legados sem unidade (unidade_id IS NULL) para compatibilidade.
-    niveis_cadastrados = (
+    # AJ22-D: ordenação A-Z na aplicação (curso, depois nível; "sem curso"
+    # primeiro, posição mantida), sem depender do collation do PostgreSQL e
+    # sem consulta por nível (curso já vem de `joinedload`).
+    niveis_cadastrados = ordenar_niveis(
         Nivel.query
         .options(joinedload(Nivel.curso))
         .filter(
             (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
             Nivel.ativo == True,
         )
-        .order_by(Nivel.nome)
         .all()
     )
     # Lista de alunos agrupada pela oferta; a ficha mantém cada vínculo como

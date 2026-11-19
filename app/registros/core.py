@@ -35,6 +35,11 @@ from app.models import (
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
+from app.utils.ordenacao import (
+    agrupar_niveis_por_curso,
+    chave_ordenacao,
+    ordenar_niveis,
+)
 from app.utils.timezone import get_local_now
 from app.utils.logica import (
     PendenciaValorAula,
@@ -1307,9 +1312,13 @@ def planejamento():
             TemaAula.curso_id, TemaAula.ordem, TemaAula.id
         ).paginate(page=pagina_temas, per_page=25, error_out=False)
     from app.models import Nivel
-    niveis = Nivel.query.options(joinedload(Nivel.curso)).order_by(Nivel.nome).all()
+    # AJ22-D: a ordem A-Z é feita na aplicação (chave normalizada), não pelo
+    # collation do banco. `joinedload` evita uma consulta por nível ao agrupar.
+    niveis = Nivel.query.options(joinedload(Nivel.curso)).all()
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
+    grupos_niveis = agrupar_niveis_por_curso(niveis)
+    niveis = ordenar_niveis(niveis)
 
     # A1: catálogo de valores do esportista da unidade, ordenado por nome sem
     # diferenciar maiúsculas (mesma variável usada no KPI, na aba e no loop).
@@ -1319,7 +1328,8 @@ def planejamento():
     valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
 
     # AJ22-C: níveis sem curso (legado) NUNCA aparecem no fechamento do
-    # conselho até serem vinculados — listados no topo do cadastro.
+    # conselho até serem vinculados — listados no topo do cadastro (AJ22-D:
+    # também em A-Z, com inativos no fim).
     niveis_sem_curso = [n for n in niveis if n.curso_id is None]
 
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
@@ -1334,7 +1344,12 @@ def planejamento():
     if unidade_id:
         cursos = Curso.query.filter_by(
             ativo=True, unidade_id=unidade_id
-        ).order_by(Curso.nome).all()
+        ).all()
+        # AJ22-D: mesma chave normalizada dos blocos de nível (A-Z, sem
+        # depender do collation do PostgreSQL).
+        cursos = sorted(
+            cursos, key=lambda c: (chave_ordenacao(c.nome), c.id or 0)
+        )
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
 
     return render_template('planejamento/planejamento.html',
@@ -1347,6 +1362,7 @@ def planejamento():
                            filtro_curso=filtro_curso,
                            niveis=niveis,
                            niveis_sem_curso=niveis_sem_curso,
+                           grupos_niveis=grupos_niveis,
                            valores_esportista=valores_esportista,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,

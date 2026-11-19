@@ -199,3 +199,55 @@ SELECT COUNT(*) FROM conselho_classe WHERE proximo_nivel_id IS NOT NULL;
   AJ22-B removidos (a coluna não existe mais).
 - `ruff --select F821,F811,F841` limpo nos arquivos Python tocados;
   `git diff --check` limpo.
+
+---
+
+# Adendo AJ22-D — Níveis agrupados por curso e ordenados A-Z (apresentação)
+
+**Escopo:** somente apresentação. **Sem migration, sem schema, sem regras de
+gravação** — a migration `a7b8c9d0e1f2` e o head do Alembic continuam os
+mesmos do AJ22-C; fechamento, leitores, cadastro/edição de níveis, perfis,
+isolamento por unidade e validações não mudaram.
+
+## O que mudou
+
+- **Helper único** `app/utils/ordenacao.py`: `chave_ordenacao()` normaliza
+  (`NFD` → remove marcas diacríticas → `casefold`), `agrupar_niveis_por_curso()`
+  monta os blocos e `ordenar_niveis()` devolve a lista plana na mesma ordem.
+  Desempate sempre por `id`, então "avançado" e "Avançado" ficam juntos
+  sem depender do collation do PostgreSQL.
+- **Aba "Níveis" do planejamento** (`app/registros/core.py` +
+  `planejamento.html`): o aviso "Níveis sem curso" permanece no topo e agora
+  lista os nomes em A-Z; abaixo, um bloco por curso com **nome do curso e
+  contagem** no cabeçalho (`N nível/is`), cursos em A-Z e níveis em A-Z
+  dentro de cada bloco. Curso sem nível não gera bloco. Nível inativo
+  continua visível com "INATIVO" e vai **no fim do bloco** do seu curso.
+  O select de Curso do cadastro/edição também usa a chave normalizada.
+- **Selects de `turmas/detalhe.html`** (ficha do aluno + enturmação):
+  mesmos valores (`Nome`) e rótulos "Nome — Curso" do AJ22-C; a ordem passa
+  a ser **curso A-Z → nível A-Z**, com os níveis **sem curso primeiro**
+  (antes não havia agrupamento: `ORDER BY nivel.nome` do banco; a posição
+  "sem curso" primeiro é preservada porque a chave do grupo vazia sorts
+  antes de qualquer nome). A consulta mantém `joinedload(Nivel.curso)` —
+  nenhuma consulta extra por nível.
+
+## Arquivos tocados (AJ22-D)
+
+- `app/utils/ordenacao.py` (novo)
+- `app/registros/core.py`, `app/templates/planejamento/planejamento.html`
+- `app/registros/turmas.py` (`ordenar_niveis` no `niveis_cadastrados`;
+  `detalhe.html` intocado — já trazia o rótulo do AJ22-C)
+- `tests/test_aj22d_ordenacao_niveis.py` (novo, 7 testes)
+- `backlog_desenvolvimento.md`, este adendo
+
+## Verificação (AJ22-D)
+
+- `tests/test_aj22d_ordenacao_niveis.py`: **7 passed** — acentos/caixa
+  mista, agrupamento com contagem e ordem A-Z dos blocos, "sem curso" no
+  topo, curso vazio sem bloco, inativos no fim com etiqueta, ordem/valores
+  dos selects da turma e contagem de queries constante com 2×7 níveis.
+- Regressão: `tests/test_aj22_proximo_curso_nivel.py` **43 passed**.
+- Suíte completa: **1864 passed, 0 failed** (base 1857 + 7 novos testes;
+  1161 warnings conhecidos/preexistentes).
+- Sem alteração de migration/head; `git diff --check` e
+  `ruff --select F821,F811,F841` limpos nos arquivos tocados.
