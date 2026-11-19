@@ -251,3 +251,58 @@ isolamento por unidade e validações não mudaram.
   1161 warnings conhecidos/preexistentes).
 - Sem alteração de migration/head; `git diff --check` e
   `ruff --select F821,F811,F841` limpos nos arquivos tocados.
+
+## Adendo AJ22-E — Select de nível no modal de enturmação restrito ao curso da oferta
+
+**Data:** 19/11/2026 · **Branch:** `nova_feature` · **Migration:** nenhuma
+
+### Motivação
+
+No AJ22-C, o catálogo `Nivel` passou a pertencer a um curso (`nivel.curso_id`), e no AJ22-D os níveis foram ordenados A-Z por curso. No entanto, ao enturmar alunos em `turmas/detalhe.html` (`#modalEnturmar`), o `<select name="nivel_{{ a.id }}">` ainda iterava sobre a lista global de níveis da unidade (`niveis_cadastrados`), disponibilizando opções de todos os cursos para a oferta que estava sendo enturmada.
+
+O usuário solicitou que apenas os níveis do curso da oferta em que o aluno está sendo enturmado fossem exibidos no select.
+
+### Implementação
+
+1. **Backend (`app/registros/turmas.py` — `ver_turma`):**
+   - A partir de `niveis_cadastrados` (que já carrega os níveis ativos com `joinedload(Nivel.curso)` e ordenação A-Z), deriva em memória:
+     ```python
+     niveis_oferta_sel = (
+         [n for n in niveis_cadastrados if n.curso_id == oferta_sel.curso_id]
+         if oferta_sel is not None
+         else []
+     )
+     ```
+   - Passa `niveis_oferta_sel` para o contexto do `render_template`. Nenhuma consulta adicional ao banco.
+
+2. **Template (`app/templates/turmas/detalhe.html`):**
+   - No `#modalEnturmar`, substitui a iteração `niveis_cadastrados` por `niveis_oferta_sel`.
+   - Como todos os níveis do select pertencem exclusivamente ao curso selecionado, o rótulo da opção foi simplificado para `{{ nivel.nome }}` (sem redundância de sufixo `— Curso`).
+   - "Não se aplica" permanece como primeira opção (padrão).
+   - Se o curso não tem níveis cadastrados, o select exibe unicamente "Não se aplica".
+
+3. **Defesa em profundidade no POST (`app/registros/turmas.py` — `enturmar_alunos`):**
+   - Antes do loop de alunos, obtém os nomes dos níveis válidos do curso da oferta:
+     ```python
+     niveis_curso_nomes = {
+         n.nome
+         for n in Nivel.query.filter(
+             Nivel.curso_id == oferta_sel.curso_id,
+             (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
+             Nivel.ativo == True,
+         ).all()
+     }
+     ```
+   - Se o valor recebido no formulário não pertencer a esse conjunto, é sanitizado para `None` (não grava nível de outro curso).
+
+### Arquivos tocados (AJ22-E)
+
+- `app/registros/turmas.py` (`niveis_oferta_sel` em `ver_turma` e sanitização em `enturmar_alunos`)
+- `app/templates/turmas/detalhe.html` (iteração `niveis_oferta_sel` no `#modalEnturmar`)
+- `tests/test_aj22e_nivel_enturmar.py` (novo: 6 testes)
+- `backlog_desenvolvimento.md`, este relatório, `app/models/MER.md`
+
+### Verificação (AJ22-E)
+
+- `tests/test_aj22e_nivel_enturmar.py`: **6 passed** (filtro por oferta A/B, curso sem níveis, turma de oferta única, gravação válida no aluno e inscrição, sanitização de nível de outro curso e opção "Não se aplica").
+- Regressões: `tests/test_aj22d_ordenacao_niveis.py` (**7 passed**) e `tests/test_aj22_proximo_curso_nivel.py` (**43 passed**). Total de 56 testes AJ22 verdes.

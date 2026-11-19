@@ -1520,6 +1520,20 @@ def ver_turma(id):
         )
         .all()
     )
+    # AJ22-E: no modal de enturmação, o select de nível do aluno exibe APENAS
+    # os níveis pertencentes ao curso da oferta selecionada (oferta_sel).
+    niveis_oferta_sel = (
+        [n for n in niveis_cadastrados if n.curso_id == oferta_sel.curso_id]
+        if oferta_sel is not None
+        else []
+    )
+    # AJ22-E: mapa de níveis por curso para as fichas de alunos enturmados
+    # em cada oferta (detalhe.html). Cada card de oferta exibe apenas os níveis
+    # cadastrados para o seu respectivo curso.
+    niveis_por_curso_id = {}
+    for n in niveis_cadastrados:
+        if n.curso_id is not None:
+            niveis_por_curso_id.setdefault(n.curso_id, []).append(n)
     # Lista de alunos agrupada pela oferta; a ficha mantém cada vínculo como
     # linha própria dentro do painel recolhível do curso correspondente.
     alunos_por_oferta = {oferta.id: [] for oferta in ofertas_todas}
@@ -1657,6 +1671,8 @@ def ver_turma(id):
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
         niveis_cadastrados=niveis_cadastrados,
+        niveis_oferta_sel=niveis_oferta_sel,
+        niveis_por_curso_id=niveis_por_curso_id,
         ofertas=ofertas_lista,
         ofertas_todas=ofertas_todas,
         oferta_principal=oferta_principal,
@@ -1749,9 +1765,22 @@ def enturmar_alunos(turma_id):
             entrada_obrigatoria = bool(ini_eff and hoje_ent > ini_eff)
             enturmados = 0
             acoes = []
+            # AJ22-E: nomes dos níveis ativos do curso da oferta para sanitização defensiva
+            niveis_curso_nomes = {
+                n.nome
+                for n in Nivel.query.filter(
+                    Nivel.curso_id == oferta_sel.curso_id,
+                    (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
+                    Nivel.ativo == True,
+                ).all()
+            }
             for aluno in alunos:
                 nivel_form = request.form.get(f"nivel_{aluno.id}")
                 nivel_val = None if nivel_form == "Não se aplica" else nivel_form
+
+                # AJ22-E: se o nível não pertence ao curso da oferta, não grava
+                if nivel_val and nivel_val not in niveis_curso_nomes:
+                    nivel_val = None
 
                 if nivel_form:
                     aluno.nivel = nivel_val

@@ -1,3 +1,9 @@
+### Alterações do dia — 19/11/2026 (AJ22-E — select de nível na enturmação restrito ao curso)
+
+Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.
+
+**AJ22-E.** No modal de enturmação (`turmas/detalhe.html`), o select de nível do aluno (`nivel_{{ a.id }}`) passou a exibir **apenas os níveis pertencentes ao curso da oferta em que o aluno está sendo enturmado** (`oferta_sel.curso_id`). Anteriormente (AJ22-D), todos os níveis ativos da unidade (de todos os cursos) eram listados indistintamente com o sufixo " — Curso". Com a alteração: (1) `ver_turma` (`app/registros/turmas.py`) deriva em memória `niveis_oferta_sel` a partir de `niveis_cadastrados` (zero queries adicionais); (2) `detalhe.html` itera exclusivamente sobre `niveis_oferta_sel`, exibindo `{{ nivel.nome }}` de forma limpa e sem redundância; (3) níveis de outros cursos e níveis sem curso (legados) são omitidos; (4) curso sem níveis exibe apenas "Não se aplica"; (5) `POST /turma/enturmar/<id>` sanitiza defensivamente contra valores que não pertençam ao curso da oferta (sanitização para `None` em caso de valor inválido); (6) o select de nível da ficha do aluno (`select name="nivel"`) e demais fluxos permanecem intactos. Testes: `tests/test_aj22e_nivel_enturmar.py` (**6 novos testes** cobrindo filtro por oferta A/B, curso sem níveis, turma de oferta única, gravação com sucesso no aluno e inscrição, sanitização de nível de outro curso e opção "Não se aplica"). MER §7.5/§8.2 e relatório `docs/Relatórios/AJ22_ProximoCursoNivel.md` atualizados (adendo AJ22-E).
+
 ### Alterações do dia — 19/11/2026 (AJ22-D — níveis agrupados por curso e ordenados A-Z)
 
 Branch `nova_feature`, **sem migration, sem alteração de schema e sem mudança nas regras de gravação** (apresentação apenas), sem push, sem merge.

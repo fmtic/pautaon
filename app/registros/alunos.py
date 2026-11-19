@@ -37,6 +37,7 @@ from app.models import (
     Aluno,
     Frequencia,
     Inscricao,
+    Nivel,
     SituacaoEscolar,
     Turma,
     TurmaCurso,
@@ -343,10 +344,44 @@ def atualizar_nivel_aluno(aluno_id):
     aluno = db.get_or_404(Aluno, aluno_id)
     nivel = request.form.get("nivel")
     turma_id = request.form.get("turma_id")
+    turma_curso_id = request.form.get("turma_curso_id")
+
+    turma_curso = None
+    if turma_curso_id:
+        try:
+            turma_curso = db.session.get(TurmaCurso, int(turma_curso_id))
+        except (ValueError, TypeError):
+            turma_curso = None
+
     if nivel == "Não se aplica":
         aluno.nivel = None
     elif nivel:
-        aluno.nivel = nivel
+        # AJ22-E: se turma_curso_id foi informada, sanitização defensiva
+        # garante que o nível pertence ao curso da oferta correspondente.
+        if turma_curso:
+            niveis_validos = {
+                n.nome
+                for n in Nivel.query.filter(
+                    Nivel.curso_id == turma_curso.curso_id,
+                    (Nivel.unidade_id == aluno.unidade_id) | (Nivel.unidade_id == None),
+                    Nivel.ativo == True,
+                ).all()
+            }
+            if nivel in niveis_validos:
+                aluno.nivel = nivel
+            else:
+                aluno.nivel = None
+        else:
+            aluno.nivel = nivel
+
+    if turma_curso:
+        inscricao = Inscricao.query.filter_by(
+            turma_curso_id=turma_curso.id,
+            aluno_id=aluno.id,
+            ativo=True,
+        ).first()
+        if inscricao:
+            inscricao.nivel = aluno.nivel
 
     try:
         db.session.commit()
