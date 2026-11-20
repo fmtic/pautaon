@@ -1,56 +1,216 @@
+/* Página de login — fundo e estrutura */
+html, body {
+  min-height: 100%;
+  margin: 0;
+}
+
 body {
-    /* Degradê Azul Profissional */
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    height: 100vh;
-  }
+  background: #1e3c72;
+}
 
+.login-page {
+  min-height: 100vh;
+  min-height: 100svh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+}
+
+.login-container {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-card {
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ===== LOGO PRINCIPAL — proporção preservada ===== */
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.logo-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 220px;
+  min-height: 64px;
+  margin: 0 auto 10px;
+}
+
+/* Limites nos dois eixos: funciona para qualquer proporção de logo
+   (padrão, fallback ou imagem enviada pelo painel administrativo). */
+.login-logo {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 200px;
+  max-height: 56px;
+  object-fit: contain;
+  margin: 0 auto;
+}
+
+/* ===== Logo do botão E-mail Institucional ===== */
+/* A logo institucional é larga (~2,5:1): altura fixa e largura livre,
+   em vez de uma caixa quadrada que achataria a imagem. */
+.login-google-logo {
+  display: block;
+  flex: 0 0 auto;
+  width: auto;
+  height: 22px;
+  max-width: 64px;
+  max-height: 22px;
+  object-fit: contain;
+  margin: 0 10px 0 0;
+}
+
+/* Botão ACESSAR */
+.btn-login {
+  padding: 12px;
+  border: 0;
+  background: #1e3c72;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: background-color .2s ease, transform .2s ease;
+}
+
+.btn-login:hover {
+  background: #162a50;
+  transform: translateY(-1px);
+}
+
+/* Botão Google / E-mail Institucional */
+.btn-google {
+  min-height: 46px;
+  padding: 9px 14px;
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  font-weight: 500;
+  white-space: normal;
+  overflow: hidden;
+}
+
+.btn-google:hover {
+  background: #f8f9fa;
+  border-color: #d2e3fc;
+  color: #3c4043;
+}
+
+/* Inputs */
+.input-group-text {
+  background: #f8f9fa;
+  border-right: 0;
+  color: #1e3c72;
+}
+
+.form-control {
+  min-width: 0;
+  padding: 10px 12px;
+  border-left: 0;
+}
+
+.form-control:focus {
+  border-color: #dee2e6;
+  box-shadow: none;
+}
+
+.input-group:focus-within {
+  border-radius: .375rem;
+  box-shadow: 0 0 0 .25rem rgba(30, 60, 114, .18);
+}
+
+/* Divisor "OU" */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: 1.1rem 0;
+  text-align: center;
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* Links de rodapé */
+.login-terms-link {
+  color: #6b3131;
+  font-size: .85rem;
+}
+
+/* ===== Responsivo ===== */
+@media (max-width: 575.98px) {
+  .login-page {
+    align-items: flex-start;
+    padding: 16px 12px;
+  }
   .login-card {
-    border: none;
-    border-radius: 15px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    /* Sombra mais profunda para destacar */
+    padding: 1.35rem;
   }
-
-  .btn-login {
-    /* Botão combinando com o fundo azul */
-    background: #1e3c72;
-    border: none;
-    padding: 12px;
-    font-weight: bold;
-    transition: all 0.3s;
+  .logo-wrapper {
+    max-width: 180px;
+    min-height: 56px;
   }
-
-  .btn-login:hover {
-    background: #162a50;
-    /* Azul mais escuro no hover */
-    transform: translateY(-2px);
+  .login-logo {
+    max-width: 170px;
+    max-height: 48px;
   }
+}
 
-  /* Cor do ícone da logo combinando */
-  .text-primary {
-    color: #1e3c72 !important;
+/* Janelas baixas */
+@media (max-height: 640px) and (min-width: 576px) {
+  .login-page {
+    align-items: flex-start;
+    padding-top: 20px;
   }
+}
 
-  /* Estilo para os inputs */
-  .input-group-text {
-    background: #f8f9fa;
-    /* Fundo leve para o ícone */
-    border-right: none;
-    color: #1e3c72;
+/* Impressão */
+@media print {
+  html, body, .login-page {
+    min-height: 0;
+    height: auto;
   }
-
-  .form-control {
-    border-left: none;
-    padding: 10px;
+  .login-page {
+    display: block;
+    padding: 16px 0;
+    background: #fff;
   }
-
-  .form-control:focus {
+  .login-card {
     box-shadow: none;
-    border-color: #dee2e6;
+    break-inside: avoid;
   }
-
-  /* Cor de foco para o input-group */
-  .input-group:focus-within {
-    box-shadow: 0 0 0 0.25rem rgba(30, 60, 114, 0.25);
-    border-radius: 0.375rem;
+  .logo-wrapper {
+    min-height: 50px;
   }
+  .login-logo {
+    max-height: 44px;
+  }
+  .login-google-logo {
+    height: 18px;
+    max-height: 18px;
+    max-width: 52px;
+  }
+}
