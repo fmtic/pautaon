@@ -68,6 +68,10 @@ class Inscricao(SoftDeleteMixin, AuditoriaMixin, db.Model):
         nullable=False,
         default=lambda: get_local_now().date(),
     )
+    # AJ18-B: data de entrada do aluno na oferta. NULL = desde o início (sem
+    # corte de frequência). Preenchida quando a enturmação ocorre após o início
+    # efetivo da oferta; inscrições existentes permanecem NULL.
+    data_entrada_oferta: date = db.Column(db.Date, nullable=True)
     data_desativacao: datetime = db.Column(db.DateTime)
     motivo_desativacao: str = db.Column(db.String(50))
 

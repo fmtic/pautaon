@@ -19,7 +19,7 @@ Cobertura (roteiro do passo 6, pós c3d4e5f6a7b8):
     o NOT NULL de Inscricao.turma_curso_id extinguiu esse estado.
 """
 
-from datetime import date, time
+from datetime import date
 
 import pytest
 
@@ -160,7 +160,7 @@ def test_uma_oferta_grava_sem_escolha(app):
 
     client = _loga(app, i["resp"])
     r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     assert r.status_code == 302
     with app.app_context():
@@ -180,7 +180,7 @@ def test_zero_ofertas_recusa(app):
 
     client = _loga(app, i["resp"])
     r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     assert r.status_code == 302
     with app.app_context():
@@ -198,7 +198,7 @@ def test_duas_ofertas_sem_escolha_recusa(app):
 
     client = _loga(app, i["resp"])
     r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     assert r.status_code == 302
     with app.app_context():
@@ -217,7 +217,7 @@ def test_duas_ofertas_com_escolha_grava(app):
     client = _loga(app, i["resp"])
     r = client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(seg)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(seg), f"entrada_{aluno}": "inicio"},
     )
     assert r.status_code == 302
     with app.app_context():
@@ -253,7 +253,7 @@ def test_oferta_de_outra_turma_recusada(app):
     client = _loga(app, i["resp"])
     r = client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(of_outra)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(of_outra), f"entrada_{aluno}": "inicio"},
     )
     assert r.status_code == 302
     with app.app_context():
@@ -273,7 +273,7 @@ def test_oferta_desativada_recusada(app):
     client = _loga(app, i["resp"])
     r = client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(of_inativa)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(of_inativa), f"entrada_{aluno}": "inicio"},
     )
     assert r.status_code == 302
     with app.app_context():
@@ -292,11 +292,11 @@ def test_mesmo_aluno_em_duas_ofertas_permitido(app):
     client = _loga(app, i["resp"])
     client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o1)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o1), f"entrada_{aluno}": "inicio"},
     )
     client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o2)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o2), f"entrada_{aluno}": "inicio"},
     )
     with app.app_context():
         inscs = _inscricoes_ativas(turma_id)
@@ -315,10 +315,10 @@ def test_duplicata_mesma_oferta_recusada(app):
 
     client = _loga(app, i["resp"])
     r1 = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     r2 = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     # A rota redireciona (flash) em vez de estourar 500 ao reenturmar.
     assert r1.status_code == 302
@@ -382,7 +382,7 @@ def test_pauta_por_oferta_correta(app):
     client = _loga(app, i["resp"])
     client.post(
         f"/turma/enturmar/{turma_id}",
-        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o1)},
+        data={"aluno_ids[]": str(aluno), "turma_curso_id": str(o1), f"entrada_{aluno}": "inicio"},
     )
     with app.app_context():
         na_o1 = _alunos_da_oferta(turma_id, o1)
@@ -404,7 +404,7 @@ def test_usuario_de_outra_unidade_recusado(app):
 
     client = _loga(app, outra_resp)
     r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     assert r.status_code == 403
     with app.app_context():
@@ -432,7 +432,7 @@ def test_sem_null_cria_normalmente(app):
 
     client = _loga(app, i["resp"])
     r = client.post(
-        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno)}
+        f"/turma/enturmar/{turma_id}", data={"aluno_ids[]": str(aluno), f"entrada_{aluno}": "inicio"}
     )
     assert r.status_code == 302
     with app.app_context():

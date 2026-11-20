@@ -14,6 +14,7 @@ from flask import current_app, flash, render_template, url_for, request, redirec
 from flask_login import login_required, current_user
 from sqlalchemy import select, func, or_, cast, String
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, date
 
@@ -34,6 +35,11 @@ from app.models import (
 from app.models.enums import UserRole
 from app.utils.datetime_parse import parse_date
 from app.utils.formatters import formatar_ch
+from app.utils.ordenacao import (
+    agrupar_niveis_por_curso,
+    chave_ordenacao,
+    ordenar_niveis,
+)
 from app.utils.timezone import get_local_now
 from app.utils.logica import (
     PendenciaValorAula,
@@ -69,18 +75,26 @@ def _aba_planejamento(valor) -> str | None:
     return aba if aba in _ABAS_PLANEJAMENTO else None
 
 
-def _voltar_planejamento(aba=None):
+def _voltar_planejamento(aba=None, nivel_grupo=None):
     """Redirect pós-escrita mantendo a aba e os filtros da aba Temas.
 
     A aba vem do `hidden` `aba` (ou do argumento) e os filtros do contexto em
     que o formulário foi aberto (`filtro_curso`, `filtro_q`, `filtro_page`).
     Tudo passa por whitelist/validação: valor inválido cai na aba padrão
     (Temas) sem querystring, como o redirect antigo fazia.
+
+    AJ22-F: `nivel_grupo` (id do curso do nível gravado) reabre o bloco
+    recolhível correspondente já no HTML do redirect — sem depender de JS.
+    Níveis legados (sem curso) não geram parâmetro: o aviso já fica aberto.
     """
     aba = _aba_planejamento(aba) or _aba_planejamento(request.form.get('aba'))
     params = {}
     if aba and aba != 'temas':
         params['aba'] = aba
+
+    grupo = (str(nivel_grupo) if nivel_grupo is not None else '').strip()
+    if grupo.isdigit():
+        params['nivel_grupo'] = int(grupo)
 
     curso_id = (request.form.get('filtro_curso') or '').strip()
     if curso_id.isdigit():
@@ -250,11 +264,6 @@ def frequencia():
                 abort(403)
 
         data_post = (request.form.get('data') or request.form.get('data_hidden') or '').strip()
-        if turma_post_id.isdigit() and data_post:
-            contexto = carregar_contexto_turma(int(turma_post_id))
-            if data_post not in contexto.get('datas', []):
-                flash('A data informada não pertence ao calendário válido da turma.', 'warning')
-                return redirect(url_for('registros.frequencia', turma_id=turma_post_id))
 
         # Onda 4 (Fase 4, D2): resolve a oferta ANTES de gravar.
         # Decisão do responsável: com 2+ ofertas ativas a escolha é exigida e
@@ -337,17 +346,43 @@ def frequencia():
         ):
             abort(403)
 
+        if turma_post_id.isdigit() and data_post:
+            # AJ16-E: a data precisa pertencer ao MESMO calendário que a tela
+            # oferece no <select name="data"> — com oferta resolvida é a grade
+            # da oferta (`datas_aula_oferta`, mesma fonte de `situacao_datas` e
+            # do seletor do GET); sem oferta é o calendário legado da turma
+            # (`gerar_datas` via `carregar_contexto_turma`). Antes o POST
+            # validava sempre contra o calendário da turma, o que rejeitava
+            # datas legítimas da oferta — inclusive a "próxima pendente" —
+            # quando a vigência da oferta divergia da vigência da turma (ou a
+            # turma não tinha vigência própria).
+            contexto_post = carregar_contexto_turma(int(turma_post_id))
+            if oferta_post is not None:
+                datas_lancaveis = {
+                    dia.strftime('%Y-%m-%d')
+                    for dia in datas_aula_oferta(
+                        oferta_post,
+                        limite=get_local_now().date(),
+                        blocked=_blocked_dates_str(contexto_post['turma']),
+                    )
+                }
+            else:
+                datas_lancaveis = set(contexto_post.get('datas', []))
+            if data_post not in datas_lancaveis:
+                flash(
+                    'A data informada não pertence ao calendário válido da turma.',
+                    'warning',
+                )
+                return redirect(url_for('registros.frequencia', **redirect_back))
+
         form_data = request.form
         if oferta_post is not None:
             # Rejeita lançamentos de alunos fora da pauta da oferta: chaves
             # aluno_<id> fora da pauta são ignorados e contabilizados no log.
             # A pauta segue a mesma regra do GET: inscrição sempre apontada
             # para a oferta (Inscricao.turma_curso_id NOT NULL desde a Onda 4).
-            permitidos = {
-                a.id for a in _alunos_da_oferta(
-                    int(turma_post_id), oferta_post.id,
-                )
-            }
+            pauta_oferta = _alunos_da_oferta(int(turma_post_id), oferta_post.id)
+            permitidos = {a.id for a in pauta_oferta}
             # Mantém os campos repetidos (`tema_ids`) ao fazer a cópia mutável
             # usada para remover alunos que não pertencem à pauta da oferta.
             form_data = request.form.copy()
@@ -362,19 +397,66 @@ def frequencia():
                 # sem validação extra (decisão D2 — sem dupla checagem de
                 # vigência/dia no caminho de oferta única).
                 form_data.pop('turma_curso', None)
-            ignorados = 0
+            ignorados_fora_pauta = 0
+            ignorados_entrada = 0
+            inscricoes_pauta = {}
+            if data_alvo_post:
+                inscricoes_pauta = {
+                    insc.aluno_id: insc
+                    for insc in Inscricao.query.filter(
+                        Inscricao.turma_curso_id == oferta_post.id,
+                        Inscricao.ativo.is_(True),
+                        Inscricao.aluno_id.in_(permitidos or [-1]),
+                    ).all()
+                }
             for chave in list(form_data.keys()):
                 # `valor_ids` é da AULA (não do aluno), então nunca sai junto.
                 if chave.startswith('aluno_'):
                     aluno_raw = chave[len('aluno_'):]
-                    if aluno_raw.isdigit() and int(aluno_raw) not in permitidos:
+                    if not aluno_raw.isdigit():
+                        continue
+                    aluno_id_form = int(aluno_raw)
+                    if aluno_id_form not in permitidos:
                         form_data.pop(chave)
-                        ignorados += 1
-            if ignorados:
+                        ignorados_fora_pauta += 1
+                        continue
+                    # AJ18-C (item 1): ignora lançamento de aluno cuja entrada
+                    # na oferta é posterior à data-alvo (mesmo ponto de
+                    # `permitidos`). Defensivo contra manipulação do form.
+                    if data_alvo_post:
+                        from app.services.entrada_oferta import aula_conta_para_aluno
+                        insc_aluno = inscricoes_pauta.get(aluno_id_form)
+                        if insc_aluno is not None and not aula_conta_para_aluno(
+                            insc_aluno, data_alvo_post
+                        ):
+                            conceito_ignorado = form_data.get(chave)
+                            form_data.pop(chave)
+                            ignorados_entrada += 1
+                            from app.models import LogAcao
+                            db.session.add(LogAcao(
+                                usuario_id=current_user.id,
+                                usuario_nome=getattr(current_user, 'name', None),
+                                acao='Lançamento de frequência ignorado (entrada futura)',
+                                detalhes=(
+                                    f'aluno_id={aluno_id_form} oferta_id={oferta_post.id} '
+                                    f'turma_id={turma_post_id} data={data_post} '
+                                    f'conceito_recebido={conceito_ignorado} '
+                                    f'entrada={getattr(insc_aluno, "data_entrada_oferta", None)}'
+                                ),
+                                ip=request.remote_addr,
+                                unidade_id=oferta_post.unidade_id,
+                            ))
+            if ignorados_fora_pauta:
                 current_app.logger.warning(
                     'Frequência: %s lançamento(s) ignorado(s) fora da pauta da '
                     'oferta %s (turma %s)',
-                    ignorados, oferta_post.id, turma_post_id,
+                    ignorados_fora_pauta, oferta_post.id, turma_post_id,
+                )
+            if ignorados_entrada:
+                current_app.logger.warning(
+                    'Frequência: %s lançamento(s) ignorado(s) por entrada '
+                    'posterior à data na oferta %s (turma %s, data %s)',
+                    ignorados_entrada, oferta_post.id, turma_post_id, data_post,
                 )
 
         try:
@@ -384,7 +466,18 @@ def frequencia():
             flash(str(exc), 'warning')
             return redirect(url_for('registros.frequencia', **redirect_back))
         if not data:
-            flash("Preencha a data da aula antes de salvar.", "warning")
+            if data_post:
+                # AJ16-E: a data foi enviada e já passou pela validação de
+                # calendário — um retorno sem data aqui só acontece por uma
+                # exceção interna de `salvar_frequencia` (já registrada no
+                # log). Não é "falta de data": mostra erro honesto em vez da
+                # mensagem enganosa "Preencha a data da aula antes de salvar.".
+                flash(
+                    'Não foi possível salvar a frequência. Tente novamente.',
+                    'danger',
+                )
+            else:
+                flash("Preencha a data da aula antes de salvar.", "warning")
             return redirect(url_for('registros.frequencia', turma_id=turma_post_id or ''))
 
         flash('Frequência salva com sucesso!', 'success')
@@ -662,8 +755,52 @@ def frequencia():
         ):
             pode_imprimir_pauta = False
 
+    # AJ18-C (item 3): alunos da pauta com entrada posterior à data selecionada.
+    # Expor ao template para a data selecionada quais alunos da pauta têm
+    # entrada posterior à data (via aula_conta_para_aluno) e a data de entrada.
+    from app.services.entrada_oferta import aula_conta_para_aluno
+
+    alunos_entrada_posterior = {}
+    data_alvo_get = None
+    if data:
+        try:
+            data_alvo_get = date.fromisoformat(data)
+        except (ValueError, TypeError):
+            data_alvo_get = None
+
+    if data_alvo_get and aluno_ids:
+        inscricoes_get = []
+        if oferta_atual is not None:
+            inscricoes_get = Inscricao.query.filter(
+                Inscricao.turma_curso_id == oferta_atual.id,
+                Inscricao.ativo.is_(True),
+                Inscricao.aluno_id.in_(aluno_ids),
+            ).all()
+        elif turma_id:
+            inscricoes_get = (
+                Inscricao.query
+                .filter(
+                    Inscricao.turma_id == turma_id,
+                    Inscricao.ativo.is_(True),
+                    Inscricao.aluno_id.in_(aluno_ids),
+                )
+                .order_by(Inscricao.id)
+                .all()
+            )
+        insc_map_get = {}
+        for insc in inscricoes_get:
+            insc_map_get.setdefault(insc.aluno_id, insc)
+
+        for aid in aluno_ids:
+            insc = insc_map_get.get(aid)
+            if insc is not None and not aula_conta_para_aluno(insc, data_alvo_get):
+                entrada_ef = getattr(insc, "data_entrada_oferta", None)
+                if entrada_ef is not None:
+                    alunos_entrada_posterior[aid] = entrada_ef
+
     return render_template('frequencia/lancar.html',
                            alunos_com_info=alunos_com_info,
+                           alunos_entrada_posterior=alunos_entrada_posterior,
                            turmas=turmas,
                            turma_id=turma_id,
                            data=data,
@@ -1003,33 +1140,58 @@ def planejamento():
         if tipo_post == 'nivel':
             from app.models import Nivel
             nome_nivel = request.form.get('nome_nivel', '').strip()
+            # AJ22-C: o nível pertence a um CURSO da unidade; vazio = "sem
+            # curso" (legado, não aparece no fechamento). A unicidade é por
+            # (nome, unidade, COALESCE(curso_id,0)) — o mesmo nome pode
+            # repetir entre cursos.
+            curso_nivel_id = request.form.get('curso_nivel', '').strip()
+            if curso_nivel_id and not curso_nivel_id.isdigit():
+                flash("Curso do nível inválido.", 'warning')
+                return _voltar_planejamento()
+            curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
+            # AJ22-F: reabre (no redirect) o bloco do curso do nível gravado.
+            nivel_grupo_aberto = curso_nivel_id
             if nome_nivel:
                 nivel_unidade_id = get_unidade_id()
                 # ETAPA B6: criar nível exige unidade efetiva na sessão; a
                 # Visão Global (unidade None) é somente leitura, como nos
                 # demais ramos de escrita do planejamento.
                 assert_unidade_context(nivel_unidade_id, nivel_unidade_id)
-                existente = Nivel.query.filter_by(
+                if curso_nivel_id is not None:
+                    curso_nivel = db.session.get(Curso, curso_nivel_id)
+                    if (
+                        curso_nivel is None
+                        or curso_nivel.unidade_id != nivel_unidade_id
+                        or not curso_nivel.ativo
+                    ):
+                        flash("Curso do nível inválido.", 'warning')
+                        return _voltar_planejamento()
+                candidatos = Nivel.query.filter_by(
                     nome=nome_nivel,
                     unidade_id=nivel_unidade_id,
-                ).first()
-                if existente:
-                    flash("Já existe um nível com esse nome nesta unidade.", 'warning')
+                    curso_id=curso_nivel_id,
+                ).all()
+                if candidatos:
+                    flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
                 else:
                     try:
                         db.session.add(Nivel(
                             nome=nome_nivel,
                             ativo=True,
                             unidade_id=nivel_unidade_id,
+                            curso_id=curso_nivel_id,
                         ))
                         db.session.commit()
                         flash(f"Nível '{nome_nivel}' adicionado com sucesso!", 'success')
+                    except IntegrityError:
+                        db.session.rollback()
+                        flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
                     except Exception:
                         db.session.rollback()
                         flash("Erro ao salvar nível.", 'danger')
             else:
                 flash("Informe o nome do nível.", 'warning')
-            return _voltar_planejamento()
+            return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
 
         if tipo_post == 'valor':
             # A1 — Valores do Esportista: catálogo usado no lançamento de
@@ -1160,9 +1322,13 @@ def planejamento():
             TemaAula.curso_id, TemaAula.ordem, TemaAula.id
         ).paginate(page=pagina_temas, per_page=25, error_out=False)
     from app.models import Nivel
-    niveis = Nivel.query.order_by(Nivel.nome).all()
+    # AJ22-D: a ordem A-Z é feita na aplicação (chave normalizada), não pelo
+    # collation do banco. `joinedload` evita uma consulta por nível ao agrupar.
+    niveis = Nivel.query.options(joinedload(Nivel.curso)).all()
     if unidade_id:
         niveis = [n for n in niveis if n.unidade_id == unidade_id or n.unidade_id is None]
+    grupos_niveis = agrupar_niveis_por_curso(niveis)
+    niveis = ordenar_niveis(niveis)
 
     # A1: catálogo de valores do esportista da unidade, ordenado por nome sem
     # diferenciar maiúsculas (mesma variável usada no KPI, na aba e no loop).
@@ -1171,8 +1337,19 @@ def planejamento():
         q_valores = q_valores.filter(ValorEsportista.unidade_id == unidade_id)
     valores_esportista = q_valores.order_by(func.lower(ValorEsportista.nome)).all()
 
+    # AJ22-C: níveis sem curso (legado) NUNCA aparecem no fechamento do
+    # conselho até serem vinculados — listados no topo do cadastro (AJ22-D:
+    # também em A-Z, com inativos no fim).
+    niveis_sem_curso = [n for n in niveis if n.curso_id is None]
+
     # Aba que o usuário estava usando; um valor inválido cai em Temas.
     aba_ativa = _aba_planejamento(request.args.get('aba')) or 'temas'
+
+    # AJ22-F: bloco de nível reaberto após uma escrita (whitelist: só id de
+    # curso). O estado vem do servidor no HTML do redirect, não de JS.
+    nivel_grupo_aberto = (request.args.get('nivel_grupo') or '').strip()
+    if not nivel_grupo_aberto.isdigit():
+        nivel_grupo_aberto = ''
 
     q_periodos = PeriodoLetivo.query.filter_by(ativo=True)
     if unidade_id:
@@ -1183,7 +1360,12 @@ def planejamento():
     if unidade_id:
         cursos = Curso.query.filter_by(
             ativo=True, unidade_id=unidade_id
-        ).order_by(Curso.nome).all()
+        ).all()
+        # AJ22-D: mesma chave normalizada dos blocos de nível (A-Z, sem
+        # depender do collation do PostgreSQL).
+        cursos = sorted(
+            cursos, key=lambda c: (chave_ordenacao(c.nome), c.id or 0)
+        )
     curso_cores = {curso.id: indice % 10 for indice, curso in enumerate(cursos)}
 
     return render_template('planejamento/planejamento.html',
@@ -1195,12 +1377,15 @@ def planejamento():
                            prog_filtro=prog_filtro,
                            filtro_curso=filtro_curso,
                            niveis=niveis,
+                           niveis_sem_curso=niveis_sem_curso,
+                           grupos_niveis=grupos_niveis,
                            valores_esportista=valores_esportista,
                            periodos_ativos=periodos_ativos,
                            cursos=cursos,
                            curso_cores=curso_cores,
                            unidade_id=unidade_id,
                            aba_ativa=aba_ativa,
+                           nivel_grupo_aberto=nivel_grupo_aberto,
                            data_inicio_atual=conf_i.valor if conf_i else '',
                            data_fim_atual=conf_f.valor if conf_f else '')
 
@@ -1302,17 +1487,39 @@ def editar_nivel(id):
     assert_unidade_context(nivel.unidade_id, unidade_id)
 
     novo_nome = request.form.get('nome_nivel', '').strip()
+    # AJ22-C: curso do nível; vazio = sem curso (legado). Mantidos os perfis
+    # atuais do cadastro de níveis.
+    curso_nivel_id = request.form.get('curso_nivel', '').strip()
+    if curso_nivel_id and not curso_nivel_id.isdigit():
+        flash("Curso do nível inválido.", 'warning')
+        return _voltar_planejamento()
+    curso_nivel_id = int(curso_nivel_id) if curso_nivel_id else None
+    # AJ22-F: o bloco reaberto é o do curso RESULTANTE da edição.
+    nivel_grupo_aberto = curso_nivel_id
+    if curso_nivel_id is not None:
+        curso_nivel = db.session.get(Curso, curso_nivel_id)
+        if (
+            curso_nivel is None
+            or curso_nivel.unidade_id != unidade_id
+            or not curso_nivel.ativo
+        ):
+            flash("Curso do nível inválido.", 'warning')
+            return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
     if novo_nome:
         try:
             nivel.nome = novo_nome
+            nivel.curso_id = curso_nivel_id
             db.session.commit()
             flash("Nível atualizado com sucesso!", 'success')
+        except IntegrityError:
+            db.session.rollback()
+            flash("Já existe um nível com esse nome e curso nesta unidade.", 'warning')
         except Exception:
             db.session.rollback()
             flash("Erro ao atualizar nível.", 'danger')
     else:
         flash("O nome do nível não pode ser vazio.", 'warning')
-    return _voltar_planejamento()
+    return _voltar_planejamento(nivel_grupo=nivel_grupo_aberto)
 
 
 @bp.route('/planejamento/nivel/inativar/<int:id>', methods=['POST'])
@@ -1334,7 +1541,8 @@ def inativar_nivel(id):
     except Exception:
         db.session.rollback()
         flash("Erro ao alterar status do nível.", 'warning')
-    return _voltar_planejamento()
+    # AJ22-F: reabre o bloco do curso deste nível após ativar/inativar.
+    return _voltar_planejamento(nivel_grupo=nivel.curso_id)
 
 
 # ---------------------------------------------------------------------------

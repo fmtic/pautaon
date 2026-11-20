@@ -90,6 +90,44 @@
   })();
 
   /* ─────────────────────────────────────────────
+     4b. Blocos de níveis por curso (AJ22-F)
+     Colapso via Bootstrap; teclado e "expandir/recolher todos".
+     ───────────────────────────────────────────── */
+  (function initGruposNiveis() {
+    const headers = document.querySelectorAll(
+      '.grupo-nivel-header[data-bs-toggle="collapse"]'
+    );
+    if (!headers.length) return;
+
+    const collapseDe = (header) => {
+      const alvo = document.querySelector(header.dataset.bsTarget);
+      if (!alvo || !window.bootstrap?.Collapse) return null;
+      return window.bootstrap.Collapse.getOrCreateInstance(alvo, { toggle: false });
+    };
+
+    // O clique já é tratado pelo data-bs-toggle; o teclado precisa de handler.
+    headers.forEach((header) => {
+      header.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        collapseDe(header)?.toggle();
+      });
+    });
+
+    const todos = (expandir) => {
+      headers.forEach((header) => {
+        const collapse = collapseDe(header);
+        if (!collapse) return;
+        if (expandir) collapse.show();
+        else collapse.hide();
+        header.setAttribute('aria-expanded', String(expandir));
+      });
+    };
+    document.getElementById('btnExpandirNiveis')?.addEventListener('click', () => todos(true));
+    document.getElementById('btnRecolherNiveis')?.addEventListener('click', () => todos(false));
+  })();
+
+  /* ─────────────────────────────────────────────
      5. Gestão de Cursos (AJAX)
      ───────────────────────────────────────────── */
   (function initCursos() {
@@ -220,7 +258,7 @@
         tbody.replaceChildren();
         if (!cursos.length) {
           tbody.innerHTML = `<tr id="cursoVazio">
-            <td colspan="4" class="text-center text-muted py-4">
+            <td colspan="5" class="text-center text-muted py-4">
               <i class="bi bi-mortarboard d-block mb-2 opacity-25 fs-3"></i>
               Nenhum curso ativo para esta unidade.
             </td></tr>`;
@@ -231,7 +269,7 @@
           tbodyInativos.replaceChildren();
           if (!cursosInativos.length) {
             tbodyInativos.innerHTML = `<tr id="cursosInativosVazio">
-              <td colspan="4" class="text-center text-muted py-3">Nenhum curso inativo.</td>
+              <td colspan="5" class="text-center text-muted py-3">Nenhum curso inativo.</td>
             </tr>`;
           } else {
             cursosInativos.forEach(curso => tbodyInativos.appendChild(buildInactiveRow(curso)));

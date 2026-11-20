@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/resumo_conselho.css') }}">
+
+{% endblock %}
+
+{% block content %}
+{% set titulo_resumo = 'Resumo do Conselho de Classe' %}
+{% set subtitulo_resumo = 'Avaliação individual dos alunos e avaliação coletiva do curso — ' ~ etapa.value|capitalize
+%}
+<main class="print-page">
+  {% include "conselho/_resumo_cabecalho.html" %}
+
+  <div class="actions no-print">
+    <button class="btn btn-primary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i> Imprimir
+    </button>
+    <button class="btn btn-outline-secondary" onclick="location.reload()">
+      <i class="bi bi-arrow-clockwise me-1"></i> Atualizar
+    </button>
+    <div class="seletor-etapa" aria-label="Etapa do conselho">
+      <span class="small text-muted">Etapa:</span>
+      <a class="btn btn-sm {{ 'btn-primary' if etapa_valor == 'INICIAL' else 'btn-outline-secondary' }}"
+        href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa='INICIAL', turma_curso_id=oferta.id) }}{% if aluno_id %}&aluno_id={{ aluno_id }}{% endif %}">Inicial</a>
+      <a class="btn btn-sm {{ 'btn-primary' if etapa_valor == 'PERCURSO' else 'btn-outline-secondary' }}"
+        href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa='PERCURSO', turma_curso_id=oferta.id) }}{% if aluno_id %}&aluno_id={{ aluno_id }}{% endif %}">Percurso</a>
+      <a class="btn btn-sm {{ 'btn-primary' if etapa_valor == 'FINAL' else 'btn-outline-secondary' }}"
+        href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa='FINAL', turma_curso_id=oferta.id) }}{% if aluno_id %}&aluno_id={{ aluno_id }}{% endif %}">Final</a>
+    </div>
+  </div>
+
+  <section class="mb-4">
+    <h2 class="h5 fw-bold mb-2">Avaliação individual dos alunos</h2>
+    {% if not alunos_resumo %}
+    <div class="alert alert-info">Sem alunos ativos no curso.</div>
+    {% else %}
+    {% for item in alunos_resumo %}
+    <div class="resumo-aluno" id="aluno-{{ item.aluno.id }}">
+      <div class="resumo-aluno-header">
+        <span>{{ item.nome_exibicao }}</span>
+        {% if item.destino %}
+        <span class="small text-muted fw-normal">
+          <i class="bi bi-signpost-split me-1"></i>Próximo curso: {{ item.destino }}
+        </span>
+        {% endif %}
+        {% if item.autor_nome %}
+        <span class="small text-muted fw-normal">Última gravação: {{ item.autor_nome }}</span>
+        {% endif %}
+      </div>
+      <div class="resumo-aluno-body">
+        {% if not item.tem_conteudo %}
+        <div class="sem-respostas">Sem respostas registradas.</div>
+        {% else %}
+        {% if item.respostas %}
+        <div class="fw-semibold small mb-2">Respostas:</div>
+        {% for resp in item.respostas %}
+        <div class="resp-linha">
+          <span class="resp-pergunta">{{ resp.numero }}. {{ resp.pergunta_texto }}</span>
+          {% if not resp.ativo %}
+          <span class="badge bg-secondary inativo">inativa</span>
+          {% endif %}
+          <span class="resp-resposta marca-texto">{{ resp.resposta_exibicao }}</span>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% if item.observacao %}
+        <div class="fw-semibold small mt-2">Observação:</div>
+        <div class="obs-box">{{ item.observacao }}</div>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% if current_user.role in ['admin', 'pedagogico'] %}
+      <div class="text-end mt-2 mb-2 me-2 no-print">
+        <a href="{{ url_for('conselho.lancamento_conselho', turma=turma.id, etapa=etapa_valor, oferta_sel=oferta.id) }}#aluno-{{ item.aluno.id }}"
+          class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-pencil me-1"></i> Editar
+        </a>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+  </section>
+
+  <section class="mb-4">
+    <h2 class="h5 fw-bold mb-2">Avaliação coletiva do curso (oferta)</h2>
+    <div class="resumo-coletivo">
+      <div class="resumo-coletivo-body">
+        {% if not coletivo_respostas and not observacao_coletiva %}
+        <div class="alert alert-info mb-0">Sem avaliação coletiva registrada para esta etapa.</div>
+        {% else %}
+        {% if coletivo_respostas %}
+        {% for resp in coletivo_respostas %}
+        <div class="resp-linha">
+          <span class="resp-pergunta">{{ resp.numero }}. {{ resp.pergunta_texto }}</span>
+          {% if not resp.ativo %}
+          <span class="badge bg-secondary inativo">inativa</span>
+          {% endif %}
+          <span class="resp-resposta marca-texto">{{ resp.resposta_exibicao }}</span>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% if observacao_coletiva %}
+        <div class="fw-semibold small mt-2">Observação geral da turma:</div>
+        <div class="obs-box">{{ observacao_coletiva }}</div>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% if current_user.role in ['admin', 'pedagogico'] %}
+      <div class="text-end mt-2 mb-2 me-2 no-print">
+        <a href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id, etapa=etapa_valor, oferta_sel=oferta.id) }}"
+          class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-pencil me-1"></i> Editar avaliação da turma
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</main>
+{% endblock %}

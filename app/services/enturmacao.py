@@ -41,7 +41,15 @@ MSG_SELECIONE_OFERTA = (
 MSG_JA_ENTURMADO = "O aluno já está enturmado nessa oferta."
 
 
-def enturmar_aluno(aluno, turma, oferta_id=None, *, nivel=None, data_inicio=None):
+def enturmar_aluno(
+    aluno,
+    turma,
+    oferta_id=None,
+    *,
+    nivel=None,
+    data_inicio=None,
+    data_entrada=None,
+):
     """Cria a ``Inscricao`` do aluno na oferta da turma. NÃO commita.
 
     Regras (as mesmas das rotas desde a Etapa M1):
@@ -56,6 +64,10 @@ def enturmar_aluno(aluno, turma, oferta_id=None, *, nivel=None, data_inicio=None
         - duplicidade: inscrição ativa do aluno na mesma oferta →
           ``ValueError(MSG_JA_ENTURMADO)`` (rede de segurança além do
           índice único parcial).
+
+    ``data_entrada`` (AJ18-B): NULL = desde o início. Quando informada,
+    deve estar dentro da vigência efetiva da oferta (D2); a validação é feita
+    aqui para centralizar a regra.
 
     Retorna a ``Inscricao`` criada (já adicionada à sessão, sem flush/commit).
     """
@@ -81,6 +93,14 @@ def enturmar_aluno(aluno, turma, oferta_id=None, *, nivel=None, data_inicio=None
     if duplicada:
         raise ValueError(MSG_JA_ENTURMADO)
 
+    if data_entrada is not None:
+        # Validação centralizada (D2). Import local para evitar ciclo.
+        from app.services.entrada_oferta import validar_entrada_na_vigencia
+
+        data_entrada, _ = validar_entrada_na_vigencia(
+            data_entrada, oferta
+        )
+
     inscricao = Inscricao(
         aluno_id=aluno.id,
         turma_id=turma.id,
@@ -89,6 +109,7 @@ def enturmar_aluno(aluno, turma, oferta_id=None, *, nivel=None, data_inicio=None
         ativo=True,
         # Usa fuso local em vez de UTC, alinhado com o default do modelo.
         data_inicio=data_inicio or date.today(),
+        data_entrada_oferta=data_entrada,
     )
     db.session.add(inscricao)
     return inscricao

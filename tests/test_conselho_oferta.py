@@ -9,9 +9,9 @@ Regras cobertas (docs/D5_0_desenho.md D5.2 + decisões Q1/Q4/Q5):
       D5.5 o banco recusa conselho sem oferta (o ramo legado NULL saiu).
     - Respostas tipo TURMA saem de ConselhoResposta e passam a viver em
       `TurmaCurso.avaliacao_*` (JSON da avaliação coletiva da oferta).
-    - Fechamento por oferta: situacao_final/proxima_turma_id no conselho da
-      oferta, próximas turmas via catálogo OpcaoProximaTurma e frequência
-      filtrada por `Frequencia.turma_curso_id`.
+    - Fechamento por oferta: situacao_final/proximo_curso_id no conselho da
+      oferta, próximo curso via catálogo `Curso` e frequência filtrada por
+      `Frequencia.turma_curso_id`.
     - `alternar_conselho` alterna SÓ a oferta (D5.5: a ponte que escrevia
       `Turma.conselho_concluido` foi removida junto com a coluna).
     - Isolamento por unidade (B3/B4) vale para todos os perfis.
@@ -34,7 +34,6 @@ from app.models import (
     ConselhoResposta,
     Curso,
     Frequencia,
-    OpcaoProximaTurma,
     PerguntaConselho,
     PeriodoLetivo,
     Turma,
@@ -184,8 +183,21 @@ def test_lancamento_oferta_unica_usa_direto_e_vincula(client, app):
     _enturma(app, ids, "aluno_a")
     _loga(client, ids, unidade_id=ids["un_a"])
 
+    # AJ20: o GET não cria mais ConselhoClasse — a linha nasce no POST.
     r = client.get(f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL")
     assert r.status_code == 200
+    with app.app_context():
+        assert ConselhoClasse.query.count() == 0
+
+    # O POST de salvar cria a linha já vinculada à oferta.
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][0]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         conselhos = ConselhoClasse.query.filter_by(etapa=EtapaConselho.INICIAL).all()
         assert len(conselhos) == 1
@@ -206,12 +218,24 @@ def test_lancamento_duas_ofertas_exige_escolha(client, app):
     with app.app_context():
         assert ConselhoClasse.query.count() == 0
 
-    # Com escolha válida: cria conselho vinculado Àquela oferta.
+    # Com escolha válida: a tela abre; o POST vincula Àquela oferta
+    # (AJ20: o GET não cria mais a linha).
     r = client.get(
         f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL"
         f"&oferta_sel={ids['ofertas'][1]}"
     )
     assert r.status_code == 200
+    with app.app_context():
+        assert ConselhoClasse.query.count() == 0
+
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][1]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         conselhos = ConselhoClasse.query.all()
         assert len(conselhos) == 1
@@ -324,12 +348,21 @@ def test_aluno_em_duas_ofertas_tem_um_conselho_por_oferta(client, app):
     _enturma(app, ids, "aluno_a", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
 
+    p_aluno, _ = _perguntas(app)
     for idx in (0, 1):
+        # AJ20: o GET não cria linha; o POST em cada oferta cria a sua.
         r = client.get(
             f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL"
             f"&oferta_sel={ids['ofertas'][idx]}"
         )
         assert r.status_code == 200
+        r = client.post("/conselho/salvar", data={
+            "turma_id": str(ids["turma"]),
+            "etapa": "INICIAL",
+            "turma_curso_id": str(ids["ofertas"][idx]),
+            f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+        })
+        assert r.status_code == 302
     with app.app_context():
         do_aluno = ConselhoClasse.query.filter_by(aluno_id=ids["aluno_a"]).all()
         assert len(do_aluno) == 2
@@ -355,6 +388,19 @@ def test_conselho_sem_oferta_recusado_pelo_banco(client, app):
 
     _loga(client, ids, unidade_id=ids["un_a"])
     client.get(f"/conselho/lancamento?turma={ids['turma']}&etapa=INICIAL")
+    with app.app_context():
+        # AJ20: o GET não cria mais a casca — continua 0 linhas.
+        assert ConselhoClasse.query.count() == 0
+
+    # O POST cria a linha já com turma_curso_id (nunca NULL).
+    p_aluno, _ = _perguntas(app)
+    r = client.post("/conselho/salvar", data={
+        "turma_id": str(ids["turma"]),
+        "etapa": "INICIAL",
+        "turma_curso_id": str(ids["ofertas"][0]),
+        f"resp_{ids['aluno_a']}_{p_aluno}": "Sempre",
+    })
+    assert r.status_code == 302
     with app.app_context():
         linhas = ConselhoClasse.query.all()
         assert len(linhas) == 1
@@ -422,10 +468,12 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     _enturma(app, ids, "aluno_b", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
     with app.app_context():
-        opt = OpcaoProximaTurma(nome="Avançado", ativo=True)
-        db.session.add(opt)
+        curso = Curso(
+            nome="Avançado", unidade_id=ids["un_a"], ativo=True,
+        )
+        db.session.add(curso)
         db.session.commit()
-        opt_id = opt.id
+        curso_id = curso.id
 
     r = client.get(f"/conselho/fechamento/{ids['turma']}?oferta_sel={ids['ofertas'][0]}")
     assert r.status_code == 200
@@ -433,8 +481,8 @@ def test_fechar_lista_apenas_alunos_da_oferta_com_catalogo(client, app):
     assert "Aluno Ana" in body
     assert "Aluno Beto" not in body
     assert f'data-oferta-id="{ids["ofertas"][0]}"' in body
-    # Catálogo (Passo 5): a opção próxima usa o id do catálogo, não o nome.
-    assert f'<option value="{opt_id}">Avançado</option>' in body
+    # Próximo curso usa o id do CURSO (AJ22-C), não o catálogo legado.
+    assert f'<option value="{curso_id}">Avançado</option>' in body
 
 
 def test_fechar_frequencia_filtrada_pela_oferta(client, app):
@@ -469,10 +517,12 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
     _enturma(app, ids, "aluno_b", oferta_idx=1)
     _loga(client, ids, unidade_id=ids["un_a"])
     with app.app_context():
-        opt = OpcaoProximaTurma(nome="Avançado", ativo=True)
-        db.session.add(opt)
+        curso = Curso(
+            nome="Avançado", unidade_id=ids["un_a"], ativo=True,
+        )
+        db.session.add(curso)
         db.session.commit()
-        opt_id = opt.id
+        curso_id = curso.id
 
     r = client.post(
         f"/conselho/fechamento/{ids['turma']}/salvar",
@@ -480,10 +530,10 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
             "oferta_id": ids["ofertas"][0],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "APROVADO",
-                 "proxima_turma_id": str(opt_id)},
+                 "proximo_curso_id": str(curso_id)},
                 # aluno_b é matriculado só na OUTRA oferta → ignorado
                 {"aluno_id": ids["aluno_b"], "situacao": "EVADIDO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )
@@ -495,7 +545,8 @@ def test_fechar_salvar_grava_na_oferta_correta(client, app):
         ).one()
         assert c.aluno_id == ids["aluno_a"]
         assert c.situacao_final == "Aprovado"  # normalizado para o CHECK
-        assert c.proxima_turma_id == opt_id
+        assert c.proximo_curso_id == curso_id
+        assert c.proxima_turma_id is None  # legado não é escrito
         assert c.concluido is True
         assert ConselhoClasse.query.filter_by(
             aluno_id=ids["aluno_b"]
@@ -513,7 +564,7 @@ def test_fechar_salvar_situacao_invalida_recusa_tudo(client, app):
             "oferta_id": ids["ofertas"][0],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "EMPREGADO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )
@@ -534,7 +585,7 @@ def test_fechar_salvar_sem_oferta_valida_recusa(client, app):
             "oferta_id": ids["oferta_inativa"],
             "dados": [
                 {"aluno_id": ids["aluno_a"], "situacao": "APROVADO",
-                 "proxima_turma_id": None},
+                 "proximo_curso_id": None},
             ],
         },
     )

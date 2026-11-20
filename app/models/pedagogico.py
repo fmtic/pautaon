@@ -50,14 +50,37 @@ class CentroCusto(db.Model):
 
 
 class Nivel(db.Model):
-    """Nivel pedagogico."""
+    """Nivel pedagogico.
+
+    AJ22-C: `curso_id` (FK → `curso`, nullable) vincula o nível a um CURSO
+    — cada curso tem sua nomenclatura de níveis. Nível sem curso (NULL,
+    legado) NUNCA aparece como opção no fechamento do conselho até ser
+    vinculado. A unicidade é o índice funcional
+    `uq_nivel_nome_unidade_curso` (nome, unidade_id,
+    COALESCE(curso_id, 0)) — o mesmo nome pode repetir entre cursos;
+    legados sem curso mantêm a unicidade anterior.
+    """
     __tablename__ = 'nivel'
-    __table_args__ = (UniqueConstraint('nome', 'unidade_id', name='uq_nivel_nome_unidade'),)
+    __table_args__ = (
+        db.Index(
+            'uq_nivel_nome_unidade_curso',
+            'nome',
+            'unidade_id',
+            db.text("COALESCE(curso_id, 0)"),
+            unique=True,
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
     ativo = db.Column(db.Boolean, default=True, nullable=False)
     unidade_id = db.Column(db.Integer, db.ForeignKey('unidade.id'))
+    curso_id = db.Column(
+        db.Integer,
+        db.ForeignKey('curso.id', ondelete='RESTRICT'),
+    )
+
+    curso = db.relationship('Curso', backref='niveis')
 
 
 class ValorEsportista(db.Model):

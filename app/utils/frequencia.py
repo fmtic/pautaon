@@ -153,62 +153,101 @@ def contar_pendencias_frequencia(turmas) -> int:
 
 
 def _pendencias_por_ofertas(turma, ativas, blocked) -> int:
-    """Pendência somada por oferta (2+ ativas) — D3b-1.
+    """Pendência somada por oferta (2+ ativas) — D3b-1/AJ18-C.
 
     Para cada oferta: itera as datas esperadas da própria oferta até hoje e
-    conta a aula como pendente quando o lançado da oferta é menor que o
-    tamanho da pauta dela. Pauta estrita (sem fallback NULL), pois com 2+
-    ofertas as inscrições NULL são ambíguas.
+    conta a aula como pendente quando nem todos os alunos ESPERADOS naquela data
+    (inscrição ativa com entrada NULL ou <= data, via regra única de
+    app.services.entrada_oferta) têm lançamento. Alunos ainda não entrados na
+    oferta naquela data não geram pendência; lançamentos de não-esperados não
+    substituem os esperados. Data sem aluno esperado mantém comportamento de
+    pauta vazia (não conta como pendente). Pauta estrita por oferta.
     """
+    from app.services.entrada_oferta import aula_conta_para_aluno
     from app.services.turma_curso import _alunos_da_oferta, datas_esperadas_oferta
 
     hoje = get_local_now().date()
     pendencias = 0
     for oferta in ativas:
-        pauta = _alunos_da_oferta(
-            turma.id, oferta.id,
-        )
+        pauta = _alunos_da_oferta(turma.id, oferta.id)
         if not pauta:
             continue
         aluno_ids = [a.id for a in pauta]
-        for data_alvo in datas_esperadas_oferta(oferta, hoje, blocked):
-            lancados = frequencias_lancadas(
-                turma.id, data_alvo, aluno_ids, turma_curso_id=oferta.id,
+        inscricoes = Inscricao.query.filter(
+            Inscricao.turma_curso_id == oferta.id,
+            Inscricao.ativo.is_(True),
+            Inscricao.aluno_id.in_(aluno_ids),
+        ).all()
+        inscr_por_aluno = {}
+        for insc in inscricoes:
+            inscr_por_aluno.setdefault(insc.aluno_id, insc)
+        datas = datas_esperadas_oferta(oferta, hoje, blocked)
+        if not datas:
+            continue
+        linhas = (
+            Frequencia.query.with_entities(Frequencia.data, Frequencia.aluno_id)
+            .filter(
+                Frequencia.turma_curso_id == oferta.id,
+                Frequencia.data.in_(datas),
+                Frequencia.aluno_id.in_(aluno_ids),
+                Frequencia.conceito.isnot(None),
             )
-            if lancados < len(aluno_ids):
+            .all()
+        )
+        lancados_por_data: dict = {}
+        for data_l, aluno_l in linhas:
+            lancados_por_data.setdefault(data_l, set()).add(aluno_l)
+        for data_alvo in datas:
+            esperados = {
+                aid for aid in aluno_ids
+                if (insc := inscr_por_aluno.get(aid)) is not None
+                and aula_conta_para_aluno(insc, data_alvo)
+            }
+            if not esperados:
+                # Data sem aluno esperado: comportamento de pauta vazia
+                # (não exige lançamento / não conta como pendente).
+                continue
+            lancados = lancados_por_data.get(data_alvo, set())
+            if not esperados.issubset(lancados):
                 pendencias += 1
     return pendencias
 
 
 def situacao_datas_oferta(turma, oferta) -> dict:
-    """Status das aulas da OFERTA para o seletor "Data da Aula" (V3a).
+    """Status das aulas da OFERTA para o seletor "Data da Aula" (V3a/AJ18-C).
 
-    Usa a definição de "lançada" já existente nas pendências do dashboard
-    (``frequencias_lancadas`` / ``_pendencias_por_ofertas``): a aula está
-    lançada quando **todos** os alunos da pauta da oferta têm conceito
-    registrado naquela data. Nada novo é criado aqui — só em lote.
+    Usa a definição de "lançada" alinhada às pendências: a aula está lançada
+    quando **todos** os alunos ESPERADOS da pauta têm conceito registrado naquela
+    data. Esperados por data = inscrições ativas da pauta com entrada NULL ou
+    <= data (regra única em ``app.services.entrada_oferta.aula_conta_para_aluno``;
+    sem duplicação). Lançamentos de alunos não-esperados não substituem
+    esperados.
 
     Devolve::
 
         {
           "status": {ISO: "lancada" | "pendente"},  # datas da oferta
-          "lancadas": X,        # datas <= hoje totalmente lançadas
-          "total_ate_hoje": Y,  # datas da oferta <= hoje
+          "lancadas": X,        # datas <= hoje totalmente lançadas (com esperado)
+          "total_ate_hoje": Y,  # datas da oferta <= hoje com >=1 aluno esperado
           "pendentes": Z,       # Y - X
           "proxima_pendente": ISO | None,  # a mais antiga
         }
 
-    Datas futuras já lançadas entram em ``status`` como "lancada" (e não
-    contam em X/Y/Z). Datas do seletor que não pertencem ao calendário da
-    oferta simplesmente não aparecem em ``status`` (sem marca no template).
+    Datas futuras já lançadas (todos os esperados daquela data) entram em
+    ``status`` como "lancada" e não contam em X/Y/Z. Datas sem aluno esperado
+    mantêm comportamento de "pauta vazia" para aquela data: não entram em
+    X/Y/Z nem como pendentes (não exigem lançamento). Datas do seletor fora
+    do calendário da oferta não aparecem em ``status``.
 
     Legado D2: quando a oferta é a ÚNICA ativa da turma, as linhas com
-    ``turma_curso_id`` NULL contam como dela (mesma regra das demais leituras).
-    Uma única consulta agregada por data — sem N+1.
+    ``turma_curso_id`` NULL contam como dela. Consulta agregada de lançamentos
+    por (data, aluno) — sem N+1 de consultas e sem join em Inscricao nos
+    agregados de Frequencia.
     """
-    from sqlalchemy import and_, func, or_
+    from sqlalchemy import and_, or_
 
     from app.database import db
+    from app.services.entrada_oferta import aula_conta_para_aluno
     from app.services.frequencia_oferta import ofertas_unicas_ativas
     from app.services.turma_curso import _alunos_da_oferta, datas_aula_oferta
 
@@ -230,6 +269,15 @@ def situacao_datas_oferta(turma, oferta) -> dict:
     if not aluno_ids or not datas_oferta:
         return vazio
 
+    inscricoes = Inscricao.query.filter(
+        Inscricao.turma_curso_id == oferta.id,
+        Inscricao.ativo.is_(True),
+        Inscricao.aluno_id.in_(aluno_ids),
+    ).all()
+    inscr_por_aluno = {}
+    for insc in inscricoes:
+        inscr_por_aluno.setdefault(insc.aluno_id, insc)
+
     escopo = [Frequencia.turma_curso_id == oferta.id]
     if oferta.id in ofertas_unicas_ativas([oferta.id]):
         escopo = [
@@ -243,26 +291,34 @@ def situacao_datas_oferta(turma, oferta) -> dict:
         ]
 
     linhas = (
-        db.session.query(
-            Frequencia.data,
-            func.count(func.distinct(Frequencia.aluno_id)),
-        )
+        db.session.query(Frequencia.data, Frequencia.aluno_id)
         .filter(
             Frequencia.data.in_(datas_oferta),
             Frequencia.aluno_id.in_(aluno_ids),
             Frequencia.conceito.isnot(None),
             *escopo,
         )
-        .group_by(Frequencia.data)
+        .distinct()
         .all()
     )
-    lancados_por_data = {data: quantidade for data, quantidade in linhas}
+    lancados_por_data: dict = {}
+    for data_l, aluno_l in linhas:
+        lancados_por_data.setdefault(data_l, set()).add(aluno_l)
 
     status: dict[str, str] = {}
     lancadas = 0
     pendentes: list[date] = []
     for data_oferta in datas_oferta:
-        completa = lancados_por_data.get(data_oferta, 0) >= len(aluno_ids)
+        esperados = {
+            aid for aid in aluno_ids
+            if (insc := inscr_por_aluno.get(aid)) is not None
+            and aula_conta_para_aluno(insc, data_oferta)
+        }
+        if not esperados:
+            # Data sem aluno esperado: pauta vazia para a data (não conta).
+            continue
+        lancados_set = lancados_por_data.get(data_oferta, set())
+        completa = esperados.issubset(lancados_set)
         chave = data_oferta.strftime("%Y-%m-%d")
         if data_oferta <= hoje:
             if completa:
@@ -272,13 +328,13 @@ def situacao_datas_oferta(turma, oferta) -> dict:
                 pendentes.append(data_oferta)
                 status[chave] = "pendente"
         elif completa:
-            # Futura já lançada também recebe a marca.
+            # Futura já lançada (todos esperados) também recebe a marca.
             status[chave] = "lancada"
 
     return {
         "status": status,
         "lancadas": lancadas,
-        "total_ate_hoje": sum(1 for d in datas_oferta if d <= hoje),
+        "total_ate_hoje": lancadas + len(pendentes),
         "pendentes": len(pendentes),
         "proxima_pendente": (
             pendentes[0].strftime("%Y-%m-%d") if pendentes else None

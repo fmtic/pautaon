@@ -2,21 +2,52 @@
 
 {% block content %}
 {# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
-   continua sendo apenas o texto da opção, sem a letra. #}
+continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}">
+
 <div class="container mt-4">
+   <!-- <style>
+        :root {
+            --conselho-pergunta-cor: #0a3d62;
+        }
+
+        .conselho-pergunta {
+            color: var(--conselho-pergunta-cor);
+        }
+
+        .conselho-opcao.active {
+            border-color: #0a3d62;
+            background-color: #e7f1ff;
+            font-weight: 700;
+        }
+
+        .conselho-opcao:focus-visible {
+            outline: 2px solid #0a3d62;
+            outline-offset: 2px;
+        }
+    </style> -->
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="text-primary fw-bold mb-0">Conselho da Turma</h2>
             {# D5.2 (Q1): a avaliação coletiva é da OFERTA, não mais da turma #}
-            <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta %} | {{ oferta.curso.nome }}{% endif %}</p>
+            <p class="text-muted small">Avaliação Coletiva da sua Turma: <strong>{{ turma.nome }}</strong>{% if oferta
+                %} | {{ oferta.curso.nome }}{% endif %}</p>
         </div>
         {# Rota canônica do painel: `main.painel` monta `entradas`, `aulas_pendentes`
-           e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
-           mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
+        e `dias_bloqueados`. `registros.painel_professor` é legada e renderiza o
+        mesmo template sem esse contexto ("Minhas Turmas" sai vazia). #}
         <a href="{{ url_for('main.painel') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Voltar ao Painel
         </a>
+        {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] and oferta %}
+        <a class="btn btn-info btn-sm shadow-sm ms-2"
+            href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa=etapa_atual, turma_curso_id=oferta.id) }}"
+            target="_blank" rel="noopener">
+            <i class="bi bi-journal-text me-1"></i> Ver respostas
+        </a>
+        {% endif %}
     </div>
 
     {% if exigir_escolha %}
@@ -69,32 +100,51 @@
                     {% for pergunta in perguntas_turma %}
                     <div class="col-md-6 mb-3">
                         <div class="p-3 bg-white rounded border h-100 shadow-sm">
-                            <label class="fw-bold mb-2 small text-muted text-uppercase">{{ loop.index }}. {{ pergunta.texto }}</label>
+                            <label class="fw-bold mb-2 conselho-pergunta text-uppercase"
+                                for="resp_turma_{{ pergunta.id }}">{{ loop.index }}. {{ pergunta.texto }}</label>
+
+                            {% set resp_atual = respostas.get(pergunta.id|string, '') %}
 
                             {% if pergunta.opcoes %}
-                            <div class="mb-2">
+                            {# Com opções: a escolha vai num campo oculto e o botão fica destacado. #}
+                            <input type="hidden" name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
+                                value="{{ resp_atual }}">
+                            <div class="mb-2 conselho-opcoes">
                                 {% for opcao in pergunta.opcoes.split(' | ') %}
-                                <button type="button" class="btn btn-xs btn-outline-info me-1 mb-1"
-                                    style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
-                                    onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = '{{ opcao }}'">
+                                <button type="button"
+                                    class="btn btn-xs btn-outline-primary me-1 mb-1 conselho-opcao {% if resp_atual == opcao %}active fw-bold{% endif %}"
+                                    style="font-size: 1rem; padding: 0.375rem 0.75rem; text-align: justify;"
+                                    data-valor="{{ opcao }}"
+                                    onclick="document.getElementById('resp_turma_{{ pergunta.id }}').value = this.getAttribute('data-valor'); this.parentElement.querySelectorAll('.conselho-opcao').forEach(b=>b.classList.remove('active','fw-bold')); this.classList.add('active','fw-bold');">
                                     {{ letras[loop.index0] }}) {{ opcao }}
                                 </button>
                                 {% endfor %}
                             </div>
-                            {% endif %}
-
+                            {% else %}
+                            {# Sem opções: o texto digitado é a própria resposta. #}
                             <textarea name="resp_turma_{{ pergunta.id }}" id="resp_turma_{{ pergunta.id }}"
                                 class="form-control" rows="3"
-                                placeholder="Digite sua observação...">{{ respostas.get(pergunta.id|string, '') }}</textarea>
+                                placeholder="Digite a resposta...">{{ resp_atual }}</textarea>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
+                </div>
+
+                {# Observação geral única, no fim do questionário (gravada em `_obs`). #}
+                <div class="p-3 bg-white rounded border shadow-sm mt-2">
+                    <label class="fw-bold mb-2 conselho-pergunta text-uppercase" for="obs_turma">
+                        Observações e informações adicionais
+                    </label>
+                    <textarea name="obs_turma" id="obs_turma" class="form-control" rows="4"
+                        placeholder="Digite observações gerais sobre a turma...">{{ observacao or '' }}</textarea>
                 </div>
             </div>
         </div>
 
         <div class="text-center mb-5">
-            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit" class="btn btn-primary btn-lg px-5 shadow">
+            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit"
+                class="btn btn-primary btn-lg px-5 shadow">
                 <i class="bi bi-save me-2"></i> Salvar Avaliação
             </button>{% endif %}
         </div>

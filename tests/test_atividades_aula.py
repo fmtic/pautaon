@@ -176,10 +176,15 @@ def test_atividades_ficam_acima_das_observacoes_no_mesmo_card(app, client):
     corpo = client.get(_url_pauta(ids)).get_data(as_text=True)
 
     assert corpo.index('name="atividades"') < corpo.index('name="observacoes"')
-    # Mesmo card/coluna: entre os dois campos não há abertura/fechamento de
-    # coluna nova (o layout continua com 2 colunas no bloco do diário).
-    trecho = corpo[corpo.index('name="atividades"'):corpo.index('name="observacoes"')]
-    assert "col-md-" not in trecho
+    # AJ16-D: atividades e observações agora ficam lado a lado (dois
+    # col-md-6) dentro do MESMO card de dados da aula. Em vez de exigir a
+    # ausência de col-md-, garante que os dois campos estão dentro do mesmo
+    # card-dados-aula (o card fecha antes do "QUADRO DE FREQUÊNCIA").
+    ini_card = corpo.index('card-dados-aula')
+    fim_card = corpo.index('<div class="card p-3">', ini_card)
+    trecho_card = corpo[ini_card:fim_card]
+    assert 'name="atividades"' in trecho_card
+    assert 'name="observacoes"' in trecho_card
 
 
 def test_editar_substitui_atividades(app, client):

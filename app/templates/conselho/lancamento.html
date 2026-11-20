@@ -1,30 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
-{# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado
-   continua sendo apenas o texto da opção, sem a letra. #}
+{# Alfabeto para rotular as opções de resposta (A, B, C...); o valor gravado continua sendo apenas o texto da opção, sem a letra. #}
 {% set letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}">
+
 <div class="container-fluid mt-4">
-    <style>
+    <!-- <style>
         :root { --conselho-pergunta-cor: #0a3d62; }
         .conselho-pergunta { color: var(--conselho-pergunta-cor); }
         .conselho-opcao.active { border-color: #0a3d62; background-color: #e7f1ff; font-weight: 700; }
         .conselho-opcao:focus-visible { outline: 2px solid #0a3d62; outline-offset: 2px; }
-    </style>
+    </style> -->
 
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body">
             <form method="GET" action="{{ url_for('conselho.lancamento_conselho') }}" class="row g-3 align-items-end">
-                {# D5.2: etapa e oferta sobrevivem ao reenvio dos filtros #}
                 <input type="hidden" name="etapa" value="{{ etapa }}">
-                <!-- <div class="col-md-3">
-                    <label class="form-label small fw-bold text-secondary">Programa</label>
-                    <select name="programa" class="form-select" onchange="this.form.submit()">
-                        <option value="Todos">Todos os Programas</option>
-                        {% for p in lista_programas %}
-                        <option value="{{ p }}" {% if programa_ativo==p %}selected{% endif %}>{{ p }}</option>
-                        {% endfor %}
-                    </select> 
-                </div> -->
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-secondary">Turno</label>
                     <select name="turno" class="form-select" onchange="this.form.submit()">
@@ -35,17 +26,14 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small fw-bold text-secondary">Selecionar Curso</label>
+                    <label class="form-label small fw-bold text-secondary">Selecionar Turma</label>
                     <select name="turma" class="form-select" onchange="this.form.submit()">
                         <option value="">Escolha a turma...</option>
                         {% for t in turmas %}
-                        <option value="{{ t.id }}" {% if turma and turma.id==t.id %}selected{% endif %}>{{ t.nome }}
-                        </option>
+                        <option value="{{ t.id }}" {% if turma and turma.id==t.id %}selected{% endif %}>{{ t.nome }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                {# D5.2 (M1): com 2+ ofertas ativas a escolha do curso é obrigatória;
-                   com 0/1 o seletor não aparece (uso direto ou recusa). #}
                 {% if turma and ofertas and ofertas|length >= 2 %}
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-secondary">Curso (oferta)</label>
@@ -63,9 +51,7 @@
 
     <hr>
 
-    {# 2. CONTEÚDO DINÂMICO #}
     {% if turma %}
-    {# Card Azul com detalhes da turma #}
     <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
         <div class="card-body d-flex justify-content-between align-items-center">
             <div>
@@ -79,47 +65,60 @@
                     {% endif %}
                 </p>
             </div>
-            {# D5.2: avaliação coletiva é da OFERTA — link direto com a oferta #}
             <a class="btn btn-warning btn-sm shadow-sm"
                 href="{{ url_for('conselho.avaliar_turma', turma_id=turma.id) }}{% if oferta %}?oferta_sel={{ oferta.id }}{% endif %}">
                 <i class="bi bi-chat-left-text-fill me-1"></i> Avaliação da Turma
             </a>
+            {% if current_user.role in ['admin', 'pedagogico', 'secretaria'] and oferta %}
+            <a class="btn btn-info btn-sm shadow-sm ms-2"
+                href="{{ url_for('conselho.resumo_conselho', turma_id=turma.id, etapa=etapa, turma_curso_id=oferta.id) }}"
+                target="_blank" rel="noopener">
+                <i class="bi bi-journal-text me-1"></i> Ver respostas
+            </a>
+            {% endif %}
         </div>
     </div>
 
     {% if exigir_escolha %}
-    {# 2+ ofertas sem escolha: nada é listado nem criado antes de escolher #}
     <div class="alert alert-warning shadow-sm">
         <i class="bi bi-exclamation-triangle me-2"></i>
-        Esta turma tem mais de um curso ativo. Selecione o <strong>curso (oferta)</strong>
-        acima para abrir o lançamento do conselho daquela oferta.
+        Esta turma tem mais de um curso ativo. Selecione o <strong>curso (oferta)</strong> acima para abrir o lançamento do conselho daquela oferta.
     </div>
     {% else %}
-    {# Formulário de Lançamento #}
+    
     <form action="{{ url_for('conselho.salvar_conselho') }}" method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="turma_id" value="{{ turma.id }}">
         <input type="hidden" name="etapa" value="{{ etapa }}">
-        {# D5.2: toda gravação nasce vinculada à oferta escolhida #}
         <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}">
+        
         <div class="row">
-            {# D5.2b: grade aluno×pergunta. Só perguntas tipo ALUNO aparecem aqui —
-               as do tipo TURMA são a avaliação coletiva da oferta (turma_aval).
-               Os nomes resp_<aluno_id>_<pergunta_id> são os que o salvar_conselho
-               lê e os que a validação do conselho.js percorre. #}
             {% set perguntas_aluno = perguntas | selectattr('tipo', 'equalto', 'ALUNO') | list %}
             {% if not perguntas_aluno %}
             <div class="col-12">
                 <div class="alert alert-info shadow-sm">
                     <i class="bi bi-info-circle me-2"></i>
-                    Nenhuma pergunta individual (tipo ALUNO) cadastrada para a etapa
-                    <strong>{{ etapa }}</strong>. Cadastre as perguntas do conselho
-                    antes de lançar.
+                    Nenhuma pergunta individual (tipo ALUNO) cadastrada para a etapa <strong>{{ etapa }}</strong>. Cadastre as perguntas do conselho antes de lançar.
                 </div>
             </div>
             {% endif %}
+
+            {# BARRA DE PROGRESSO E PAGINAÇÃO #}
+            {% if alunos and perguntas_aluno %}
+            <div class="col-12 mb-3" id="progressContainer">
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="fw-bold text-secondary" id="progressText">Aluno 1 de {{ alunos|length }}</span>
+                    <span class="fw-bold text-primary" id="progressPercent">0%</span>
+                </div>
+                <div class="progress shadow-sm" style="height: 12px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" id="progressBar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+            {% endif %}
+
+            {# LOOP DOS ALUNOS COM CLASSE 'aluno-card' #}
             {% for aluno in alunos %}
-            <div class="col-12 mb-4">
+            <div class="col-12 mb-4 aluno-card" id="aluno-step-{{ loop.index0 }}" data-aluno-id="{{ aluno.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
                 <div class="card shadow-sm border-0">
                     <div class="card-header bg-light py-2">
                         <h6 class="mb-0 fw-bold text-primary">
@@ -154,14 +153,19 @@
                                     class="form-control mb-2" rows="2"
                                     placeholder="Digite a resposta...">{{ respostas.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
                                 {% endif %}
-
-                                <label class="small text-muted mb-1" for="obs_{{ aluno.id }}_{{ pergunta.id }}">Observação (texto livre)</label>
-                                <textarea name="obs_{{ aluno.id }}_{{ pergunta.id }}"
-                                    id="obs_{{ aluno.id }}_{{ pergunta.id }}"
-                                    class="form-control" rows="2"
-                                    placeholder="Digite sua observação...">{{ observacoes.get('%d_%d' | format(aluno.id, pergunta.id), '') }}</textarea>
                             </div>
                             {% endfor %}
+                        </div>
+
+                        {# AJ19: observação geral ÚNICA por aluno, no fim do card
+                        (mesmo estilo da avaliação coletiva em turma_aval.html). #}
+                        <div class="p-3 bg-white rounded border shadow-sm mt-2">
+                            <label class="fw-bold mb-2 conselho-pergunta text-uppercase" for="obs_{{ aluno.id }}">
+                                Observações e informações adicionais
+                            </label>
+                            <textarea name="obs_{{ aluno.id }}" id="obs_{{ aluno.id }}"
+                                class="form-control" rows="4" maxlength="5000"
+                                placeholder="Digite observações gerais sobre o aluno...">{{ observacoes.get(aluno.id, '') }}</textarea>
                         </div>
                     </div>
                 </div>
@@ -169,15 +173,30 @@
             {% endfor %}
         </div>
 
-        <div class="sticky-bottom bg-white p-3 border-top shadow-lg text-end mt-4">
-            <a href="{{ url_for('conselho.index_conselho') }}" class="btn btn-outline-secondary me-2">Cancelar</a>
-            {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}<button type="submit" class="btn btn-success px-5">Salvar Tudo</button>{% endif %}
+        {# FOOTER ADAPTADO COM NAVEGAÇÃO #}
+        <div class="sticky-bottom bg-white p-3 border-top shadow-lg d-flex justify-content-between align-items-center mt-4">
+            <div>
+                <a href="{{ url_for('conselho.index_conselho') }}" class="btn btn-outline-secondary">Cancelar</a>
+            </div>
+            <div class="d-flex align-items-center">
+                <button type="button" class="btn btn-primary px-4 me-2" id="btnPrev" onclick="mudarAluno(-1)" style="display: none;">
+                    <i class="bi bi-chevron-left"></i> Anterior
+                </button>
+                <button type="button" class="btn btn-primary px-4 me-2" id="btnNext" onclick="mudarAluno(1)">
+                    Próximo <i class="bi bi-chevron-right"></i>
+                </button>
+                
+                {% if current_user.role in ['admin', 'pedagogico', 'professor'] %}
+                <button type="submit" class="btn btn-success px-5 ms-3 border-start border-2 ps-4">
+                    <i class="bi bi-save me-1"></i> Salvar Tudo
+                </button>
+                {% endif %}
+            </div>
         </div>
     </form>
     {% endif %}
 
     {% else %}
-    {# MENSAGEM QUANDO NÃO HÁ TURMA SELECIONADA OU SE A TURMA ESTAVA VAZIA #}
     <div class="text-center py-5">
         <div class="mb-3">
             <i class="bi bi-person-video3 text-secondary opacity-25" style="font-size: 5rem;"></i>
@@ -188,5 +207,6 @@
     {% endif %}
 
 </div>
+
 <script src="{{ url_for('static', filename='js/conselho/conselho.js') }}"></script>
 {% endblock %}

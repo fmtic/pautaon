@@ -156,6 +156,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Inicializa a sincronização de spans se estiver na tela de impressão
     sincronizarSpans();
+
+    // AJ22: habilita/popula os selects de nível do fechamento (inicia já
+    // com a pré-seleção do servidor, se houver).
+    ligarNiveisFechamento();
 });
 
 // -------------------------------------------------------------------------
@@ -175,9 +179,91 @@ function sincronizarSpans() {
     document.querySelectorAll('.proxima-select').forEach(sel => {
         const span = sel.closest('td').querySelector('.proxima-texto');
         if (span) {
+            // AJ22-B: quando nada está gravado no novo campo, a linha pode
+            // ter um valor LEGADO (opcao_proxima_turma) vindo de data-legado;
+            // ele aparece na impressão sem nível.
+            const textoAtual = () => {
+                if (sel.value) return sel.options[sel.selectedIndex]?.text || '';
+                return sel.dataset.legado || '';
+            };
+            span.innerText = textoAtual();
+            sel.addEventListener('change', () => { span.innerText = textoAtual(); });
+        }
+    });
+
+    document.querySelectorAll('.nivel-select').forEach(sel => {
+        const span = sel.closest('td').querySelector('.nivel-texto');
+        if (span) {
             span.innerText = sel.options[sel.selectedIndex]?.text || '';
             sel.addEventListener('change', () => { span.innerText = sel.options[sel.selectedIndex].text; });
         }
+    });
+}
+
+// -------------------------------------------------------------------------
+// AJ22 — Nível de destino do próximo curso (fechamento)
+// -------------------------------------------------------------------------
+// NIVEL_DATA ({curso_id: [{id, nome, ativo}]}) é embutido pela página de
+// fechamento; nas demais telas do conselho não existe e a lógica fica
+// inerte.
+
+function temDadosNivel() {
+    return typeof NIVEL_DATA !== 'undefined';
+}
+
+// Reconstrói as opções do select de nível da linha conforme o CURSO
+// escolhido: só níveis daquele curso; o nível já gravado inativo permanece
+// visível com etiqueta "(inativo)" (F2). Curso sem níveis → select
+// desabilitado com "Nível não cadastrado"; sem curso → "Não se aplica".
+function atualizarNivelDaLinha(row) {
+    const proxima = row.querySelector('.proxima-select');
+    const nivelSel = row.querySelector('.nivel-select');
+    if (!proxima || !nivelSel || !temDadosNivel()) return;
+
+    const cursoId = proxima.value;
+    const nivelAtual = nivelSel.getAttribute('data-nivel-atual') || '';
+
+    // Trocar/limpar o curso limpa o nível.
+    nivelSel.innerHTML = '<option value="">Não se aplica</option>';
+    nivelSel.disabled = true;
+    sincronizarSpanNivel(nivelSel);
+    if (!cursoId) return;
+
+    const niveis = (NIVEL_DATA[cursoId] || []);
+    const opcoes = niveis.filter(n => n.ativo || String(n.id) === String(nivelAtual));
+
+    if (!opcoes.length) {
+        nivelSel.options[0].text = 'Nível não cadastrado';
+        sincronizarSpanNivel(nivelSel);
+        return;
+    }
+
+    opcoes.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n.id;
+        opt.innerText = n.nome + (n.ativo ? '' : ' (inativo)');
+        if (String(n.id) === String(nivelAtual)) opt.selected = true;
+        nivelSel.appendChild(opt);
+    });
+    nivelSel.disabled = false;
+    sincronizarSpanNivel(nivelSel);
+}
+
+function sincronizarSpanNivel(nivelSel) {
+    const span = nivelSel.closest('td').querySelector('.nivel-texto');
+    if (span) span.innerText = nivelSel.options[nivelSel.selectedIndex]?.text || '';
+}
+
+function ligarNiveisFechamento() {
+    const tabela = document.getElementById('tabelaFechamento');
+    if (!tabela || !temDadosNivel()) return;
+    tabela.querySelectorAll('tbody tr').forEach(row => {
+        const proxima = row.querySelector('.proxima-select');
+        if (proxima) {
+            proxima.addEventListener('change', () => atualizarNivelDaLinha(row));
+        }
+        // Respeita a pré-seleção vinda do servidor (edição de fechamento).
+        atualizarNivelDaLinha(row);
     });
 }
 
@@ -250,12 +336,18 @@ function salvarFechamento() {
 
         if (alunoId && selects.length >= 2) {
             const situacao = selects[0].value;
-            const proximaTurmaId = selects[1].value;
+            // AJ22-B: 2º select = CURSO de destino (curso.id, não mais a
+            // opção do catálogo legado). Vazio → NULL.
+            const proximoCursoId = selects[1].value;
+            // 3º select = nível de destino (pode estar desabilitado; .value
+            // continua legível). Vazio → "Não se aplica" (NULL).
+            const proximoNivelId = selects[2] ? selects[2].value : '';
 
             dadosParaSalvar.push({
                 aluno_id: alunoId,
                 situacao: situacao,
-                proxima_turma_id: proximaTurmaId || null
+                proximo_curso_id: proximoCursoId || null,
+                proximo_nivel_id: proximoNivelId || null
             });
         }
     });
@@ -288,3 +380,73 @@ function salvarFechamento() {
         alert("Erro ao salvar o fechamento: " + error.message);
     });
 }
+
+
+// -------------------------------------------------------------------------
+// FUNÇÕES DE IMPRESSÃO, EXPORTAÇÃO E FECHAMENTO
+// -------------------------------------------------------------------------
+
+document.addEventListener('DOMContentLoaded', function() {
+    const alunos = document.querySelectorAll('.aluno-card');
+    if (alunos.length === 0) return;
+    
+    let currentIndex = 0;
+    const total = alunos.length;
+
+    // AJ21: o resumo abre "Editar" com #aluno-<id>. Seleciona o card do
+    // aluno na paginação em vez de deixar sempre o primeiro visível.
+    const alunoAncora = (window.location.hash || '').match(/^#aluno-(\d+)$/);
+    if (alunoAncora) {
+        const indiceAncora = Array.from(alunos).findIndex(
+            card => card.dataset.alunoId === alunoAncora[1]
+        );
+        if (indiceAncora >= 0) currentIndex = indiceAncora;
+    }
+    
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const progressPercent = document.getElementById('progressPercent');
+
+    function updateView() {
+        // Mostra apenas o card do aluno atual
+        alunos.forEach((card, index) => {
+            card.style.display = index === currentIndex ? 'block' : 'none';
+        });
+        
+        // Atualiza a exibição dos botões
+        if (btnPrev) btnPrev.style.display = currentIndex === 0 ? 'none' : 'inline-block';
+        if (btnNext) btnNext.style.display = currentIndex === total - 1 ? 'none' : 'inline-block';
+        
+        // Atualiza a barra de progresso
+        const percent = ((currentIndex + 1) / total) * 100;
+        if (progressBar) {
+            progressBar.style.width = percent + '%';
+            progressBar.setAttribute('aria-valuenow', percent);
+        }
+        if (progressText) {
+            progressText.innerText = `Aluno ${currentIndex + 1} de ${total}`;
+        }
+        if (progressPercent) {
+            progressPercent.innerText = Math.round(percent) + '%';
+        }
+    }
+
+    // Função de navegação exposta para o HTML
+    window.mudarAluno = function(direction) {
+        currentIndex += direction;
+        if (currentIndex < 0) currentIndex = 0;
+        if (currentIndex >= total) currentIndex = total - 1;
+        
+        updateView();
+        
+        // Rola a tela suavemente para a barra de progresso no topo da página
+        const container = document.getElementById('progressContainer');
+        if (container) {
+            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    updateView(); // Inicializa o layout
+});

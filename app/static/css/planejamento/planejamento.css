@@ -167,6 +167,25 @@ tr.opacity-50 .tema-numero {
   transform: rotate(90deg);
 }
 
+/* AJ22-F — cabeçalhos recolhíveis dos blocos de nível por curso */
+.grupo-nivel-header[data-bs-toggle="collapse"] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.grupo-nivel-header[data-bs-toggle="collapse"]:hover {
+  background-color: #f1f3f5 !important;
+}
+
+.grupo-nivel-chevron {
+  transition: transform .2s ease;
+  font-size: .85rem;
+}
+
+.grupo-nivel-header[aria-expanded="true"] .grupo-nivel-chevron {
+  transform: rotate(90deg);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    SETAS DE MOVER ↑↓
    ═══════════════════════════════════════════════════════════════ */

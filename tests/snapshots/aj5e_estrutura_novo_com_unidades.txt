@@ -23,7 +23,7 @@
         </button>
         <img alt="Logo" src="/static/img/logo_textual.png">
         <span>
-          v0.2.0 · beta
+          v 0.2.2 · beta
         </span>
       </div>
       <div>
@@ -1296,7 +1296,7 @@
       </script>
     </main>
     <footer>
-      pautaON · pautaON v0.2.0 (beta) · © 2026
+      pautaON · pautaON v0.2.2 (beta) · © 2026
     </footer>
     <script src="/static/bootstrap/js/bootstrap.bundle.min.js">
     </script>

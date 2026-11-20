@@ -24,6 +24,12 @@ from app.models import (
 )
 from app.models.enums import UserRole
 from app.services.enturmacao import MSG_JA_ENTURMADO, enturmar_aluno
+from app.services.entrada_oferta import (
+    EntradaComLinhasAnteriores,
+    alterar_entrada,
+    inicio_efetivo,
+    parse_escolha_entrada,
+)
 from app.services.turma_curso import (
     adicionar_oferta,
     criar_oferta_inicial_da_turma,
@@ -57,6 +63,7 @@ from app.utils.dias_semana import (
     weekday_para_nome,
 )
 from app.utils.formatters import formatar_ch
+from app.utils.ordenacao import ordenar_niveis
 from app.utils.logica import (
     _blocked_dates_str,
     calcular_idades,
@@ -1501,15 +1508,32 @@ def ver_turma(id):
     )
     # Busca os níveis cadastrados pela unidade para o modal de enturmação.
     # Inclui níveis legados sem unidade (unidade_id IS NULL) para compatibilidade.
-    niveis_cadastrados = (
+    # AJ22-D: ordenação A-Z na aplicação (curso, depois nível; "sem curso"
+    # primeiro, posição mantida), sem depender do collation do PostgreSQL e
+    # sem consulta por nível (curso já vem de `joinedload`).
+    niveis_cadastrados = ordenar_niveis(
         Nivel.query
+        .options(joinedload(Nivel.curso))
         .filter(
             (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
             Nivel.ativo == True,
         )
-        .order_by(Nivel.nome)
         .all()
     )
+    # AJ22-E: no modal de enturmação, o select de nível do aluno exibe APENAS
+    # os níveis pertencentes ao curso da oferta selecionada (oferta_sel).
+    niveis_oferta_sel = (
+        [n for n in niveis_cadastrados if n.curso_id == oferta_sel.curso_id]
+        if oferta_sel is not None
+        else []
+    )
+    # AJ22-E: mapa de níveis por curso para as fichas de alunos enturmados
+    # em cada oferta (detalhe.html). Cada card de oferta exibe apenas os níveis
+    # cadastrados para o seu respectivo curso.
+    niveis_por_curso_id = {}
+    for n in niveis_cadastrados:
+        if n.curso_id is not None:
+            niveis_por_curso_id.setdefault(n.curso_id, []).append(n)
     # Lista de alunos agrupada pela oferta; a ficha mantém cada vínculo como
     # linha própria dentro do painel recolhível do curso correspondente.
     alunos_por_oferta = {oferta.id: [] for oferta in ofertas_todas}
@@ -1590,11 +1614,65 @@ def ver_turma(id):
             if chave in ids_do_professor
         }
 
+    # AJ18-B: pergunta de data de entrada quando a oferta selecionada já começou.
+    entrada_hoje = get_local_now().date()
+    oferta_entrada = oferta_sel
+    entrada_obrigatoria = False
+    entrada_ini_iso = None
+    entrada_fim_iso = None
+    if oferta_entrada is not None:
+        ini_eff = inicio_efetivo(oferta_entrada)
+        fim_eff = oferta_entrada.data_fim or (oferta_entrada.turma.data_fim if oferta_entrada.turma else None)
+        entrada_ini_iso = ini_eff.isoformat() if ini_eff else None
+        entrada_fim_iso = fim_eff.isoformat() if fim_eff else None
+        if ini_eff and entrada_hoje > ini_eff:
+            entrada_obrigatoria = True
+
+    # AJ18-E: reabre o modal de correção da entrada com a contagem devolvida
+    # pelo POST (única fonte da verdade). Só faz sentido para quem pode editar.
+    entrada_pendentes = None
+    entrada_pendentes_ini = None
+    entrada_pendentes_fim = None
+    entrada_escolha = None
+    entrada_inscricao_id = None
+    abrir_modal_entrada = False
+    entrada_conselho_bloqueia_remocao = False
+    if current_user.role in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        inscricao_id_entrada = request.args.get("inscricao", type=int)
+        pendentes_arg = request.args.get("entrada_pendentes", type=int)
+        if inscricao_id_entrada and pendentes_arg:
+            inscricao_entrada = Inscricao.query.filter_by(
+                id=inscricao_id_entrada,
+                turma_id=id,
+                ativo=True,
+            ).first()
+            if inscricao_entrada is not None:
+                entrada_inscricao_id = inscricao_entrada.id
+                entrada_pendentes = pendentes_arg
+                entrada_pendentes_ini = parse_date(
+                    request.args.get("entrada_pendentes_ini")
+                )
+                entrada_pendentes_fim = parse_date(
+                    request.args.get("entrada_pendentes_fim")
+                )
+                entrada_escolha = request.args.get("entrada_escolha")
+                abrir_modal_entrada = True
+                entrada_conselho_bloqueia_remocao = bool(
+                    inscricao_entrada.turma_curso
+                    and inscricao_entrada.turma_curso.conselho_concluido
+                )
+
     return render_template(
         "turmas/detalhe.html",
         alunos_sem_turma=alunos_disponiveis,
         alunos_ativos_count=alunos_ativos_count,
         niveis_cadastrados=niveis_cadastrados,
+        niveis_oferta_sel=niveis_oferta_sel,
+        niveis_por_curso_id=niveis_por_curso_id,
         ofertas=ofertas_lista,
         ofertas_todas=ofertas_todas,
         oferta_principal=oferta_principal,
@@ -1610,6 +1688,18 @@ def ver_turma(id):
             else []
         ),
         abrir_modal_enturmar=request.args.get("modal") == "enturmar",
+        entrada_obrigatoria=entrada_obrigatoria,
+        entrada_hoje_iso=entrada_hoje.isoformat(),
+        entrada_ini_iso=entrada_ini_iso,
+        entrada_fim_iso=entrada_fim_iso,
+        hoje=entrada_hoje,
+        abrir_modal_entrada=abrir_modal_entrada,
+        entrada_inscricao_id=entrada_inscricao_id,
+        entrada_escolha=entrada_escolha,
+        entrada_pendentes=entrada_pendentes,
+        entrada_pendentes_ini=entrada_pendentes_ini,
+        entrada_pendentes_fim=entrada_pendentes_fim,
+        entrada_conselho_bloqueia_remocao=entrada_conselho_bloqueia_remocao,
         **ctx,
     )
 
@@ -1666,31 +1756,121 @@ def enturmar_alunos(turma_id):
             if turma_obj.unidade_id:
                 alunos = alunos.filter(Aluno.unidade_id == turma_obj.unidade_id)
             alunos = alunos.all()
+            # AJ18-B: quando a oferta já começou, a escolha de entrada é obrigatória
+            # para CADA aluno selecionado do lote (recusa atômica se faltar),
+            # mesmo que nenhum campo entrada_* seja enviado no POST. Oferta não
+            # iniciada -> NULL sem perguntar.
+            hoje_ent = get_local_now().date()
+            ini_eff = inicio_efetivo(oferta_sel)
+            entrada_obrigatoria = bool(ini_eff and hoje_ent > ini_eff)
             enturmados = 0
+            acoes = []
+            # AJ22-E: nomes dos níveis ativos do curso da oferta para sanitização defensiva
+            niveis_curso_nomes = {
+                n.nome
+                for n in Nivel.query.filter(
+                    Nivel.curso_id == oferta_sel.curso_id,
+                    (Nivel.unidade_id == turma_obj.unidade_id) | (Nivel.unidade_id == None),
+                    Nivel.ativo == True,
+                ).all()
+            }
             for aluno in alunos:
                 nivel_form = request.form.get(f"nivel_{aluno.id}")
                 nivel_val = None if nivel_form == "Não se aplica" else nivel_form
 
+                # AJ22-E: se o nível não pertence ao curso da oferta, não grava
+                if nivel_val and nivel_val not in niveis_curso_nomes:
+                    nivel_val = None
+
                 if nivel_form:
                     aluno.nivel = nivel_val
+
+                # AJ18-B: data de entrada do aluno na oferta.
+                if entrada_obrigatoria:
+                    entrada_raw = request.form.get(f"entrada_{aluno.id}")
+                    if not entrada_raw:
+                        flash(
+                            "Informe a data de entrada na oferta para todos os alunos selecionados.",
+                            "warning",
+                        )
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
+                    try:
+                        data_entrada, rotulo_entrada = parse_escolha_entrada(
+                            entrada_raw, oferta_sel, hoje_ent
+                        )
+                    except ValueError as e:
+                        flash(str(e), "warning")
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
+                else:
+                    data_entrada, rotulo_entrada = None, "desde o início"
 
                 # ETAPA M2: duplicidade e criação concentradas no serviço
                 # único de enturmação. Duplicata ativa na mesma oferta segue
                 # como salto silencioso (sem flash), como antes; em outra
                 # oferta da turma, o aluno pode ter nova inscrição ativa.
                 try:
-                    enturmar_aluno(
+                    insc = enturmar_aluno(
                         aluno,
                         turma_obj,
                         oferta_id,
                         nivel=nivel_val,
-                        data_inicio=date.today(),
+                        data_inicio=hoje_ent,
+                        data_entrada=data_entrada,
                     )
                 except ValueError as e:
                     if str(e) != MSG_JA_ENTURMADO:
-                        raise
+                        flash(str(e), "warning")
+                        db.session.rollback()
+                        return redirect(
+                            url_for(
+                                "registros.ver_turma",
+                                id=turma_id,
+                                oferta_sel=oferta_sel.id,
+                                modal="enturmar",
+                            )
+                        )
                     continue
                 enturmados += 1
+                acoes.append((aluno, insc, rotulo_entrada))
+
+            # LogAcao por aluno enturmado com a data escolhida.
+            if acoes:
+                try:
+                    from app.models import LogAcao
+                except Exception:
+                    LogAcao = None
+                if LogAcao is not None:
+                    for aluno_log, _, rotulo_entrada in acoes:
+                        db.session.add(
+                            LogAcao(
+                                usuario_id=current_user.id,
+                                usuario_nome=getattr(current_user, "name", None),
+                                acao="Enturmação de aluno na oferta",
+                                detalhes=(
+                                    f"aluno_id={aluno_log.id} nome=\"{aluno_log.nome}\" "
+                                    f"turma_id={turma_obj.id} oferta_id={oferta_sel.id} "
+                                    f"entrada={rotulo_entrada}"
+                                ),
+                                ip=request.remote_addr,
+                                unidade_id=turma_obj.unidade_id,
+                            )
+                        )
 
             db.session.commit()
             flash(
@@ -1705,6 +1885,154 @@ def enturmar_alunos(turma_id):
         flash("Rejeitado: Nenhum aluno foi parametrizado.", "warning")
 
     return redirect(url_for("registros.ver_turma", id=turma_id))
+
+
+def _rotulo_data_entrada(valor):
+    """Rótulo do log/UI para uma data de entrada (NULL = desde o início)."""
+    return valor.isoformat() if valor is not None else "desde o início"
+
+
+@bp.route(
+    "/turma/<int:turma_id>/oferta/<int:oferta_id>/inscricao/<int:inscricao_id>/entrada",
+    methods=["POST"],
+)
+@login_required
+def alterar_entrada_aluno(turma_id, oferta_id, inscricao_id):
+    """AJ18-E: corrige a data de entrada de um aluno já enturmado.
+
+    Não desenturma: altera somente ``Inscricao.data_entrada_oferta``. Perfis
+    com permissão de enturmar (admin/pedagógico/secretaria), isolamento por
+    unidade. Inscrição inexistente, inativa ou de outra turma/oferta → 404.
+    A gravação e o ``LogAcao`` acontecem no mesmo commit (ou nada acontece).
+    """
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.PEDAGOGICO,
+        UserRole.SECRETARIA,
+    ):
+        abort(403)
+
+    turma_obj = Turma.query.get_or_404(turma_id)
+    assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
+
+    oferta = TurmaCurso.query.filter_by(id=oferta_id, turma_id=turma_id).first()
+    if oferta is None or not oferta.ativo:
+        abort(404)
+    inscricao = Inscricao.query.filter_by(
+        id=inscricao_id,
+        turma_id=turma_id,
+        turma_curso_id=oferta_id,
+        ativo=True,
+    ).first()
+    if inscricao is None:
+        abort(404)
+
+    escolha = request.form.get("escolha")
+    acao_anteriores = request.form.get("acao_anteriores")
+    if acao_anteriores is not None and acao_anteriores not in (
+        "manter",
+        "remover",
+    ):
+        abort(400)
+    # AJ18-F: "manter" equivale à confirmação do AJ18-E; "remover" exclui as
+    # linhas anteriores na mesma transação. O checkbox antigo continua aceito.
+    manter = acao_anteriores == "manter"
+    confirmar = request.form.get("confirmar") == "1" or manter
+    remover_anteriores = acao_anteriores == "remover"
+    hoje = get_local_now().date()
+
+    try:
+        resultado = alterar_entrada(
+            inscricao,
+            escolha,
+            hoje,
+            confirmar=confirmar,
+            remover_anteriores=remover_anteriores,
+        )
+        anterior = resultado.anterior
+        nova = resultado.nova
+        if anterior == nova:
+            flash("A data de entrada já é essa; nada foi alterado.", "info")
+            return redirect(
+                url_for(
+                    "registros.ver_turma",
+                    id=turma_id,
+                    oferta_sel=oferta_id,
+                )
+            )
+
+        from app.models import LogAcao
+
+        detalhes = (
+            f"aluno_id={inscricao.aluno_id} "
+            f'nome="{inscricao.aluno.nome}" '
+            f"turma_id={turma_id} oferta_id={oferta_id} "
+            f"entrada_anterior={_rotulo_data_entrada(anterior)} "
+            f"entrada_nova={_rotulo_data_entrada(nova)}"
+        )
+        if resultado.removidas:
+            detalhes += (
+                f" removidas {resultado.removidas} frequências anteriores a "
+                f"{nova.strftime('%d/%m/%Y')} "
+                f"(de {resultado.removidas_ini.strftime('%d/%m/%Y')} a "
+                f"{resultado.removidas_fim.strftime('%d/%m/%Y')})"
+            )
+        elif resultado.anteriores:
+            detalhes += f" mantidas {resultado.anteriores}"
+
+        db.session.add(
+            LogAcao(
+                usuario_id=current_user.id,
+                usuario_nome=getattr(current_user, "name", None),
+                acao="Alteração da data de entrada na oferta",
+                detalhes=detalhes,
+                ip=request.remote_addr,
+                unidade_id=turma_obj.unidade_id,
+            )
+        )
+        db.session.commit()
+    except EntradaComLinhasAnteriores as exc:
+        db.session.rollback()
+        parametros = {
+            "id": turma_id,
+            "oferta_sel": oferta_id,
+            "modal": "entrada",
+            "inscricao": inscricao_id,
+            "entrada_escolha": escolha,
+            "entrada_pendentes": exc.quantidade,
+        }
+        if exc.data_min is not None:
+            parametros["entrada_pendentes_ini"] = exc.data_min.isoformat()
+        if exc.data_max is not None:
+            parametros["entrada_pendentes_fim"] = exc.data_max.isoformat()
+        return redirect(url_for("registros.ver_turma", **parametros))
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(
+            url_for(
+                "registros.ver_turma", id=turma_id, oferta_sel=oferta_id
+            )
+        )
+    except Exception:
+        db.session.rollback()
+        raise
+
+    nome_curso = (
+        oferta.curso.nome if oferta.curso else f"Curso #{oferta.curso_id}"
+    )
+    mensagem = (
+        f"Data de entrada de {inscricao.aluno.nome} na oferta "
+        f"{nome_curso} alterada."
+    )
+    if resultado.removidas:
+        mensagem += (
+            f" {resultado.removidas} frequência(s) anterior(es) removida(s)."
+        )
+    flash(mensagem, "success")
+    return redirect(
+        url_for("registros.ver_turma", id=turma_id, oferta_sel=oferta_id)
+    )
 
 
 def _editar_turma_contexto(turma_obj, rascunho=None):
@@ -2456,7 +2784,7 @@ def excluir_turma(id):
     if not turma_obj:
         return redirect(url_for("registros.turma"))
 
-    from app.models import DiaBloqueadoTurma, TemaAula
+    from app.models import ConselhoClasse, DiaBloqueadoTurma, TemaAula
 
     assert_unidade_context(turma_obj.unidade_id, get_unidade_id())
     nome = turma_obj.nome
@@ -2511,7 +2839,16 @@ def excluir_turma(id):
             DiaBloqueadoTurma.query.filter_by(turma_id=id).delete(
                 synchronize_session=False
             )
-            # Ofertas (TurmaCurso) — já sem inscrições que as referenciem.
+            # AJ20-F2: apaga cascas de ConselhoClasse (sem conteúdo) que apontam
+            # para as ofertas da turma. Conselho com conteúdo já bloqueou acima
+            # (turma_tem_historico → caminho lógico). ON DELETE RESTRICT em
+            # turma_curso_id impede deletar TurmaCurso com filhos.
+            from app.services.conselho_leitura import cond_conselho_sem_conteudo
+            ConselhoClasse.query.filter(
+                ConselhoClasse.turma_id == id,
+                cond_conselho_sem_conteudo(),
+            ).delete(synchronize_session=False)
+            # Ofertas (TurmaCurso) — já sem inscrições e cascas de conselho.
             TurmaCurso.query.filter_by(turma_id=id).delete(synchronize_session=False)
             # Por último a própria turma (delete em massa: sem cascata ORM).
             db.session.query(Turma).filter_by(id=id).delete(synchronize_session=False)

@@ -40,7 +40,7 @@ import logging
 from flask import Blueprint, render_template, request, redirect, flash, abort, url_for, jsonify
 from flask_login import login_required, current_user
 from app.models import (PerguntaConselho, Turma, TurmaCurso, Aluno, Frequencia,
-                    OpcaoProximaTurma, ConselhoClasse, ConselhoResposta, Inscricao,
+                    ConselhoClasse, ConselhoResposta, Inscricao,
                     PeriodoConselho, PeriodoLetivo)
 from app.models.enums import (
     ETAPA_PARA_CAMPO_AVALIACAO,
@@ -59,10 +59,12 @@ from app.services.turma_curso import (
 )
 from app.services.turma_curso_horario import grades_para_exibicao
 from sqlalchemy import select, case
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from app.utils.autor import autor_do_lancamento
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+from app.utils.timezone import get_local_now
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('conselho', __name__)
@@ -270,6 +272,12 @@ def _build_turma_avaliacao_payload(form_data, perguntas) -> str:
         valor_limpo = str(valor).strip()
         if valor_limpo:
             respostas[str(pergunta.id)] = valor_limpo
+    # Observação geral da turma (AJ21-B): mesma codificação JSON, chave
+    # reservada `_obs`; vazia não entra e, como o payload substitui o campo,
+    # limpar a observação remove a chave.
+    observacao = form_data.get('obs_turma')
+    if observacao is not None and str(observacao).strip():
+        respostas['_obs'] = str(observacao).strip()
     return json.dumps(respostas, ensure_ascii=False)
 
 
@@ -310,6 +318,8 @@ def _normalize_conselho_request(form_data) -> dict:
         "data_inicio": form_data.get("data_inicio", ""),
         "data_fim": form_data.get("data_fim", ""),
         "respostas": {},
+        # AJ19: UMA observação geral por aluno (não mais por pergunta),
+        # gravada em `ConselhoClasse.observacao`. Chave = aluno_id.
         "observacoes": {},
     }
 
@@ -332,15 +342,75 @@ def _normalize_conselho_request(form_data) -> dict:
                 pergunta_id = parts[2]
                 if aluno_id.isdigit() and pergunta_id.isdigit():
                     normalized["respostas"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
-        if key.startswith(("obs_", "observacao_")):
-            parts = key.split("_")
-            if len(parts) >= 3:
-                aluno_id = parts[1]
-                pergunta_id = parts[2]
-                if aluno_id.isdigit() and pergunta_id.isdigit():
-                    normalized["observacoes"][f"{aluno_id}_{pergunta_id}"] = str(value).strip()
+        # AJ19: `obs_<aluno_id>` — observação geral única do aluno. O antigo
+        # `obs_<aluno>_<pergunta>` (por pergunta) foi removido junto com a
+        # leitura/escrita de `ConselhoResposta.observacao`.
+        if key.startswith("obs_"):
+            aluno_id = key[len("obs_"):]
+            if aluno_id.isdigit():
+                # AJ19-F2: normaliza quebras de linha ANTES do strip e da
+                # contagem do limite — \r\n e \r viram \n, então 150 CRLF
+                # contam como 150 caracteres, não 300, e o texto gravado já
+                # sai com \n (a ficha exibe com white-space: pre-line).
+                texto = str(value).replace("\r\n", "\n").replace("\r", "\n")
+                normalized["observacoes"][aluno_id] = texto.strip()
 
     return normalized
+
+
+# ---------------------------------------------------------------------------
+# AJ20 — ConselhoClasse só nasce na escrita (nunca no GET)
+# ---------------------------------------------------------------------------
+
+def _buscar_conselho(oferta_id: int, aluno_id: int, etapa):
+    """SELECT da linha (aluno, oferta, etapa) — extraído para o teste de
+    corrida do AJ20 poder simular "a linha apareceu entre o select e o
+    insert" devolvendo None na primeira chamada."""
+    return ConselhoClasse.query.filter_by(
+        turma_curso_id=oferta_id,
+        aluno_id=aluno_id,
+        etapa=etapa,
+    ).first()
+
+
+def get_or_create_conselho(
+    *, turma_id, oferta, aluno_id, etapa, unidade_id,
+    data_inicio=None, instrutor_id=None,
+) -> ConselhoClasse:
+    """ConselhoClasse de (aluno, oferta, etapa): devolve a existente ou cria.
+
+    Chamado SOMENTE por fluxos que vão gravar conteúdo (resposta,
+    observação ou fechamento) — o GET nunca cria mais cascas vazias.
+
+    O INSERT corre dentro de SAVEPOINT: se outra requisição criou a linha
+    entre o SELECT e o INSERT, a UNIQUE `uix_conselho_oferta` estoura
+    IntegrityError, o savepoint desfaz apenas o INSERT e a linha vencedora
+    é relida — nunca 500 em corrida. Compatível com SQLite (testes) e
+    PostgreSQL.
+    """
+    etapa_valor = getattr(etapa, "value", etapa)
+    existente = _buscar_conselho(oferta.id, aluno_id, etapa_valor)
+    if existente is not None:
+        return existente
+    try:
+        with db.session.begin_nested():
+            conselho = ConselhoClasse(
+                turma_id=turma_id,
+                turma_curso_id=oferta.id,
+                aluno_id=aluno_id,
+                etapa=etapa_valor,
+                unidade_id=unidade_id,
+                data_inicio=data_inicio,
+                instrutor_id=instrutor_id,
+            )
+            db.session.add(conselho)
+            db.session.flush()
+        return conselho
+    except IntegrityError:
+        vencedor = _buscar_conselho(oferta.id, aluno_id, etapa_valor)
+        if vencedor is None:
+            raise
+        return vencedor
 
 
 # ---------------------------------------------------------------------------
@@ -604,8 +674,6 @@ def lancamento_conselho():
     # painel, que já filtra `if p`).
     lista_programas = [p for p in db.session.execute(stmt_prog).scalars().all() if p]
 
-    opcoes_proximas = OpcaoProximaTurma.query.filter_by(ativo=True).all()
-
     if current_user.role in (UserRole.ADMIN, UserRole.PEDAGOGICO, UserRole.GERENCIA):
         stmt = select(Turma).where(Turma.ativo == True)
         if unidade_id:
@@ -677,7 +745,6 @@ def lancamento_conselho():
         programa_ativo=programa_filtro,
         turno_ativo=turno_filtro,
         etapa=etapa,
-        opcoes_proximas_turmas=opcoes_proximas,
     )
     if not ofertas_turma:
         flash(
@@ -718,37 +785,17 @@ def lancamento_conselho():
                             etapa=etapa,
                             oferta_sel=oferta.id))
 
-    # Busca ou cria registros de conselho POR OFERTA para a etapa. Linhas
-    # legadas (turma_curso_id NULL) não são tocadas nem adotadas.
-    for aluno in alunos:
-        existe = ConselhoClasse.query.filter_by(
-            turma_curso_id=oferta.id,
-            aluno_id=aluno.id,
-            etapa=etapa
-        ).first()
-        if not existe:
-            db.session.add(ConselhoClasse(
-                turma_id=turma_obj.id,
-                turma_curso_id=oferta.id,
-                aluno_id=aluno.id,
-                etapa=etapa,
-                unidade_id=unidade_id
-            ))
-    try:
-        db.session.commit()
-    except Exception as e:
-        from app.utils.errors import flash_and_log
-
-        db.session.rollback()
-        flash_and_log(e, location='conselho.lancamento_conselho', hint='db')
-        return redirect(url_for('conselho.lancamento_conselho', etapa=etapa,
-                                oferta_sel=oferta.id))
-
-    # Usa o primeiro registro da oferta como referência de conselho_id
-    db.session.expire_all()
-    conselho = ConselhoClasse.query.filter_by(
+    # AJ20: o GET NÃO escreve mais. Antes, cada abertura criava uma
+    # ConselhoClasse "casca" por aluno ativo da oferta/etapa e dava commit
+    # (GET com efeito colateral + risco de UNIQUE em aberturas simultâneas).
+    # Linha ausente = vazio: os mapas abaixo simplesmente não têm entrada
+    # para aquele aluno e o formulário volta em branco.
+    conselhos_etapa = ConselhoClasse.query.filter_by(
         turma_curso_id=oferta.id, etapa=etapa
-    ).first()
+    ).order_by(ConselhoClasse.id).all()
+    # A variável `conselho` era referência de conselho_id e não é usada pelo
+    # template; sem linha garantida, o valor neutro é None.
+    conselho = None
 
     perguntas = PerguntaConselho.query.filter_by(etapa=etapa, ativo=True).order_by(PerguntaConselho.id).all()
 
@@ -760,7 +807,9 @@ def lancamento_conselho():
     # devolve o None (o default '' do `.get` do template só vale p/ chave
     # ausente) e o Jinja imprimia "None" em todos os campos de texto.
     respostas_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.resposta or '') for r in respostas_db}
-    observacoes_map = {f"{r.aluno_id}_{r.pergunta_id}": (r.observacao or '') for r in respostas_db}
+    # AJ19: observação geral por aluno, lida de `ConselhoClasse.observacao`.
+    # A chave é o aluno_id (não mais aluno×pergunta) e `or ''` evita "None".
+    observacoes_map = {c.aluno_id: (c.observacao or '') for c in conselhos_etapa}
 
     return render_template('conselho/lancamento.html',
                            turma=turma_obj,
@@ -787,6 +836,17 @@ def salvar_conselho():
     if not turma_id or not etapa:
         flash("Dados insuficientes para salvar.", "warning")
         return redirect(url_for('conselho.lancamento_conselho'))
+
+    # AJ19: limite de 5000 caracteres validado ANTES de qualquer mutação —
+    # um pedido com excesso não grava nada (nem respostas, nem observações).
+    for texto in normalized["observacoes"].values():
+        if len(texto) > 5000:
+            flash(
+                "A observação de cada aluno deve ter no máximo 5000 caracteres.",
+                "warning",
+            )
+            return redirect(url_for('conselho.lancamento_conselho',
+                                    turma=turma_id, etapa=etapa))
 
     turma_obj = db.get_or_404(Turma, turma_id)
     unidade_id = get_unidade_id()
@@ -865,7 +925,7 @@ def salvar_conselho():
     # AJ7-A: estado anterior em lote. É a base da auditoria do gestor e da
     # decisão "preenchimento" (aluno ainda sem conteúdo) × "alteração".
     # NULL e '' contam como o mesmo vazio.
-    chaves = set(normalized["respostas"]) | set(normalized["observacoes"])
+    chaves = set(normalized["respostas"])
     respostas_existentes = (
         ConselhoResposta.query.filter(
             ConselhoResposta.conselho_id.in_([c.id for c in conselhos_turma])
@@ -877,8 +937,13 @@ def salvar_conselho():
     }
     havia_conteudo = {}
     for r in respostas_existentes:
-        if (r.resposta or "").strip() or (r.observacao or "").strip():
+        if (r.resposta or "").strip():
             havia_conteudo[r.aluno_id] = True
+    # AJ19: a observação geral também conta como conteúdo do aluno — um aluno
+    # que só tem observação não é "primeiro preenchimento" ao editá-la.
+    for c in conselhos_turma:
+        if (c.observacao or "").strip():
+            havia_conteudo[c.aluno_id] = True
 
     perguntas_ids = set()
     for key in chaves:
@@ -902,9 +967,7 @@ def salvar_conselho():
         pergunta_id = int(parts[1])
 
         value_resposta = normalized["respostas"].get(key)
-        value_obs = normalized["observacoes"].get(key)
         has_resposta = key in normalized["respostas"]
-        has_obs = key in normalized["observacoes"]
 
         if aluno_id not in alunos_oferta:
             continue
@@ -913,15 +976,15 @@ def salvar_conselho():
         if conselho is None:
             # Aluno matriculado na oferta sem conselho criado ainda: nasce já
             # vinculado à oferta (regra D5.2 — nada de linha sem turma_curso_id).
-            conselho = ConselhoClasse(
+            # AJ20: helper único com SAVEPOINT — corrida na UNIQUE
+            # `uix_conselho_oferta` relê a linha vencedora, nunca 500.
+            conselho = get_or_create_conselho(
                 turma_id=turma_obj.id,
-                turma_curso_id=oferta.id,
+                oferta=oferta,
                 aluno_id=aluno_id,
                 etapa=etapa,
                 unidade_id=unidade_id,
             )
-            db.session.add(conselho)
-            db.session.flush()
             conselho_map[aluno_id] = conselho
 
         resposta = respostas_por_chave.get((aluno_id, pergunta_id))
@@ -955,21 +1018,6 @@ def salvar_conselho():
                         registro["novo_conteudo"] = True
                 resposta.resposta = value_resposta
                 changed = True
-            if has_obs and resposta.observacao != value_obs:
-                if _valor_conselho_mudou(resposta.observacao, value_obs):
-                    registro = alteracoes.setdefault(
-                        aluno_id,
-                        {"nomes": set(), "detalhes": [], "novo_conteudo": False},
-                    )
-                    registro["nomes"].add("observacao")
-                    # Observação é sempre texto livre.
-                    registro["detalhes"].append(
-                        f"observacao[p{pergunta_id}]: texto alterado"
-                    )
-                    if (value_obs or "").strip():
-                        registro["novo_conteudo"] = True
-                resposta.observacao = value_obs
-                changed = True
             if changed:
                 resposta.autor_id = autor_id
                 resposta.autor_nome = autor_nome
@@ -979,7 +1027,6 @@ def salvar_conselho():
                 aluno_id=aluno_id,
                 pergunta_id=pergunta_id,
                 resposta=value_resposta if has_resposta else None,
-                observacao=value_obs if has_obs else None,
                 autor_id=autor_id,
                 autor_nome=autor_nome,
                 unidade_id=turma_obj.unidade_id,
@@ -1007,17 +1054,40 @@ def salvar_conselho():
                     )
                 if (value_resposta or "").strip():
                     registro["novo_conteudo"] = True
-            if has_obs and _valor_conselho_mudou(None, value_obs):
-                registro = alteracoes.setdefault(
-                    aluno_id,
-                    {"nomes": set(), "detalhes": [], "novo_conteudo": False},
-                )
-                registro["nomes"].add("observacao")
-                registro["detalhes"].append(
-                    f"observacao[p{pergunta_id}]: texto alterado"
-                )
-                if (value_obs or "").strip():
-                    registro["novo_conteudo"] = True
+
+    # AJ19: observação geral ÚNICA por aluno/etapa/oferta, gravada em
+    # `ConselhoClasse.observacao`. Só toca a linha quando o texto realmente
+    # muda (NULL e '' contam como o mesmo vazio).
+    for aluno_id_str, value_obs in normalized["observacoes"].items():
+        aluno_id = int(aluno_id_str)
+        if aluno_id not in alunos_oferta:
+            continue
+        conselho = conselho_map.get(aluno_id)
+        if conselho is None:
+            if not (value_obs or "").strip():
+                continue
+            # AJ20: observação com conteúdo é o único motivo para criar a
+            # linha aqui — obs vazia e sem linha existente não grava nada.
+            conselho = get_or_create_conselho(
+                turma_id=turma_obj.id,
+                oferta=oferta,
+                aluno_id=aluno_id,
+                etapa=etapa,
+                unidade_id=unidade_id,
+            )
+            conselho_map[aluno_id] = conselho
+        if not _valor_conselho_mudou(conselho.observacao, value_obs):
+            continue
+        registro = alteracoes.setdefault(
+            aluno_id,
+            {"nomes": set(), "detalhes": [], "novo_conteudo": False},
+        )
+        registro["nomes"].add("observacao")
+        # Observação é sempre texto livre: conteúdo NUNCA vai para o log.
+        registro["detalhes"].append("observacao: texto alterado")
+        if (value_obs or "").strip():
+            registro["novo_conteudo"] = True
+        conselho.observacao = value_obs
 
     # AJ7-A: UM log por aluno, na MESMA transação do salvamento. O helper
     # ignora o professor da oferta e não loga quando nada mudou.
@@ -1093,11 +1163,35 @@ def fechamento_turma(turma_id):
         flash(f'A turma "{turma.nome}" não possui alunos ativos para fechamento.', 'warning')
         return redirect(url_for('conselho.lancamento_conselho'))
 
-    # D5.2 (Passo 5): a lista hardcoded de "próximas turmas" sai de cena —
-    # o catálogo OpcaoProximaTurma (ativos) é a fonte das opções.
-    proximas_opcoes = OpcaoProximaTurma.query.filter_by(ativo=True).order_by(
-        OpcaoProximaTurma.nome
-    ).all()
+    # AJ22-B: o "Próximo Curso" é um CURSO já cadastrado da unidade da
+    # turma (mesma fonte/escopo dos selects de turma/oferta). O catálogo
+    # `opcao_proxima_turma` é LEGADO: só alimenta o fallback histórico.
+    # Conselhos FINAL já gravados preenchem os selects (situação, curso e
+    # nível). Curso/nível inativo já gravado segue visível com etiqueta.
+    aluno_ids_fechamento = [a.id for a in alunos]
+    conselhos_finais = (
+        ConselhoClasse.query.filter_by(
+            turma_curso_id=oferta.id, etapa=EtapaConselho.FINAL
+        )
+        .filter(ConselhoClasse.aluno_id.in_(aluno_ids_fechamento))
+        .all()
+        if aluno_ids_fechamento
+        else []
+    )
+    conselhos_por_aluno = {c.aluno_id: c for c in conselhos_finais}
+
+    from app.services.proximo_curso import (
+        cursos_da_unidade,
+        destinos_por_conselho,
+        mapa_niveis_por_curso,
+    )
+
+    destinos = destinos_por_conselho(conselhos_finais)
+    cursos_ativos = cursos_da_unidade(turma.unidade_id)
+    cursos_ativos_ids = {c.id for c in cursos_ativos}
+    # Cursos que precisam de mapa de níveis: os ativos da unidade + os já
+    # gravados que ficaram inativos (entram só na linha do aluno).
+    cursos_mapa = {c.id: c for c in cursos_ativos}
 
     dados_alunos = []
     for aluno in alunos:
@@ -1109,6 +1203,24 @@ def fechamento_turma(turma_id):
         estatisticas = calcular_estatisticas_frequencia(
             registro.conceito for registro in registros
         )
+
+        conselho = conselhos_por_aluno.get(aluno.id)
+        destino = destinos.get(conselho.id) if conselho else None
+        curso_atual = destino.get("curso") if destino else None
+        cursos_opcoes = list(cursos_ativos)
+        if curso_atual is not None and curso_atual.id not in cursos_ativos_ids:
+            # Curso já gravado que ficou inativo/fora da lista ativa entra
+            # só na linha do aluno e com etiqueta "(inativo)" (E1).
+            cursos_opcoes.append(curso_atual)
+            cursos_mapa[curso_atual.id] = curso_atual
+        legado_nome = None
+        if (
+            conselho is not None
+            and not conselho.proximo_curso_id
+            and destino is not None
+            and destino.get("legado") is not None
+        ):
+            legado_nome = destino["legado"].nome
 
         dados_alunos.append({
             'obj':      aluno,
@@ -1122,6 +1234,10 @@ def fechamento_turma(turma_id):
             'presenca': estatisticas['presenca_percentual'],
             'falta':    estatisticas['falta_percentual'],
             'justificadas': estatisticas['justificadas'],
+            'conselho': conselho,
+            'destino': destino,
+            'cursos_opcoes': cursos_opcoes,
+            'legado_nome': legado_nome,
         })
 
     return render_template('conselho/fechamento.html',
@@ -1131,7 +1247,10 @@ def fechamento_turma(turma_id):
                            ofertas=ofertas_turma,
                            exigir_escolha=False,
                            dados=dados_alunos,
-                           opcoes_turma=proximas_opcoes)
+                           cursos_ativos=cursos_ativos,
+                           niveis_curso=mapa_niveis_por_curso(
+                               cursos_mapa.values(), turma.unidade_id
+                           ))
 
 
 @bp.route('/conselho/fechamento/<int:turma_id>/salvar', methods=['POST'])
@@ -1177,41 +1296,147 @@ def salvar_fechamento_data(turma_id):
     }
 
     try:
-        # Valida situações ANTES de mutar qualquer linha (pedido atômico).
+        from app.models import Nivel
+        from app.services.proximo_curso import (
+            curso_da_escolha,
+            curso_tem_niveis,
+            nivel_compativel,
+            nivel_elegivel,
+        )
+
+        # AJ22: conselhos FINAL já gravados (somente leitura) — necessários
+        # para a exceção "valor já gravado, inalterado". NÃO cria linhas; a
+        # criação segue no helper do loop de mutação.
+        ids_validos = [
+            int(item['aluno_id'])
+            for item in registros
+            if str(item.get('aluno_id') or '').isdigit()
+            and int(item['aluno_id']) in alunos_oferta
+        ]
+        existentes = {
+            c.aluno_id: c
+            for c in ConselhoClasse.query.filter(
+                ConselhoClasse.turma_curso_id == oferta.id,
+                ConselhoClasse.etapa == EtapaConselho.FINAL,
+                ConselhoClasse.aluno_id.in_(ids_validos),
+            ).all()
+        } if ids_validos else {}
+
+        def _ler_id(valor, rotulo):
+            if valor in ("", "None", None):
+                return None
+            try:
+                return int(valor)
+            except (TypeError, ValueError):
+                raise ValueError(f"{rotulo} inválido.") from None
+
+        # Valida situações E próximo curso/nível ANTES de mutar qualquer
+        # linha (pedido atômico). Qualquer recusa → rollback, nada gravado.
         validados = []
         for item in registros:
             aluno_id = int(item['aluno_id'])
             if aluno_id not in alunos_oferta:
                 continue
             situacao = _normalizar_situacao_final(item.get('situacao'))
-            validados.append((aluno_id, situacao, item.get('proxima_turma_id')))
 
-        for aluno_id, situacao, p_turma_id in validados:
-            if p_turma_id in ("", "None", None):
-                p_turma_id = None
-            else:
-                p_turma_id = int(p_turma_id)
+            proximo_curso_id = _ler_id(
+                item.get('proximo_curso_id'), "Próximo curso"
+            )
+            proximo_nivel_id = _ler_id(
+                item.get('proximo_nivel_id'), "Nível de destino"
+            )
 
-            conselho = ConselhoClasse.query.filter_by(
-                turma_curso_id=oferta.id,
-                aluno_id=aluno_id,
-                etapa=EtapaConselho.FINAL
-            ).first()
-
-            if not conselho:
-                conselho = ConselhoClasse(
-                    turma_id=turma.id,
-                    turma_curso_id=oferta.id,
-                    aluno_id=aluno_id,
-                    etapa=EtapaConselho.FINAL.value,
-                    data_inicio=date.today(),
-                    instrutor_id=current_user.id,
-                    unidade_id=unidade_id
+            if proximo_nivel_id is not None and proximo_curso_id is None:
+                raise ValueError(
+                    "O nível de destino exige a escolha do próximo curso."
                 )
-                db.session.add(conselho)
+
+            existente = existentes.get(aluno_id)
+            if proximo_curso_id is None:
+                # Limpar o curso zera o nível (mesmo que venha no payload).
+                curso_efetivo = None
+                nivel_efetivo = None
+            else:
+                curso = curso_da_escolha(proximo_curso_id)
+                if curso is None:
+                    raise ValueError("Próximo curso não encontrado.")
+                curso_inalterado = (
+                    existente is not None
+                    and existente.proximo_curso_id == curso.id
+                )
+                # E1: curso de outra unidade/inativo só é aceito INALTERADO
+                # (histórico preservado). Novo valor exige curso ativo da
+                # unidade da turma.
+                if not curso_inalterado and (
+                    not curso.ativo or curso.unidade_id != turma.unidade_id
+                ):
+                    raise ValueError(
+                        "O próximo curso deve ser um curso ativo desta "
+                        "unidade."
+                    )
+                curso_efetivo = curso.id
+
+                if proximo_nivel_id is None:
+                    nivel_efetivo = None
+                else:
+                    # AJ22-C: o nível pertence ao CURSO escolhido.
+                    nivel = nivel_elegivel(
+                        proximo_nivel_id,
+                        curso_id=curso.id,
+                        unidade_id=turma.unidade_id,
+                    )
+                    if nivel is None:
+                        # Exceção AJ22: aceita o nível já gravado mesmo
+                        # inativo, desde que inalterado e ainda compatível
+                        # (curso e unidade da turma) — avaliada ANTES da
+                        # regra "curso sem níveis", para não punir o
+                        # histórico já gravado.
+                        gravado = getattr(existente, "proximo_nivel_id", None)
+                        candidato = Nivel.query.get(proximo_nivel_id)
+                        if (
+                            candidato is not None
+                            and gravado == proximo_nivel_id
+                            and nivel_compativel(
+                                candidato, curso.id, turma.unidade_id
+                            )
+                        ):
+                            nivel = candidato
+                    if nivel is None:
+                        if not curso_tem_niveis(
+                            curso.id, turma.unidade_id
+                        ):
+                            raise ValueError(
+                                "Não há nível ativo cadastrado para o "
+                                "próximo curso nesta unidade."
+                            )
+                        raise ValueError(
+                            "O nível informado não é válido para o próximo "
+                            "curso e a unidade desta turma."
+                        )
+                    nivel_efetivo = nivel.id
+
+            validados.append(
+                (aluno_id, situacao, curso_efetivo, nivel_efetivo)
+            )
+
+        for aluno_id, situacao, curso_efetivo, nivel_efetivo in validados:
+            # AJ20: helper único com SAVEPOINT — o fechamento só cria a
+            # linha quando vai gravar situação/concluído, e uma corrida na
+            # UNIQUE `uix_conselho_oferta` relê a linha vencedora.
+            conselho = get_or_create_conselho(
+                turma_id=turma.id,
+                oferta=oferta,
+                aluno_id=aluno_id,
+                etapa=EtapaConselho.FINAL,
+                unidade_id=unidade_id,
+                data_inicio=date.today(),
+                instrutor_id=current_user.id,
+            )
 
             conselho.situacao_final         = situacao
-            conselho.proxima_turma_id       = p_turma_id
+            # AJ22-B: `proxima_turma_id` é LEGADO — nunca é escrito aqui.
+            conselho.proximo_curso_id       = curso_efetivo
+            conselho.proximo_nivel_id       = nivel_efetivo
             conselho.concluido              = True
             conselho.data_fim               = date.today()
 
@@ -1314,7 +1539,8 @@ def avaliar_turma(turma_id):
                            exigir_escolha=False,
                            etapa_atual=etapa_selecionada,
                            perguntas=perguntas,
-                           respostas=respostas)
+                           respostas=respostas,
+                           observacao=respostas.get('_obs', ''))
 
 
 # ---------------------------------------------------------------------------
@@ -1446,3 +1672,280 @@ def deletar_periodo_conselho(conselho_id):
         logger.exception("Erro ao deletar período de conselho.")
         return jsonify({"success": False, "msg": "Erro interno ao excluir. Tente novamente."}), 500
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# RESUMO DE RESPOSTAS DO CONSELHO (AJ21)
+# Leitura apenas — nunca cria ConselhoClasse nem escreve.
+# ---------------------------------------------------------------------------
+
+_ROLES_RESUMO_CONSELHO = (
+    UserRole.ADMIN,
+    UserRole.PEDAGOGICO,
+    UserRole.SECRETARIA,
+)
+
+
+def _exigir_resumo_conselho() -> None:
+    """Recusa (403) perfis que não podem ler o resumo de respostas.
+
+    Apenas admin, pedagogico e secretaria. Professor e demais recebem 403.
+    """
+    if current_user.role not in _ROLES_RESUMO_CONSELHO:
+        abort(403)
+
+
+def _turma_do_contexto(turma_id: int) -> Turma:
+    """Turma do resumo respeitando o isolamento por unidade.
+
+    Usuários com unidade no contexto (todos os perfis operacionais) só
+    alcançam a própria unidade; admin/gerência sem unidade mantêm a visão
+    global de leitura. A busca já filtra a unidade — não há IDOR por id.
+    """
+    unidade_id = get_unidade_id()
+    query = Turma.query.filter_by(id=turma_id)
+    if unidade_id is not None:
+        query = query.filter_by(unidade_id=unidade_id)
+    turma_obj = query.first_or_404()
+    if unidade_id is not None:
+        assert_unidade_context(turma_obj.unidade_id, unidade_id)
+    return turma_obj
+
+
+def _oferta_do_resumo(turma_obj: Turma):
+    """Resolve a oferta do resumo com a mesma política 0/1/2+ do conselho.
+
+    1 ativa = uso direto; 2+ exige `turma_curso_id` válido; id inativo,
+    inexistente ou de outra turma é recusado com 404 (nada é escrito).
+    """
+    oferta_id = request.args.get('turma_curso_id', type=int)
+    oferta, ativas, exigir_escolha = _resolver_oferta_conselho(
+        turma_obj, oferta_id
+    )
+    if exigir_escolha or not ativas:
+        abort(404)
+    if _escolha_fora_das_ativas(oferta_id, oferta):
+        abort(404)
+    # A guarda de role já restringiu o resumo aos 3 perfis de leitura; esta
+    # chamada mantém a regra central de acesso à oferta em um único lugar.
+    if not professor_pode_acessar_oferta(current_user, oferta):
+        abort(403)
+    return oferta
+
+
+def _etapa_do_resumo() -> EtapaConselho:
+    """Etapa da querystring; inválida/ausente cai em INICIAL (404 se lixo)."""
+    etapa_raw = request.args.get('etapa', EtapaConselho.INICIAL.value)
+    try:
+        return EtapaConselho(etapa_raw)
+    except (TypeError, ValueError):
+        abort(404)
+
+
+_LETRAS_RESUMO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+
+def _resposta_escolhida(pergunta, valor: str) -> str:
+    """Formata a resposta salva para o resumo.
+
+    Com opções, devolve a letra + texto da alternativa escolhida (ex.:
+    ``B) Às vezes``); sem opções, devolve o texto dissertativo. Nunca lista
+    as alternativas não escolhidas.
+    """
+    valor = (valor or '').strip()
+    if not valor:
+        return ''
+    if pergunta is not None and pergunta.opcoes:
+        opcoes = [opcao.strip() for opcao in pergunta.opcoes.split(' | ')]
+        for indice, opcao in enumerate(opcoes):
+            if opcao == valor:
+                letra = (
+                    _LETRAS_RESUMO[indice]
+                    if indice < len(_LETRAS_RESUMO)
+                    else str(indice + 1)
+                )
+                return f'{letra}) {valor}'
+    return valor
+
+
+@bp.route('/conselho/resumo/<int:turma_id>')
+@login_required
+def resumo_conselho(turma_id):
+    """Resumo único (individual + coletivo) do conselho da oferta/etapa.
+
+    GET nunca escreve nem cria ConselhoClasse (AJ20). Todo aluno ativo da
+    oferta aparece; aluno sem linha/conteúdo = "Sem respostas registradas".
+    Pergunta hoje inativa com resposta salva continua aparecendo (não filtra
+    `ativo`). A seção coletiva lê `TurmaCurso.avaliacao_<etapa>` (JSON) e
+    mostra a observação geral em `_obs`.
+    """
+    _exigir_resumo_conselho()
+    etapa = _etapa_do_resumo()
+    etapa_valor = etapa.value
+    turma_obj = _turma_do_contexto(turma_id)
+    oferta = _oferta_do_resumo(turma_obj)
+    aluno_id = request.args.get('aluno_id', type=int)
+
+    # Alunos ATIVOS da oferta (mesma regra do lançamento) — a lista é a
+    # espinha do resumo: quem não tem ConselhoClasse também aparece.
+    alunos_query = (
+        Aluno.query.join(Inscricao)
+        .filter(
+            Inscricao.turma_curso_id == oferta.id,
+            Inscricao.ativo == True,  # noqa: E712 — coluna booleana
+            Aluno.ativo == True,  # noqa: E712 — coluna booleana
+        )
+        .distinct()
+        .order_by(Aluno.nome)
+    )
+    if aluno_id is not None:
+        alunos_query = alunos_query.filter(Aluno.id == aluno_id)
+    alunos = alunos_query.all()
+    if aluno_id is not None and not alunos:
+        # `aluno_id` de fora da oferta não revela dados de outro aluno.
+        abort(404)
+
+    aluno_ids = [a.id for a in alunos]
+
+    conselhos = (
+        ConselhoClasse.query.filter_by(
+            turma_curso_id=oferta.id, etapa=etapa_valor
+        )
+        .filter(ConselhoClasse.aluno_id.in_(aluno_ids))
+        .all()
+        if aluno_ids
+        else []
+    )
+    conselho_por_aluno = {c.aluno_id: c for c in conselhos}
+    conselho_ids = [c.id for c in conselhos]
+
+    # AJ22-B: destino (curso + nível) por aluno, em lote.
+    from app.services.proximo_curso import destinos_por_conselho
+
+    destinos = destinos_por_conselho(conselhos)
+
+    # UMA consulta para todas as respostas da oferta/etapa (sem N+1 por
+    # aluno). Só respostas com texto entram no resumo.
+    respostas = (
+        ConselhoResposta.query.filter(
+            ConselhoResposta.conselho_id.in_(conselho_ids)
+        ).all()
+        if conselho_ids
+        else []
+    )
+    respostas_por_conselho: dict[int, list] = defaultdict(list)
+    for r in respostas:
+        if (r.resposta or '').strip():
+            respostas_por_conselho[r.conselho_id].append(r)
+
+    perguntas_ids = {
+        r.pergunta_id
+        for lst in respostas_por_conselho.values()
+        for r in lst
+        if r.pergunta_id
+    }
+    perguntas = (
+        {
+            p.id: p
+            for p in PerguntaConselho.query.filter(
+                PerguntaConselho.id.in_(perguntas_ids)
+            ).all()
+        }
+        if perguntas_ids
+        else {}
+    )
+    # Numeração estável no conjunto respondido (não depende do aluno).
+    numero_por_pergunta = {
+        pid: indice + 1
+        for indice, pid in enumerate(sorted(perguntas_ids))
+    }
+
+    alunos_resumo = []
+    for aluno in alunos:
+        conselho = conselho_por_aluno.get(aluno.id)
+        resp_aluno = (
+            respostas_por_conselho.get(conselho.id, []) if conselho else []
+        )
+        resp_lista = []
+        for r in sorted(resp_aluno, key=lambda item: item.pergunta_id or 0):
+            p = perguntas.get(r.pergunta_id) if r.pergunta_id else None
+            resposta_exibicao = _resposta_escolhida(p, r.resposta)
+            if not resposta_exibicao:
+                continue
+            resp_lista.append(
+                {
+                    'pergunta_id': r.pergunta_id,
+                    'numero': numero_por_pergunta.get(r.pergunta_id, ''),
+                    'pergunta_texto': (
+                        p.texto if p else f'Pergunta {r.pergunta_id}'
+                    ),
+                    'resposta_exibicao': resposta_exibicao,
+                    'ativo': bool(p.ativo) if p else False,
+                }
+            )
+
+        autor_nome = None
+        if resp_aluno:
+            # F1: cada resposta guarda o último autor; a de maior id é a
+            # última gravação daquele aluno/etapa.
+            autor_nome = max(resp_aluno, key=lambda item: item.id).autor_nome
+
+        observacao = (conselho.observacao or '') if conselho else ''
+        destino_texto = (
+            (destinos.get(conselho.id) or {}).get('texto') or ''
+            if conselho else ''
+        )
+        alunos_resumo.append(
+            {
+                'aluno': aluno,
+                'nome_exibicao': aluno.nome_social or aluno.nome,
+                'conselho': conselho,
+                'destino': destino_texto,
+                'observacao': observacao,
+                'autor_nome': autor_nome,
+                'respostas': resp_lista,
+                'tem_conteudo': bool(resp_lista or observacao),
+            }
+        )
+
+    # Seção coletiva: mesmo parser da avaliação da turma, sem filtrar a etapa
+    # no modelo (o mapa etapa→campo é a fonte única).
+    dados_coletivos = _get_turma_avaliacao_respostas(oferta, etapa_valor)
+    observacao_coletiva = dados_coletivos.pop('_obs', '')
+    perguntas_coletivas = (
+        PerguntaConselho.query.filter_by(
+            tipo='TURMA', etapa=etapa_valor
+        )
+        .order_by(PerguntaConselho.id)
+        .all()
+    )
+    coletivo_respostas = []
+    for indice, pergunta in enumerate(perguntas_coletivas, start=1):
+        resposta_exibicao = _resposta_escolhida(
+            pergunta, dados_coletivos.get(str(pergunta.id), '')
+        )
+        if not resposta_exibicao:
+            continue
+        coletivo_respostas.append(
+            {
+                'pergunta_id': pergunta.id,
+                'numero': indice,
+                'pergunta_texto': pergunta.texto,
+                'resposta_exibicao': resposta_exibicao,
+                'ativo': bool(pergunta.ativo),
+            }
+        )
+
+    return render_template(
+        'conselho/resumo_conselho.html',
+        turma=turma_obj,
+        oferta=oferta,
+        etapa=etapa,
+        etapa_valor=etapa_valor,
+        alunos_resumo=alunos_resumo,
+        coletivo_respostas=coletivo_respostas,
+        observacao_coletiva=observacao_coletiva,
+        now=get_local_now(),
+        aluno_id=aluno_id,
+        total_alunos=len(alunos_resumo),
+    )

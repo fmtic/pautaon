@@ -24,7 +24,10 @@ from app.models import (
     Turma,
     TurmaCurso,
 )
-from app.services.conselho_leitura import rotulo_oferta
+from app.services.conselho_leitura import (
+    cond_conselho_sem_conteudo,
+    rotulo_oferta,
+)
 from app.services.turma_curso import ofertas_ativas
 from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
 
@@ -131,10 +134,12 @@ def resultado_conselho():
                     ofertas = []
 
                 oferta_ids = [o.id for o in ofertas]
+                # AJ20: casca FINAL sem conteúdo equivale a linha ausente.
                 conselhos = (
                     ConselhoClasse.query.filter(
                         ConselhoClasse.etapa == "FINAL",
                         ConselhoClasse.turma_curso_id.in_(oferta_ids),
+                        ~cond_conselho_sem_conteudo(),
                     ).all()
                     if oferta_ids
                     else []
@@ -187,6 +192,13 @@ def resultado_conselho():
                             freq.conceito
                         )
 
+                # AJ22-B: curso + nível de destino em LOTE (sem N+1), com
+                # fallback para a opção legada quando `proximo_curso_id` é
+                # NULL.
+                from app.services.proximo_curso import destinos_por_conselho
+
+                destinos = destinos_por_conselho(conselhos)
+
                 for cons in conselhos:
                     aluno = alunos_map.get(cons.aluno_id)
                     oferta = ofertas_map.get(cons.turma_curso_id)
@@ -206,9 +218,8 @@ def resultado_conselho():
                     )
                     presenca_pct = estatisticas.get("presenca_percentual", 0)
 
-                    proxima = (
-                        cons.proxima_turma_obj.nome if cons.proxima_turma_obj else "-"
-                    )
+                    destino = destinos.get(cons.id) or {}
+                    proxima = destino.get("texto") or "-"
 
                     registros.append({
                         "turma": turma.nome,

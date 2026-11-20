@@ -169,6 +169,10 @@
           </div>
           <hr class="my-3">
           {% set inscricoes_oferta = alunos_por_oferta.get(oferta.id, []) %}
+          {# AJ18-E: ação de correção da entrada só existe com oferta iniciada e
+             para os perfis que podem enturmar (sem gerência). #}
+          {% set inicio_entrada_oferta = oferta.data_inicio or turma.data_inicio %}
+          {% set fim_entrada_oferta = oferta.data_fim or turma.data_fim %}
           <div class="d-flex justify-content-between align-items-center mb-2">
             <strong>Alunos enturmados</strong>
             <span class="text-muted small">{{ inscricoes_oferta|length }} aluno(s)</span>
@@ -195,26 +199,63 @@
                         class="w-100 h-100 object-fit-cover" alt="Foto de {{ aluno.nome }}" />
                     </div>
                   </td>
-                  <td class="fw-bold small">{{ aluno.nome }}</td>
+                  <td class="fw-bold small">
+                    {{ aluno.nome }}
+                    <div class="fw-normal text-muted">
+                      {% if inscricao_aluno.data_entrada_oferta %}
+                      Entrou em {{ inscricao_aluno.data_entrada_oferta.strftime('%d/%m/%Y') }}
+                      {% else %}
+                      Desde o início
+                      {% endif %}
+                    </div>
+                  </td>
                   <td>
                     {# AJ6-B6: `nivel` é campo da FICHA do aluno. Guarda mínima: esconder
                        SÓ do professor (fora da sua allowlist); demais perfis, incl.
                        servico_social, permanecem inalterados. #}
                     {% if current_user.role != 'professor' %}
+                    {% set nivel_atual = inscricao_aluno.nivel or aluno.nivel %}
                     <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
                       style="width: 150px">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                       <input type="hidden" name="turma_id" value="{{ turma.id }}" />
+                      <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}" />
                       <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
-                        <option value="Não se aplica" {% if not aluno.nivel or aluno.nivel == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
-                        {% for nv in niveis_cadastrados %}
-                        <option value="{{ nv.nome }}" {% if aluno.nivel == nv.nome %}selected{% endif %}>{{ nv.nome }}</option>
+                        {# AJ22-F: o valor já gravado (texto livre/legado/de outro curso) vem
+                           primeiro e marcado como "(atual)". Reenviar o select sem mudar
+                           não apaga o dado: o POST aceita o valor atual. #}
+                        {% if nivel_atual and nivel_atual != 'Não se aplica' %}
+                        <option value="{{ nivel_atual }}" selected>{{ nivel_atual }} (atual)</option>
+                        {% endif %}
+                        <option value="Não se aplica" {% if not nivel_atual or nivel_atual == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
+                        {# AJ22-E: exibe apenas os níveis do curso desta oferta específica #}
+                        {% for nv in niveis_por_curso_id.get(oferta.curso_id, []) %}
+                        {% if nv.nome != nivel_atual %}
+                        <option value="{{ nv.nome }}">{{ nv.nome }}</option>
+                        {% endif %}
                         {% endfor %}
                       </select>
                     </form>
                     {% endif %}
                   </td>
                   <td class="text-end">
+                    {# AJ18-E: corrigir a data de entrada sem desenturmar. #}
+                    {% if current_user.role in ['admin', 'pedagogico', 'secretaria']
+                          and inicio_entrada_oferta and inicio_entrada_oferta <= hoje %}
+                    <button type="button"
+                      class="btn btn-sm btn-outline-secondary js-alterar-entrada"
+                      data-bs-toggle="modal" data-bs-target="#modalEntrada"
+                      data-url="{{ url_for('registros.alterar_entrada_aluno', turma_id=turma.id, oferta_id=oferta.id, inscricao_id=inscricao_aluno.id) }}"
+                      data-inscricao="{{ inscricao_aluno.id }}"
+                      data-aluno="{{ aluno.nome }}"
+                      data-entrada="{{ inscricao_aluno.data_entrada_oferta.isoformat() if inscricao_aluno.data_entrada_oferta else '' }}"
+                      data-atual="{% if inscricao_aluno.data_entrada_oferta %}Entrou em {{ inscricao_aluno.data_entrada_oferta.strftime('%d/%m/%Y') }}{% else %}Desde o início{% endif %}"
+                      data-ini="{{ inicio_entrada_oferta.isoformat() }}"
+                      data-fim="{{ fim_entrada_oferta.isoformat() if fim_entrada_oferta else '' }}"
+                      title="Alterar data de entrada">
+                      <i class="bi bi-calendar-event"></i> Entrada
+                    </button>
+                    {% endif %}
                     {# AJ6-B6: editar/transferir mexem na FICHA do aluno e não estão na
                        allowlist do professor. Guarda mínima: esconder SÓ do professor;
                        demais perfis inalterados (desenturmar mantém a sua guarda). #}
@@ -305,23 +346,42 @@
         </div>
         {% endif %}
         {% if ofertas | length == 1 or oferta_sel %}
+        {% if entrada_obrigatoria %}
+        <div class="alert alert-warning small mb-3" id="entrada-obrigatoria-aviso">
+          Esta oferta já começou. Informe, para cada aluno, a data de entrada na oferta:
+          <strong>Hoje</strong>, <strong>Data específica</strong> (dentro da vigência) ou <strong>Desde o início</strong>.
+          Nenhuma opção vem pré-selecionada. "Hoje" fora da vigência será recusado.
+          <div class="mt-2 d-flex flex-wrap gap-2 align-items-center">
+            <span class="fw-bold small">Aplicar a todos:</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm js-aplicar-todos" data-valor="hoje">Hoje</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm js-aplicar-todos" data-valor="inicio">Desde o início</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm js-aplicar-todos" data-valor="data">Data específica</button>
+            <input type="date" class="form-control form-control-sm" id="entrada-aplicar-data" style="width:auto"
+              {% if entrada_ini_iso %}min="{{ entrada_ini_iso }}"{% endif %}
+              {% if entrada_fim_iso %}max="{{ entrada_fim_iso }}"{% endif %}>
+          </div>
+        </div>
+        {% endif %}
         <div class="mb-3">
           <input type="search" id="alunoSearchInput" class="form-control form-control-sm"
             placeholder="Pesquisar aluno..." autocomplete="off" />
         </div>
         <div class="table-responsive" style="max-height: 400px">
-          <table class="table table-sm table-hover">
+          <table class="table table-sm table-hover align-middle">
             <thead class="table-light sticky-top">
               <tr>
                 <th style="width: 40px"></th>
                 <th>Nome</th>
                 <th>Nível</th>
+                {% if entrada_obrigatoria %}
+                <th style="min-width: 290px">Data de entrada na oferta *</th>
+                {% endif %}
               </tr>
             </thead>
             <tbody>
               {% if alunos_sem_turma %}
               {% for a in alunos_sem_turma %}
-              <tr class="enturmar-row" data-nome="{{ a.nome.lower() }}">
+              <tr class="enturmar-row" data-nome="{{ a.nome.lower() }}" data-aluno="{{ a.id }}">
                 <td>
                   <input type="checkbox" name="aluno_ids[]" value="{{ a.id }}" class="form-check-input" />
                 </td>
@@ -333,17 +393,31 @@
                     <option value="Não se aplica" selected>
                       Não se aplica
                     </option>
-                    {# Níveis cadastrados pelo usuário em Planejamento #} {% for
-                    nivel in niveis_cadastrados %}
+                    {# AJ22-E: exibe apenas os níveis do curso da oferta a que ele foi enturmado #}
+                    {% for nivel in niveis_oferta_sel %}
                     <option value="{{ nivel.nome }}">{{ nivel.nome }}</option>
                     {% endfor %}
                   </select>
                 </td>
+                {% if entrada_obrigatoria %}
+                <td class="small entrada-celula">
+                  <div class="d-flex flex-column gap-1">
+                    <label class="mb-0"><input type="radio" name="entrada_{{ a.id }}" value="hoje" class="form-check-input me-1 entrada-radio"> Hoje ({{ entrada_hoje_iso }})</label>
+                    <label class="mb-0"><input type="radio" name="entrada_{{ a.id }}" value="inicio" class="form-check-input me-1 entrada-radio"> Desde o início</label>
+                    <div class="d-flex align-items-center gap-2">
+                      <label class="mb-0"><input type="radio" name="entrada_{{ a.id }}" value="" class="form-check-input me-1 entrada-radio entrada-radio-data" data-aluno="{{ a.id }}"> Data específica</label>
+                      <input type="date" class="form-control form-control-sm entrada-date" data-aluno="{{ a.id }}" style="width:auto"
+                        {% if entrada_ini_iso %}min="{{ entrada_ini_iso }}"{% endif %}
+                        {% if entrada_fim_iso %}max="{{ entrada_fim_iso }}"{% endif %} disabled>
+                    </div>
+                  </div>
+                </td>
+                {% endif %}
               </tr>
               {% endfor %}
               {% else %}
               <tr>
-                <td colspan="3" class="text-center py-4 text-muted">
+                <td colspan="{{ 4 if entrada_obrigatoria else 3 }}" class="text-center py-4 text-muted">
                   Nenhum aluno disponível para este curso.
                 </td>
               </tr>
@@ -371,20 +445,221 @@
 </div>
 {% endif %}
 
+{% if current_user.role in ['admin', 'pedagogico', 'secretaria'] %}
+<!-- Modal Alterar Data de Entrada (AJ18-E) -->
+<div class="modal fade" id="modalEntrada" tabindex="-1"
+  data-reabrir="{{ '1' if abrir_modal_entrada else '0' }}"
+  data-inscricao="{{ entrada_inscricao_id or '' }}"
+  data-escolha="{{ entrada_escolha or '' }}">
+  <div class="modal-dialog">
+    <form id="formEntrada" method="POST" class="modal-content">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">Alterar data de entrada</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">
+          Aluno: <strong id="entradaAlunoNome">—</strong><br />
+          Data atual: <strong id="entradaAtual">—</strong>
+        </p>
+        {% if abrir_modal_entrada and entrada_pendentes %}
+        <div class="alert alert-warning small" id="entradaPendentesAviso">
+          Existem <strong>{{ entrada_pendentes }}</strong> frequência(s) deste
+          aluno nesta oferta em datas anteriores à nova entrada{% if entrada_pendentes_ini and entrada_pendentes_fim %}
+          (de <strong>{{ entrada_pendentes_ini.strftime('%d/%m/%Y') }}</strong>
+          a <strong>{{ entrada_pendentes_fim.strftime('%d/%m/%Y') }}</strong>){% endif %}.
+          Escolha o que fazer com elas:
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button type="submit" name="acao_anteriores" value="manter"
+              class="btn btn-sm btn-primary fw-bold" id="entradaManter">
+              Manter frequências
+            </button>
+            {% if not entrada_conselho_bloqueia_remocao %}
+            <button type="submit" name="acao_anteriores" value="remover"
+              class="btn btn-sm btn-danger fw-bold" id="entradaRemover">
+              Remover frequências
+            </button>
+            {% endif %}
+          </div>
+          <div class="{% if not entrada_conselho_bloqueia_remocao %}text-danger {% endif %}mt-2 mb-0">
+            {% if entrada_conselho_bloqueia_remocao %}
+            O conselho desta oferta já foi concluído: não é possível remover
+            frequências anteriores. Você pode manter as frequências para
+            avançar a entrada.
+            {% else %}
+            <strong>Remover é irreversível:</strong> as frequências listadas
+            serão apagadas definitivamente.
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {# Mesmas 3 opções do enturmar, reutilizando markup e JS da escolha de
+           entrada (`.entrada-celula`/`.entrada-radio`). #}
+        <div class="entrada-celula">
+          <div class="d-flex flex-column gap-1">
+            <label class="mb-0"><input type="radio" name="escolha" value="hoje" class="form-check-input me-1 entrada-radio"> Hoje ({{ entrada_hoje_iso }})</label>
+            <label class="mb-0"><input type="radio" name="escolha" value="inicio" class="form-check-input me-1 entrada-radio"> Desde o início</label>
+            <div class="d-flex align-items-center gap-2">
+              <label class="mb-0"><input type="radio" name="escolha" value="" class="form-check-input me-1 entrada-radio entrada-radio-data"> Data específica</label>
+              <input type="date" class="form-control form-control-sm entrada-date" style="width:auto" disabled>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        {% if not (abrir_modal_entrada and entrada_pendentes) %}
+        <button type="submit" class="btn btn-primary fw-bold">SALVAR DATA DE ENTRADA</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     var searchInput = document.getElementById("alunoSearchInput");
-    if (!searchInput) return;
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        var query = searchInput.value.trim().toLowerCase();
+        document
+          .querySelectorAll("#modalEnturmar tbody tr.enturmar-row")
+          .forEach(function (row) {
+            var nome = row.dataset.nome || "";
+            row.style.display = nome.includes(query) ? "" : "none";
+          });
+      });
+    }
 
-    searchInput.addEventListener("input", function () {
-      var query = searchInput.value.trim().toLowerCase();
-      document
-        .querySelectorAll("#modalEnturmar tbody tr.enturmar-row")
-        .forEach(function (row) {
-          var nome = row.dataset.nome || "";
-          row.style.display = nome.includes(query) ? "" : "none";
+    // AJ18-B/E: sincroniza rádio "Data específica" com o input date da linha
+    // (vale para o modal de enturmar e para o de alterar a entrada).
+    document.querySelectorAll(".entrada-celula").forEach(function (cel) {
+      var radioData = cel.querySelector(".entrada-radio-data");
+      var dateInput = cel.querySelector(".entrada-date");
+      var radios = cel.querySelectorAll(".entrada-radio");
+      if (!radioData || !dateInput) return;
+      radios.forEach(function (r) {
+        r.addEventListener("change", function () {
+          if (radioData.checked) {
+            dateInput.disabled = false;
+            if (dateInput.value) { radioData.value = dateInput.value; }
+          } else {
+            dateInput.disabled = true;
+          }
         });
+      });
+      dateInput.addEventListener("change", function () {
+        radioData.value = dateInput.value || "";
+        radioData.checked = true;
+        dateInput.disabled = false;
+      });
+      dateInput.addEventListener("input", function () {
+        radioData.value = dateInput.value || "";
+      });
     });
+
+    // AJ18-B: "aplicar a todos" apenas pré-preenche (não seleciona alunos).
+    var aplicarData = document.getElementById("entrada-aplicar-data");
+    document.querySelectorAll(".js-aplicar-todos").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var modo = btn.getAttribute("data-valor");
+        var dataVal = aplicarData ? aplicarData.value : "";
+        document.querySelectorAll("#modalEnturmar .entrada-celula").forEach(function (cel) {
+          var radioHoje = cel.querySelector('input.entrada-radio[value="hoje"]');
+          var radioInicio = cel.querySelector('input.entrada-radio[value="inicio"]');
+          var radioData = cel.querySelector(".entrada-radio-data");
+          var dateInput = cel.querySelector(".entrada-date");
+          if (!radioData || !dateInput) return;
+          if (modo === "hoje" && radioHoje) {
+            radioHoje.checked = true;
+            dateInput.disabled = true;
+          } else if (modo === "inicio" && radioInicio) {
+            radioInicio.checked = true;
+            dateInput.disabled = true;
+          } else if (modo === "data") {
+            radioData.checked = true;
+            dateInput.disabled = false;
+            if (dataVal) {
+              dateInput.value = dataVal;
+              radioData.value = dataVal;
+            }
+          }
+        });
+      });
+    });
+
+    // AJ18-E: um único modal reutilizado por aluno. Os dados vêm do botão da
+    // linha; o POST é a única fonte da verdade (inclusive da contagem de
+    // frequências anteriores, devolvida na reabertura).
+    var modalEntrada = document.getElementById("modalEntrada");
+    var formEntrada = document.getElementById("formEntrada");
+    if (modalEntrada && formEntrada) {
+      var nomeEl = document.getElementById("entradaAlunoNome");
+      var atualEl = document.getElementById("entradaAtual");
+      var radioHoje = formEntrada.querySelector('input.entrada-radio[value="hoje"]');
+      var radioInicio = formEntrada.querySelector('input.entrada-radio[value="inicio"]');
+      var radioData = formEntrada.querySelector(".entrada-radio-data");
+      var dateInput = formEntrada.querySelector(".entrada-date");
+
+      var preencherEntrada = function (btn) {
+        formEntrada.action = btn.getAttribute("data-url");
+        nomeEl.textContent = btn.getAttribute("data-aluno") || "";
+        atualEl.textContent = btn.getAttribute("data-atual") || "";
+        var entrada = btn.getAttribute("data-entrada") || "";
+        radioHoje.checked = false;
+        radioInicio.checked = false;
+        radioData.checked = false;
+        radioData.value = "";
+        dateInput.value = "";
+        dateInput.disabled = true;
+        dateInput.min = btn.getAttribute("data-ini") || "";
+        dateInput.max = btn.getAttribute("data-fim") || "";
+        if (entrada) {
+          radioData.checked = true;
+          radioData.value = entrada;
+          dateInput.value = entrada;
+          dateInput.disabled = false;
+        } else {
+          radioInicio.checked = true;
+        }
+      };
+
+      document.querySelectorAll(".js-alterar-entrada").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          preencherEntrada(btn);
+        });
+      });
+
+      // Reabre com a contagem devolvida pelo POST: mesma modal, mesmo markup,
+      // com o aviso renderizado pelo servidor e a escolha tentada preservada.
+      if (modalEntrada.getAttribute("data-reabrir") === "1") {
+        var alvo = document.querySelector(
+          '.js-alterar-entrada[data-inscricao="' +
+            modalEntrada.getAttribute("data-inscricao") + '"]'
+        );
+        if (alvo) {
+          preencherEntrada(alvo);
+          var escolha = modalEntrada.getAttribute("data-escolha") || "";
+          if (escolha === "inicio") {
+            radioInicio.checked = true;
+            radioData.checked = false;
+            dateInput.disabled = true;
+          } else if (escolha === "hoje") {
+            radioHoje.checked = true;
+            radioData.checked = false;
+            dateInput.disabled = true;
+          } else if (escolha) {
+            radioData.checked = true;
+            radioData.value = escolha;
+            dateInput.value = escolha;
+            dateInput.disabled = false;
+          }
+          new bootstrap.Modal(modalEntrada).show();
+        }
+      }
+    }
   });
 
   // Etapa M1: após trocar o curso no seletor (reload), reabrir o modal.

@@ -240,6 +240,9 @@ class Config:
     NOTIFICADOR_DRY_RUN = get_bool("NOTIFICADOR_DRY_RUN", True)
     NOTIFICADOR_LOG_LEVEL = os.getenv("NOTIFICADOR_LOG_LEVEL", "INFO")
 
+    GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    GOOGLE_OAUTH_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
     GOOGLE_OAUTH_ALLOWED_DOMAINS = [
         item.strip().lower()
         for item in os.getenv("GOOGLE_OAUTH_ALLOWED_DOMAINS", "").split(",")

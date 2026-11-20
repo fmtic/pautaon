@@ -94,9 +94,12 @@ CENSO_REAL = frozenset(
 ROTULOS_SEM_LINHA = frozenset(
     {
         "Acesso via Google",
+        "Alteração da data de entrada na oferta",
         "Cadastro Período Letivo",
         "Desbloqueio de login",
+        "Enturmação de aluno na oferta",
         "Gestão de Unidade",
+        "Lançamento de frequência ignorado (entrada futura)",
         "Reativação de Turma",
         "Trocar Professor da Oferta",
         "Excluir documento",
@@ -139,6 +142,7 @@ CATEGORIA_ESPERADA = {
     "Alterar TemaAula": "edicao",
     "Alterar Turma": "edicao",
     "Alterar TurmaCurso": "edicao",
+    "Alteração da data de entrada na oferta": "edicao",
     "Alteração de Cadastros": "edicao",
     "Alteração de conselho (gestor)": "edicao",
     "Aviso de Invasão/Falha": "login",
@@ -153,6 +157,7 @@ CATEGORIA_ESPERADA = {
     "Criar TurmaCurso": "criacao",
     "DESENTURMADO": "outras",
     "Desbloqueio de login": "login",
+    "Enturmação de aluno na oferta": "outras",
     "Disparo de E-mail": "outras",
     "Editar aluno": "edicao",
     "Erro E-mail": "outras",
@@ -162,6 +167,7 @@ CATEGORIA_ESPERADA = {
     "Exclusão de Turma": "exclusao",
     "Gestão de Unidade": "outras",
     "Informacao Padrao": "outras",
+    "Lançamento de frequência ignorado (entrada futura)": "outras",
     "Logoff": "login",
     "Manutenção": "outras",
     "Reativação de Turma": "outras",
@@ -499,7 +505,7 @@ def test_listas_congeladas_sem_sobreposicao():
                 "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
                 f"{sorted(a & b)}."
             )
-    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 8
+    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 11
     assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 

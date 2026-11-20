@@ -1,15 +1,10 @@
 {% extends "base.html" %} {% block styles %} {{ super() }}
-<link
-  rel="stylesheet"
-  href="{{ url_for('static', filename='css/conselho/conselho.css') }}?v=1"
-/>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}?v=1" />
 {% endblock %} {% block content %}
 <div id="conteudo-impressao">
   <div class="container-fluid mb-5">
     {# Cabeçalho com botões — some todo na impressão #}
-    <div
-      class="d-flex justify-content-between align-items-center mb-4 d-print-none"
-    >
+    <div class="d-flex justify-content-between align-items-center mb-4 d-print-none">
       <h2 class="fw-bold">
         <i class="bi bi-mortarboard me-2"></i>Conselho da Turma - Fechamento
         {% if oferta %}
@@ -20,10 +15,7 @@
         <button onclick="prepararImpressao()" class="btn btn-dark">
           <i class="bi bi-printer me-2"></i>Imprimir
         </button>
-        <button
-          onclick="exportTableToCSV('{{ turma.nome }}.csv')"
-          class="btn btn-outline-success"
-        >
+        <button onclick="exportTableToCSV('{{ turma.nome }}.csv')" class="btn btn-outline-success">
           <i class="bi bi-file-earmark-excel me-2"></i>Exportar .CSV
         </button>
         <button onclick="salvarFechamento()" class="btn btn-primary">
@@ -55,8 +47,8 @@
             </p>
             <p class="mb-0">
               {# H3e/H5a: dias/horário da OFERTA pela grade; sem oferta escolhida
-                 (2+ cursos) não há agenda única — nenhuma leitura de coluna
-                 escalar da turma. #}
+              (2+ cursos) não há agenda única — nenhuma leitura de coluna
+              escalar da turma. #}
               {% if grade_oferta %}
               {{ grade_oferta.dias_texto or '—' }} | {{ grade_oferta.texto_horario or 'Horário não definido' }}
               {% else %}
@@ -69,7 +61,7 @@
     </div>
 
     {# D5.2 (M1): fechamento por OFERTA — com 2+ cursos ativos exige escolha
-       antes de listar qualquer aluno; com 0 a rota recusa com flash. #}
+    antes de listar qualquer aluno; com 0 a rota recusa com flash. #}
     {% if exigir_escolha %}
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-body">
@@ -92,11 +84,7 @@
     {% else %}
     <div class="card shadow-sm border-0">
       <div class="table-responsive">
-        <table
-          id="tabelaFechamento"
-          class="table table-hover align-middle mb-0"
-          data-oferta-id="{{ oferta.id }}"
-        >
+        <table id="tabelaFechamento" class="table table-hover align-middle mb-0" data-oferta-id="{{ oferta.id }}">
           <thead class="table-dark">
             <tr class="small text-center">
               <th class="text-start ps-4">Aluno</th>
@@ -105,7 +93,8 @@
               <th>Falta</th>
               {# Removido d-print-none — agora aparece na impressão #}
               <th>Situação Final</th>
-              <th>Próxima Turma</th>
+              <th>Próximo Curso</th>
+              <th>Nível</th>
             </tr>
           </thead>
           <tbody>
@@ -113,20 +102,13 @@
             <tr data-aluno-id="{{ item.obj.id }}">
               <td class="ps-3">
                 <div class="d-flex align-items-center">
-                  <img
-                    src="{{ url_for('registros.foto_aluno', aluno_id=item.obj.id) }}"
-                    class="rounded-circle me-3 border"
-                    width="45"
-                    height="45"
-                    style="object-fit: cover"
-                  />
+                  <img src="{{ url_for('registros.foto_aluno', aluno_id=item.obj.id) }}"
+                    class="rounded-circle me-3 border" width="45" height="45" style="object-fit: cover" />
                   <div>
                     <div class="fw-bold">
                       {{ item.obj.nome_social or item.obj.nome }}
                     </div>
-                    <small class="text-muted"
-                      >{{ item.obj.nivel or '—' }} | {{ item.obj.idade }} anos</small
-                    >
+                    <small class="text-muted">{{ item.obj.nivel or '—' }} | {{ item.obj.idade }} anos</small>
                   </div>
                 </div>
               </td>
@@ -134,9 +116,7 @@
                 <span class="badge bg-success">A: {{ item.percs.A }}%</span>
                 <span class="badge bg-primary">B: {{ item.percs.B }}%</span>
                 <span class="badge bg-info">C: {{ item.percs.C }}%</span>
-                <span class="badge bg-warning text-dark"
-                  >D: {{ item.percs.D }}%</span
-                >
+                <span class="badge bg-warning text-dark">D: {{ item.percs.D }}%</span>
                 <span class="badge bg-danger">F: {{ item.percs.F }}%</span>
                 <span class="badge bg-secondary">J: {{ item.counts.J }} ocorr.</span>
               </td>
@@ -149,35 +129,43 @@
               impressão. D5.2b: value = VALOR do enum SituacaoFinal
               (app/models/enums.py) — nada fora dele. #}
               <td class="text-center">
-                <select
-                  class="form-select form-select-sm border-primary d-print-none situacao-select"
-                >
-                  <option value="Aprovado">Aprovado</option>
-                  <option value="Reprovado por Falta">Reprovado por Falta</option>
-                  <option value="Desistente">Desistente</option>
-                  <option value="Evadido">Evadido</option>
-                  <option value="Participação">Participação</option>
-                  <option value="Concluído">Concluído</option>
+                <select class="form-select form-select-sm border-primary d-print-none situacao-select">
+                  <option value="Aprovado"{%- if item.conselho and item.conselho.situacao_final == 'Aprovado' %} selected{%- endif %}>Aprovado</option>
+                  <option value="Reprovado por Falta"{%- if item.conselho and item.conselho.situacao_final == 'Reprovado por Falta' %} selected{%- endif %}>Reprovado por Falta</option>
+                  <option value="Desistente"{%- if item.conselho and item.conselho.situacao_final == 'Desistente' %} selected{%- endif %}>Desistente</option>
+                  <option value="Evadido"{%- if item.conselho and item.conselho.situacao_final == 'Evadido' %} selected{%- endif %}>Evadido</option>
+                  <option value="Participação"{%- if item.conselho and item.conselho.situacao_final == 'Participação' %} selected{%- endif %}>Participação</option>
+                  <option value="Concluído"{%- if item.conselho and item.conselho.situacao_final == 'Concluído' %} selected{%- endif %}>Concluído</option>
                 </select>
-                <span class="d-none d-print-inline situacao-texto fw-semibold"
-                  >Aprovado</span
-                >
+                <span class="d-none d-print-inline situacao-texto fw-semibold">{{ item.conselho.situacao_final if item.conselho and item.conselho.situacao_final else 'Aprovado' }}</span>
               </td>
 
-              {# Próxima Turma: mesma lógica. D5.2 (Passo 5): o valor é o id
-                 do catálogo OpcaoProximaTurma (era lista hardcoded de nomes). #}
+              {# Próximo Curso (AJ22-B/C): id de um CURSO já cadastrado da
+              unidade da turma. #}
               <td class="text-center">
-                <select
-                  class="form-select form-select-sm border-secondary d-print-none proxima-select"
-                >
+                <select class="form-select form-select-sm border-secondary d-print-none proxima-select"
+                  data-legado="{{ item.legado_nome or '' }}">
                   <option value="">—</option>
-                  {% for opt in opcoes_turma %}
-                  <option value="{{ opt.id }}">{{ opt.nome }}</option>
+                  {% for c in item.cursos_opcoes %}
+                  <option value="{{ c.id }}"{%- if item.conselho and item.conselho.proximo_curso_id == c.id %} selected{%- endif %}>{{ c.nome }}{% if not c.ativo %} (inativo){% endif %}</option>
                   {% endfor %}
                 </select>
-                <span
-                  class="d-none d-print-inline proxima-texto fw-semibold"
-                ></span>
+                <span class="d-none d-print-inline proxima-texto fw-semibold">{{ item.legado_nome or '' }}</span>
+                {% if item.legado_nome %}
+                <small class="d-block text-muted d-print-none" title="Valor do catálogo antigo, preservado apenas para leitura">Legado: {{ item.legado_nome }} (sem nível)</small>
+                {% endif %}
+              </td>
+
+              {# Nível (AJ22-C): "Não se aplica" é o default; o JS habilita e
+              popula com os níveis DO CURSO escolhido. Curso sem níveis
+              mostra "Nível não cadastrado". `data-nivel-atual` guarda o
+              nível já gravado (o inativo continua visível com etiqueta). #}
+              <td class="text-center">
+                <select class="form-select form-select-sm border-info d-print-none nivel-select" disabled
+                  data-nivel-atual="{{ item.conselho.proximo_nivel_id if item.conselho and item.conselho.proximo_nivel_id else '' }}">
+                  <option value="">Não se aplica</option>
+                </select>
+                <span class="d-none d-print-inline nivel-texto fw-semibold"></span>
               </td>
             </tr>
             {% endfor %}
@@ -188,9 +176,7 @@
     {% endif %}
 
     {# Rodapé de auditoria — só aparece na impressão #}
-    <div
-      class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted"
-    >
+    <div class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted">
       <div class="d-flex justify-content-between">
         <span><strong>Impresso por:</strong> {{ current_user.name }}</span>
         <span><strong>Data/Hora:</strong> <span id="print-date"></span></span>
@@ -202,6 +188,12 @@
 {% endblock %} {% block scripts %} {{ super() }}
 <script src="/static/js/conselho/conselho.js"></script>
 <script>
+  // AJ22-C: dados do fechamento embutidos na página (sem requisição extra).
+  // NIVEL_DATA: {curso_id: [{id, nome, ativo}]} — inclui inativos para o
+  // nível já gravado continuar visível com etiqueta "(inativo)"; níveis sem
+  // curso (legado) não entram.
+  const NIVEL_DATA = {{ niveis_curso|default ({}) | tojson }};
+
   // Preenche data/hora do rodapé
   document.getElementById("print-date").innerText = new Date().toLocaleString(
     "pt-BR",

@@ -137,6 +137,8 @@ def _seed(app):
         conselho = ConselhoClasse(
             turma_id=turma.id, turma_curso_id=oferta.id, aluno_id=aluno.id,
             etapa=EtapaConselho.INICIAL, unidade_id=unidade.id,
+            # AJ19: observação geral do aluno (uma por etapa/oferta).
+            observacao=OBS_INICIAL,
         )
         db.session.add(conselho)
         db.session.flush()
@@ -144,12 +146,12 @@ def _seed(app):
         r_escolha = ConselhoResposta(
             conselho_id=conselho.id, aluno_id=aluno.id,
             pergunta_id=p_escolha.id, resposta=RESP_ESCOLHA,
-            observacao=OBS_INICIAL, unidade_id=unidade.id,
+            unidade_id=unidade.id,
         )
         r_livre = ConselhoResposta(
             conselho_id=conselho.id, aluno_id=aluno.id,
             pergunta_id=p_livre.id, resposta=RESP_LIVRE,
-            observacao="", unidade_id=unidade.id,
+            unidade_id=unidade.id,
         )
         db.session.add_all([r_escolha, r_livre])
         db.session.commit()
@@ -174,23 +176,23 @@ def _url_lancamento(ids):
     return _URL_LANCAMENTO.format(turma=ids["turma"], oferta=ids["oferta"])
 
 
-def _form(ids, resp_escolha, obs_escolha, resp_livre, obs_livre):
+def _form(ids, resp_escolha, resp_livre, obs_geral):
     aluno, p_escolha, p_livre = ids["aluno"], ids["p_escolha"], ids["p_livre"]
     return {
         "turma_id": str(ids["turma"]),
         "etapa": "INICIAL",
         "turma_curso_id": str(ids["oferta"]),
         f"resp_{aluno}_{p_escolha}": resp_escolha,
-        f"obs_{aluno}_{p_escolha}": obs_escolha,
         f"resp_{aluno}_{p_livre}": resp_livre,
-        f"obs_{aluno}_{p_livre}": obs_livre,
+        # AJ19: UMA observação geral por aluno.
+        f"obs_{aluno}": obs_geral,
     }
 
 
-def _salvar(client, ids, *, resp_escolha, obs_escolha, resp_livre, obs_livre):
+def _salvar(client, ids, *, resp_escolha, resp_livre, obs_geral):
     return client.post(
         "/conselho/salvar",
-        data=_form(ids, resp_escolha, obs_escolha, resp_livre, obs_livre),
+        data=_form(ids, resp_escolha, resp_livre, obs_geral),
     )
 
 
@@ -214,6 +216,13 @@ def _resposta(app, aluno_id, pergunta_id):
         ).one()
 
 
+def _conselho(app, aluno_id):
+    with app.app_context():
+        return ConselhoClasse.query.filter_by(
+            aluno_id=aluno_id, etapa=EtapaConselho.INICIAL,
+        ).one()
+
+
 # ---------------------------------------------------------------------------
 # A0 — descoberta: o listener genérico não cobre ConselhoResposta
 # ---------------------------------------------------------------------------
@@ -228,8 +237,8 @@ def test_a0_listener_generico_nao_audita_conselho_resposta(client, app):
     login_as(client, ids["admin"], ids["un"])
     antes = _ids_logs(app)
     r = _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha=OBS_INICIAL,
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha="Sempre", obs_geral=OBS_INICIAL,
+        resp_livre=RESP_LIVRE,
     )
     assert r.status_code == 302
 
@@ -238,7 +247,8 @@ def test_a0_listener_generico_nao_audita_conselho_resposta(client, app):
         "o listener genérico passou a cobrir ConselhoResposta — a descoberta "
         "do AJ7-A envelheceu; revisar o helper"
     )
-    # O helper do AJ7-A é o ÚNICO registro dessa edição.
+    # O helper do AJ7-A é o ÚNICO registro dessa edição (só a resposta mudou;
+    # a observação geral ficou igual, então ConselhoClasse não ficou dirty).
     assert [log.acao for log in novos] == [ACAO_EDICAO_CONSELHO_GESTOR]
 
 
@@ -261,9 +271,8 @@ def test_a0b_listener_generico_loga_conselho_classe_sem_detalhes_uteis(client, a
         "etapa": "INICIAL",
         "turma_curso_id": str(ids["oferta"]),
         f"resp_{aluno2}_{p_escolha}": "Sempre",
-        f"obs_{aluno2}_{p_escolha}": "Primeiro parecer",
         f"resp_{aluno2}_{p_livre}": "",
-        f"obs_{aluno2}_{p_livre}": "",
+        f"obs_{aluno2}": "Primeiro parecer",
     })
     assert r.status_code == 302
 
@@ -299,15 +308,17 @@ def test_a1_admin_altera_gera_um_log_com_ids_e_campos(client, app):
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha=SEGREDO_OBS,
-        resp_livre=SEGREDO_TEXTO, obs_livre="",
+        client, ids, resp_escolha="Sempre", resp_livre=SEGREDO_TEXTO,
+        obs_geral=SEGREDO_OBS,
     )
     assert r.status_code == 302
 
     novos = _logs_novos(app, antes)
-    assert len(novos) == 1, f"esperado 1 log por aluno; veio {len(novos)}"
-    log = novos[0]
-    assert log.acao == ACAO_EDICAO_CONSELHO_GESTOR
+    # AJ19: além do helper, o listener genérico audita a ConselhoClasse que
+    # ficou dirty pela observação geral. O helper continua sendo UM por aluno.
+    helper = [log for log in novos if log.acao == ACAO_EDICAO_CONSELHO_GESTOR]
+    assert len(helper) == 1, f"esperado 1 log por aluno; veio {len(helper)}"
+    log = helper[0]
     assert log.usuario_id == ids["admin"]
     assert log.unidade_id == ids["un"]
 
@@ -325,7 +336,7 @@ def test_a1_admin_altera_gera_um_log_com_ids_e_campos(client, app):
         f"resposta[p{ids['p_escolha']}]: 'Nunca' -> 'Sempre'" in detalhes
     )
     # Texto livre: só o marcador, nunca o conteúdo.
-    assert f"observacao[p{ids['p_escolha']}]: texto alterado" in detalhes
+    assert "observacao: texto alterado" in detalhes
     assert f"resposta[p{ids['p_livre']}]: texto alterado" in detalhes
     for proibido in (SEGREDO_OBS, SEGREDO_TEXTO, RESP_LIVRE):
         assert proibido not in detalhes
@@ -341,19 +352,19 @@ def test_a2_pedagogico_altera_gera_log(client, app):
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha=RESP_ESCOLHA, obs_escolha="Nova observacao",
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha=RESP_ESCOLHA, resp_livre=RESP_LIVRE,
+        obs_geral="Nova observacao",
     )
     assert r.status_code == 302
 
     novos = _logs_novos(app, antes)
-    assert len(novos) == 1
-    log = novos[0]
-    assert log.acao == ACAO_EDICAO_CONSELHO_GESTOR
+    helper = [log for log in novos if log.acao == ACAO_EDICAO_CONSELHO_GESTOR]
+    assert len(helper) == 1
+    log = helper[0]
     assert log.usuario_id == ids["pedagogico"]
     assert log.unidade_id == ids["un"]
     assert "papel=pedagogico" in log.detalhes
-    assert f"observacao[p{ids['p_escolha']}]: texto alterado" in log.detalhes
+    assert "observacao: texto alterado" in log.detalhes
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +377,8 @@ def test_a3_sem_mudanca_nao_gera_log(client, app):
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha=RESP_ESCOLHA, obs_escolha=OBS_INICIAL,
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha=RESP_ESCOLHA, resp_livre=RESP_LIVRE,
+        obs_geral=OBS_INICIAL,
     )
     assert r.status_code == 302
     assert _logs_novos(app, antes) == []
@@ -383,18 +394,17 @@ def test_a4_professor_da_oferta_nao_gera_log(client, app):
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha="Ajuste do professor",
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha="Sempre", resp_livre=RESP_LIVRE,
+        obs_geral="Ajuste do professor",
     )
     assert r.status_code == 302
 
     novos = _logs_novos(app, antes)
     assert [log for log in novos if log.acao == ACAO_EDICAO_CONSELHO_GESTOR] == []
-    # ConselhoResposta não é auditada pelo listener: nada é gravado.
-    assert novos == []
-    assert _resposta(app, ids["aluno"], ids["p_escolha"]).observacao == (
-        "Ajuste do professor"
-    )
+    # AJ19: a observação geral vive em ConselhoClasse (auditada pelo listener
+    # genérico); o professor não gera o log de gestor.
+    assert [log.acao for log in novos] == ["Alterar ConselhoClasse"]
+    assert _conselho(app, ids["aluno"]).observacao == "Ajuste do professor"
 
 
 # ---------------------------------------------------------------------------
@@ -409,15 +419,17 @@ def test_a5_primeiro_preenchimento_tem_tipo_preenchimento(client, app):
                 aluno_id=ids["aluno"], pergunta_id=pergunta_id,
             ).one()
             linha.resposta = None
-            linha.observacao = None
+        ConselhoClasse.query.filter_by(
+            aluno_id=ids["aluno"], etapa=EtapaConselho.INICIAL,
+        ).one().observacao = None
         db.session.commit()
 
     login_as(client, ids["admin"], ids["un"])
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha="",
-        resp_livre="", obs_livre="",
+        client, ids, resp_escolha="Sempre", resp_livre="",
+        obs_geral="",
     )
     assert r.status_code == 302
 
@@ -441,17 +453,17 @@ def test_a6_texto_livre_nao_aparece_no_log(client, app):
 
     r = _salvar(
         client, ids, resp_escolha=RESP_ESCOLHA,
-        obs_escolha=SEGREDO_OBS,
-        resp_livre=SEGREDO_TEXTO, obs_livre=SEGREDO_OBS,
+        resp_livre=SEGREDO_TEXTO, obs_geral=SEGREDO_OBS,
     )
     assert r.status_code == 302
 
     novos = _logs_novos(app, antes)
-    assert len(novos) == 1
-    detalhes = novos[0].detalhes
+    helper = [log for log in novos if log.acao == ACAO_EDICAO_CONSELHO_GESTOR]
+    assert len(helper) == 1
+    detalhes = helper[0].detalhes
     assert SEGREDO_OBS not in detalhes
     assert SEGREDO_TEXTO not in detalhes
-    assert detalhes.count("texto alterado") == 3
+    assert detalhes.count("texto alterado") == 2
     # Nenhum valor livre nem entre aspas/repr.
     assert re.search(r"SEGREDO", detalhes) is None
 
@@ -466,14 +478,14 @@ def test_a7_outro_professor_recebe_403_e_nao_grava(client, app):
     antes = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha="invasao",
-        resp_livre="invasao", obs_livre="",
+        client, ids, resp_escolha="Sempre", resp_livre="invasao",
+        obs_geral="invasao",
     )
     assert r.status_code == 403
     assert _logs_novos(app, antes) == []
     linha = _resposta(app, ids["aluno"], ids["p_escolha"])
     assert linha.resposta == RESP_ESCOLHA
-    assert linha.observacao == OBS_INICIAL
+    assert _conselho(app, ids["aluno"]).observacao == OBS_INICIAL
 
 
 # ---------------------------------------------------------------------------
@@ -484,8 +496,8 @@ def test_a8_filtro_admin_logs_exibe_rotulo_em_edicao(client, app):
     ids = _seed(app)
     login_as(client, ids["admin"], ids["un"])
     _salvar(
-        client, ids, resp_escolha="Sempre", obs_escolha="Ajuste",
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha="Sempre", resp_livre=RESP_LIVRE,
+        obs_geral="Ajuste",
     )
 
     edicao = client.get("/admin/logs?acao=edicao")
@@ -511,8 +523,8 @@ def test_a9_golden_lancamento_identico_em_salvamento_sem_mudanca(client, app):
     antes_logs = _ids_logs(app)
 
     r = _salvar(
-        client, ids, resp_escolha=RESP_ESCOLHA, obs_escolha=OBS_INICIAL,
-        resp_livre=RESP_LIVRE, obs_livre="",
+        client, ids, resp_escolha=RESP_ESCOLHA, resp_livre=RESP_LIVRE,
+        obs_geral=OBS_INICIAL,
     )
     assert r.status_code == 302
     # Consome o flash do POST antes de comparar o HTML.
