@@ -1,3 +1,9 @@
+### Alterações do dia — 19/11/2026 (AJ23-B — callback OAuth com redirect_uri configurado)
+
+Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.
+
+**AJ23-B.** Corrigida a causa do `InsecureTransportError (OAuth 2 MUST utilize https)` vista em `logs\app.log`: com o TLS terminado antes do app, `request.url` chegava como `http` e era passado ao `flow.fetch_token`. `app/auth.py` agora usa o helper `_authorization_response_oauth(redirect_uri, query_string)`, que monta a URL a partir de `GOOGLE_OAUTH_REDIRECT_URI` (o mesmo `flow.redirect_uri`) mais a query devolvida no callback; sem query, resulta apenas no `redirect_uri`. State, PKCE, escopos longos, domínios, vínculo e perfis intactos; `OAUTHLIB_INSECURE_TRANSPORT` e `.env` não foram alterados. Auditoria relatada (sem mudança): `request.is_secure` em `app/__init__.py` (HSTS depende de `TRUSTED_PROXY` no IIS), `request.url_root` no logo de `emails/base_email.html`, `{{ request.url }}` no rodapé de `conselho/fechamento.html` e `request.referrer` no handler 413 — todos com proposta separada no relatório; não há `request.host_url`, `request.scheme` nem `url_for(..., _external=True)` no projeto, e o cookie `Secure` não depende do esquema observado. Teste: `tests/test_aj23b_callback_authorization_response.py` (5 novos). Relatório `docs/Relatórios/AJ23_BotaoGoogleLogArquivo.md` atualizado (adendo AJ23-B).
+
 ### Alterações do dia — 19/11/2026 (AJ23 — botão Google em "/" + log em arquivo)
 
 Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.

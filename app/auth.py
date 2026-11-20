@@ -543,6 +543,18 @@ def google_login():
         return redirect(url_for("auth.login"))
 
 
+def _authorization_response_oauth(redirect_uri: str, query_string: bytes) -> str:
+    """Monta a URL de autorização a partir do ``redirect_uri`` configurado.
+
+    AJ23-B: com TLS terminado no IIS/Kestrel, ``request.url`` chega como ``http``
+    e o authlib recusa a troca do código (``InsecureTransportError``). A URL
+    entregue ao ``fetch_token`` precisa ser a mesma registrada no Google —
+    esquema https incluído — com a query devolvida no callback.
+    """
+    qs = query_string.decode("utf-8")
+    return redirect_uri + (("?" + qs) if qs else "")
+
+
 @bp.route("/auth/google/callback")
 def google_callback():
     """Processa o retorno do Google após a tela de consentimento.
@@ -593,8 +605,14 @@ def google_callback():
         flow.redirect_uri = redirect_uri
         flow.code_verifier = session.pop("google_code_verifier", None)
 
-        # Troca o código de autorização pelos tokens de acesso
-        flow.fetch_token(authorization_response=request.url)
+        # Troca o código de autorização pelos tokens de acesso. AJ23-B: nunca
+        # usar request.url/host_url/scheme aqui — atrás do terminador TLS o
+        # esquema observado é http e o authlib recusa a troca.
+        flow.fetch_token(
+            authorization_response=_authorization_response_oauth(
+                redirect_uri, request.query_string
+            )
+        )
 
         # --- 2. Obtém dados do perfil via UserInfo ---
         credentials = flow.credentials

@@ -75,3 +75,59 @@ Goldens (`tests/snapshots/*`) **não** foram alterados: nenhum HTML mudou de fat
 - Suíte completa: **1906 passed, 0 failed** (base 1893 + 13 novos).
 - `ruff --select F821,F811,F841` e `git diff --check`: limpos.
 - Nenhuma migration/head alterado; sem push e sem merge.
+
+---
+
+## Adendo AJ23-B — authorization_response a partir do redirect_uri configurado
+
+**Data:** 19/11/2026 · **Branch:** `nova_feature` · **Migration:** nenhuma · **Schema:** inalterado · **Push/merge:** nenhum
+
+### Motivação
+
+O log real de produção (`logs\app.log`) registrou
+`InsecureTransportError (insecure_transport) OAuth 2 MUST utilize https` no
+`google_callback`. O TLS termina antes do app (IIS/wfastcgi), então
+`request.url` chegava com esquema `http` e o authlib recusava a troca do código.
+`OAUTHLIB_INSECURE_TRANSPORT` não pode ser ligado em produção.
+
+### Implementação
+
+`app/auth.py` não usa mais `request.url` no `fetch_token`. Novo helper puro
+`_authorization_response_oauth(redirect_uri, query_string)` monta:
+
+```python
+qs = query_string.decode("utf-8")
+authorization_response = redirect_uri + (("?" + qs) if qs else "")
+```
+
+com `redirect_uri` vindo de `GOOGLE_OAUTH_REDIRECT_URI` (o mesmo já atribuído a
+`flow.redirect_uri`). Sem query, o resultado é apenas o `redirect_uri`.
+State anti-CSRF, PKCE (`google_code_verifier`), escopos longos, domínios
+permitidos, vínculo e perfis permanecem intactos. Log/flash do `except` seguem
+como no AJ23 (tipo + mensagem sanitizada, traceback anexo).
+
+### Auditoria de esquema (somente relato — nada alterado além do callback)
+
+| Local | Uso | Risco em produção | Proposta (separada, não implementada) |
+| --- | --- | --- | --- |
+| `app/auth.py` (`fetch_token`) | `request.url` | **Era o bug corrigido**: `http` → `InsecureTransportError` | Corrigido neste adendo |
+| `app/__init__.py` (`set_security_headers`) | `request.is_secure` | HSTS não é emitido se `TRUSTED_PROXY` não estiver ligado no IIS | Confirmar `TRUSTED_PROXY=true` + `HTTP_X_FORWARDED_PROTO=https` no `web.config` (já documentado em `docs/manual_deploy.md`); nenhuma mudança de código |
+| `app/templates/emails/base_email.html:62` | `request.url_root` na `<img>` do logo | E-mail pode sair com `http://...` (mixed content/bloqueio) atrás do terminador TLS | Usar base pública configurada (`PUBLIC_BASE_URL`) no render do e-mail, ou garantir `TRUSTED_PROXY`; sem mudança aqui |
+| `app/templates/conselho/fechamento.html:183` | `{{ request.url }}` no rodapé de impressão | Imprime `http://...` com a query completa da tela | Trocar por URL canônica configurada / remover a query do rodapé; sem mudança aqui |
+| `app/__init__.py` (handler 413, `redirect(ref or "/")`) | `request.referrer` | Pode devolver para `http` se o IIS não redirecionar HTTP→HTTPS | Validar/normalizar o esquema do referrer ou voltar sempre à rota relativa; sem mudança aqui |
+
+Não há ocorrências de `request.host_url`, `request.scheme` ou `url_for(...,
+_external=True)` no projeto. Cookies não dependem do esquema observado:
+`SESSION_COOKIE_SECURE` é `True` por padrão (S1-09).
+
+### Arquivos tocados (AJ23-B)
+
+- `app/auth.py` — helper + `fetch_token` com `authorization_response` derivado do `redirect_uri`
+- `tests/test_aj23b_callback_authorization_response.py` — **novo**: 5 testes
+- `backlog_desenvolvimento.md`, este relatório (adendo AJ23-B)
+
+### Verificação (AJ23-B)
+
+- Novos testes: **5 passed** (HTTP com `?state=...&code=...` → URL https + mesma query; sem query → só o `redirect_uri`; state divergente recusado sem chamar `fetch_token`; state/PKCE/escopos preservados; exceção logada com tipo/mensagem sanitizada e flash).
+- Regressão AJ23: **13 passed**; suíte completa: **1911 passed, 0 failed** (base 1906 + 5 novos).
+- `ruff --select F821,F811,F841` e `git diff --check`: limpos.
