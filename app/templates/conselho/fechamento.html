@@ -3,28 +3,59 @@
 {% endblock %} {% block content %}
 <div id="conteudo-impressao">
   <div class="container-fluid mb-5">
-    {# Cabeçalho com botões — some todo na impressão #}
-    <div class="d-flex justify-content-between align-items-center mb-4 d-print-none">
-      <h2 class="fw-bold">
-        <i class="bi bi-mortarboard me-2"></i>Conselho da Turma - Fechamento
-        {% if oferta %}
-        <span class="fs-6 fw-normal text-muted ms-2">| Curso: {{ oferta.curso.nome }}</span>
+    {# Cabeçalho institucional SÓ da impressão. Segue o padrão de
+       `conselho/_resumo_cabecalho.html` / `conselho/imprimir_formulario.html`:
+       logo + instituição + título + turma/período + emissão/colaborador.
+       `.print-only` é revelado por `conselho.css` dentro de `@media print`. #}
+    <header class="print-only report-header fechamento-print-header">
+      <div class="fechamento-print-identidade">
+        {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+        <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" class="report-logo" />
         {% endif %}
-      </h2>
+        <div>
+          <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
+          <h1 class="h4 mb-1">Conselho da Turma — Fechamento</h1>
+          <div class="small text-muted">
+            {% if oferta %}Curso: {{ oferta.curso.nome }}{% else %}Curso: a selecionar{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="fechamento-print-meta">
+        <div class="fw-bold">{{ turma.nome }}</div>
+        {% if turma.periodo_letivo %}
+        <div><strong>Período letivo:</strong> {{ turma.periodo_letivo.nome }}</div>
+        {% endif %}
+        <div>Emitido em <span class="fechamento-emissao"></span></div>
+        <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
+      </div>
+    </header>
+
+    {# Cabeçalho com botões — some todo na impressão (AJ25): padrão de
+       `relatorios/geral.html` / `conselho/perguntas.html` / `turmas/listar.html`. #}
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 d-print-none">
       <div>
-        <button onclick="prepararImpressao()" class="btn btn-dark">
-          <i class="bi bi-printer me-2"></i>Imprimir
+        <h2 class="h4 fw-bold mb-0">
+          <i class="bi bi-mortarboard me-2"></i>Conselho da Turma - Fechamento
+        </h2>
+        {% if oferta %}
+        <p class="text-muted small mb-0">Curso: {{ oferta.curso.nome }}</p>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2 flex-wrap justify-content-end ms-auto d-print-none">
+        <button onclick="prepararImpressao()" class="btn btn-outline-secondary">
+          <i class="bi bi-printer me-1"></i> Imprimir
         </button>
         <button onclick="exportTableToCSV('{{ turma.nome }}.csv')" class="btn btn-outline-success">
-          <i class="bi bi-file-earmark-excel me-2"></i>Exportar .CSV
+          <i class="bi bi-file-earmark-excel me-1"></i> Exportar .CSV
         </button>
         <button onclick="salvarFechamento()" class="btn btn-primary">
-          <i class="bi bi-save me-2"></i>Salvar Fechamento
+          <i class="bi bi-save me-1"></i> Salvar Fechamento
         </button>
       </div>
     </div>
 
-    <div class="card shadow-sm border-0 mb-4">
+    {# Resumo de tela duplica o cabeçalho impresso: some no papel. #}
+    <div class="card shadow-sm border-0 mb-4 d-print-none">
       <div class="card-body bg-light rounded">
         <div class="row">
           <div class="col-4">
@@ -63,7 +94,8 @@
     {# D5.2 (M1): fechamento por OFERTA — com 2+ cursos ativos exige escolha
     antes de listar qualquer aluno; com 0 a rota recusa com flash. #}
     {% if exigir_escolha %}
-    <div class="card shadow-sm border-0 mb-4">
+    {# Card interativo de escolha de oferta: nunca entra na impressão. #}
+    <div class="card shadow-sm border-0 mb-4 d-print-none">
       <div class="card-body">
         <h5 class="fw-bold mb-3">
           <i class="bi bi-exclamation-triangle text-warning me-2"></i>Selecione o curso (oferta)
@@ -101,10 +133,13 @@
             {% for item in dados %}
             <tr data-aluno-id="{{ item.obj.id }}">
               <td class="ps-3">
-                <div class="d-flex align-items-center">
+                <div class="d-flex align-items-center fechamento-aluno-linha">
+                  {# AJ23: foto só na tela. d-print-none + regra explícita no
+                     CSS; sem `me-3` para não deixar recuo no nome impresso. #}
                   <img src="{{ url_for('registros.foto_aluno', aluno_id=item.obj.id) }}"
-                    class="rounded-circle me-3 border" width="45" height="45" style="object-fit: cover" />
-                  <div>
+                    class="rounded-circle border foto-aluno-fechamento d-print-none" width="45" height="45" style="object-fit: cover"
+                    alt="Foto do aluno" />
+                  <div class="fechamento-aluno-nome">
                     <div class="fw-bold">
                       {{ item.obj.nome_social or item.obj.nome }}
                     </div>
@@ -178,7 +213,7 @@
     {# Rodapé de auditoria — só aparece na impressão #}
     <div class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted">
       <div class="d-flex justify-content-between">
-        <span><strong>Impresso por:</strong> {{ current_user.name }}</span>
+        <span>v {{ app_version }}-{{ app_stage }}</span>
         <span><strong>Data/Hora:</strong> <span id="print-date"></span></span>
         <span><strong>URL:</strong> {{ request.url }}</span>
       </div>
@@ -194,9 +229,11 @@
   // curso (legado) não entram.
   const NIVEL_DATA = {{ niveis_curso|default ({}) | tojson }};
 
-  // Preenche data/hora do rodapé
-  document.getElementById("print-date").innerText = new Date().toLocaleString(
-    "pt-BR",
-  );
+  // AJ23: a mesma data/hora aparece no cabeçalho e no rodapé de auditoria.
+  const dataEmissaoFechamento = new Date().toLocaleString("pt-BR");
+  document.getElementById("print-date").innerText = dataEmissaoFechamento;
+  document.querySelectorAll(".fechamento-emissao").forEach((el) => {
+    el.innerText = dataEmissaoFechamento;
+  });
 </script>
 {% endblock %}

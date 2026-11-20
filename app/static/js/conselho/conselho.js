@@ -269,9 +269,14 @@ function ligarNiveisFechamento() {
 
 // Função chamada pelo botão Imprimir
 function prepararImpressao() {
-    sincronizarSpans(); 
+    sincronizarSpans();
     window.print();
 }
+
+// AJ23: Ctrl+P / menu do navegador não passa pelo botão. O beforeprint
+// reaplica os spans com o valor ATUAL dos selects (inclusive escolhas ainda
+// não salvas), sem consultar o legado quando há uma seleção vigente.
+window.addEventListener('beforeprint', sincronizarSpans);
 
 // Função para exportar a tabela para CSV (Excel)
 function exportTableToCSV(filename) {

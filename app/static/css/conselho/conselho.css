@@ -110,8 +110,15 @@
 }
 
 /* ============================================================
-   IMPRESSÃO — conselho_fechamento
-   Adicione/substitua o bloco @media print existente no conselho.css
+   IMPRESSÃO — conselho/fechamento (AJ23)
+
+   Padrão adotado (o mesmo dos relatórios mais recentes):
+     - `templates/conselho/imprimir_formulario.html` (cabeçalho
+       institucional, `@page` paisagem, thead repetido, break-inside);
+     - `templates/conselho/_resumo_cabecalho.html` (logo/instituição/
+       turma/período/emissão/colaborador);
+     - `static/css/turmas/carga_horaria_curso.css` (cabeçalho claro,
+       bordas finas, tabela 8.5pt, rodapé 7.5pt).
    ============================================================ */
 
 .print-only {
@@ -119,13 +126,16 @@
 }
 
 @media print {
-  /* 1. Configurações de página */
+  /* 1. Página: mesma orientação/margem dos relatórios tabulares. */
   @page {
     size: A4 landscape;
     margin: 1cm;
   }
 
-  /* 2. Esconder elementos de interface */
+  /* 2. Nada interativo vai para o papel. */
+  .app-topbar,
+  .app-sidebar,
+  .sidebar-backdrop,
   nav,
   .navbar,
   .sidebar,
@@ -133,14 +143,19 @@
   footer,
   .btn,
   .no-print,
-  .d-print-none {
+  .d-print-none,
+  .alert,
+  .modal,
+  .modal-backdrop,
+  #conteudo-impressao select {
     display: none !important;
   }
 
-  /* 3. Reset de layout */
+  /* 3. Reset de layout e tipografia. */
   body {
-    background: white !important;
-    color: black !important;
+    background: #fff !important;
+    color: #212529 !important;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
     font-size: 10pt;
   }
 
@@ -152,47 +167,155 @@
     margin: 0 !important;
   }
 
-  .card {
-    border: none !important;
-    box-shadow: none !important;
+  /* `sidebar.css` reserva 260px à esquerda de `.app-main`; sem este reset o
+     conteúdo impresso começa fora da margem da folha (cabeçalho cortado). */
+  .app-main,
+  body.sidebar-collapsed .app-main,
+  .app-footer {
+    margin-left: 0 !important;
+    padding: 0 !important;
   }
 
-  /* 4. Tabela */
+  .table-responsive {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .card,
+  .shadow-sm {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* `style.css` reexibe `.card.shadow-sm` com `!important` na impressão.
+     Aqui a especificidade é maior para os cards marcados como tela. */
+  #conteudo-impressao .card.d-print-none {
+    display: none !important;
+  }
+
+  /* 4. Cabeçalho institucional (visível só no papel). */
+  /* `style.css` também estiliza `.report-header` com `display:block !important`;
+     o ID aumenta a especificidade e preserva as duas colunas na folha. */
+  #conteudo-impressao .fechamento-print-header {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12pt;
+    padding-bottom: 8pt;
+    margin-bottom: 10pt;
+    border-bottom: 2px solid #343a40;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .fechamento-print-header .fechamento-print-identidade {
+    display: flex;
+    align-items: flex-start;
+    gap: 10pt;
+  }
+
+  .fechamento-print-header .report-logo {
+    max-width: 110px;
+    max-height: 45px;
+    object-fit: contain;
+  }
+
+  .fechamento-print-header h1 {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #212529 !important;
+    margin: 2px 0 0;
+  }
+
+  .fechamento-print-header .fechamento-print-meta {
+    text-align: right;
+    font-size: 8pt;
+  }
+
+  /* 5. Tabela: cabeçalho claro e legível, bordas finas, thead repetido. */
   table {
     page-break-inside: auto;
     width: 100% !important;
   }
 
-  tr {
+  #tabelaFechamento {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8.5pt;
+  }
+
+  #tabelaFechamento thead {
+    display: table-header-group;
+  }
+
+  #tabelaFechamento thead th {
+    background-color: #f1f3f5 !important;
+    color: #212529 !important;
+    font-size: 8pt;
+    font-weight: 700;
+    padding: 5pt 4pt !important;
+    border: 1px solid #adb5bd !important;
+    border-bottom: 2px solid #343a40 !important;
+    vertical-align: middle;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #tabelaFechamento tbody td {
+    border: 1px solid #adb5bd !important;
+    padding: 4pt !important;
+    vertical-align: middle;
+    word-break: break-word;
+  }
+
+  #tabelaFechamento tbody tr {
+    break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* Força cores do cabeçalho escuro a imprimir */
-  .table-dark th {
-    background-color: #212529 !important;
-    color: white !important;
+  /* A foto não imprime; o nome ocupa a célula inteira, sem recuo. */
+  .foto-aluno-fechamento {
+    display: none !important;
+  }
+
+  .fechamento-aluno-linha {
+    display: block !important;
+  }
+
+  .fechamento-aluno-nome {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  /* Conceitos legíveis em P&B: borda + texto, sem depender do fundo. */
+  #tabelaFechamento .badge {
+    display: inline-block;
+    background: #fff !important;
+    color: #212529 !important;
+    border: 1px solid #212529 !important;
+    font-weight: 700;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  /* Força cores dos badges a imprimir */
-  .badge {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  /* 5. Spans de impressão dos selects */
+  /* Textos dos selects (atualizados pelo JS antes de imprimir). */
   .situacao-texto,
-  .proxima-texto {
+  .proxima-texto,
+  .nivel-texto {
     font-weight: 600;
+    color: #212529 !important;
   }
 
-  /* 6. Rodapé de auditoria */
+  /* 6. Rodapé de auditoria. */
   .print-footer-container {
-    margin-top: 1cm;
-    border-top: 1px solid #ccc;
+    display: block !important;
+    margin-top: 10pt;
     padding-top: 4pt;
-    font-size: 8pt;
-    color: #555;
+    border-top: 1px solid #adb5bd !important;
+    font-size: 7.5pt;
+    color: #6c757d !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
