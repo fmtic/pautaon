@@ -1,3 +1,9 @@
+### Alterações do dia — 20/11/2026 (AJ24 — admin vincula conta Google pendente a usuário existente)
+
+Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.
+
+**AJ24.** Unificação feita só pelo admin, sem perda de dados. Confirmado que `user.google_id`/`google_email` já existem (migration `6a8df39d`), então nenhuma migration foi necessária. Novo serviço `app/services/vinculo_google_admin.py` valida origem pendente com identidade Google e alvo ativo/não pendente/sem vínculo/diferente da origem; varre **todas as FKs para `user.id` via `db.metadata`** (sem lista manual) e recusa a operação se a pendente tiver qualquer referência, com mensagem `tabela.coluna=contagem`. Transação: `DELETE` da pendente + `flush()` antes de gravar as colunas Google no alvo (por causa do `UNIQUE`), `LogAcao` de "Alteração de Cadastros" na mesma transação com admin/origem/alvo/e-mails e `rollback` total em qualquer erro. `app/auth.py` ganhou `POST /usuarios/vincular-google/<id>` (admin, CSRF, confirmação com os dois e-mails) e calcula os alvos elegíveis para o painel; `app/templates/admin/painel_admin.html` ganhou botão/modal com nome, e-mail, perfil e unidade dos alvos. O próximo login Google entra no alvo, mantendo e-mail local/AD, domínios, e-mail verificado e conta ativa; fluxo OAuth e perfis intactos. Atenção documentada: se a pendente tiver `log_acao` de acessos Google, a varredura estrita recusa — decisão separada, nada implementado. Testes: `tests/test_aj24_vinculo_google_admin.py` (15 novos). Relatório `docs/Relatórios/AJ24_VinculoGoogleAdmin.md` (adendo AJ24). Goldens inalterados.
+
 ### Alterações do dia — 19/11/2026 (AJ23-B — callback OAuth com redirect_uri configurado)
 
 Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.

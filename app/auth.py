@@ -43,6 +43,10 @@ from app.services.auth_service import (
     validate_password_strength,
     generate_secure_random_password,
 )
+from app.services.vinculo_google_admin import (
+    VinculoGoogleAdminError,
+    vincular_conta_google_pendente,
+)
 from app.utils.logging_seguro import mascarar_para_log
 
 bp = Blueprint("auth", __name__)
@@ -758,6 +762,31 @@ def painel_admin():
 
     usuarios = db.session.execute(select(User).order_by(User.name)).scalars().all()
 
+    # AJ24: só pendentes com identidade Google ganham a ação de unificação. Os
+    # alvos elegíveis são calculados aqui e revalidados no serviço no POST.
+    pendentes_google = [
+        usuario
+        for usuario in usuarios
+        if usuario.role == UserRole.PENDENTE.value and usuario.google_id
+    ]
+    alvos_vinculo: dict[int, list[User]] = {}
+    if pendentes_google:
+        elegiveis = (
+            db.session.execute(
+                select(User)
+                .where(User.is_active.is_(True))
+                .where(User.role != UserRole.PENDENTE.value)
+                .where(User.google_id.is_(None))
+                .order_by(User.name)
+            )
+            .scalars()
+            .all()
+        )
+        alvos_vinculo = {
+            pendente.id: [alvo for alvo in elegiveis if alvo.id != pendente.id]
+            for pendente in pendentes_google
+        }
+
     unidades = (
         db.session.execute(
             select(Unidade).where(Unidade.ativo == True).order_by(Unidade.nome)
@@ -789,6 +818,7 @@ def painel_admin():
         senha_gerada=senha_gerada,
         bloqueios_ativos=bloqueios_ativos,
         agora=agora,
+        alvos_vinculo=alvos_vinculo,
     )
 
 
@@ -1093,6 +1123,60 @@ def excluir_usuario(id):
             )
     else:
         flash("Política de suicídio de perfil barrada. Peça a outro Admin.", "danger")
+
+    return redirect(url_for("auth.painel_admin"))
+
+
+@bp.route("/usuarios/vincular-google/<int:id>", methods=["POST"])
+@login_required
+def vincular_conta_google(id):
+    """AJ24 — admin unifica uma pendente Google a um usuário já existente."""
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+
+    origem = db.session.get(User, id)
+    if (
+        origem is None
+        or origem.role != UserRole.PENDENTE.value
+        or not origem.google_id
+    ):
+        flash("Conta pendente com identidade Google não encontrada.", "danger")
+        return redirect(url_for("auth.painel_admin"))
+
+    # Confirmação explícita: o modal mostra os dois e-mails e o servidor
+    # confere que nada foi trocado no caminho (além do token CSRF global).
+    if request.form.get("confirmar") != "1":
+        flash("Confirme a vinculação antes de continuar.", "danger")
+        return redirect(url_for("auth.painel_admin"))
+    if request.form.get("origem_email") != origem.email:
+        flash("A confirmação não corresponde à conta pendente.", "danger")
+        return redirect(url_for("auth.painel_admin"))
+
+    alvo_id = request.form.get("alvo_id", type=int)
+    alvo = db.session.get(User, alvo_id) if alvo_id else None
+    if alvo is None or request.form.get("alvo_email") != alvo.email:
+        flash("Selecione novamente o usuário alvo.", "danger")
+        return redirect(url_for("auth.painel_admin"))
+
+    try:
+        resultado = vincular_conta_google_pendente(
+            origem.id, alvo.id, admin_id=current_user.id
+        )
+    except VinculoGoogleAdminError as exc:
+        flash(str(exc), "danger")
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao vincular conta Google pendente.")
+        flash("Não foi possível vincular a conta Google agora.", "danger")
+    else:
+        flash(
+            "Conta Google de "
+            + resultado.google_email
+            + " vinculada a "
+            + resultado.alvo_email
+            + ". A conta pendente foi removida; nenhum registro do alvo foi alterado.",
+            "success",
+        )
 
     return redirect(url_for("auth.painel_admin"))
 
