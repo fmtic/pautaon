@@ -1,9 +1,10 @@
-"""AJ24 — admin vincula conta Google pendente a usuário existente.
+"""AJ24 / AJ24-B — admin vincula conta Google pendente a usuário existente.
 
 Cobre: UI no painel admin, transferência atômica de ``google_id``/``google_email``
-sem mover registros do alvo, recusa quando a pendente tem FKs, validações de
-alvo, permissão/CSRF, rollback e auditoria. Nenhuma migration é necessária:
-as colunas já existem (ver migration ``6a8df39d``).
+sem mover registros do alvo, varredura estrita de FKs (com a exceção de
+``log_acao.usuario_id`` no AJ24-B), validações de alvo, permissão/CSRF, rollback
+e auditoria. Nenhuma migration é necessária: as colunas já existem (ver
+migration ``6a8df39d``).
 """
 
 from __future__ import annotations
@@ -14,12 +15,13 @@ from types import SimpleNamespace
 
 import pytest
 from google_auth_oauthlib.flow import Flow
-from sqlalchemy import Column, ForeignKey, Integer, Table, select
+from sqlalchemy import Column, ForeignKey, Integer, Table, func, select
 
 from app import db
 from app.models import Aluno, Frequencia, LogAcao, Turma, Unidade, User
 from app.models.enums import UserRole
 from app.services.vinculo_google_admin import (
+    logs_a_reapontar,
     referencias_a_usuario,
     vincular_conta_google_pendente,
 )
@@ -175,6 +177,21 @@ def _simular_callback_google(monkeypatch):
         ),
     )
     monkeypatch.setattr("requests.get", lambda *args, **kwargs: RespostaFalsa())
+
+
+def _criar_logs_na_pendente(pendente, acoes):
+    """Sementes de log de acesso da pendente (o cenário real do AJ24-B)."""
+    for indice, acao in enumerate(acoes, start=1):
+        db.session.add(
+            LogAcao(
+                usuario_id=pendente.id,
+                usuario_nome=pendente.name,
+                acao=acao,
+                detalhes=f"marcador=pendente-aj24-{indice}",
+                ip="127.0.0.1",
+            )
+        )
+    db.session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -370,8 +387,105 @@ def test_log_acao_registra_admin_origem_alvo_e_emails(app, client):
         assert f"alvo_id={ids[1]}" in log.detalhes
         assert ORIGEM_EMAIL in log.detalhes
         assert ALVO_EMAIL in log.detalhes
+        assert f"google_email={ORIGEM_EMAIL}" in log.detalhes
+        assert "logs_reapontados=0" in log.detalhes
         assert "token" not in log.detalhes.lower()
         assert "secret" not in log.detalhes.lower()
+
+
+# ---------------------------------------------------------------------------
+# AJ24-B — reaponte de log_acao.usuario_id
+# ---------------------------------------------------------------------------
+
+
+def test_logs_da_pendente_sao_reapontados_e_contabilizados(app, client):
+    from _helpers import login_as
+
+    acoes = ("Acesso via Google", "Login Google", "Acesso via Google")
+    with app.app_context():
+        admin, alvo, pendente, _ = _cenario(app, com_referencias_no_alvo=False)
+        _criar_logs_na_pendente(pendente, acoes)
+        ids = (admin.id, alvo.id, pendente.id)
+        # A FK de log é a única fora da varredura estrita de recusa.
+        assert "log_acao.usuario_id" not in referencias_a_usuario(ids[2])
+        assert logs_a_reapontar(ids[2]) == len(acoes)
+
+    login_as(client, ids[0])
+    resposta = _post_vinculo(client, ids[2], ids[1], ORIGEM_EMAIL, ALVO_EMAIL)
+    assert resposta.status_code == 200
+
+    with app.app_context():
+        movidos = db.session.execute(
+            select(LogAcao)
+            .where(LogAcao.detalhes.like("marcador=pendente-aj24-%"))
+            .order_by(LogAcao.id)
+        ).scalars().all()
+        assert len(movidos) == len(acoes)
+        assert {log.usuario_id for log in movidos} == {ids[1]}
+        assert [log.acao for log in movidos] == list(acoes)
+        assert db.session.execute(
+            select(func.count())
+            .select_from(LogAcao)
+            .where(LogAcao.usuario_id == ids[2])
+        ).scalar() == 0
+        assert logs_a_reapontar(ids[2]) == 0
+        assert logs_a_reapontar(ids[1]) == len(acoes)
+
+        log_unificacao = db.session.execute(
+            select(LogAcao).where(LogAcao.acao == "Alteração de Cadastros")
+        ).scalars().one()
+        assert f"admin_id={ids[0]}" in log_unificacao.detalhes
+        assert f"origem_id={ids[2]}" in log_unificacao.detalhes
+        assert f"alvo_id={ids[1]}" in log_unificacao.detalhes
+        assert ORIGEM_EMAIL in log_unificacao.detalhes
+        assert ALVO_EMAIL in log_unificacao.detalhes
+        assert f"google_email={ORIGEM_EMAIL}" in log_unificacao.detalhes
+        assert f"logs_reapontados={len(acoes)}" in log_unificacao.detalhes
+        assert "token" not in log_unificacao.detalhes.lower()
+        assert "secret" not in log_unificacao.detalhes.lower()
+
+
+def test_relacao_logs_carregada_nao_anula_o_reaponte(app):
+    """A relação ``User.logs`` carregada antes do UPDATE não pode anulá-lo."""
+    with app.app_context():
+        admin, alvo, pendente, _ = _cenario(app, com_referencias_no_alvo=False)
+        _criar_logs_na_pendente(pendente, ("Acesso via Google", "Login Google"))
+        assert len(pendente.logs) == 2  # força o carregamento da relação
+
+        vincular_conta_google_pendente(pendente.id, alvo.id, admin_id=admin.id)
+
+        assert logs_a_reapontar(alvo.id) == 2
+        assert logs_a_reapontar(pendente.id) == 0
+        assert {log.usuario_id for log in alvo.logs} == {alvo.id}
+
+
+def test_erro_depois_do_update_faz_rollback_dos_logs(app, monkeypatch):
+    with app.app_context():
+        admin, alvo, pendente, _ = _cenario(app, com_referencias_no_alvo=False)
+        _criar_logs_na_pendente(pendente, ("Acesso via Google", "Login Google"))
+        ids = (admin.id, alvo.id, pendente.id)
+
+        def _falha_depois_do_update(*args, **kwargs):
+            raise RuntimeError("erro simulado depois do UPDATE")
+
+        monkeypatch.setattr(
+            "app.services.vinculo_google_admin._registrar_log",
+            _falha_depois_do_update,
+        )
+        with pytest.raises(RuntimeError, match="depois do UPDATE"):
+            vincular_conta_google_pendente(ids[2], ids[1], admin_id=ids[0])
+
+        # O UPDATE dos logs e o DELETE da pendente foram desfeitos juntos.
+        assert db.session.get(User, ids[2]) is not None
+        assert db.session.get(User, ids[2]).google_id == GOOGLE_ID
+        assert db.session.get(User, ids[1]).google_id is None
+        assert logs_a_reapontar(ids[2]) == 2
+        assert logs_a_reapontar(ids[1]) == 0
+        assert db.session.execute(
+            select(func.count())
+            .select_from(LogAcao)
+            .where(LogAcao.acao == "Alteração de Cadastros")
+        ).scalar() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -380,30 +494,40 @@ def test_log_acao_registra_admin_origem_alvo_e_emails(app, client):
 
 
 def test_recusa_quando_pendente_tem_referencias_em_outra_tabela(app, client):
+    """AJ24-B: log sozinho não recusa; qualquer outra FK continua recusando."""
     from _helpers import login_as
 
     with app.app_context():
-        admin, alvo, pendente, _ = _cenario(app)
+        admin, alvo, pendente, unidade = _cenario(app)
         db.session.add(
-            LogAcao(
-                usuario_id=pendente.id,
-                usuario_nome=pendente.name,
-                acao="Acesso via Google",
-                detalhes="marcador=pendente-aj24",
-                ip="127.0.0.1",
+            Turma(
+                nome="Turma da pendente",
+                turno="Manhã",
+                data_inicio=date(2026, 1, 1),
+                data_fim=date(2026, 12, 31),
+                unidade_id=unidade.id,
+                professor_id=pendente.id,
+                ativo=True,
             )
         )
+        _criar_logs_na_pendente(pendente, ("Acesso via Google",))
         db.session.commit()
         ids = (admin.id, alvo.id, pendente.id)
+        logs_alvo_antes = logs_a_reapontar(alvo.id)
 
     login_as(client, ids[0])
     resposta = _post_vinculo(client, ids[2], ids[1], ORIGEM_EMAIL, ALVO_EMAIL)
     html = resposta.data.decode("utf-8")
     assert "possui registros vinculados" in html
-    assert "log_acao.usuario_id=1" in html  # contagem da FK na mensagem
+    assert "turma.professor_id=1" in html  # formato tabela.coluna=contagem
+    assert "log_acao.usuario_id" not in html  # eximida da recusa
     with app.app_context():
+        assert db.session.get(User, ids[2]) is not None
         assert db.session.get(User, ids[2]).google_id == GOOGLE_ID
         assert db.session.get(User, ids[1]).google_id is None
+        # Nada foi movido: o log segue na pendente e o alvo não ganhou linhas.
+        assert logs_a_reapontar(ids[2]) == 1
+        assert logs_a_reapontar(ids[1]) == logs_alvo_antes
 
 
 @pytest.mark.parametrize(

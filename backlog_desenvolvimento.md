@@ -1,3 +1,9 @@
+### Alterações do dia — 20/11/2026 (AJ24-B — unificação Google re-aponta `log_acao` da pendente)
+
+Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge. Commit separado do AJ24.
+
+**AJ24-B.** A pendente de produção (id 97, `fabianomotta@projetograel.org.br`) tem 0 referências nas 21 FKs para `user`, mas 1 linha em `log_acao.usuario_id` — o acesso Google que a criou; por ser inerente ao nascimento da pendente, a varredura estrita do AJ24 recusaria sempre. Verificado antes: nenhum `CREATE TRIGGER`/`CREATE RULE`, regra append-only ou teste AJ1/AJ4 de imutabilidade em `log_acao` (AJ4 congela só rótulos/categorias; o rótulo `Alteração de Cadastros` segue intacto) — nada foi contornado. `app/services/vinculo_google_admin.py` mantém a varredura via `db.metadata` estrita para **todas** as FKs, com recusa `tabela.coluna=contagem`, exceto `log_acao.usuario_id`: na mesma transação, `UPDATE log_acao SET usuario_id = <alvo> WHERE usuario_id = <pendente>` roda antes do `DELETE`, e o `rowcount` (contagem exata) entra no `detalhes` do `LogAcao` da unificação como `logs_reapontados=N`, junto de admin/origem/alvo, os dois e-mails e `google_email`, sem token/secret/senha. Qualquer outra FK continua recusando antes de qualquer escrita; erro depois do UPDATE (ex.: no INSERT do log) faz rollback total, inclusive dos logs. Helpers: `logs_a_reapontar()` e `_contar_fk()`; `expire_all()` evita que relação `User.logs` pré-carregada anule o reaponte no delete. Testes: `tests/test_aj24_vinculo_google_admin.py` (3 novos; 2 existentes reforçados, demais intactos). Relatório `docs/Relatórios/AJ24_VinculoGoogleAdmin.md` (adendo AJ24-B). Goldens inalterados. Suíte completa: 1929 passed.
+
 ### Alterações do dia — 20/11/2026 (AJ24 — admin vincula conta Google pendente a usuário existente)
 
 Branch `nova_feature`, **sem migration, sem alteração de schema**, sem push, sem merge.
