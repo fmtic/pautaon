@@ -11,6 +11,8 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DEFAULT_DB_PATH = INSTANCE_DIR / "database.db"
+#: AJ23: pasta do log em arquivo (stderr é descartado pelo wfastcgi/IIS).
+DEFAULT_LOG_DIR = BASE_DIR / "logs"
 
 
 def get_bool(name: str, default: bool = False) -> bool:
@@ -149,6 +151,9 @@ class Config:
     APP_ENV = _resolver_app_env()
     DEBUG = _resolver_debug(APP_ENV)
     TEMPLATES_AUTO_RELOAD = True
+
+    # AJ23: LOG_DIR sobrepõe a pasta padrão (<raiz>/logs).
+    LOG_DIR = os.getenv("LOG_DIR") or str(DEFAULT_LOG_DIR)
 
     # Sem fallback: a validação acontece em `create_app` (ver
     # `validar_configuracao`) para que configurações de teste possam definir a

@@ -43,6 +43,7 @@ from app.services.auth_service import (
     validate_password_strength,
     generate_secure_random_password,
 )
+from app.utils.logging_seguro import mascarar_para_log
 
 bp = Blueprint("auth", __name__)
 
@@ -444,13 +445,7 @@ def login():
         flash(msg, "danger")
         return redirect(url_for("auth.login"))
 
-    return render_template(
-        "login.html",
-        google_login_habilitado=bool(
-            current_app.config.get("GOOGLE_OAUTH_CLIENT_ID")
-            and current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
-        ),
-    )
+    return render_template("login.html")
 
 
 @bp.route("/logout", methods=["GET", "POST"])
@@ -611,8 +606,14 @@ def google_callback():
         userinfo_resp.raise_for_status()
         userinfo = userinfo_resp.json()
 
-    except Exception:
-        current_app.logger.exception("Falha no callback OAuth Google.")
+    except Exception as exc:
+        # AJ23: só tipo + mensagem sanitizada na linha de log; o traceback do
+        # logger.exception continua (sem code/token/secret/URL com query).
+        current_app.logger.exception(
+            "Falha no callback OAuth Google: %s: %s",
+            type(exc).__name__,
+            mascarar_para_log(exc),
+        )
         flash("Não foi possível concluir a autenticação com o Google.", "danger")
         return redirect(url_for("auth.login"))
 
