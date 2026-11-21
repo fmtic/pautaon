@@ -5,7 +5,36 @@
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+{# AJ28: escopo disponível nesta rota — apenas a unidade do contexto
+   (`get_unidade_id()`); não existe filtro de turma em `/relatorios/`. #}
+{% set escopo_unidade = unidade_contexto|default('', true) %}
+{% if not escopo_unidade or escopo_unidade == 'Visão Global' %}
+{% set escopo_unidade = 'Todas' %}
+{% endif %}
+<div id="conteudo-impressao" class="container mt-4">
+
+    {# Cabeçalho institucional SÓ da impressão — padrão AJ23/AJ26/AJ27.
+       `.print-only` mantém o bloco fora da tela; o `@media print` revela.
+       A classe `report-header` não é usada nos cards do painel. #}
+    <header class="print-only report-header geral-print-header">
+        <div class="geral-print-identidade">
+            {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+            <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" class="report-logo">
+            {% endif %}
+            <div>
+                <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
+                <h1 class="h4 mb-1">Resumo - Primeira Vista</h1>
+                <div class="small text-muted">Escopo: Unidade {{ escopo_unidade }} · Turma: Todas</div>
+            </div>
+        </div>
+        <div class="geral-print-meta">
+            <div class="fw-bold">{{ escopo_unidade }}</div>
+            <div><strong>Unidade:</strong> {{ escopo_unidade }}</div>
+            <div><strong>Turma:</strong> Todas{% if todas_as_turmas is defined %} ({{ todas_as_turmas|length }} ativas){% endif %}</div>
+            <div>Emitido em <span class="geral-emissao"></span></div>
+            <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
+        </div>
+    </header>
 
     <!-- Cabeçalho -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
@@ -17,7 +46,7 @@
             <a href="{{ url_for('relatorios.relatorio_alunos') }}" class="btn btn-primary">
                 <i class="bi bi-person-lines-fill me-1"></i> Exportar Alunos
             </a>
-            <button onclick="window.print()" class="btn btn-outline-secondary">
+            <button onclick="prepararImpressao()" class="btn btn-outline-secondary">
                 <i class="bi bi-printer me-1"></i> Imprimir
             </button>
             <a href="{{ url_for('relatorios.exportar_relatorio', turma=turma_selecionada) }}" class="btn btn-success">
@@ -160,6 +189,8 @@
                             <span>{{ prog }}</span>
                             <span class="fw-bold text-dark">{{ media|round(1) }} anos</span>
                         </div>
+                        {% else %}
+                        <div class="print-only lista-vazia">—</div>
                         {% endfor %}
                     </div>
                 </div>
@@ -182,6 +213,8 @@
                             <span>{{ t_nome }}</span>
                             <span class="badge bg-light text-dark border">{{ media|round(1) }} anos</span>
                         </div>
+                        {% else %}
+                        <div class="print-only lista-vazia">—</div>
                         {% endfor %}
                     </div>
                 </div>
@@ -211,6 +244,8 @@
                             <div class="progress-bar bg-success" style="width: {{ perc }}%"></div>
                         </div>
                     </div>
+                    {% else %}
+                    <div class="print-only lista-vazia">—</div>
                     {% endfor %}
                 </div>
             </div>
@@ -234,6 +269,8 @@
                                 {{ perc }}%
                             </span>
                         </div>
+                        {% else %}
+                        <div class="print-only lista-vazia">—</div>
                         {% endfor %}
                     </div>
                 </div>
@@ -261,10 +298,21 @@
                                 <div class="progress-bar bg-primary" style="width: {{ perc }}%"></div>
                             </div>
                         </div>
+                        {% else %}
+                        <div class="print-only lista-vazia">—</div>
                         {% endfor %}
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    {# Rodapé de auditoria — SÓ na impressão (padrão AJ23/AJ26/AJ27). #}
+    <div class="print-only print-footer-container">
+        <div class="d-flex justify-content-between">
+            <span>v {{ app_version }}-{{ app_stage }}</span>
+            <span><strong>Data/Hora:</strong> <span id="print-date"></span></span>
+            <span><strong>URL:</strong> {{ request.url }}</span>
         </div>
     </div>
 
