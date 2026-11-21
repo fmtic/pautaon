@@ -132,3 +132,33 @@ def test_barra_segue_padrao_de_layout_das_listagens():
         template,
         re.S,
     ).group(1)
+
+
+def test_voltar_para_o_painel_do_conselho(app, client):
+    ids = _setup(app)
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    html = client.get(
+        f"/conselho/fechamento/{ids['turma']}?oferta_sel={ids['oferta']}"
+    ).get_data(as_text=True)
+
+    grupo = re.search(
+        r'<div class="d-flex gap-2 flex-wrap justify-content-end ms-auto d-print-none">'
+        r'(.*?)</div>\s*</div>',
+        html,
+        re.S,
+    )
+    assert grupo is not None, "grupo de botões da barra não renderizado"
+    acoes = grupo.group(1)
+
+    voltar = re.search(
+        r'<a href="([^"]+)" class="btn btn-outline-secondary">\s*'
+        r'<i class="bi bi-arrow-left me-1"></i>\s*Voltar\s*</a>',
+        acoes,
+    )
+    assert voltar is not None, "link Voltar ausente na barra do fechamento"
+    assert voltar.group(1) == "/conselho"
+    # Antes dos botões de ação e dentro do grupo `d-print-none`: não entra
+    # na impressão e não altera a ordem dos botões fixada no teste acima.
+    assert acoes.index("<a href=") < acoes.index("<button onclick=")
+    assert "prepararImpressao()" in acoes
+    assert "salvarFechamento()" in acoes

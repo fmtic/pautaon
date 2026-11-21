@@ -42,6 +42,11 @@
         {% endif %}
       </div>
       <div class="d-flex gap-2 flex-wrap justify-content-end ms-auto d-print-none">
+        {# Navegação de volta ao painel do conselho. É um link (não um botão
+           de ação) e fica fora da impressão junto com todo o cabeçalho. #}
+        <a href="{{ url_for('conselho.index_conselho') }}" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left me-1"></i> Voltar
+        </a>
         <button onclick="prepararImpressao()" class="btn btn-outline-secondary">
           <i class="bi bi-printer me-1"></i> Imprimir
         </button>
