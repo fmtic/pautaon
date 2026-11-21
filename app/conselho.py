@@ -63,7 +63,11 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date
 from collections import OrderedDict, defaultdict
 from app.utils.autor import autor_do_lancamento
-from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+from app.utils.logica import (
+    calcular_estatisticas_frequencia,
+    get_unidade_id,
+    percs_por_conceito,
+)
 from app.utils.timezone import get_local_now
 
 logger = logging.getLogger(__name__)
@@ -1225,12 +1229,8 @@ def fechamento_turma(turma_id):
         dados_alunos.append({
             'obj':      aluno,
             'counts':   estatisticas['counts'],
-            'percs': {
-                conceito: round(
-                    quantidade / estatisticas['total_registros'] * 100, 1
-                ) if estatisticas['total_registros'] else 0
-                for conceito, quantidade in estatisticas['counts'].items()
-            },
+            # AJ26: base única de percentuais (compartilhada com o resultado).
+            'percs': percs_por_conceito(estatisticas),
             'presenca': estatisticas['presenca_percentual'],
             'falta':    estatisticas['falta_percentual'],
             'justificadas': estatisticas['justificadas'],
