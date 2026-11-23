@@ -284,6 +284,238 @@
     color: #495057 !important;
   }
 
+  /* ======================================================================
+     AJ28-B — bloco de impressão PRÓPRIO (não reutiliza os cards da tela)
+
+     Os cards usam `h-100` e esticam até a altura do maior da linha; listas
+     longas abriam molduras vazias entre páginas. No papel entra uma faixa
+     de indicadores + tabelas, sem altura mínima e sem cards. Os números
+     continuam vindo das mesmas variáveis do template — nada é recalculado.
+     ====================================================================== */
+  #conteudo-impressao .geral-print-resumo {
+    display: block !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+    break-before: auto !important;
+    page-break-before: auto !important;
+    font-size: 8.5pt;
+    line-height: 1.25;
+  }
+
+  #conteudo-impressao .geral-print-faixa {
+    display: flex !important;
+    align-items: stretch;
+    gap: 6pt;
+    padding: 5pt 6pt;
+    margin: 0 0 8pt !important;
+    border: 1px solid #343a40 !important;
+    background: #fff !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 5pt;
+    border-right: 1px solid #dee2e6 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi:last-child {
+    border-right: 0 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-label {
+    display: block;
+    font-size: 7pt;
+    line-height: 1.15;
+    text-transform: uppercase;
+    letter-spacing: .3pt;
+    color: #495057 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-valor {
+    display: block;
+    font-size: 13pt;
+    line-height: 1.15;
+    color: #212529 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-sexo {
+    flex: 1.15 1 0;
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 1pt 6pt;
+    font-size: 7.5pt;
+  }
+
+  #conteudo-impressao .geral-print-kpi-conselho {
+    flex: 2.1 1 0;
+    font-size: 7.5pt;
+  }
+
+  /* Trilho bordado + barra escura: legível em P&B sem depender da cor. */
+  #conteudo-impressao .geral-print-barra {
+    display: block;
+    width: 100%;
+    height: 4pt;
+    margin: 1pt 0 2pt;
+    border: 1px solid #6c757d !important;
+    background: #fff !important;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-barra > span {
+    display: block;
+    height: 100%;
+    background: #212529 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Duas colunas: a esquerda continua nas páginas seguintes; as tabelas
+     da direita são atômicas (nunca viram moldura vazia). Sem borda no
+     container, não sobra caixa vazia quando uma delas salta de página. */
+  #conteudo-impressao .geral-print-colunas {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-colunas > tbody,
+  #conteudo-impressao .geral-print-colunas > tbody > tr {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-colunas > tbody > tr > td {
+    vertical-align: top !important;
+    padding: 0 !important;
+    border: 0 !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-coluna-esquerda { width: 62% !important; }
+  #conteudo-impressao .geral-print-coluna-direita { width: 38% !important; padding-left: 8pt !important; }
+
+  #conteudo-impressao .geral-print-tabela {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 8.5pt;
+    margin: 0 0 8pt !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* style.css força `page-break-inside: avoid` em `.table`; estas tabelas
+     não usam essa classe e o !important aqui mantém a quebra natural. */
+  #conteudo-impressao .geral-print-tabela-programas,
+  #conteudo-impressao .geral-print-tabela-professores {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela caption {
+    caption-side: top;
+    text-align: left;
+    padding: 0 0 3pt !important;
+    color: #212529 !important;
+    font-size: 9.5pt;
+    font-weight: 800;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela thead {
+    display: table-header-group;
+  }
+
+  #conteudo-impressao .geral-print-tabela thead th {
+    padding: 3pt 4pt !important;
+    border: 1px solid #212529 !important;
+    background: #e9ecef !important;
+    color: #212529 !important;
+    font-size: 7.5pt;
+    font-weight: 800;
+    text-align: left;
+    text-transform: uppercase;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-tabela tbody td {
+    padding: 3pt 4pt !important;
+    border: 1px solid #adb5bd !important;
+    vertical-align: middle !important;
+    overflow-wrap: break-word;
+  }
+
+  #conteudo-impressao .geral-print-tabela tbody tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(1) { width: 38% !important; }
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(2) { width: 24% !important; }
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(3) { width: 38% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(1) { width: 48% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(2) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(3) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(1) { width: 50% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(2) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(3) { width: 24% !important; }
+
+  #conteudo-impressao .geral-print-freq {
+    display: flex !important;
+    align-items: center;
+    gap: 4pt;
+  }
+
+  #conteudo-impressao .geral-print-freq .geral-print-barra {
+    flex: 1 1 auto;
+    margin: 0;
+  }
+
+  #conteudo-impressao .geral-print-freq strong {
+    min-width: 32pt;
+    text-align: right;
+    color: #212529 !important;
+  }
+
+  #conteudo-impressao .geral-print-marca {
+    display: inline-block;
+    padding: 0 3pt;
+    border: 1px solid #212529 !important;
+    font-weight: 800;
+    color: #212529 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-marca.atende { border-style: solid !important; }
+  #conteudo-impressao .geral-print-marca.abaixo { border-style: dashed !important; }
+
+  #conteudo-impressao .geral-print-legenda {
+    margin-top: 6pt;
+    padding: 5pt 6pt;
+    border: 1px solid #adb5bd !important;
+    font-size: 7.2pt;
+    line-height: 1.3;
+    color: #212529 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-legenda div + div { margin-top: 2pt; }
+
   /* Rodapé de auditoria (versão, emissão, URL) — padrão das AJ recentes. */
   #conteudo-impressao .print-footer-container {
     display: block !important;

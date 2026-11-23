@@ -1,13 +1,16 @@
-"""AJ28 — impressão do "Resumo - Primeira Vista" (`/relatorios/`).
+"""AJ28 / AJ28-B — impressão do "Resumo - Primeira Vista" (`/relatorios/`).
 
 Cobre: cabeçalho/rodapé de impressão, 9 blocos, listas longas e vazias,
 contrato do CSS/JS de impressão e, principalmente, a não regressão da tela
-(os cards continuam com o mesmo HTML de antes da AJ28).
+(os cards continuam com o mesmo HTML de antes da AJ28; só ganharam o wrapper
+`d-print-none`). A AJ28-B acrescenta o bloco impresso dedicado, testado
+neste mesmo módulo.
 """
 
 from __future__ import annotations
 
 import difflib
+import re
 from pathlib import Path
 
 from _helpers import login_as
@@ -115,10 +118,11 @@ def test_rota_e_contexto_de_escopo(app, client):
     assert resposta.status_code == 200
     html = resposta.get_data(as_text=True)
     assert 'id="conteudo-impressao"' in html
-    # A rota não tem filtro de turma: o cabeçalho mostra a unidade e "Todas".
-    assert "Escopo: Unidade Unidade AJ28 · Turma: Todas" in html
-    assert "<strong>Unidade:</strong> Unidade AJ28" in html
-    assert "<strong>Turma:</strong> Todas" in html
+    # A rota não tem filtro de turma: UMA linha de escopo, sem repetir unidade.
+    assert "Unidade: Unidade AJ28 · Turma: Todas" in html
+    assert "Escopo:" not in html
+    assert "<strong>Unidade:</strong>" not in html
+    assert "<strong>Turma:</strong>" not in html
     assert "Colaborador: <strong>Colaborador AJ28</strong>" in html
     assert "Emitido em <span class=\"geral-emissao\"></span>" in html
 
@@ -153,10 +157,13 @@ def test_cabecalho_e_rodapé_de_impressao(app, client):
     cabecalho = html[inicio:html.index("</header>", inicio) + len("</header>")]
     for trecho in (
         "print-only", "geral-print-header", "report-logo",
-        "Resumo - Primeira Vista", "Escopo:", "Emitido em",
-        "geral-emissao", "Colaborador:",
+        "Resumo - Primeira Vista", "Unidade: Unidade AJ28 · Turma: Todas",
+        "Emitido em", "geral-emissao", "Colaborador:",
     ):
         assert trecho in cabecalho
+    # AJ28-B: a unidade aparece UMA vez no papel.
+    assert cabecalho.count("Unidade AJ28") == 1
+    assert "Escopo:" not in cabecalho
 
     assert 'class="print-only print-footer-container"' in html
     assert 'id="print-date"' in html
@@ -226,10 +233,11 @@ def test_listas_grandes_imprimem_todos_os_itens(app, client, monkeypatch):
     login_as(client, str(ids["user_id"]), ids["unidade"])
     html = _get(client, ids).get_data(as_text=True)
 
-    # 30 turmas aparecem em "Média por Turma" e em "Frequência por Turma".
+    # 30 turmas aparecem em "Média por Turma", "Frequência por Turma" e
+    # na tabela "Por turma" do bloco impresso da AJ28-B.
     for indice in range(1, dados["turmas"] + 1):
         nome = f"TURMA-AJ28-{indice:02d}"
-        assert html.count(nome) == 2, f"{nome}: esperado em duas listas"
+        assert html.count(nome) == 3, f"{nome}: esperado nas duas listas + impressão"
     # 15 professores, apenas em "Desempenho por Professor".
     for indice in range(1, dados["profs"] + 1):
         assert f"PROF-AJ28-{indice:02d}" in html
@@ -255,10 +263,12 @@ def test_listas_vazias_só_aparecem_na_impressao(app, client, monkeypatch):
 
 
 def test_html_dos_nove_cards_permanece_idêntico():
-    """Regressão de tela: só `.print-only` e o `onclick` podem ter mudado."""
+    """Regressão de tela: só o wrapper `d-print-none` pode ter mudado."""
     origem = TEMPLATE.read_text(encoding="utf-8")
-    inicio = origem.index("    <!-- Linha 1: Visão Geral e Comunidade -->")
-    fim = origem.index("\n    {# Rodapé de auditoria", inicio)
+    inicio = origem.index('    <div class="d-print-none">\n    <!-- Linha 1: Visão Geral e Comunidade -->')
+    # O bloco impresso da AJ28-B vem DEPOIS do wrapper dos cards: o snapshot
+    # deve parar no fechamento desse wrapper, antes do comentário da AJ28-B.
+    fim = origem.index("\n    {# ───", inicio)
     atual = [linha for linha in origem[inicio:fim].replace("\r\n", "\n").splitlines()
              if linha.strip()
              and "print-only lista-vazia" not in linha
@@ -277,6 +287,227 @@ def test_html_dos_nove_cards_permanece_idêntico():
     assert origem.count('style="max-height: 250px; overflow-y: auto;"') == 2
     assert 'style="width: {{ perc }}%"' in origem
     assert ".custom-scrollbar::-webkit-scrollbar" in origem
+
+
+# ---------------------------------------------------------------------------
+# AJ28-B — layout de impressão próprio (cards continuam só na tela)
+# ---------------------------------------------------------------------------
+
+BLOCO_IMPRESSO_INICIO = '<section class="print-only geral-print-resumo"'
+
+
+def _bloco_impresso(html):
+    inicio = html.index(BLOCO_IMPRESSO_INICIO)
+    return html[inicio:html.index("</section>", inicio) + len("</section>")]
+
+
+def _cartoes(html):
+    inicio = html.index('    <div class="d-print-none">')
+    return html[inicio:html.index(BLOCO_IMPRESSO_INICIO)]
+
+
+def _linha(bloco, tipo, nome):
+    """Linha de uma das tabelas impressas cuja 1ª célula é `nome`."""
+    inicio = bloco.index(f"geral-print-tabela-{tipo}")
+    tabela = bloco[inicio:]
+    tabela = tabela[:tabela.index("</table>", tabela.index("<tbody>"))]
+    for linha in re.findall(r"<tr>(.*?)</tr>", tabela, flags=re.S):
+        if f">{nome}<" in linha:
+            return linha
+    raise AssertionError(f"linha não encontrada em {tipo}: {nome}")
+
+
+def _patch_dados_custom(
+    monkeypatch,
+    *,
+    media_turma,
+    freq_turma,
+    media_programa,
+    freq_programa,
+    freq_professor,
+):
+    monkeypatch.setattr(
+        modulo_geral,
+        "calcular_estatisticas_idade",
+        lambda unidade_id=None: {
+            "media_geral": 21.5,
+            "media_programa": media_programa,
+            "media_turma": media_turma,
+        },
+    )
+    monkeypatch.setattr(
+        modulo_geral,
+        "calcular_frequencias_relatorio",
+        lambda turmas_do_banco, unidade_id=None: (
+            88.0, freq_programa, freq_turma, freq_professor
+        ),
+    )
+    monkeypatch.setattr(
+        modulo_geral,
+        "calcular_metricas_conselho",
+        lambda unidade_id=None: {
+            "progresso_aulas": 90.0,
+            "progresso_reunioes": 66.7,
+            "turmas_concluidas": 7,
+            "total_turmas": 10,
+        },
+    )
+
+
+def test_bloco_impresso_contem_todos_os_valores_da_tela(app, client, monkeypatch):
+    ids = _setup(app)
+    dados = _patch_dados(monkeypatch, turmas=12, professores=4, programas=2)
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    html = _get(client, ids).get_data(as_text=True)
+    bloco = _bloco_impresso(html)
+    cartoes = _cartoes(html)
+
+    # Contagens e sexo: exatamente os números dos cards, sem recálculo.
+    comunidade = re.findall(r'<h3 class="mb-0 fw-bold">([^<]+)</h3>', cartoes)
+    assert len(comunidade) == 3
+    for valor in comunidade:
+        assert f'<strong class="geral-print-kpi-valor">{valor}</strong>' in bloco
+    sexo = re.findall(r'<h4 class="mb-0 fw-bold mt-1">([^<]+)</h4>', cartoes)
+    assert len(sexo) == 3
+    faixa = bloco[bloco.index("geral-print-kpi-sexo"):bloco.index("geral-print-kpi-conselho")]
+    for valor in sexo:
+        assert f"<strong>{valor}</strong>" in faixa
+
+    geral = re.search(
+        r'<h2 class="display-6 fw-bold mb-0 text-dark">([^<]+)</h2>', cartoes
+    ).group(1)
+    assert f'<strong class="geral-print-kpi-valor">{geral}</strong>' in bloco
+
+    # Conselho: duas porcentagens + "N de M" na mesma linha de escopo.
+    assert "Conteúdos registrados <strong>90%</strong>" in bloco
+    assert "Ofertas avaliadas <strong>70%</strong> (7 de 10 ofertas finalizadas)" in bloco
+
+    # Todas as chaves e todos os valores das seis listas da tela.
+    for i in range(1, dados["turmas"] + 1):
+        nome = f"TURMA-AJ28-{i:02d}"
+        media = str(round(14.0 + i / 10, 1))
+        perc = 50 + i
+        linha = _linha(bloco, "turmas", nome)
+        assert media in linha and f"{perc}%" in linha
+    for i in range(1, dados["programas"] + 1):
+        nome = f"Programa AJ28 {i}"
+        linha = _linha(bloco, "programas", nome)
+        assert str(float(25 + i)) in linha and f"{80 + i}%" in linha
+    for i in range(1, dados["profs"] + 1):
+        nome = f"PROF-AJ28-{i:02d}"
+        assert f">{nome}<" in _linha(bloco, "professores", nome)
+        assert f">{70 + i}%" in _linha(bloco, "professores", nome)
+
+
+def test_juncao_por_chave_ausente_mostra_travessao(app, client, monkeypatch):
+    ids = _setup(app)
+    _patch_dados_custom(
+        monkeypatch,
+        media_turma={"TURMA-1": 12.34, "TURMA-2": 13.0},
+        freq_turma={"TURMA-2": 88.0, "TURMA-3": 0.0},
+        media_programa={"Programa A": 20.0},
+        freq_programa={"Programa A": 80.0, "Programa B": 0.0},
+        freq_professor={"Prof A": 75.0},
+    )
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    bloco = _bloco_impresso(_get(client, ids).get_data(as_text=True))
+
+    # TURMA-1: sem frequência; TURMA-2: completa; TURMA-3: sem média.
+    assert "—" in _linha(bloco, "turmas", "TURMA-1")
+    assert "12.3" in _linha(bloco, "turmas", "TURMA-1")
+    assert "88.0%" in _linha(bloco, "turmas", "TURMA-2")
+    assert "—" in _linha(bloco, "turmas", "TURMA-3")
+    assert "0.0%" in _linha(bloco, "turmas", "TURMA-3")
+    # Programa B existe só na frequência.
+    assert "—" in _linha(bloco, "programas", "Programa B")
+    assert "Programa B" in bloco
+
+
+def test_ordenacao_natural_e_por_nome_no_bloco_impresso(app, client, monkeypatch):
+    ids = _setup(app)
+    _patch_dados_custom(
+        monkeypatch,
+        media_turma={
+            "TURMA-10": 10.0,
+            "TURMA-2": 12.0,
+            "Sem número": 13.0,
+            "TURMA-1": 14.0,
+        },
+        freq_turma={
+            "TURMA-10": 10.0,
+            "TURMA-2": 12.0,
+            "TURMA-1": 14.0,
+            "Sem número": 13.0,
+        },
+        media_programa={"Programa 10": 20.0, "Programa 2": 21.0},
+        freq_programa={"Programa 2": 80.0, "Programa 10": 81.0},
+        freq_professor={"Zélia": 70.0, "Ana": 90.0, "Bruno": 80.0},
+    )
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    bloco = _bloco_impresso(_get(client, ids).get_data(as_text=True))
+
+    def ordem(nomes):
+        return sorted(nomes, key=bloco.index)
+
+    assert ordem(["TURMA-1", "TURMA-2", "TURMA-10", "Sem número"]) == [
+        "TURMA-1", "TURMA-2", "TURMA-10", "Sem número"
+    ]
+    assert ordem(["Programa 2", "Programa 10"]) == ["Programa 2", "Programa 10"]
+    assert ordem(["Ana", "Bruno", "Zélia"]) == ["Ana", "Bruno", "Zélia"]
+
+
+def test_marca_de_professor_segue_a_regra_do_badge(app, client, monkeypatch):
+    ids = _setup(app)
+    _patch_dados_custom(
+        monkeypatch,
+        media_turma={}, freq_turma={}, media_programa={}, freq_programa={},
+        freq_professor={"Limite": 75.0, "Acima": 99.9, "Abaixo": 74.9, "Zero": 0.0},
+    )
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    html = _get(client, ids).get_data(as_text=True)
+    bloco = _bloco_impresso(html)
+
+    for nome, perc in (("Limite", 75.0), ("Acima", 99.9),
+                       ("Abaixo", 74.9), ("Zero", 0.0)):
+        linha = _linha(bloco, "professores", nome)
+        if perc >= 75:
+            assert 'geral-print-marca atende">≥ 75%' in linha
+            assert "bg-success-subtle text-success" in html  # badge da tela
+        else:
+            assert 'geral-print-marca abaixo">&lt; 75%' in linha
+            assert "bg-warning-subtle text-dark" in html
+
+
+def test_legenda_e_contrato_do_bloco_impresso(app, client):
+    ids = _setup(app)
+    login_as(client, str(ids["user_id"]), ids["unidade"])
+    html = _get(client, ids).get_data(as_text=True)
+    bloco = _bloco_impresso(html)
+
+    for trecho in (
+        "Legenda.",
+        "presenças ÷ (presenças + faltas)",
+        "faltas justificadas (J) não entram no cálculo",
+        "A mesma regra vale para programa, turma e professor",
+        "0,0% pode indicar que ainda não há lançamentos no período.",
+        "Ofertas = cursos ofertados nas turmas.",
+    ):
+        assert trecho in bloco, trecho
+    assert "h-100" not in bloco
+    assert "card" not in bloco.lower()
+    assert bloco.startswith(BLOCO_IMPRESSO_INICIO)
+
+    # A tela continua com os 9 cards dentro do único wrapper d-print-none.
+    assert html.count('    <div class="d-print-none">\n    <!-- Linha 1') == 1
+    assert html.count('class="card h-100 shadow-sm') == 9
+    css = CSS.read_text(encoding="utf-8")
+    assert ".d-print-none," in css
+    assert "#conteudo-impressao .geral-print-resumo" in css
+    assert "#conteudo-impressao .geral-print-tabela thead" in css
+    assert "display: table-header-group" in css
+    assert "#conteudo-impressao .geral-print-tabela-professores" in css
+    assert "#conteudo-impressao .geral-print-legenda" in css
+    assert css.count("@page") == 1
 
 
 def test_contratos_das_ajs_anteriores_preservados():

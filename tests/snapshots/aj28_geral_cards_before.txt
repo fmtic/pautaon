@@ -1,3 +1,4 @@
+    <div class="d-print-none">
     <!-- Linha 1: Visão Geral e Comunidade -->
     <div class="row g-4 mb-4">
         <!-- Comunidade Ativa -->
@@ -238,5 +239,6 @@
                 </div>
             </div>
         </div>
+    </div>
     </div>
 

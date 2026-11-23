@@ -13,7 +13,25 @@
 {% endif %}
 <div id="conteudo-impressao" class="container mt-4">
 
+    {# AJ28-B: chave de ordenação natural (inteiro inicial do nome, com
+       fallback alfabético). Macro não produz HTML na tela. #}
+    {% macro chave_natural(texto) -%}
+    {%- set ns = namespace(digitos='', iniciou=false, terminou=false) -%}
+    {%- for caractere in texto|string -%}
+    {%- if not ns.terminou -%}
+    {%- if caractere.isdigit() -%}
+    {%- set ns.digitos = ns.digitos ~ caractere -%}
+    {%- set ns.iniciou = true -%}
+    {%- elif ns.iniciou -%}
+    {%- set ns.terminou = true -%}
+    {%- endif -%}
+    {%- endif -%}
+    {%- endfor -%}
+    {%- if ns.digitos -%}{{ '%012d'|format(ns.digitos|int) }}{%- else -%}999999999999{%- endif -%}|{{ texto|string|lower }}
+    {%- endmacro %}
+
     {# Cabeçalho institucional SÓ da impressão — padrão AJ23/AJ26/AJ27.
+       AJ28-B: uma única linha de escopo, sem repetir a unidade à direita.
        `.print-only` mantém o bloco fora da tela; o `@media print` revela.
        A classe `report-header` não é usada nos cards do painel. #}
     <header class="print-only report-header geral-print-header">
@@ -24,13 +42,10 @@
             <div>
                 <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
                 <h1 class="h4 mb-1">Resumo - Primeira Vista</h1>
-                <div class="small text-muted">Escopo: Unidade {{ escopo_unidade }} · Turma: Todas</div>
+                <div class="small text-muted">Unidade: {{ escopo_unidade }} · Turma: Todas{% if todas_as_turmas is defined %} ({{ todas_as_turmas|length }} ativas){% endif %}</div>
             </div>
         </div>
         <div class="geral-print-meta">
-            <div class="fw-bold">{{ escopo_unidade }}</div>
-            <div><strong>Unidade:</strong> {{ escopo_unidade }}</div>
-            <div><strong>Turma:</strong> Todas{% if todas_as_turmas is defined %} ({{ todas_as_turmas|length }} ativas){% endif %}</div>
             <div>Emitido em <span class="geral-emissao"></span></div>
             <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
         </div>
@@ -55,6 +70,9 @@
         </div>
     </div>
 
+    {# AJ28-B: os 9 cards continuam EXATAMENTE iguais na tela; o papel usa
+       o bloco próprio abaixo. d-print-none não tem efeito visual na tela. #}
+    <div class="d-print-none">
     <!-- Linha 1: Visão Geral e Comunidade -->
     <div class="row g-4 mb-4">
         <!-- Comunidade Ativa -->
@@ -306,6 +324,160 @@
             </div>
         </div>
     </div>
+    </div>
+
+    {# ─────────────────────────────────────────────────────────────────────
+       AJ28-B — LAYOUT DE IMPRESSÃO PRÓPRIO
+
+       Bloco SÓ DO PAPEL. Não reutiliza os cards: a mesma largura de tela
+       que os esticava (h-100) e as quebras de lista no meio de molduras
+       são substituídas por faixa de indicadores + tabelas. Todos os valores
+       vêm das MESMAS variáveis do template, sem recálculo, sem nova rota,
+       consulta ou filtro. A ordem no papel é livre; os números não são.
+       ───────────────────────────────────────────────────────────────────── #}
+    <section class="print-only geral-print-resumo" aria-label="Resumo - Primeira Vista para impressão">
+
+        {# a) Faixa de indicadores — uma linha, sem cards e sem altura mínima. #}
+        <div class="geral-print-faixa">
+            <div class="geral-print-kpi">
+                <span class="geral-print-kpi-label">Alunos</span>
+                <strong class="geral-print-kpi-valor">{{ total_alunos }}</strong>
+            </div>
+            <div class="geral-print-kpi">
+                <span class="geral-print-kpi-label">Professores</span>
+                <strong class="geral-print-kpi-valor">{{ total_professores }}</strong>
+            </div>
+            <div class="geral-print-kpi">
+                <span class="geral-print-kpi-label">Turmas</span>
+                <strong class="geral-print-kpi-valor">{{ total_turmas }}</strong>
+            </div>
+            <div class="geral-print-kpi">
+                <span class="geral-print-kpi-label">Média de idade geral (anos)</span>
+                <strong class="geral-print-kpi-valor">{{ media_geral }}</strong>
+            </div>
+            <div class="geral-print-kpi geral-print-kpi-sexo">
+                <span class="geral-print-kpi-label">Sexo</span>
+                <span>Masc. <strong>{{ total_masculino }}</strong></span>
+                <span>Fem. <strong>{{ total_feminino }}</strong></span>
+                <span>Outro <strong>{{ total_outro }}</strong></span>
+            </div>
+            <div class="geral-print-kpi geral-print-kpi-conselho">
+                <div class="geral-print-kpi-label">Conselho</div>
+                <div>Conteúdos registrados <strong>{{ conselho.progresso_aulas }}%</strong></div>
+                <div class="geral-print-barra"><span style="width: {{ conselho.progresso_aulas }}%"></span></div>
+                <div>Ofertas avaliadas <strong>{{ conselho.progresso_reunioes }}%</strong> ({{ conselho.turmas_concluidas }} de {{ conselho.total_turmas }} ofertas finalizadas)</div>
+                <div class="geral-print-barra"><span style="width: {{ conselho.progresso_reunioes }}%"></span></div>
+            </div>
+        </div>
+
+        {# Chaves únicas das duas origens de cada tabela, ordenadas pelo
+           inteiro inicial do nome (fallback alfabético). #}
+        {% set nomes_turma = ((media_turma or {}).keys()|list + (freq_turma or {}).keys()|list)|unique|list %}
+        {% set pares_turma = [] %}
+        {% for nome in nomes_turma %}{% set _ = pares_turma.append((chave_natural(nome), nome)) %}{% endfor %}
+        {% set turmas_ordenadas = pares_turma|sort(attribute=0)|map(attribute=1)|list %}
+
+        {% set nomes_programa = ((media_programa or {}).keys()|list + (freq_programa or {}).keys()|list)|unique|list %}
+        {% set pares_programa = [] %}
+        {% for nome in nomes_programa %}{% set _ = pares_programa.append((chave_natural(nome), nome)) %}{% endfor %}
+        {% set programas_ordenados = pares_programa|sort(attribute=0)|map(attribute=1)|list %}
+
+        <table class="geral-print-colunas">
+            <tbody>
+                <tr>
+                    <td class="geral-print-coluna-esquerda">
+                        {# b) Por turma — junção media_turma × freq_turma. #}
+                        <table class="geral-print-tabela geral-print-tabela-turmas">
+                            <caption>Por turma</caption>
+                            <thead>
+                                <tr>
+                                    <th>Turma</th>
+                                    <th>Média de idade (anos)</th>
+                                    <th>Frequência</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for nome in turmas_ordenadas %}
+                                {% set media = (media_turma or {}).get(nome) %}
+                                {% set perc = (freq_turma or {}).get(nome) %}
+                                <tr>
+                                    <td>{{ nome }}</td>
+                                    <td>{% if media is not none %}{{ media|round(1) }}{% else %}—{% endif %}</td>
+                                    <td>
+                                        {% if perc is not none %}
+                                        <span class="geral-print-freq"><span class="geral-print-barra"><span style="width: {{ perc }}%"></span></span><strong>{{ perc }}%</strong></span>
+                                        {% else %}—{% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="3">—</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                    <td class="geral-print-coluna-direita">
+                        {# c) Por programa — junção media_programa × freq_programa. #}
+                        <table class="geral-print-tabela geral-print-tabela-programas">
+                            <caption>Por programa</caption>
+                            <thead>
+                                <tr>
+                                    <th>Programa</th>
+                                    <th>Média de idade</th>
+                                    <th>Frequência</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for nome in programas_ordenados %}
+                                {% set media = (media_programa or {}).get(nome) %}
+                                {% set perc = (freq_programa or {}).get(nome) %}
+                                <tr>
+                                    <td>{{ nome }}</td>
+                                    <td>{% if media is not none %}{{ media|round(1) }}{% else %}—{% endif %}</td>
+                                    <td>{% if perc is not none %}{{ perc }}%{% else %}—{% endif %}</td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="3">—</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+
+                        {# c) Por professor — mesma regra do badge da tela: >= 75. #}
+                        <table class="geral-print-tabela geral-print-tabela-professores">
+                            <caption>Por professor</caption>
+                            <thead>
+                                <tr>
+                                    <th>Professor</th>
+                                    <th>Frequência</th>
+                                    <th>Faixa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for prof, perc in (freq_professor or {}).items()|sort %}
+                                <tr>
+                                    <td>{{ prof }}</td>
+                                    <td>{{ perc }}%</td>
+                                    <td><span class="geral-print-marca {{ 'atende' if perc >= 75 else 'abaixo' }}">{{ '≥ 75%' if perc >= 75 else '< 75%' }}</span></td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="3">—</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        {# d) Legenda — fórmula conferida em app/utils/logica.py
+           (percentual() de app/services/frequencia_oferta.py) e em
+           app/models/enums.py (J = falta justificada). #}
+        <div class="geral-print-legenda">
+            <div><strong>Legenda.</strong> Alunos, professores e turmas são as contagens do resumo; a média de idade é a média das idades dos alunos, agrupada por programa ou turma quando indicado.</div>
+            <div>A frequência é <strong>presenças ÷ (presenças + faltas)</strong>, em porcentagem, com uma casa decimal. A mesma regra vale para programa, turma e professor; faltas justificadas (J) não entram no cálculo.</div>
+            <div>Conteúdos registrados: registros de aula em relação aos temas do período. Ofertas avaliadas: ofertas com conselho concluído entre as ofertas consideradas. <strong>Ofertas = cursos ofertados nas turmas.</strong></div>
+            <div><strong>0,0% pode indicar que ainda não há lançamentos no período.</strong> “—” indica que a chave não existe em uma das origens da junção.</div>
+        </div>
+    </section>
 
     {# Rodapé de auditoria — SÓ na impressão (padrão AJ23/AJ26/AJ27). #}
     <div class="print-only print-footer-container">
