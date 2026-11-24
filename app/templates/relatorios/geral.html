@@ -11,7 +11,8 @@
 {% if not escopo_unidade or escopo_unidade == 'Visão Global' %}
 {% set escopo_unidade = 'Todas' %}
 {% endif %}
-<div id="conteudo-impressao" class="container mt-4">
+<div id="conteudo-impressao" class="container mt-4"
+     data-pdf-nome="Resumo-Primeira-Vista{% if escopo_unidade %}_{{ escopo_unidade }}{% endif %}_{data}">
 
     {# AJ28-B: chave de ordenação natural (inteiro inicial do nome, com
        fallback alfabético). Macro não produz HTML na tela. #}

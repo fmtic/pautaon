@@ -174,7 +174,7 @@
   </style>
 </head>
 
-<body>
+<body data-pdf-nome="Relatorio-Pauta{% if turma and turma.nome %}_{{ turma.nome }}{% endif %}{% if oferta_atual and oferta_atual.curso and oferta_atual.curso.nome %}_{{ oferta_atual.curso.nome }}{% endif %}{% if mes_nome is defined and mes_nome %}_{{ mes_nome }}{% endif %}_{data}">
   <main class="print-page">
     <div class="no-print d-flex justify-content-between align-items-center mb-3">
       <a href="javascript:window.close()" class="btn btn-outline-secondary btn-sm">Voltar</a>
@@ -287,6 +287,8 @@
     {% endfor %}
 
   </main>
+  {# AJ29: fora do base.html — carregar o módulo do nome do PDF aqui. #}
+  <script src="{{ url_for('static', filename='js/impressao_pdf.js') }}"></script>
 </body>
 
 </html>

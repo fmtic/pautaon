@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block body_atributos %} data-pdf-nome="Relatorio-Certificados{% if periodo and periodo.nome_exibicao %}_{{ periodo.nome_exibicao }}{% endif %}_{data}"{% endblock %}
+
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/periodos/certificado.css') }}">
 {% endblock %}

@@ -1,7 +1,8 @@
 {% extends "base.html" %} {% block styles %} {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/conselho.css') }}?v=1" />
 {% endblock %} {% block content %}
-<div id="conteudo-impressao">
+<div id="conteudo-impressao"
+  data-pdf-nome="Fechamento-Conselho{% if oferta and oferta.curso and oferta.curso.nome %}_{{ oferta.curso.nome }}{% endif %}{% if turma and turma.nome %}_{{ turma.nome }}{% endif %}_{data}">
   <div class="container-fluid mb-5">
     {# Cabeçalho institucional SÓ da impressão. Segue o padrão de
        `conselho/_resumo_cabecalho.html` / `conselho/imprimir_formulario.html`:

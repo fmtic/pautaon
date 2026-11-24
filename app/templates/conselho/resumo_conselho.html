@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block body_atributos %} data-pdf-nome="Relatorio-Resumo-Conselho{% if turma and turma.nome %}_{{ turma.nome }}{% endif %}{% if oferta and oferta.curso and oferta.curso.nome %}_{{ oferta.curso.nome }}{% endif %}{% if etapa and etapa.value %}_{{ etapa.value }}{% endif %}_{data}"{% endblock %}
+
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/conselho/resumo_conselho.css') }}">
 

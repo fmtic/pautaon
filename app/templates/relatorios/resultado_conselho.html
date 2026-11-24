@@ -6,7 +6,8 @@
 {% endblock %}
 
 {% block content %}
-<div id="conteudo-impressao" class="container mt-4">
+<div id="conteudo-impressao" class="container mt-4"
+     data-pdf-nome="Resultado-Conselho{% if unidade_contexto %}_{{ unidade_contexto }}{% endif %}{% if periodo_selecionado and periodo_selecionado.nome %}_{{ periodo_selecionado.nome }}{% endif %}_{data}">
 
     {# Cabeçalho institucional SÓ da impressão — padrão consolidado na AJ23. #}
     <header class="print-only report-header resultado-print-header">

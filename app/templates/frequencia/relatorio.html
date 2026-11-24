@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block body_atributos %} data-pdf-nome="Relatorio-Frequencia{% if turma_selecionada and turma_selecionada.nome %}_{{ turma_selecionada.nome }}{% endif %}_{data}"{% endblock %}
+
 {% block content %}
 
 <div class="d-flex align-items-center justify-content-between mb-4">

@@ -25,12 +25,14 @@ _GOLDEN_HTML = {
     # AJ19: hashes do individual mudaram SÓ na região da observação (o
     # textarea por pergunta virou UM `obs_<aluno>` no fim do card). A
     # coletiva permaneceu idêntica.
-    ("admin", "individual"): "1c4f24b029c43c26713f3254e521bf4eb72a228ccef4b59208f9aeeb017f6844",
-    ("admin", "coletiva"): "9bb491a1ba6a86b7b0d9ee36ee35c0c8f8824b3e2811680c8a2659271ae4a496",
-    ("pedagogico", "individual"): "805c6c8877192309ebde2f8e3833a49e7f34d8c05e8ed32588a09cd662008cfe",
-    ("pedagogico", "coletiva"): "46e25a80ea80f50665b65c4d491248e782575bc833f66bd1261c6db66abe2817",
-    ("professor", "individual"): "e0e2f376de3388148b5fe98883ff6308a16aee24c80aa8a38cd47a61df754d44",
-    ("professor", "coletiva"): "3ff0346bb7031c036e75d42ddeb6ca30938afed774a6c5e2317916e26e7a862c",
+    # AJ29: única diferença no HTML é a tag `<script src=".../impressao_pdf.js">`
+    # incluída no `base.html`; hashes regravados com só o CSRF trocado.
+    ("admin", "individual"): "47f5e4fb3afeb4666b9986c96063ac65de8485d7569ea23a9731c8b291d84ecc",
+    ("admin", "coletiva"): "e332b054884499a2f1e3131f9f3b7054ec08004b92eeccb6f7327de85a1e2cb7",
+    ("pedagogico", "individual"): "299bc2acb173d02fcbaff066fad956f3556aeff4dd8320c95e9001bbf1f864fe",
+    ("pedagogico", "coletiva"): "9f8309b3ccd10938dfebb6c0b8ac31146bab1608cd2df3a75890cc79a29242a1",
+    ("professor", "individual"): "46534ada8ae736241196e297e4e2a8aa708258aab1be0a29360a3f885570a45d",
+    ("professor", "coletiva"): "abd13ccf61b6cccd14f3a94e9da5c4e09e8ae67527f73ef2fb044773b4597517",
 }
 
 _ROTAS = ("individual", "coletiva")

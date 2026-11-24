@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block body_atributos %} data-pdf-nome="Relatorio-Atendimento-Social_{data}"{% endblock %}
+
 {% block styles %}
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/servico_social/forms/notificacao_violencia.css') }}">

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block body_atributos %} data-pdf-nome="Relatorio-Plano-Individual-Trans_{data}"{% endblock %}
+
 {% block styles %}
 {{ super() }}
 <style>
