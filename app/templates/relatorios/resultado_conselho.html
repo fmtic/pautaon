@@ -40,8 +40,8 @@
         </div>
     </header>
 
-    <div class="d-flex justify-content-between align-items-center mb-4 no-print d-print-none">
-        <div>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 no-print d-print-none">
+        <div class="min-w-0">
             <h2 class="fw-bold mb-1 text-dark">
                 <i class="bi bi-bar-chart-line text-primary me-2"></i>Resultado do Conselho
             </h2>
@@ -49,7 +49,7 @@
                 Filtre por período letivo e turmas para consultar o resultado final do conselho de classe.
             </p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-shrink-0 acoes-resultado-conselho">
             <a href="{{ url_for('relatorios.relatorio_geral') }}" class="btn btn-light border">
                 <i class="bi bi-chevron-left me-1"></i> Relatórios
             </a>
@@ -59,7 +59,7 @@
             </button>
             {% endif %}
             <button type="button" class="btn btn-danger" onclick="prepararImpressao()">
-                <i class="bi bi-file-pdf me-1"></i> Imprimir
+                <i class="bi bi-printer me-1"></i> Imprimir
             </button>
         </div>
     </div>
@@ -125,7 +125,12 @@
                             A lista contém apenas turmas ativas do período letivo selecionado.
                         </small>
                     </div>
-                    <div class="col-12 text-end pt-3 border-top">
+                    <div class="col-12 d-flex justify-content-end align-items-center gap-2 pt-3 border-top">
+                        <a id="btnInfoGeraisPeriodo"
+                           href="{{ url_for('relatorios.informacoes_gerais_periodo', periodo_id=selected_periodo_id) if selected_periodo_id else '#' }}"
+                           class="btn btn-outline-primary {{ 'disabled' if not selected_periodo_id }}">
+                            <i class="bi bi-pie-chart me-1"></i> Informações Gerais do Período
+                        </a>
                         <button type="submit" class="btn btn-primary px-5">
                             <i class="bi bi-funnel me-2"></i>Filtrar
                         </button>
@@ -319,4 +324,24 @@
 {% block scripts %}
 {{ super() }}
 <script src="{{ url_for('static', filename='js/relatorios/resultado_conselho.js') }}"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const selectPeriodo = document.getElementById("periodo_letivo_id");
+    const btnInfo = document.getElementById("btnInfoGeraisPeriodo");
+    const baseUrl = "{{ url_for('relatorios.informacoes_gerais_periodo', periodo_id=0) }}";
+
+    if (selectPeriodo && btnInfo) {
+        selectPeriodo.addEventListener("change", function () {
+            const id = this.value;
+            if (id) {
+                btnInfo.href = baseUrl.replace("/0/", `/${id}/`);
+                btnInfo.classList.remove("disabled");
+            } else {
+                btnInfo.href = "#";
+                btnInfo.classList.add("disabled");
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

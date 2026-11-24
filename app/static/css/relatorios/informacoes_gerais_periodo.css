@@ -1,0 +1,94 @@
+.print-only {
+    display: none;
+}
+
+.card-executivo {
+    max-width: 920px;
+    border-top: 5px solid #0a3d62 !important;
+    background: #ffffff;
+}
+
+.logo-card {
+    height: 54px;
+    width: auto;
+    object-fit: contain;
+}
+
+.logo-print,
+.report-logo {
+    max-height: 44px;
+    width: auto;
+    object-fit: contain;
+}
+
+.indicador-box {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    break-inside: avoid;
+}
+
+.letter-spacing-1 {
+    letter-spacing: 0.05em;
+}
+
+@page {
+    size: A4 portrait;
+    margin: 1cm;
+}
+
+@media print {
+    body {
+        background: #ffffff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Neutraliza margens do layout base/sidebar */
+    .app-sidebar,
+    .app-header,
+    .no-print,
+    .d-print-none {
+        display: none !important;
+    }
+
+    .app-main,
+    .app-footer {
+        margin-left: 0 !important;
+        padding: 0 !important;
+    }
+
+    .print-only {
+        display: block !important;
+    }
+
+    .report-header.print-only,
+    .cabecalho-institucional.print-only {
+        display: flex !important;
+    }
+
+    .print-footer-container,
+    .rodape-auditoria.print-only {
+        display: block !important;
+    }
+
+    .card-executivo {
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+        border-top: 4px solid #0a3d62 !important;
+    }
+
+    .card-body {
+        padding: 1.25rem !important;
+    }
+
+    .progress {
+        border: 1px solid #94a3b8;
+        background-color: #e2e8f0 !important;
+    }
+
+    .progress-bar {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}
