@@ -14,6 +14,7 @@ from flask import abort, render_template, request
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
+from app.models.enums import SITUACAO_FINAL_BADGES, SITUACAO_FINAL_INDEFINIDA
 from app.models import (
     Aluno,
     ConselhoClasse,
@@ -279,7 +280,7 @@ def resultado_conselho():
                         "aluno": aluno.nome_social or aluno.nome,
                         "nivel": nivel_aluno,
                         "presenca": presenca_pct,
-                        "situacao_final": cons.situacao_final or "Sem Registro",
+                        "situacao_final": cons.situacao_final or SITUACAO_FINAL_INDEFINIDA,
                         # AJ26: conceito predominante calculado no backend,
                         # pela mesma base de `percs` do fechamento.
                         "conceito": conceito_predominante(estatisticas),
@@ -289,7 +290,7 @@ def resultado_conselho():
 
                 situacoes = {}
                 for cons in conselhos:
-                    sit = cons.situacao_final or "Sem Registro"
+                    sit = cons.situacao_final or SITUACAO_FINAL_INDEFINIDA
                     situacoes[sit] = situacoes.get(sit, 0) + 1
                 total = len(conselhos)
                 for sit, cnt in situacoes.items():
@@ -315,6 +316,7 @@ def resultado_conselho():
         turma_count=turma_count,
         aluno_count=aluno_count,
         resumo_status=resumo_status,
+        situacao_badges=SITUACAO_FINAL_BADGES,
         conselho_inicio=conselho_inicio,
         conselho_fim=conselho_fim,
         escopo_turmas=escopo_turmas,

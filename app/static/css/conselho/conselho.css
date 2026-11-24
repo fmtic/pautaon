@@ -125,6 +125,40 @@
   display: none;
 }
 
+/* ============================================================
+   AJ30 — indicador de autosave por linha (área fixa, sem N+1 visual)
+   ============================================================ */
+.autosave-indicador {
+  min-height: 1.15rem;
+  font-size: .72rem;
+  line-height: 1.15rem;
+  white-space: nowrap;
+}
+
+.autosave-estado {
+  color: #6c757d;
+}
+
+.autosave-salvando .autosave-estado {
+  color: #0d6efd;
+}
+
+.autosave-salvo .autosave-estado {
+  color: #198754;
+  font-weight: 600;
+}
+
+.autosave-erro .autosave-estado {
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.autosave-retry {
+  font-size: .72rem;
+  text-decoration: underline;
+  vertical-align: baseline;
+}
+
 @media print {
   /* 1. Página: mesma orientação/margem dos relatórios tabulares. */
   @page {

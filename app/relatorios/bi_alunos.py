@@ -17,7 +17,7 @@ from app.models import (
     User,
 )
 from app import db
-from app.models.enums import StatusAluno
+from app.models.enums import SituacaoFinal, StatusAluno
 from app.services.aluno_status import (
     periodos_de_referencia_bi,
     status_alunos_para_bi,
@@ -2868,7 +2868,9 @@ def desempenho_conselho_por_renda(
         else:
             chave_renda = "acima_3000"
 
-        if sit and "APROVADO" in str(sit).upper():
+        # AJ30: comparação exata ao valor canônico, sem "contém APROVADO"
+        # (equivalente para os dados antigos, mas sem depender de texto).
+        if sit == SituacaoFinal.APROVADO.value:
             faixas[chave_renda]["aprovados"] += 1
         else:
             faixas[chave_renda]["outros"] += 1

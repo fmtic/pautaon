@@ -297,7 +297,7 @@ def _seed():
                        unidade_id=ua.id, concluido=True),
         ConselhoClasse(turma_id=alfa.id, aluno_id=Davi.id, turma_curso_id=o1.id,
                        etapa=EtapaConselho.FINAL,
-                       situacao_final="Reprovado por Falta",
+                       situacao_final="Reprovado por faltas",  # AJ30: valor canônico
                        unidade_id=ua.id, concluido=True),
         ConselhoClasse(turma_id=delta.id, aluno_id=Fefa.id, turma_curso_id=od.id,
                        etapa=EtapaConselho.FINAL, situacao_final="Aprovado",

@@ -563,7 +563,9 @@ def test_fechar_salvar_situacao_invalida_recusa_tudo(client, app):
         json={
             "oferta_id": ids["ofertas"][0],
             "dados": [
-                {"aluno_id": ids["aluno_a"], "situacao": "EMPREGADO",
+                # AJ30: "EMPREGADO" passou a ser nome válido do enum; um
+                # valor realmente desconhecido continua sendo recusado.
+                {"aluno_id": ids["aluno_a"], "situacao": "SITUACAO_INEXISTENTE",
                  "proximo_curso_id": None},
             ],
         },

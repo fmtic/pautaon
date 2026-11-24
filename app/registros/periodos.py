@@ -16,6 +16,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import select
 
 from app.database import db
+from app.models.enums import SITUACOES_FINAIS_FAVORAVEIS
 from app.models import (
     DiaBloqueado,
     DiaBloqueadoTurma,
@@ -555,7 +556,9 @@ def periodo_letivo_relatorio_certificado(id):
 
     carga_oferta_map = cargas_horarias_ofertas_em_lote(ofertas_relatorio)
     alunos_map = defaultdict(lambda: {"aluno": None, "cursos": []})
-    situacoes_aprovadas = {"Aprovado", "Participação", "Concluído"}
+    # AJ30: "Concluído" foi fundido em "Aprovado" na migration; a regra de
+    # certificado continua a mesma com a fonte única de situações favoráveis.
+    situacoes_aprovadas = SITUACOES_FINAIS_FAVORAVEIS
 
     for turma in turmas:
         inscricoes = (

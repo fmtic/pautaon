@@ -209,10 +209,11 @@ def test_t3c_fechamento_cria_uma_linha_final_por_aluno(client, app):
             turma_curso_id=ids["ofertas"][0],
             etapa=EtapaConselho.FINAL,
         ).all()
-        assert len(finais) == 2
-        assert {c.aluno_id for c in finais} == {
-            ids["aluno_a"], ids["aluno_b"],
-        }
+        # AJ30: vazio = "Não definido" = NULL e NÃO cria ConselhoClasse.
+        # Antes este teste esperava 2 linhas (inclusive a do aluno_b, vazia);
+        # agora só o aluno com situação preenchida gera a linha FINAL.
+        assert len(finais) == 1
+        assert {c.aluno_id for c in finais} == {ids["aluno_a"]}
         assert all(c.concluido for c in finais)
         # E nada nasceu na etapa INICIAL.
         assert ConselhoClasse.query.filter_by(

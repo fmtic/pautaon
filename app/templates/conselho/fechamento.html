@@ -54,9 +54,8 @@
         <button onclick="exportTableToCSV('{{ turma.nome }}.csv')" class="btn btn-outline-success">
           <i class="bi bi-file-earmark-excel me-1"></i> Exportar .CSV
         </button>
-        <button onclick="salvarFechamento()" class="btn btn-primary">
-          <i class="bi bi-save me-1"></i> Salvar Fechamento
-        </button>
+        {# AJ30: sem botão "Salvar Fechamento" — cada linha é salva ao alterar. #}
+        <span class="text-muted small d-print-none align-self-center">As alterações são salvas automaticamente.</span>
       </div>
     </div>
 
@@ -150,6 +149,15 @@
                       {{ item.obj.nome_social or item.obj.nome }}
                     </div>
                     <small class="text-muted">{{ item.obj.nivel or '—' }} | {{ item.obj.idade }} anos</small>
+                    {# AJ30: área fixa do autosave — nunca desloca as colunas.
+                       aria-live polite sem roubar foco; o botão de retry só
+                       aparece em caso de erro e expõe a mensagem do servidor
+                       em title/aria-label. #}
+                    <div class="autosave-indicador d-print-none" role="status" aria-live="polite" aria-atomic="true">
+                      <span class="autosave-estado"></span>
+                      <button type="button" class="btn btn-link btn-sm p-0 d-none autosave-retry"
+                        title="Tentar novamente" aria-label="Tentar novamente">tentar novamente</button>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -167,18 +175,18 @@
               <td class="text-center fw-bold text-danger">{{ item.falta }}%</td>
 
               {# Situação Final: select visível na tela, span visível na
-              impressão. D5.2b: value = VALOR do enum SituacaoFinal
-              (app/models/enums.py) — nada fora dele. #}
+              impressão. AJ30: opções vêm da ÚNICA fonte
+              `SITUACAO_FINAL_OPCOES` (app/models/enums.py); a primeira option
+              é "Não definido" com value="" = NULL. Na impressão, NULL é "—"
+              (nunca "Aprovado"). #}
               <td class="text-center">
                 <select class="form-select form-select-sm border-primary d-print-none situacao-select">
-                  <option value="Aprovado"{%- if item.conselho and item.conselho.situacao_final == 'Aprovado' %} selected{%- endif %}>Aprovado</option>
-                  <option value="Reprovado por Falta"{%- if item.conselho and item.conselho.situacao_final == 'Reprovado por Falta' %} selected{%- endif %}>Reprovado por Falta</option>
-                  <option value="Desistente"{%- if item.conselho and item.conselho.situacao_final == 'Desistente' %} selected{%- endif %}>Desistente</option>
-                  <option value="Evadido"{%- if item.conselho and item.conselho.situacao_final == 'Evadido' %} selected{%- endif %}>Evadido</option>
-                  <option value="Participação"{%- if item.conselho and item.conselho.situacao_final == 'Participação' %} selected{%- endif %}>Participação</option>
-                  <option value="Concluído"{%- if item.conselho and item.conselho.situacao_final == 'Concluído' %} selected{%- endif %}>Concluído</option>
+                  <option value="">{{ situacao_indefinida }}</option>
+                  {% for valor in situacoes_finais %}
+                  <option value="{{ valor }}"{%- if item.conselho and item.conselho.situacao_final == valor %} selected{%- endif %}>{{ valor }}</option>
+                  {% endfor %}
                 </select>
-                <span class="d-none d-print-inline situacao-texto fw-semibold">{{ item.conselho.situacao_final if item.conselho and item.conselho.situacao_final else 'Aprovado' }}</span>
+                <span class="d-none d-print-inline situacao-texto fw-semibold">{{ item.conselho.situacao_final if item.conselho and item.conselho.situacao_final else situacao_indefinida_impressao }}</span>
               </td>
 
               {# Próximo Curso (AJ22-B/C): id de um CURSO já cadastrado da
@@ -228,6 +236,7 @@
 </div>
 {% endblock %} {% block scripts %} {{ super() }}
 <script src="/static/js/conselho/conselho.js"></script>
+<script src="/static/js/conselho/autosave.js"></script>
 <script>
   // AJ22-C: dados do fechamento embutidos na página (sem requisição extra).
   // NIVEL_DATA: {curso_id: [{id, nome, ativo}]} — inclui inativos para o

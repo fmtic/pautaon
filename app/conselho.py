@@ -44,6 +44,10 @@ from app.models import (PerguntaConselho, Turma, TurmaCurso, Aluno, Frequencia,
                     PeriodoConselho, PeriodoLetivo)
 from app.models.enums import (
     ETAPA_PARA_CAMPO_AVALIACAO,
+    SITUACAO_FINAL_INDEFINIDA,
+    SITUACAO_FINAL_INDEFINIDA_IMPRESSAO,
+    SITUACAO_FINAL_LEGADO,
+    SITUACAO_FINAL_OPCOES,
     EtapaConselho,
     SituacaoFinal,
     UserRole,
@@ -185,15 +189,14 @@ def _escolha_fora_das_ativas(oferta_id, oferta):
 
 
 def _normalizar_situacao_final(valor):
-    """Converte o código enviado pelo select do fechamento no valor válido
-    do CHECK `ck_conselho_situacao_final` (enum `SituacaoFinal`).
+    """Converte o código enviado pelo select no valor canônico da AJ30.
 
-    Aceita o VALOR do enum ('Aprovado', 'Reprovado por Falta', ...) — forma
-    enviada pelo select a partir da D5.2b — e, por compatibilidade, os nomes
-    do enum ('APROVADO', 'REPROVADO_POR_FALTA', ...), incluindo o apelido
-    histórico 'PARTICIPANTE' (a tela antiga usava esse rótulo para
-    'Participação'). Vazio/None = situação não informada. Valor desconhecido
-    levanta ValueError — o chamador recusa o pedido em vez de gravar às cegas.
+    Aceita os 6 valores do novo vocabulário ('Aprovado', 'Participante',
+    'Reprovado por faltas', ...), os VALORES antigos mapeados por
+    ``SITUACAO_FINAL_LEGADO`` e os NOMES do enum (inclusive os aliases
+    históricos ``PARTICIPACAO``/``REPROVADO_POR_FALTA``) usados por clientes
+    antigos e testes. Vazio/None = "Não definido" = NULL. Qualquer outro
+    valor levanta ``ValueError`` — o chamador recusa em vez de gravar às cegas.
     """
     if valor is None:
         return None
@@ -203,11 +206,10 @@ def _normalizar_situacao_final(valor):
     for situacao in SituacaoFinal:
         if texto == situacao.value:
             return situacao.value
-    codigo = texto.upper()
-    if codigo == "PARTICIPANTE":
-        codigo = "PARTICIPACAO"
+    if texto in SITUACAO_FINAL_LEGADO:
+        return SITUACAO_FINAL_LEGADO[texto]
     try:
-        return SituacaoFinal[codigo].value
+        return SituacaoFinal[texto.upper()].value
     except KeyError:
         raise ValueError(f"Situação final inválida: {valor}") from None
 
@@ -473,10 +475,38 @@ def index_conselho():
         [item['oferta'] for item in ofertas]
     )
 
+    # AJ30: contagem de alunos SEM situação final definida para o aviso antes
+    # de encerrar. Duas consultas em lote para TODAS as ofertas da página —
+    # nenhuma consulta por linha (sem N+1). Aluno ativo inscrito na oferta que
+    # não tenha ConselhoClasse FINAL com situacao_final preenchida conta como
+    # pendente (inclui o caso de não existir linha de conselho — AJ20).
+    oferta_ids_painel = [item['oferta'].id for item in ofertas]
+    pendencias_por_oferta = {oid: 0 for oid in oferta_ids_painel}
+    if oferta_ids_painel:
+        inscritos = set(db.session.execute(
+            select(Inscricao.turma_curso_id, Inscricao.aluno_id).where(
+                Inscricao.turma_curso_id.in_(oferta_ids_painel),
+                Inscricao.ativo == True,
+            ).distinct()
+        ).all())
+        definidos = set(db.session.execute(
+            select(ConselhoClasse.turma_curso_id, ConselhoClasse.aluno_id).where(
+                ConselhoClasse.turma_curso_id.in_(oferta_ids_painel),
+                ConselhoClasse.etapa == EtapaConselho.FINAL,
+                ConselhoClasse.situacao_final.isnot(None),
+            ).distinct()
+        ).all())
+        for oferta_id, aluno_id in inscritos:
+            if (oferta_id, aluno_id) not in definidos:
+                pendencias_por_oferta[oferta_id] = (
+                    pendencias_por_oferta.get(oferta_id, 0) + 1
+                )
+
     return render_template('conselho/painel.html',
                            ofertas=ofertas,
                            grade_oferta_map=grade_oferta_map,
                            turmas_sem_oferta=turmas_sem_oferta,
+                           pendencias_fechamento=pendencias_por_oferta,
                            lista_programas=lista_programas,
                            programa_ativo=programa_ativo,
                            turno_ativo=turno_ativo)
@@ -1153,7 +1183,10 @@ def fechamento_turma(turma_id):
                                ofertas=ofertas_turma,
                                exigir_escolha=True,
                                dados=[],
-                               opcoes_turma=[])
+                               opcoes_turma=[],
+                               situacoes_finais=SITUACAO_FINAL_OPCOES,
+                               situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
+                               situacao_indefinida_impressao=SITUACAO_FINAL_INDEFINIDA_IMPRESSAO)
 
     # Alunos da OFERTA (inscrição ativa nela, distinct por aluno).
     alunos = Aluno.query.join(Inscricao).filter(
@@ -1248,6 +1281,9 @@ def fechamento_turma(turma_id):
                            exigir_escolha=False,
                            dados=dados_alunos,
                            cursos_ativos=cursos_ativos,
+                           situacoes_finais=SITUACAO_FINAL_OPCOES,
+                           situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
+                           situacao_indefinida_impressao=SITUACAO_FINAL_INDEFINIDA_IMPRESSAO,
                            niveis_curso=mapa_niveis_por_curso(
                                cursos_mapa.values(), turma.unidade_id
                            ))
@@ -1256,14 +1292,27 @@ def fechamento_turma(turma_id):
 @bp.route('/conselho/fechamento/<int:turma_id>/salvar', methods=['POST'])
 @login_required
 def salvar_fechamento_data(turma_id):
-    """Salva situação final de cada aluno da OFERTA via JSON (chamado pelo JS).
+    """Salva UMA linha do fechamento da OFERTA via JSON (autosave da AJ30).
 
-    D5.2: a rota passa a exigir a oferta (mesmo padrão 0/1/2+ das outras) e
-    o caminho alinha o JS antigo (`<path da página>/salvar`). Itens de alunos
+    Contrato novo: ``{oferta_id, aluno_id, situacao, proximo_curso_id,
+    proximo_nivel_id}`` no topo — o JS envia somente a linha alterada, com a
+    mesma validação atômica de antes. ``{"dados": [...]}`` continua aceito
+    para clientes/testes antigos; em ambos os casos nada é gravado no GET.
+
+    D5.2: a rota exige a oferta (padrão 0/1/2+ das outras). Itens de alunos
     sem inscrição ativa na oferta são ignorados.
     """
     data = request.get_json(silent=True) or {}
-    registros = data.get('dados', [])
+    if isinstance(data, dict) and 'dados' in data:
+        registros = data.get('dados') or []
+    elif isinstance(data, dict) and data.get('aluno_id') is not None:
+        registros = [data]
+    else:
+        registros = []
+    if isinstance(registros, dict):
+        registros = [registros]
+    if not isinstance(registros, list):
+        return jsonify({"success": False, "message": "Payload de fechamento inválido."}), 400
 
     if current_user.role == UserRole.PROFESSOR:
         return jsonify({
@@ -1334,7 +1383,12 @@ def salvar_fechamento_data(turma_id):
         # linha (pedido atômico). Qualquer recusa → rollback, nada gravado.
         validados = []
         for item in registros:
-            aluno_id = int(item['aluno_id'])
+            if not isinstance(item, dict):
+                raise ValueError("Registro de fechamento inválido.")
+            aluno_bruto = item.get('aluno_id')
+            if not str(aluno_bruto or '').strip().isdigit():
+                raise ValueError("Aluno inválido no fechamento.")
+            aluno_id = int(aluno_bruto)
             if aluno_id not in alunos_oferta:
                 continue
             situacao = _normalizar_situacao_final(item.get('situacao'))
@@ -1420,6 +1474,17 @@ def salvar_fechamento_data(turma_id):
             )
 
         for aluno_id, situacao, curso_efetivo, nivel_efetivo in validados:
+            # AJ30: escolher "Não definido" (NULL) em um aluno que ainda não
+            # tem conselho FINAL NÃO cria linha alguma — segue a regra AJ20
+            # de que o GET/carregamento nunca materializa casas vazias. Se a
+            # linha já existe, ela é atualizada para NULL normalmente.
+            if (
+                aluno_id not in existentes
+                and situacao is None
+                and curso_efetivo is None
+                and nivel_efetivo is None
+            ):
+                continue
             # AJ20: helper único com SAVEPOINT — o fechamento só cria a
             # linha quando vai gravar situação/concluído, e uma corrida na
             # UNIQUE `uix_conselho_oferta` relê a linha vencedora.

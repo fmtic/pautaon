@@ -274,20 +274,12 @@
                                     linha.presenca }}%</span>
                             </td>
                             <td class="px-3 py-2 text-center">
+                                {# AJ30: badge pela fonte única de valores.
+                                   NULL chega do backend como "Não definido";
+                                   nunca mais o rótulo enganoso "Sem Registro". #}
                                 {% set s = linha.situacao_final %}
-                                {% if s in ['APROVADO', 'Aprovado'] %}
-                                <span class="badge badge-situacao-aprovado">Aprovado</span>
-                                {% elif s in ['REPROVADO_POR_FALTA', 'Reprovado por Falta'] %}
-                                <span class="badge badge-situacao-reprovado">Rep. por Falta</span>
-                                {% elif s in ['EVADIDO', 'Evadido'] %}
-                                <span class="badge badge-situacao-evadido">Evadido</span>
-                                {% elif s in ['DESISTENTE', 'Desistente'] %}
-                                <span class="badge badge-situacao-desistente">Desistente</span>
-                                {% elif s in ['EMPREGADO', 'Empregado'] %}
-                                <span class="badge badge-situacao-empregado">Empregado</span>
-                                {% else %}
-                                <span class="badge badge-situacao-sem-registro">Sem Registro</span>
-                                {% endif %}
+                                {% set info = situacao_badges.get(s, situacao_badges.get('')) %}
+                                <span class="badge {{ info[0] }}">{{ info[1] }}</span>
                             </td>
                         </tr>
                         {% endfor %}

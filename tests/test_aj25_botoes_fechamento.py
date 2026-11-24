@@ -1,8 +1,10 @@
-"""AJ25 — barra de ações do fechamento do conselho.
+"""AJ25 — barra de ações do fechamento do conselho (atualizada na AJ30).
 
 Cobre o alinhamento da barra de botões com o padrão das demais telas
-(`relatorios/geral.html`, `conselho/perguntas.html`, `turmas/listar.html`),
-sem alterar rótulos, ícones, ``onclick`` ou comportamento.
+(`relatorios/geral.html`, `conselho/perguntas.html`, `turmas/listar.html`).
+AJ30 removeu "Salvar Fechamento" (autosave por linha) e acrescentou o texto
+discreto "As alterações são salvas automaticamente."; Imprimir, Exportar
+.CSV e Voltar seguem intactos.
 """
 
 from __future__ import annotations
@@ -96,13 +98,11 @@ def test_barra_mantem_botoes_onclick_e_dprintnone(app, client):
             "bi bi-file-earmark-excel me-1",
             "Exportar .CSV",
         ),
-        (
-            "salvarFechamento()",
-            "btn btn-primary",
-            "bi bi-save me-1",
-            "Salvar Fechamento",
-        ),
     ]
+    # AJ30: botão de salvar substituído por aviso discreto de autosave.
+    assert "salvarFechamento()" not in html
+    assert "Salvar Fechamento" not in html
+    assert '<span class="text-muted small d-print-none align-self-center">As alterações são salvas automaticamente.</span>' in html
     assert (
         '<div class="d-flex flex-wrap justify-content-between '
         'align-items-center mb-4 gap-3 d-print-none">' in html
@@ -161,4 +161,4 @@ def test_voltar_para_o_painel_do_conselho(app, client):
     # na impressão e não altera a ordem dos botões fixada no teste acima.
     assert acoes.index("<a href=") < acoes.index("<button onclick=")
     assert "prepararImpressao()" in acoes
-    assert "salvarFechamento()" in acoes
+    assert "salvarFechamento()" not in acoes

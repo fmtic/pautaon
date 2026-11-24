@@ -77,6 +77,7 @@ process.stdout.write(JSON.stringify({
     antesSemAttr, depoisSemAttr,
     antesBody, depoisBody: soBody.title,
     antesVazio, tituloVazio: vazio.title,
+    dataHoje: P.dataLocal(),
 }));
 """
 
@@ -132,7 +133,9 @@ def test_limite_de_100_caracteres_sem_hifen_solto(saida):
 
 
 def test_titulo_e_trocado_e_restaurado_no_afterprint(saida):
-    assert saida["antes"] == "Resumo-Primeira-Vista_MGB_2026-11-23"
+    # {data} usa a data local do navegador: o esperado é derivado da própria
+    # função, senão o teste quebra todo dia 00:00 (era fixo em 2026-11-23).
+    assert saida["antes"] == f"Resumo-Primeira-Vista_MGB_{saida['dataHoje']}"
     assert saida["durante"] == saida["antes"]
     assert saida["restaurou"] is True
     assert saida["depois"] == "Resumo - Primeira Vista · pautaON"
@@ -146,5 +149,5 @@ def test_sem_atributo_ou_atributo_vazio_nao_mexe_no_titulo(saida):
 
 
 def test_fallback_para_body_quando_nao_ha_conteudo_impressao(saida):
-    assert saida["antesBody"] == "Historico-Aluno_2026-11-23"
+    assert saida["antesBody"] == f"Historico-Aluno_{saida['dataHoje']}"
     assert saida["depoisBody"] == "So body"

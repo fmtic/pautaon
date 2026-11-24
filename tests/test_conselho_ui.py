@@ -15,7 +15,7 @@ from test_conselho_oferta import _enturma, _loga, _perguntas, _setup
 
 from app.database import db
 from app.models import ConselhoResposta, PerguntaConselho
-from app.models.enums import EtapaConselho, SituacaoFinal
+from app.models.enums import SITUACAO_FINAL_OPCOES, EtapaConselho, SituacaoFinal
 
 
 def _token_csrf(html: str) -> str:
@@ -124,8 +124,14 @@ def test_select_situacao_final_igual_ao_enum(app, client):  # noqa: F811
     trecho = body[inicio:body.index("</select>", inicio)]
     valores = re.findall(r'value="([^"]*)"', trecho)
 
-    assert valores == [situacao.value for situacao in SituacaoFinal]
-    assert "EMPREGADO" not in body
+    # AJ30: primeira option = "Não definido" (value=""), depois os 6 valores
+    # canônicos pela ordem da fonte única. Nenhum valor antigo sobrevive.
+    assert valores == [""] + list(SITUACAO_FINAL_OPCOES)
+    assert [situacao.value for situacao in SituacaoFinal] == list(SITUACAO_FINAL_OPCOES)
+    for antigo in ("Concluído", "Participação", "Reprovado por Falta"):
+        assert antigo not in trecho
+    # "EMPREGADO" é nome de enum, não rótulo da option canônica ("Empregado").
+    assert "EMPREGADO" not in trecho
 
 
 # ---------------------------------------------------------------------------
