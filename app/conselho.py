@@ -45,7 +45,6 @@ from app.models import (PerguntaConselho, Turma, TurmaCurso, Aluno, Frequencia,
 from app.models.enums import (
     ETAPA_PARA_CAMPO_AVALIACAO,
     SITUACAO_FINAL_INDEFINIDA,
-    SITUACAO_FINAL_INDEFINIDA_IMPRESSAO,
     SITUACAO_FINAL_LEGADO,
     SITUACAO_FINAL_OPCOES,
     EtapaConselho,
@@ -195,8 +194,9 @@ def _normalizar_situacao_final(valor):
     'Reprovado por faltas', ...), os VALORES antigos mapeados por
     ``SITUACAO_FINAL_LEGADO`` e os NOMES do enum (inclusive os aliases
     históricos ``PARTICIPACAO``/``REPROVADO_POR_FALTA``) usados por clientes
-    antigos e testes. Vazio/None = "Não definido" = NULL. Qualquer outro
-    valor levanta ``ValueError`` — o chamador recusa em vez de gravar às cegas.
+    antigos e testes. Vazio/None é uma situação final não definida (NULL).
+    Qualquer outro valor levanta ``ValueError`` — o chamador recusa em vez
+    de gravar às cegas.
     """
     if valor is None:
         return None
@@ -1185,8 +1185,7 @@ def fechamento_turma(turma_id):
                                dados=[],
                                opcoes_turma=[],
                                situacoes_finais=SITUACAO_FINAL_OPCOES,
-                               situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
-                               situacao_indefinida_impressao=SITUACAO_FINAL_INDEFINIDA_IMPRESSAO)
+                               situacao_indefinida=SITUACAO_FINAL_INDEFINIDA)
 
     # Alunos da OFERTA (inscrição ativa nela, distinct por aluno).
     alunos = Aluno.query.join(Inscricao).filter(
@@ -1283,7 +1282,6 @@ def fechamento_turma(turma_id):
                            cursos_ativos=cursos_ativos,
                            situacoes_finais=SITUACAO_FINAL_OPCOES,
                            situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
-                           situacao_indefinida_impressao=SITUACAO_FINAL_INDEFINIDA_IMPRESSAO,
                            niveis_curso=mapa_niveis_por_curso(
                                cursos_mapa.values(), turma.unidade_id
                            ))
@@ -1474,8 +1472,9 @@ def salvar_fechamento_data(turma_id):
             )
 
         for aluno_id, situacao, curso_efetivo, nivel_efetivo in validados:
-            # AJ30: escolher "Não definido" (NULL) em um aluno que ainda não
-            # tem conselho FINAL NÃO cria linha alguma — segue a regra AJ20
+            # AJ30: escolher uma situação final não definida (NULL) em um
+            # aluno que ainda não tem conselho FINAL NÃO cria linha alguma —
+            # segue a regra AJ20
             # de que o GET/carregamento nunca materializa casas vazias. Se a
             # linha já existe, ela é atualizada para NULL normalmente.
             if (

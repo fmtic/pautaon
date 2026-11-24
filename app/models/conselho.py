@@ -144,7 +144,7 @@ class ConselhoClasse(TenantMixin, AuditoriaMixin, db.Model):
         - `etapa`: INICIAL, PERCURSO ou FINAL (enum nativo).
         - `situacao_final`: Aprovado, Participante, Reprovado por faltas,
           Desistente, Evadido, Empregado (VARCHAR + CHECK — AJ30). NULL =
-          "Não definido" (não é um valor do domínio).
+          exibido como ``—`` (não é um valor do domínio).
         - `proximo_curso_id`: curso de destino (AJ22-B, FK → curso RESTRICT);
           `proximo_nivel_id`: nível desse curso (FK → nivel RESTRICT).
         - `proxima_turma_id`: LEGADO do catálogo OpcaoProximaTurma, somente

@@ -2,11 +2,11 @@
 
 Cobre o contrato novo ponta a ponta no SQLite:
     1. enum/lista ordenada como fonte única (sem valores antigos);
-    2. select abre em "Não definido" (value="") e a impressão mostra "—";
+    2. AJ30-B: select e impressão mostram o mesmo "—" (value="" = NULL);
     3. POST de UMA linha para cada situação canônica;
-    4. "Não definido" grava NULL e NÃO cria ConselhoClasse (regra AJ20);
+    4. vazio/"—" grava NULL e NÃO cria ConselhoClasse (regra AJ20);
     5. payload inválido não altera situação/curso/nível gravados (rollback);
-    6. badges do resultado: "Não definido" em vez de "Sem Registro";
+    6. badges do resultado: "—" em vez de "Sem Registro";
     7. aviso "N aluno(s) sem situação final definida" antes de encerrar;
     8. sumário de leitores com os 6 valores + NULL.
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 from _helpers import login_as, nova_inscricao, nova_oferta
@@ -32,6 +33,7 @@ from app.models import (
 )
 from app.models.enums import (
     SITUACAO_FINAL_BADGES,
+    SITUACAO_FINAL_INDEFINIDA,
     SITUACAO_FINAL_LEGADO,
     SITUACAO_FINAL_OPCOES,
     EtapaConselho,
@@ -137,14 +139,14 @@ def test_vocabulario_final_e_mapa_de_renomeacao():
     # pré-migração; o domínio gravado continua sendo o enum de 6 valores.
     assert SITUACAO_FINAL_BADGES["Concluído"] == SITUACAO_FINAL_BADGES["Aprovado"]
     assert SITUACAO_FINAL_BADGES["Participante"][1] == "Participante"
-    assert SITUACAO_FINAL_BADGES[""][1] == "Não definido"
+    assert SITUACAO_FINAL_BADGES[""][1] == SITUACAO_FINAL_INDEFINIDA == "—"
 
 
 # ---------------------------------------------------------------------------
 # (2) tela
 # ---------------------------------------------------------------------------
 
-def test_select_abre_nao_definido_e_impressao_usa_traco(app, client):
+def test_select_e_impressao_usam_o_mesmo_traco(app, client):
     ids = _setup(app)
     login_as(client, str(ids["user_id"]), ids["unidade"])
     html = client.get(
@@ -153,14 +155,26 @@ def test_select_abre_nao_definido_e_impressao_usa_traco(app, client):
 
     trecho = html[html.index("situacao-select"):html.index("</select>", html.index("situacao-select"))]
     opcoes = re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', trecho)
-    assert opcoes[0] == ("", "Não definido")
+    assert SITUACAO_FINAL_INDEFINIDA == "—"
+    assert opcoes[0] == ("", SITUACAO_FINAL_INDEFINIDA)
     assert [valor for valor, _ in opcoes[1:]] == list(SITUACAO_FINAL_OPCOES)
     assert "selected" not in opcoes[0][0]
     assert "Concluído" not in trecho and "Participação" not in trecho
     assert "Reprovado por Falta<" not in trecho
+    assert "Não definido" not in html
+    assert 'aria-label="Situação final"' in trecho
+    assert 'title="Situação final não definida"' in trecho
+    assert 'aria-label="Situação final não definida"' in trecho
+    assert f'data-rotulo-ausente="{SITUACAO_FINAL_INDEFINIDA}"' in trecho
 
-    span = re.search(r'<span class="d-none d-print-inline situacao-texto[^"]*">([^<]*)</span>', html)
-    assert span is not None and span.group(1).strip() == "—"
+    span = re.search(
+        r'<span class="d-none d-print-inline situacao-texto[^"]*"([^>]*)>([^<]*)</span>',
+        html,
+    )
+    assert span is not None
+    assert span.group(2).strip() == SITUACAO_FINAL_INDEFINIDA
+    assert 'title="Situação final não definida"' in span.group(1)
+    assert 'aria-label="Situação final não definida"' in span.group(1)
     assert "As alterações são salvas automaticamente." in html
     assert "Salvar Fechamento" not in html
     assert "autosave-indicador" in html and 'aria-live="polite"' in html
@@ -196,7 +210,7 @@ def test_vazio_grava_null_e_nao_cria_linha(app, client):
     with app.app_context():
         assert _conselho(ids, aluno_id) is None
 
-    # Com linha já existente, "Não definido" limpa o valor mas NÃO apaga a
+    # Com linha já existente, o "—" limpa o valor mas NÃO apaga a
     # linha (histórico/respostas do conselho ficam preservados).
     assert _post(client, ids, aluno_id, "Aprovado").get_json()["success"] is True
     assert _post(client, ids, aluno_id, "").get_json() == {"success": True}
@@ -241,7 +255,7 @@ def test_valores_antigos_sao_normalizados_na_fronteira(app, client):
 # (6) leitores
 # ---------------------------------------------------------------------------
 
-def test_resultado_conselho_mostra_nao_definido_e_novos_badges(app, client):
+def test_resultado_conselho_mostra_traco_e_novos_badges(app, client):
     ids = _setup(app, dois_alunos=True)
     login_as(client, str(ids["user_id"]), ids["unidade"])
     with app.app_context():
@@ -258,9 +272,38 @@ def test_resultado_conselho_mostra_nao_definido_e_novos_badges(app, client):
         "periodo_letivo_id": ids["periodo"], "turmas": ids["turma"],
     }).get_data(as_text=True)
     assert "Sem Registro" not in html
-    assert "Não definido" in html
+    assert "Não definido" not in html
     assert "badge-situacao-participante" in html
-    assert "badge-situacao-nao-definido" in html
+    badge = re.search(
+        r'<span class="badge badge-situacao-nao-definido"([^>]*)>([^<]*)</span>',
+        html,
+    )
+    assert badge is not None
+    assert badge.group(2).strip() == SITUACAO_FINAL_INDEFINIDA
+    assert 'title="Situação final não definida"' in badge.group(1)
+    assert 'aria-label="Situação final não definida"' in badge.group(1)
+
+
+def test_rotulo_antigo_so_existe_nos_casos_b():
+    raiz = Path(__file__).resolve().parents[1] / "app"
+    # (b) Programa/centro de custo e a regra de ocultá-los — não é situação
+    # final e deve continuar exatamente como está.
+    casos_b = {
+        raiz / "registros" / "turmas.py",
+        raiz / "templates" / "turmas" / "detalhe.html",
+        raiz / "templates" / "turmas" / "editar.html",
+        raiz / "templates" / "turmas" / "listar.html",
+    }
+    for arquivo in casos_b:
+        assert "Não definido" in arquivo.read_text(encoding="utf-8")
+
+    encontrados = []
+    for arquivo in sorted(raiz.rglob("*")):
+        if arquivo.suffix not in {".py", ".html", ".js"} or arquivo in casos_b:
+            continue
+        if "Não definido" in arquivo.read_text(encoding="utf-8", errors="ignore"):
+            encontrados.append(str(arquivo.relative_to(raiz)))
+    assert encontrados == []
 
 
 def test_aviso_de_encerramento_calcula_pendencias_em_lote(app, client):

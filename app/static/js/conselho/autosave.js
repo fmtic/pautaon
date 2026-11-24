@@ -107,9 +107,9 @@
         }
     }
 
-    /** Texto impresso da situação: vazio é "—", nunca o rótulo "Não definido". */
-    function textoImpressaoSituacao(valor, rotulo) {
-        return valor ? String(rotulo || '') : '—';
+    /** Texto impresso da situação: vazio usa o rótulo canônico vindo da tela. */
+    function textoImpressaoSituacao(valor, rotulo, rotuloAusente) {
+        return valor ? String(rotulo || '') : String(rotuloAusente || '');
     }
 
     /** Prioriza a mensagem devolvida pelo servidor; fallbacks para HTTP/rede. */

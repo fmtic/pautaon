@@ -168,14 +168,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Sincroniza cada select com seu span de impressão em tempo real
 function sincronizarSpans() {
-    // AJ30: "Não definido" (value="") é ausência — na impressão aparece "—",
-    // o mesmo fallback do template, nunca o rótulo da option.
+    // AJ30-B: value="" é ausência; o fallback vem da fonte única da tela
+    // (data-rotulo-ausente), igual ao span renderizado no template.
     const textoImpressao = sel => {
         const opcao = sel.options[sel.selectedIndex];
+        const ausente = sel.dataset.rotuloAusente || '';
         const api = window.autosaveFechamento;
         return api && api.textoImpressaoSituacao
-            ? api.textoImpressaoSituacao(sel.value, opcao ? opcao.text : '')
-            : (sel.value ? (opcao ? opcao.text : '') : '—');
+            ? api.textoImpressaoSituacao(sel.value, opcao ? opcao.text : '', ausente)
+            : (sel.value ? (opcao ? opcao.text : '') : ausente);
     };
     document.querySelectorAll('.situacao-select').forEach(sel => {
         const span = sel.closest('td').querySelector('.situacao-texto');

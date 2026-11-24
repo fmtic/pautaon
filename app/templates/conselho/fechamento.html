@@ -175,18 +175,19 @@
               <td class="text-center fw-bold text-danger">{{ item.falta }}%</td>
 
               {# Situação Final: select visível na tela, span visível na
-              impressão. AJ30: opções vêm da ÚNICA fonte
-              `SITUACAO_FINAL_OPCOES` (app/models/enums.py); a primeira option
-              é "Não definido" com value="" = NULL. Na impressão, NULL é "—"
-              (nunca "Aprovado"). #}
+              impressão. AJ30-B: a primeira option e o fallback de impressão
+              vêm da MESMA fonte `SITUACAO_FINAL_INDEFINIDA`
+              (app/models/enums.py): `—` com value="" = NULL. Nunca
+              "Aprovado". #}
               <td class="text-center">
-                <select class="form-select form-select-sm border-primary d-print-none situacao-select">
-                  <option value="">{{ situacao_indefinida }}</option>
+                <select class="form-select form-select-sm border-primary d-print-none situacao-select"
+                  aria-label="Situação final" data-rotulo-ausente="{{ situacao_indefinida }}">
+                  <option value="" title="Situação final não definida" aria-label="Situação final não definida">{{ situacao_indefinida }}</option>
                   {% for valor in situacoes_finais %}
                   <option value="{{ valor }}"{%- if item.conselho and item.conselho.situacao_final == valor %} selected{%- endif %}>{{ valor }}</option>
                   {% endfor %}
                 </select>
-                <span class="d-none d-print-inline situacao-texto fw-semibold">{{ item.conselho.situacao_final if item.conselho and item.conselho.situacao_final else situacao_indefinida_impressao }}</span>
+                <span class="d-none d-print-inline situacao-texto fw-semibold"{% if not item.conselho or not item.conselho.situacao_final %} title="Situação final não definida" aria-label="Situação final não definida"{% endif %}>{{ item.conselho.situacao_final if item.conselho and item.conselho.situacao_final else situacao_indefinida }}</span>
               </td>
 
               {# Próximo Curso (AJ22-B/C): id de um CURSO já cadastrado da

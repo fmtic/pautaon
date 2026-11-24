@@ -59,8 +59,9 @@ process.stdout.write(JSON.stringify({
   falha, comErro, limpo, estados,
   debounce: P.DEBOUNCE_MS,
   mostraSalvo: P.MOSTRAR_SALVO_MS,
-  impressaoVazia: P.textoImpressaoSituacao('', 'Não definido'),
-  impressaoAprovado: P.textoImpressaoSituacao('Aprovado', 'Aprovado'),
+  // AJ30-B: a página passa o rótulo canônico da fonte única (data-rotulo-ausente).
+  impressaoVazia: P.textoImpressaoSituacao('', '', '—'),
+  impressaoAprovado: P.textoImpressaoSituacao('Aprovado', 'Aprovado', '—'),
   msgServidor: P.mensagemErro('Próximo curso não encontrado.', 400),
   msg400: P.mensagemErro('', 400),
   msg500: P.mensagemErro('', 500),

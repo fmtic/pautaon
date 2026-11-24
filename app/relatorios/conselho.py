@@ -317,6 +317,7 @@ def resultado_conselho():
         aluno_count=aluno_count,
         resumo_status=resumo_status,
         situacao_badges=SITUACAO_FINAL_BADGES,
+        situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
         conselho_inicio=conselho_inicio,
         conselho_fim=conselho_fim,
         escopo_turmas=escopo_turmas,

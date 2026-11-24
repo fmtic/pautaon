@@ -274,12 +274,12 @@
                                     linha.presenca }}%</span>
                             </td>
                             <td class="px-3 py-2 text-center">
-                                {# AJ30: badge pela fonte única de valores.
-                                   NULL chega do backend como "Não definido";
+                                {# AJ30-B: badge pela fonte única de valores.
+                                   NULL chega do backend como `—`, igual à tela;
                                    nunca mais o rótulo enganoso "Sem Registro". #}
                                 {% set s = linha.situacao_final %}
                                 {% set info = situacao_badges.get(s, situacao_badges.get('')) %}
-                                <span class="badge {{ info[0] }}">{{ info[1] }}</span>
+                                <span class="badge {{ info[0] }}"{% if s == situacao_indefinida %} title="Situação final não definida" aria-label="Situação final não definida"{% endif %}>{{ info[1] }}</span>
                             </td>
                         </tr>
                         {% endfor %}

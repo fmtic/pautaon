@@ -15,7 +15,12 @@ from test_conselho_oferta import _enturma, _loga, _perguntas, _setup
 
 from app.database import db
 from app.models import ConselhoResposta, PerguntaConselho
-from app.models.enums import SITUACAO_FINAL_OPCOES, EtapaConselho, SituacaoFinal
+from app.models.enums import (
+    SITUACAO_FINAL_INDEFINIDA,
+    SITUACAO_FINAL_OPCOES,
+    EtapaConselho,
+    SituacaoFinal,
+)
 
 
 def _token_csrf(html: str) -> str:
@@ -123,10 +128,15 @@ def test_select_situacao_final_igual_ao_enum(app, client):  # noqa: F811
     inicio = body.index("situacao-select")
     trecho = body[inicio:body.index("</select>", inicio)]
     valores = re.findall(r'value="([^"]*)"', trecho)
+    opcoes = re.findall(r'<option value="([^"]*)"[^>]*>([^<]*)</option>', trecho)
 
-    # AJ30: primeira option = "Não definido" (value=""), depois os 6 valores
+    # AJ30-B: primeira option = "—" (value="" = NULL), depois os 6 valores
     # canônicos pela ordem da fonte única. Nenhum valor antigo sobrevive.
+    assert opcoes[0] == ("", SITUACAO_FINAL_INDEFINIDA)
     assert valores == [""] + list(SITUACAO_FINAL_OPCOES)
+    assert "Não definido" not in trecho
+    assert 'aria-label="Situação final"' in trecho
+    assert 'title="Situação final não definida"' in trecho
     assert [situacao.value for situacao in SituacaoFinal] == list(SITUACAO_FINAL_OPCOES)
     for antigo in ("Concluído", "Participação", "Reprovado por Falta"):
         assert antigo not in trecho

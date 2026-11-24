@@ -95,8 +95,8 @@ class SituacaoFinal(str, enum.Enum):
     Resultado final de um aluno no conselho de classe (vocabulário AJ30).
 
     Mantido como VARCHAR + CHECK no banco (não enum nativo) porque o conjunto
-    pode evoluir. ``Não definido`` NÃO é valor deste enum: é ``NULL`` na
-    coluna, exibido como "Não definido" na tela/"—" na impressão.
+    pode evoluir. Um resultado ``não definido`` NÃO é valor deste enum: é
+    ``NULL`` na coluna, exibido como ``—`` em tela e impressão.
 
     Os dois apelidos no fim são aliases de NOME (não aparecem na iteração):
     código legado que ainda escreve ``SituacaoFinal.PARTICIPACAO`` ou
@@ -114,8 +114,8 @@ class SituacaoFinal(str, enum.Enum):
 
 
 #: Única ordem de exibição do select de situação final (e dos filtros).
-#: A option "Não definido" (value="") é acrescentada à frente pelo template;
-#: ela não entra aqui porque NULL não é valor do domínio.
+#: A option ``—`` (value="") é acrescentada à frente pelo template; ela não
+#: entra aqui porque NULL não é valor do domínio.
 SITUACAO_FINAL_OPCOES: tuple[str, ...] = tuple(s.value for s in SituacaoFinal)
 
 #: Situações que contam como aprovação nas regras de certificado e da ficha
@@ -134,8 +134,11 @@ SITUACAO_FINAL_LEGADO: dict[str, str] = {
     'Reprovado por Falta': SituacaoFinal.REPROVADO_POR_FALTAS.value,
 }
 
+#: Texto canônico do ausente (NULL) em tela, leitores e impressão.
+SITUACAO_FINAL_INDEFINIDA = '—'
+
 #: Badges do "Resultado do Conselho": (classe CSS, rótulo curto), pela fonte
-#: única de valores. NULL vira "Não definido" — nunca "Sem Registro".
+#: única de valores. NULL vira ``—`` — nunca "Sem Registro".
 SITUACAO_FINAL_BADGES: dict[str, tuple[str, str]] = {
     SituacaoFinal.APROVADO.value: ('badge-situacao-aprovado', 'Aprovado'),
     SituacaoFinal.PARTICIPANTE.value: ('badge-situacao-participante', 'Participante'),
@@ -143,7 +146,7 @@ SITUACAO_FINAL_BADGES: dict[str, tuple[str, str]] = {
     SituacaoFinal.DESISTENTE.value: ('badge-situacao-desistente', 'Desistente'),
     SituacaoFinal.EVADIDO.value: ('badge-situacao-evadido', 'Evadido'),
     SituacaoFinal.EMPREGADO.value: ('badge-situacao-empregado', 'Empregado'),
-    '': ('badge-situacao-nao-definido', 'Não definido'),
+    '': ('badge-situacao-nao-definido', SITUACAO_FINAL_INDEFINIDA),
 }
 # Apelidos históricos e códigos em maiúsculas também resolvem para o mesmo
 # badge — leitores antigos podem encontrar valores gravados pré-AJ30.
@@ -157,10 +160,6 @@ SITUACAO_FINAL_BADGES.setdefault(
 SITUACAO_FINAL_BADGES.setdefault(
     'PARTICIPACAO', SITUACAO_FINAL_BADGES[SituacaoFinal.PARTICIPANTE.value]
 )
-
-#: Texto canônico do ausente em tela (NULL) e na impressão.
-SITUACAO_FINAL_INDEFINIDA = 'Não definido'
-SITUACAO_FINAL_INDEFINIDA_IMPRESSAO = '—'
 
 
 class StatusAluno(str, enum.Enum):
