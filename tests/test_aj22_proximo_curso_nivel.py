@@ -880,7 +880,8 @@ def _fechar_com_dados(app, ids, nivel_id=None):
         return cid
 
 
-def test_leitor_resultado_mostra_curso_e_nivel(client, app):
+def test_leitor_resultado_mostra_conceito_no_lugar_do_destino(client, app):
+    """AJ26: a coluna de destino foi substituída por "Conceito"."""
     ids = _setup(app)
     _login(client, ids)
     nid = _nivel(app, "Sub-12", curso_id=ids["curso"],
@@ -894,8 +895,8 @@ def test_leitor_resultado_mostra_curso_e_nivel(client, app):
     body = r.data.decode("utf-8")
     assert r.status_code == 200
     assert "Curso AJ22" in body
-    assert "Sub-12" in body
-    assert "Próximo curso / Nível" in body
+    assert "Conceito" in body
+    assert "Próximo curso / Nível" not in body
 
 
 def test_leitor_resultado_fallback_legado(client, app):
@@ -917,7 +918,10 @@ def test_leitor_resultado_fallback_legado(client, app):
         f"/relatorios/conselho?periodo_letivo_id={_periodo(app, ids)}"
         f"&turmas={ids['turma']}"
     ).data.decode("utf-8")
-    assert "Avançado legado" in body
+    # AJ26: o destino legado continua válido no fechamento, mas o resultado
+    # do conselho não exibe mais essa coluna no lugar do conceito.
+    assert "Avançado legado" not in body
+    assert "Conceito" in body
 
 
 def test_ficha_e_resumo_mostram_destino(client, app):

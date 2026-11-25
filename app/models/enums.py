@@ -92,17 +92,74 @@ class UserRole(str, enum.Enum):
 
 class SituacaoFinal(str, enum.Enum):
     """
-    Resultado final de um aluno no conselho de classe.
+    Resultado final de um aluno no conselho de classe (vocabulário AJ30).
 
     Mantido como VARCHAR + CHECK no banco (não enum nativo) porque o conjunto
-    pode evoluir.
+    pode evoluir. Um resultado ``não definido`` NÃO é valor deste enum: é
+    ``NULL`` na coluna, exibido como ``—`` em tela e impressão.
+
+    Os dois apelidos no fim são aliases de NOME (não aparecem na iteração):
+    código legado que ainda escreve ``SituacaoFinal.PARTICIPACAO`` ou
+    ``SituacaoFinal.REPROVADO_POR_FALTA`` resolve para o valor canônico.
     """
     APROVADO = 'Aprovado'
-    REPROVADO_POR_FALTA = 'Reprovado por Falta'
+    PARTICIPANTE = 'Participante'
+    REPROVADO_POR_FALTAS = 'Reprovado por faltas'
     DESISTENTE = 'Desistente'
     EVADIDO = 'Evadido'
-    PARTICIPACAO = 'Participação'
-    CONCLUIDO = 'Concluído'
+    EMPREGADO = 'Empregado'
+
+    PARTICIPACAO = 'Participante'
+    REPROVADO_POR_FALTA = 'Reprovado por faltas'
+
+
+#: Única ordem de exibição do select de situação final (e dos filtros).
+#: A option ``—`` (value="") é acrescentada à frente pelo template; ela não
+#: entra aqui porque NULL não é valor do domínio.
+SITUACAO_FINAL_OPCOES: tuple[str, ...] = tuple(s.value for s in SituacaoFinal)
+
+#: Situações que contam como aprovação nas regras de certificado e da ficha
+#: 360°. "Concluído" foi fundido em "Aprovado" pela migration AJ30, então a
+#: semântica "Concluído vale como Aprovado" fica preservada sem valor extra.
+SITUACOES_FINAIS_FAVORAVEIS: frozenset[str] = frozenset({
+    SituacaoFinal.APROVADO.value,
+    SituacaoFinal.PARTICIPANTE.value,
+})
+
+#: Valores gravados antes da AJ30 que a fronteira (normalizador) e a migration
+#: convertem. Mapa único — não duplicar em rotas, templates ou relatórios.
+SITUACAO_FINAL_LEGADO: dict[str, str] = {
+    'Concluído': SituacaoFinal.APROVADO.value,
+    'Participação': SituacaoFinal.PARTICIPANTE.value,
+    'Reprovado por Falta': SituacaoFinal.REPROVADO_POR_FALTAS.value,
+}
+
+#: Texto canônico do ausente (NULL) em tela, leitores e impressão.
+SITUACAO_FINAL_INDEFINIDA = '—'
+
+#: Badges do "Resultado do Conselho": (classe CSS, rótulo curto), pela fonte
+#: única de valores. NULL vira ``—`` — nunca "Sem Registro".
+SITUACAO_FINAL_BADGES: dict[str, tuple[str, str]] = {
+    SituacaoFinal.APROVADO.value: ('badge-situacao-aprovado', 'Aprovado'),
+    SituacaoFinal.PARTICIPANTE.value: ('badge-situacao-participante', 'Participante'),
+    SituacaoFinal.REPROVADO_POR_FALTAS.value: ('badge-situacao-reprovado', 'Rep. por faltas'),
+    SituacaoFinal.DESISTENTE.value: ('badge-situacao-desistente', 'Desistente'),
+    SituacaoFinal.EVADIDO.value: ('badge-situacao-evadido', 'Evadido'),
+    SituacaoFinal.EMPREGADO.value: ('badge-situacao-empregado', 'Empregado'),
+    '': ('badge-situacao-nao-definido', SITUACAO_FINAL_INDEFINIDA),
+}
+# Apelidos históricos e códigos em maiúsculas também resolvem para o mesmo
+# badge — leitores antigos podem encontrar valores gravados pré-AJ30.
+for _antigo, _novo in SITUACAO_FINAL_LEGADO.items():
+    SITUACAO_FINAL_BADGES.setdefault(_antigo, SITUACAO_FINAL_BADGES[_novo])
+for _valor, _info in list(SITUACAO_FINAL_BADGES.items()):
+    SITUACAO_FINAL_BADGES.setdefault(_valor.upper(), _info)
+SITUACAO_FINAL_BADGES.setdefault(
+    'REPROVADO_POR_FALTA', SITUACAO_FINAL_BADGES[SituacaoFinal.REPROVADO_POR_FALTAS.value]
+)
+SITUACAO_FINAL_BADGES.setdefault(
+    'PARTICIPACAO', SITUACAO_FINAL_BADGES[SituacaoFinal.PARTICIPANTE.value]
+)
 
 
 class StatusAluno(str, enum.Enum):

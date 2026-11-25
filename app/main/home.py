@@ -1,12 +1,12 @@
-from flask import render_template
+from flask import redirect, render_template, url_for
 
 from . import bp
 
 
 @bp.route("/")
 def home():
-    """Portal de Entrada do Sistema."""
-    return render_template("login.html")
+    """Portal de entrada: delega ao login, fonte única da tela inicial."""
+    return redirect(url_for("auth.login"))
 
 
 @bp.route("/politica_privacidade")

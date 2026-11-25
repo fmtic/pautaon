@@ -132,7 +132,7 @@
     </style>
 </head>
 
-<body>
+<body data-pdf-nome="Relatorio-Formulario-Conselho{% if etapa and etapa.value %}_{{ etapa.value }}{% endif %}_{data}">
     <main class="print-page">
         <div class="no-print d-flex justify-content-between align-items-center mb-3">
             <a href="{{ url_for('conselho.imprimir_conselho') }}" class="btn btn-outline-secondary btn-sm">Voltar</a>
@@ -228,6 +228,8 @@
             {{ informacao_padrao.nome_instituicao or 'pautaON' }} · pautaON {{ app_version }} {{ app_stage }}
         </footer>
     </main>
+    {# AJ29: fora do base.html — carregar o módulo do nome do PDF aqui. #}
+    <script src="{{ url_for('static', filename='js/impressao_pdf.js') }}"></script>
 </body>
 
 </html>

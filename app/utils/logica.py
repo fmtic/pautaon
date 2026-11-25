@@ -150,6 +150,46 @@ def calcular_estatisticas_frequencia(conceitos) -> Dict[str, Any]:
     }
 
 
+#: Conceitos que concorrem ao rótulo de conceito predominante (AJ26).
+#: F (falta) e J (justificada) ficam de fora da disputa, mas continuam no
+#: denominador dos percentuais — a base é a mesma do fechamento.
+CONCEITOS_PREDOMINANTES = ('A', 'B', 'C', 'D')
+
+
+def percs_por_conceito(estatisticas: Dict[str, Any]) -> Dict[str, float]:
+    """Percentuais por conceito com a regra do fechamento do conselho.
+
+    Base única (AJ26): ``counts`` de :func:`calcular_estatisticas_frequencia`
+    sobre ``total_registros`` (TODOS os conceitos, inclusive F e J), com
+    ``round(..., 1)``. Tanto o fechamento quanto o resultado do conselho
+    consomem esta função — não existe segunda cópia da regra.
+    """
+    total = estatisticas.get('total_registros', 0)
+    counts = estatisticas.get('counts', {})
+    return {
+        conceito: round(quantidade / total * 100, 1) if total else 0.0
+        for conceito, quantidade in counts.items()
+    }
+
+
+def conceito_predominante(estatisticas: Dict[str, Any]) -> str:
+    """Rótulo do conceito de maior percentual entre A, B, C e D.
+
+    Formato ``"B — 75%"``; empate (após o arredondamento de 1 casa) vira
+    ``"A/B — 50%"`` na ordem A→D. Sem nenhum conceito A–D lançado devolve
+    ``"—"``. F e J nunca concorrem, mas permanecem no denominador via
+    :func:`percs_por_conceito`.
+    """
+    percs = percs_por_conceito(estatisticas)
+    valores = {c: percs.get(c, 0.0) for c in CONCEITOS_PREDOMINANTES}
+    maior = max(valores.values(), default=0.0)
+    if maior <= 0:
+        return '—'
+    siglas = [c for c in CONCEITOS_PREDOMINANTES if valores[c] == maior]
+    percentual_formatado = f'{maior:g}'
+    return f"{'/'.join(siglas)} — {percentual_formatado}%"
+
+
 # =============================================================================
 # HELPERS DE APRESENTAÇÃO
 # =============================================================================

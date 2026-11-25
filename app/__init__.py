@@ -20,6 +20,74 @@ from app.models import auditoria_listener  # noqa: F401
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+from pathlib import Path
+
+from app.utils.logging_seguro import mascarar_para_log
+
+
+class _LogArquivoAJ23(RotatingFileHandler):
+    """Handler de arquivo do AJ23: sem gravação em TESTING e sem segredos.
+
+    ``delay=True`` evita criar o arquivo só por instanciar o app; a checagem de
+    ``TESTING`` no ``emit`` cobre também os harnesses que ligam a flag *depois*
+    do ``create_app`` (padrão da suíte). O ``format`` mascara mensagem e
+    traceback, sem alterar o ``exc_info`` do ``logger.exception``.
+    """
+
+    def __init__(self, caminho: str, alvo: str, **kwargs) -> None:
+        super().__init__(caminho, encoding="utf-8", delay=True, **kwargs)
+        self._aj23_alvo = alvo
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if current_app.config.get("TESTING"):
+                return
+        except RuntimeError:
+            pass
+        super().emit(record)
+
+    def format(self, record: logging.LogRecord) -> str:
+        return mascarar_para_log(super().format(record))
+
+
+def _configure_logging(app: Flask) -> None:
+    """Configura ``logs/app.log`` uma única vez por processo Flask."""
+    if app.config.get("TESTING"):
+        return
+
+    raiz = Path(app.root_path).resolve().parent
+    diretorio = Path(app.config.get("LOG_DIR") or (raiz / "logs"))
+    if not diretorio.is_absolute():
+        diretorio = raiz / diretorio
+    diretorio = diretorio.resolve()
+    diretorio.mkdir(parents=True, exist_ok=True)
+    caminho = diretorio / "app.log"
+    alvo = os.path.normcase(str(caminho))
+
+    # O logger "app" é compartilhado por todas as instâncias de Flask no mesmo
+    # processo (wfastcgi recarrega módulos, não necessariamente o processo).
+    # Remove só os handlers que esta função instalou: nunca mexe no handler de
+    # stderr do Flask nem em handlers de outras bibliotecas.
+    for handler in list(app.logger.handlers):
+        if getattr(handler, "_aj23_alvo", None) is not None:
+            app.logger.removeHandler(handler)
+            try:
+                handler.close()
+            except Exception:
+                pass
+
+    handler = _LogArquivoAJ23(
+        str(caminho),
+        alvo=alvo,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+    )
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
 
 
 def create_app(config_class: type[Config] = Config) -> Flask:
@@ -37,31 +105,8 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     if app.config.get("TRUSTED_PROXY"):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-    # Configura log em arquivo para captura de erros em produção/WSGI
-    try:
-        instance_path = os.path.join(app.root_path, "..", "instance")
-        os.makedirs(instance_path, exist_ok=True)
-        log_file = os.path.join(instance_path, "error.log")
-        file_handler = RotatingFileHandler(
-            log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
-        )
-        formatter = logging.Formatter(
-            "%(asctime)s %(levelname)s in %(module)s: %(message)s"
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.WARNING)
-        if not app.logger.handlers:
-            app.logger.addHandler(file_handler)
-        else:
-            # Avoid duplicate handlers when reloading in debug
-            has_file = any(
-                isinstance(h, RotatingFileHandler) for h in app.logger.handlers
-            )
-            if not has_file:
-                app.logger.addHandler(file_handler)
-    except Exception:
-        # Falha ao configurar log em arquivo não deve interromper a inicialização
-        pass
+    # AJ23: captura de erros em produção/WSGI (stderr é descartado pelo IIS).
+    _configure_logging(app)
     _configure_extensions(app)
     _register_user_loader()
     _register_security_hooks(app)
@@ -272,6 +317,22 @@ def _register_blueprints(app: Flask) -> None:
 
 
 def _register_context_processors(app: Flask) -> None:
+    @app.context_processor
+    def inject_google_login_habilitado() -> dict[str, object]:
+        """Fonte única da flag do botão Google (AJ23).
+
+        Qualquer ``render_template`` — GET, re-render pós-POST, conta pendente,
+        vínculo Google — recebe o mesmo valor calculado da configuração.
+        """
+        config = current_app.config
+        return {
+            "google_login_habilitado": bool(
+                config.get("GOOGLE_OAUTH_CLIENT_ID")
+                and config.get("GOOGLE_OAUTH_CLIENT_SECRET")
+                and config.get("GOOGLE_OAUTH_REDIRECT_URI")
+            )
+        }
+
     @app.context_processor
     def inject_app_globals() -> dict[str, object]:
         from datetime import datetime

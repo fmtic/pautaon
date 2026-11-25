@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/historico.css') }}">
 </head>
 
-<body>
+<body data-pdf-nome="Historico-Aluno_{data}">
   <main class="print-page">
     <div class="no-print d-flex justify-content-end gap-2 mb-3">
       <button class="btn btn-primary btn-sm" onclick="window.print()">
@@ -127,6 +127,8 @@
       {{ informacao_padrao.nome_instituicao or 'pautaON' }} · pautaON {{app_version}} {{ app_stage}}
     </footer>
   </main>
+  {# AJ29: fora do base.html — carregar o módulo do nome do PDF aqui. #}
+  <script src="{{ url_for('static', filename='js/impressao_pdf.js') }}"></script>
 </body>
 
 </html>

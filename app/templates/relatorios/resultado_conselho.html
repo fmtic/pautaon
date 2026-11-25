@@ -1,23 +1,55 @@
 {% extends "base.html" %}
 
 {% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/resultado_conselho.css') }}">
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/resultado_conselho.css') }}?v=1">
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
+<div id="conteudo-impressao" class="container mt-4"
+     data-pdf-nome="Resultado-Conselho{% if unidade_contexto %}_{{ unidade_contexto }}{% endif %}{% if periodo_selecionado and periodo_selecionado.nome %}_{{ periodo_selecionado.nome }}{% endif %}_{data}">
 
-    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-        <div>
+    {# Cabeçalho institucional SÓ da impressão — padrão consolidado na AJ23. #}
+    <header class="print-only report-header resultado-print-header">
+        <div class="resultado-print-identidade">
+            {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+            <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" class="report-logo">
+            {% endif %}
+            <div>
+                <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
+                <h1 class="h4 mb-1">Resultado do Conselho</h1>
+                <div class="small text-muted">Escopo: {{ escopo_turmas }}</div>
+            </div>
+        </div>
+        <div class="resultado-print-meta">
+            {% if periodo_selecionado %}
+            <div class="fw-bold">{{ periodo_selecionado.nome }}</div>
+            <div>
+                <strong>Período letivo:</strong>
+                {{ periodo_selecionado.data_inicio.strftime('%d/%m/%Y') }} a
+                {{ periodo_selecionado.data_fim.strftime('%d/%m/%Y') }}
+            </div>
+            <div>
+                <strong>Período do Conselho:</strong>
+                {{ conselho_inicio.strftime('%d/%m/%Y') if conselho_inicio else '—' }} a
+                {{ conselho_fim.strftime('%d/%m/%Y') if conselho_fim else '—' }}
+            </div>
+            {% endif %}
+            <div>Emitido em <span class="resultado-emissao"></span></div>
+            <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
+        </div>
+    </header>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 no-print d-print-none">
+        <div class="min-w-0">
             <h2 class="fw-bold mb-1 text-dark">
                 <i class="bi bi-bar-chart-line text-primary me-2"></i>Resultado do Conselho
             </h2>
             <p class="text-muted small mb-0">
                 Filtre por período letivo e turmas para consultar o resultado final do conselho de classe.
-                O contexto de dados é restrito à unidade selecionada.
             </p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-shrink-0 acoes-resultado-conselho">
             <a href="{{ url_for('relatorios.relatorio_geral') }}" class="btn btn-light border">
                 <i class="bi bi-chevron-left me-1"></i> Relatórios
             </a>
@@ -25,19 +57,19 @@
             <button type="button" class="btn btn-success" onclick="exportarCSV()">
                 <i class="bi bi-file-earmark-excel me-1"></i> Exportar CSV
             </button>
-            <button type="button" class="btn btn-danger" onclick="window.print()">
-                <i class="bi bi-file-pdf me-1"></i> Imprimir / PDF
-            </button>
             {% endif %}
+            <button type="button" class="btn btn-danger" onclick="prepararImpressao()">
+                <i class="bi bi-printer me-1"></i> Imprimir
+            </button>
         </div>
     </div>
 
-    <div class="card filter-card shadow-sm mb-4 no-print">
+    <div class="card filter-card shadow-sm mb-4 no-print d-print-none">
         <div class="card-body p-4">
             <form method="get" action="{{ url_for('relatorios.resultado_conselho') }}" id="filtroForm">
                 <div class="row g-4">
                     <div class="col-lg-4">
-                        <label class="form-label fw-bold text-uppercase small text-muted">Período Letivo</label>
+                        <label class="form-label fw-bold text-uppercase small text-muted" for="periodo_letivo_id">Período Letivo</label>
                         <select class="form-select" name="periodo_letivo_id" id="periodo_letivo_id" required>
                             <option value="">Escolha um período…</option>
                             {% for periodo in periodos %}
@@ -48,7 +80,7 @@
                         </select>
                     </div>
                     <div class="col-lg-2">
-                        <label class="form-label fw-bold text-uppercase small text-muted">Opção</label>
+                        <label class="form-label fw-bold text-uppercase small text-muted" for="turmas_all">Opção</label>
                         <div class="form-check mt-2">
                             <input class="form-check-input" type="checkbox" value="1" id="turmas_all" name="turmas_all"
                                 {{ 'checked' if selected_all_turmas }}>
@@ -56,19 +88,50 @@
                         </div>
                     </div>
                     <div class="col-lg-6">
-                        <label class="form-label fw-bold text-uppercase small text-muted">Turmas</label>
-                        <select class="form-select" name="turmas" id="turmas_select" multiple size="5" {{ 'disabled' if
-                            selected_all_turmas }}>
+                        <label class="form-label fw-bold text-uppercase small text-muted" for="buscaTurmas">Turmas</label>
+                        <input type="search" class="form-control form-control-sm mb-2" id="buscaTurmas"
+                            placeholder="Buscar por turma, curso ou professor…"
+                            aria-label="Buscar turmas por nome, curso ou professor" autocomplete="off">
+                        <div class="turma-checkbox-list" id="listaTurmas">
                             {% for turma in periodos_turmas %}
-                            <option value="{{ turma.id }}" {{ 'selected' if turma.id in selected_turma_ids }}>
-                                {{ turma.nome }} {% if turma.professor %}— {{ turma.professor.name }}{% endif %}
-                            </option>
+                            {% set cursos_turma = cursos_por_turma.get(turma.id, []) %}
+                            {% set nomes_cursos = ([turma.curso.nome] if turma.curso else []) + cursos_turma %}
+                            <label class="turma-checkbox-item form-check"
+                                data-busca="{{ (turma.nome ~ ' ' ~ nomes_cursos | join(' ') ~ ' ' ~ (turma.professor.name if turma.professor else '')) | lower }}">
+                                <input class="form-check-input" type="checkbox" name="turmas" value="{{ turma.id }}"
+                                    id="turma_{{ turma.id }}" {{ 'checked' if turma.id in selected_turma_ids }}
+                                    {{ 'disabled' if selected_all_turmas }}>
+                                <span class="turma-checkbox-texto">
+                                    <span class="fw-semibold">{{ turma.nome }}</span>
+                                    <small class="text-muted d-block">
+                                        {{ nomes_cursos | unique | join(' · ') if nomes_cursos else '—' }}
+                                        {% if turma.professor %} · {{ turma.professor.name }}{% endif %}
+                                    </small>
+                                </span>
+                            </label>
+                            {% else %}
+                            <p class="text-muted small mb-0">Nenhuma turma ativa neste período letivo.</p>
                             {% endfor %}
-                        </select>
-                        <small class="text-muted d-block mt-1">Ctrl+clique para selecionar múltiplas. Ou marque "Todas
-                            as turmas".</small>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="marcarTodasTurmas">
+                                Marcar todas
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="limparTurmas">
+                                Limpar
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                            A lista contém apenas turmas ativas do período letivo selecionado.
+                        </small>
                     </div>
-                    <div class="col-12 text-end pt-3 border-top">
+                    <div class="col-12 d-flex flex-wrap justify-content-end align-items-center gap-2 pt-3 border-top">
+                        <a id="btnInfoGeraisPeriodo"
+                           href="{{ url_for('relatorios.informacoes_gerais_periodo', periodo_id=selected_periodo_id) if selected_periodo_id else '#' }}"
+                           class="btn btn-outline-primary d-print-none {{ 'disabled' if not selected_periodo_id }}"
+                           {% if not selected_periodo_id %}disabled aria-disabled="true" tabindex="-1"{% endif %}>
+                            <i class="bi bi-pie-chart me-1"></i> Informações Gerais do Período
+                        </a>
                         <button type="submit" class="btn btn-primary px-5">
                             <i class="bi bi-funnel me-2"></i>Filtrar
                         </button>
@@ -80,7 +143,7 @@
 
     {% if exigir_escolha %}
     {# D5.4 (M1): turma com 2+ ofertas ativas exige a escolha do curso. #}
-    <div class="card filter-card shadow-sm mb-4 no-print">
+    <div class="card filter-card shadow-sm mb-4 no-print d-print-none">
         <div class="card-body p-4">
             <div class="alert alert-warning small mb-3">{{ mensagem }}</div>
             <form method="get" action="{{ url_for('relatorios.resultado_conselho') }}" class="row g-3 align-items-end">
@@ -93,8 +156,8 @@
                 {% endfor %}
                 {% endif %}
                 <div class="col-lg-8">
-                    <label class="form-label fw-bold text-uppercase small text-muted">Curso (oferta)</label>
-                    <select class="form-select" name="oferta_sel" onchange="this.form.submit()">
+                    <label class="form-label fw-bold text-uppercase small text-muted" for="oferta_sel">Curso (oferta)</label>
+                    <select class="form-select" name="oferta_sel" id="oferta_sel" onchange="this.form.submit()">
                         <option value="">Selecione o curso…</option>
                         {% for o in ofertas_disponiveis %}
                         <option value="{{ o.id }}" {{ 'selected' if o.id==selected_oferta_id }}>
@@ -110,18 +173,18 @@
         </div>
     </div>
     {% elif mensagem %}
-    <div class="alert alert-warning no-print">{{ mensagem }}</div>
+    <div class="alert alert-warning no-print d-print-none">{{ mensagem }}</div>
     {% endif %}
 
     {% if periodo_selecionado %}
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 d-print-none">
         <div class="col-lg-3">
             <div class="card status-card shadow-sm p-3 h-100">
                 <small class="label-secondary text-uppercase">Período Letivo</small>
                 <h5 class="fw-bold mb-1">{{ periodo_selecionado.nome }}</h5>
                 <p class="mb-0 small text-muted">
-                    {{ periodo_selecionado.data_inicio.strftime('%d/%m/%Y') }} até {{
-                    periodo_selecionado.data_fim.strftime('%d/%m/%Y') }}
+                    {{ periodo_selecionado.data_inicio.strftime('%d/%m/%Y') }} até
+                    {{ periodo_selecionado.data_fim.strftime('%d/%m/%Y') }}
                 </p>
             </div>
         </div>
@@ -153,7 +216,8 @@
     </div>
 
     {% if resumo_status %}
-    <div class="card status-card shadow-sm mb-4">
+    {# Na folha o resumo de status é omitido: o cabeçalho já traz período e escopo. #}
+    <div class="card status-card shadow-sm mb-4 d-print-none">
         <div class="card-body">
             <div class="row g-3">
                 {% for label, item in resumo_status.items() if label != 'total' %}
@@ -177,7 +241,9 @@
     </div>
     {% endif %}
 
-    <div class="card report-header shadow-sm mb-5">
+    {# AJ27: sem `report-header` — no papel essa classe traz border-bottom/padding
+       extras e o wrapper não deve herdar o estilo do cabeçalho institucional. #}
+    <div class="card shadow-sm mb-5 resultado-tabela-card">
         <div class="card-body p-0">
             <div class="table-responsive">
                 {% if registros %}
@@ -189,14 +255,18 @@
                             <th class="px-3 py-2">Professor</th>
                             <th class="px-3 py-2">Aluno</th>
                             <th class="px-3 py-2">Nível</th>
+                            <th class="px-3 py-2 text-center">Conceito</th>
                             <th class="px-3 py-2 text-center">Presença</th>
                             <th class="px-3 py-2 text-center">Situação Final</th>
-                            <th class="px-3 py-2 text-center">Próximo curso / Nível</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for linha in registros %}
-                        <tr>
+                        {# AJ27: agrupa por turma + oferta (curso). `loop.changed`
+                           também atualiza o estado na 1ª linha, essencial para
+                           não marcar a 2ª linha do mesmo grupo como separador. #}
+                        {% set inicio_grupo = loop.changed((linha.turma, linha.oferta)) %}
+                        <tr class="{{ 'inicio-turma' if inicio_grupo and not loop.first else '' }}">
                             <td class="px-3 py-2 fw-semibold">{{ linha.turma }}
                                 <br><small class="text-muted">{{ linha.curso }}</small>
                             </td>
@@ -204,27 +274,19 @@
                             <td class="px-3 py-2 small">{{ linha.professor }}</td>
                             <td class="px-3 py-2">{{ linha.aluno }}</td>
                             <td class="px-3 py-2 small">{{ linha.nivel }}</td>
+                            <td class="px-3 py-2 text-center small conceito-predominante">{{ linha.conceito }}</td>
                             <td class="px-3 py-2 text-center">
                                 <span class="fw-bold {{ 'text-success' if linha.presenca >= 75 else 'text-danger' }}">{{
                                     linha.presenca }}%</span>
                             </td>
                             <td class="px-3 py-2 text-center">
+                                {# AJ30-B: badge pela fonte única de valores.
+                                   NULL chega do backend como `—`, igual à tela;
+                                   nunca mais o rótulo enganoso "Sem Registro". #}
                                 {% set s = linha.situacao_final %}
-                                {% if s in ['APROVADO', 'Aprovado'] %}
-                                <span class="badge badge-situacao-aprovado">Aprovado</span>
-                                {% elif s in ['REPROVADO_POR_FALTA', 'Reprovado por Falta'] %}
-                                <span class="badge badge-situacao-reprovado">Rep. por Falta</span>
-                                {% elif s in ['EVADIDO', 'Evadido'] %}
-                                <span class="badge badge-situacao-evadido">Evadido</span>
-                                {% elif s in ['DESISTENTE', 'Desistente'] %}
-                                <span class="badge badge-situacao-desistente">Desistente</span>
-                                {% elif s in ['EMPREGADO', 'Empregado'] %}
-                                <span class="badge badge-situacao-empregado">Empregado</span>
-                                {% else %}
-                                <span class="badge badge-situacao-sem-registro">Sem Registro</span>
-                                {% endif %}
+                                {% set info = situacao_badges.get(s, situacao_badges.get('')) %}
+                                <span class="badge {{ info[0] }}"{% if s == situacao_indefinida %} title="Situação final não definida" aria-label="Situação final não definida"{% endif %}>{{ info[1] }}</span>
                             </td>
-                            <td class="px-3 py-2 text-center small">{{ linha.proxima_turma or '—' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -237,6 +299,14 @@
                 </div>
                 {% endif %}
             </div>
+        </div>
+    </div>
+
+    <div class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted">
+        <div class="d-flex justify-content-between">
+            <span>v {{ app_version }}-{{ app_stage }}</span>
+            <span><strong>Data/Hora:</strong> <span id="print-date"></span></span>
+            <span><strong>URL:</strong> {{ request.url }}</span>
         </div>
     </div>
     {% else %}
@@ -253,5 +323,32 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script src="{{ url_for('static', filename='js/relatorios/resultado_conselho.js') }}"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const selectPeriodo = document.getElementById("periodo_letivo_id");
+    const btnInfo = document.getElementById("btnInfoGeraisPeriodo");
+    const baseUrl = "{{ url_for('relatorios.informacoes_gerais_periodo', periodo_id=0) }}";
+
+    if (selectPeriodo && btnInfo) {
+        selectPeriodo.addEventListener("change", function () {
+            const id = this.value;
+            if (id) {
+                btnInfo.href = baseUrl.replace("/0/", `/${id}/`);
+                btnInfo.classList.remove("disabled");
+                btnInfo.removeAttribute("disabled");
+                btnInfo.removeAttribute("aria-disabled");
+                btnInfo.removeAttribute("tabindex");
+            } else {
+                btnInfo.href = "#";
+                btnInfo.classList.add("disabled");
+                btnInfo.setAttribute("disabled", "");
+                btnInfo.setAttribute("aria-disabled", "true");
+                btnInfo.setAttribute("tabindex", "-1");
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

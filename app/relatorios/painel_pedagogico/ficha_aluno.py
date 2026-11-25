@@ -35,6 +35,7 @@ from app.models import (
     Turma,
 )
 from app.models.enums import (
+    SITUACOES_FINAIS_FAVORAVEIS,
     ConceitoFrequencia,
     EtapaConselho,
     SituacaoFinal,
@@ -74,12 +75,9 @@ class _Acumulado:
         return pct(self.presencas, self.total_contabil)
 
 
-# Situações finais consideradas favoráveis (valores de SituacaoFinal).
-_SITUACOES_FAVORAVEIS = {
-    SituacaoFinal.APROVADO.value,
-    SituacaoFinal.PARTICIPACAO.value,
-    SituacaoFinal.CONCLUIDO.value,
-}
+# Situações favoráveis — fonte única em enums.py. "Concluído" foi fundido
+# em "Aprovado" pela AJ30, preservando a regra "Concluído vale como Aprovado".
+_SITUACOES_FAVORAVEIS = SITUACOES_FINAIS_FAVORAVEIS
 
 
 def _situacao_mais_recente(conselho: dict) -> str | None:
@@ -704,7 +702,7 @@ def _situacao_por_oferta(aluno_id: int, turma_curso_id: int | None) -> dict:
     if s == SituacaoFinal.APROVADO.value:
         return {"label": "Aprovado", "classe": "success"}
     if s in (
-        SituacaoFinal.REPROVADO_POR_FALTA.value,
+        SituacaoFinal.REPROVADO_POR_FALTAS.value,
         SituacaoFinal.EVADIDO.value,
         SituacaoFinal.DESISTENTE.value,
     ):

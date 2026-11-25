@@ -697,7 +697,7 @@ def test_cru_indicadores_exigem_resposta_e_situacao_validas(codigo, app):
                 turma_curso_id=oferta.id,
                 unidade_id=unidade.id,
                 etapa=EtapaConselho.FINAL,
-                situacao_final="Reprovado por Falta",
+                situacao_final="Reprovado por faltas",  # AJ30: valor canônico
             ),
         ]
         db.session.add_all(conselhos)

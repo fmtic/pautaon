@@ -186,8 +186,11 @@ def _rotas_relatorios(app, ids):
     """`[(endpoint, url)]` de toda rota GET do blueprint `relatorios`.
 
     Parâmetros obrigatórios são preenchidos com ids da semente (ficha 360° de
-    aluno de A) ou com um código de indicador real do catálogo; rota que
-    permanecer com `<` no caminho é erro de teste (lista incompleta).
+    aluno de A, período letivo de A) ou com um código de indicador real do
+    catálogo; rota que permanecer com `<` no caminho é erro de teste (lista
+    incompleta). AJ31-B: a rota de informações gerais é preenchida com o
+    período real de A e continua exercitada pelas mesmas asserções — nunca
+    excluída nem pulada do varredor.
     """
     rotas = []
     for rule in app.url_map.iter_rules():
@@ -200,6 +203,8 @@ def _rotas_relatorios(app, ids):
             caminho = caminho.replace("<int:aluno_id>", str(ids["aluno_a"]))
         elif "<codigo>" in caminho:
             caminho = caminho.replace("<codigo>", "ALU-008")
+        elif "<int:periodo_id>" in caminho:
+            caminho = caminho.replace("<int:periodo_id>", str(ids["per_a"]))
         assert "<" not in caminho, f"rota sem id de teste: {rule.rule}"
         rotas.append((rule.endpoint, caminho))
     assert rotas, "nenhuma rota GET encontrada no blueprint relatorios"

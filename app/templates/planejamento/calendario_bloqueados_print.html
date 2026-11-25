@@ -1,4 +1,8 @@
-{% extends "base.html" %} {% block styles %}{{ super() }}
+{% extends "base.html" %}
+
+{% block body_atributos %} data-pdf-nome="Relatorio-Dias-Sem-Aula{% if periodo and periodo.nome_exibicao %}_{{ periodo.nome_exibicao }}{% endif %}_{data}"{% endblock %}
+
+{% block styles %}{{ super() }}
 <link
   rel="stylesheet"
   href="{{ url_for('static', filename='css/planejamento/calendario_bloqueados_print.css') }}"

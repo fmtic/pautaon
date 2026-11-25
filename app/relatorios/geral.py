@@ -1,4 +1,4 @@
-"""Relatório geral (visão consolidada) e sua exportação em Excel.
+"""Relatório geral (visão consolidada), informações do período e exportação em Excel.
 
 ONDA 3B
     A contagem de gênero agora usa `get_perfil_diversidade()`, que prefere
@@ -6,16 +6,18 @@ ONDA 3B
     o aluno ainda não foi migrado.
 """
 
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from flask import abort, flash, redirect, render_template, send_file, url_for
 from flask_login import current_user, login_required
 
-from app.models import Aluno, Turma, User
+from app.models import Aluno, PeriodoLetivo, Turma, User
 from app.models.enums import UserRole
 from app.services.aluno_perfil import get_perfil_diversidade
+from app.services.relatorio_periodo_info import obter_informacoes_gerais_periodo
 from app.utils.logica import (
     calcular_estatisticas_idade,
     calcular_frequencias_relatorio,
@@ -31,6 +33,9 @@ from .shared import ROLES_RELATORIOS
 # Mantidos em minúsculo porque a comparação é feita após `.lower()`.
 _GENERO_MASC = {"masculino", "homem", "masc", "m"}
 _GENERO_FEM = {"feminino", "mulher", "fem", "f"}
+
+# Somente estes papéis podem abrir a Visão Global sem unidade selecionada.
+_GLOBAL_ROLES = {UserRole.ADMIN.value, UserRole.GERENCIA.value}
 
 
 def _contar_por_genero(alunos):
@@ -112,6 +117,65 @@ def relatorio_geral():
 
         flash_and_log(e, location='relatorios.relatorio_geral')
         return redirect(url_for("main.dashboard"))
+
+
+@bp_relatorios.route("/periodo/<int:periodo_id>/informacoes-gerais")
+@login_required
+def informacoes_gerais_periodo(periodo_id: int):
+    if current_user.role not in ROLES_RELATORIOS:
+        abort(403)
+
+    try:
+        from app.models import Unidade
+
+        unidade_id = get_unidade_id()
+        # Perfil operacional sem unidade não pode cair em visão global.
+        if current_user.role not in _GLOBAL_ROLES and unidade_id is None:
+            abort(404)
+
+        periodo = PeriodoLetivo.query.get_or_404(periodo_id)
+        # Escopo explícito: período de outra unidade não vaza nome/datas.
+        if (
+            unidade_id is not None
+            and periodo.unidade_id is not None
+            and unidade_id != periodo.unidade_id
+        ):
+            abort(404)
+
+        agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+        dados = obter_informacoes_gerais_periodo(
+            periodo_letivo_id=periodo.id,
+            unidade_id=unidade_id,
+        )
+
+        unidade = Unidade.query.get(unidade_id) if unidade_id else None
+        visao_global = unidade_id is None
+        unidade_nome = unidade.nome if unidade else "Todas as unidades"
+        unidade_sigla = (
+            getattr(unidade, "sigla", None)
+            or (unidade.nome[:3].upper() if unidade else "GLOBAL")
+        )
+
+        return render_template(
+            "relatorios/informacoes_gerais_periodo.html",
+            periodo=periodo,
+            unidade_nome=unidade_nome,
+            unidade_sigla=unidade_sigla,
+            visao_global=visao_global,
+            dados=dados,
+            data_emissao_iso=agora.strftime("%Y-%m-%d"),
+            data_hora_emissao=agora.strftime("%d/%m/%Y às %H:%M"),
+        )
+    except Exception as e:
+        from werkzeug.exceptions import HTTPException
+
+        if isinstance(e, HTTPException):
+            raise
+
+        from app.utils.errors import flash_and_log
+
+        flash_and_log(e, location="relatorios.informacoes_gerais_periodo")
+        return redirect(url_for("relatorios.relatorio_geral"))
 
 
 @bp_relatorios.route("/exportar")

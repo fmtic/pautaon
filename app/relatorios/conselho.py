@@ -14,12 +14,13 @@ from flask import abort, render_template, request
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
+from app.models.enums import SITUACAO_FINAL_BADGES, SITUACAO_FINAL_INDEFINIDA
 from app.models import (
     Aluno,
-    ConfiguracaoSistema,
     ConselhoClasse,
     Frequencia,
     Inscricao,
+    PeriodoConselho,
     PeriodoLetivo,
     Turma,
     TurmaCurso,
@@ -29,7 +30,11 @@ from app.services.conselho_leitura import (
     rotulo_oferta,
 )
 from app.services.turma_curso import ofertas_ativas
-from app.utils.logica import calcular_estatisticas_frequencia, get_unidade_id
+from app.utils.logica import (
+    calcular_estatisticas_frequencia,
+    conceito_predominante,
+    get_unidade_id,
+)
 
 from . import bp_relatorios
 from .shared import ROLES_RELATORIOS
@@ -74,6 +79,25 @@ def _resolver_ofertas(turmas, oferta_sel):
     return ofertas, False, None
 
 
+def _janela_fechamento_conselho(periodo_id, unidade_id):
+    """Janela FINAL do conselho do período letivo selecionado (AJ26).
+
+    A fonte é `periodo_conselho` (por período letivo + unidade), com
+    `conselho_final=True` — as mesmas datas cadastradas em `/conselho/informacoes`.
+    Antes da AJ26 o relatório lia chaves globais de `configuracao_sistema`
+    (`inicio_conselho`/`fim_conselho`), que não variavam com o período e ainda
+    chegavam como `str` ao template.
+    """
+    query = PeriodoConselho.query.filter_by(
+        periodo_letivo_id=periodo_id, conselho_final=True
+    )
+    if unidade_id:
+        query = query.filter_by(unidade_id=unidade_id)
+    return query.order_by(
+        PeriodoConselho.data_inicio.desc(), PeriodoConselho.id.desc()
+    ).first()
+
+
 @bp_relatorios.route("/conselho")
 @login_required
 def resultado_conselho():
@@ -103,6 +127,8 @@ def resultado_conselho():
     resumo_status = {}
     conselho_inicio = None
     conselho_fim = None
+    escopo_turmas = "Nenhuma turma selecionada"
+    cursos_por_turma = {}
 
     if periodo_id:
         periodo_query = PeriodoLetivo.query.filter_by(id=periodo_id)
@@ -110,6 +136,10 @@ def resultado_conselho():
             periodo_query = periodo_query.filter_by(unidade_id=unidade_id)
         periodo_selecionado = periodo_query.first()
         if periodo_selecionado:
+            janela = _janela_fechamento_conselho(periodo_id, unidade_id)
+            if janela is not None:
+                conselho_inicio = janela.data_inicio
+                conselho_fim = janela.data_fim
             turmas_query = Turma.query.filter_by(
                 periodo_letivo_id=periodo_id, ativo=True
             )
@@ -117,12 +147,39 @@ def resultado_conselho():
                 turmas_query = turmas_query.filter_by(unidade_id=unidade_id)
             periodos_turmas = turmas_query.order_by(Turma.nome).all()
 
+            # AJ26: o curso moderno vive na oferta (`turma_curso`), não no
+            # campo opcional `turma.curso_id`. Uma consulta em lote alimenta
+            # rótulo e busca do filtro sem N+1 por turma.
+            cursos_por_turma = defaultdict(list)
+            if periodos_turmas:
+                for oferta in (
+                    TurmaCurso.query.options(joinedload(TurmaCurso.curso))
+                    .filter(
+                        TurmaCurso.turma_id.in_([t.id for t in periodos_turmas]),
+                        TurmaCurso.ativo.is_(True),
+                    )
+                    .order_by(TurmaCurso.id)
+                    .all()
+                ):
+                    nome = oferta.curso.nome if oferta.curso else None
+                    if nome and nome not in cursos_por_turma[oferta.turma_id]:
+                        cursos_por_turma[oferta.turma_id].append(nome)
+
             if turmas_all:
                 selected_turma_ids = [t.id for t in periodos_turmas]
             else:
                 selected_turma_ids = turmas_ids
 
             turmas_sel = [t for t in periodos_turmas if t.id in selected_turma_ids]
+            escopo_turmas = (
+                f"Todas as turmas do período ({len(periodos_turmas)})"
+                if turmas_all
+                else (
+                    ", ".join(t.nome for t in turmas_sel)
+                    if turmas_sel
+                    else "Nenhuma turma selecionada"
+                )
+            )
             if turmas_sel:
                 ofertas, exigir_escolha, mensagem = _resolver_ofertas(
                     turmas_sel, oferta_sel
@@ -192,13 +249,6 @@ def resultado_conselho():
                             freq.conceito
                         )
 
-                # AJ22-B: curso + nível de destino em LOTE (sem N+1), com
-                # fallback para a opção legada quando `proximo_curso_id` é
-                # NULL.
-                from app.services.proximo_curso import destinos_por_conselho
-
-                destinos = destinos_por_conselho(conselhos)
-
                 for cons in conselhos:
                     aluno = alunos_map.get(cons.aluno_id)
                     oferta = ofertas_map.get(cons.turma_curso_id)
@@ -218,9 +268,6 @@ def resultado_conselho():
                     )
                     presenca_pct = estatisticas.get("presenca_percentual", 0)
 
-                    destino = destinos.get(cons.id) or {}
-                    proxima = destino.get("texto") or "-"
-
                     registros.append({
                         "turma": turma.nome,
                         "curso": oferta.curso.nome if oferta.curso else "-",
@@ -233,15 +280,17 @@ def resultado_conselho():
                         "aluno": aluno.nome_social or aluno.nome,
                         "nivel": nivel_aluno,
                         "presenca": presenca_pct,
-                        "situacao_final": cons.situacao_final or "Sem Registro",
-                        "proxima_turma": proxima,
+                        "situacao_final": cons.situacao_final or SITUACAO_FINAL_INDEFINIDA,
+                        # AJ26: conceito predominante calculado no backend,
+                        # pela mesma base de `percs` do fechamento.
+                        "conceito": conceito_predominante(estatisticas),
                     })
                 turma_count = len({cons.turma_curso_id for cons in conselhos})
                 aluno_count = len({cons.aluno_id for cons in conselhos})
 
                 situacoes = {}
                 for cons in conselhos:
-                    sit = cons.situacao_final or "Sem Registro"
+                    sit = cons.situacao_final or SITUACAO_FINAL_INDEFINIDA
                     situacoes[sit] = situacoes.get(sit, 0) + 1
                 total = len(conselhos)
                 for sit, cnt in situacoes.items():
@@ -250,16 +299,6 @@ def resultado_conselho():
                         "percent": round(cnt / total * 100, 1) if total else 0,
                     }
                 resumo_status["total"] = total
-
-        try:
-            conf_inicio = ConfiguracaoSistema.query.filter_by(chave='inicio_conselho').first()
-            conf_fim = ConfiguracaoSistema.query.filter_by(chave='fim_conselho').first()
-            if conf_inicio:
-                conselho_inicio = conf_inicio.valor
-            if conf_fim:
-                conselho_fim = conf_fim.valor
-        except Exception:
-            pass
 
     return render_template(
         "relatorios/resultado_conselho.html",
@@ -277,6 +316,10 @@ def resultado_conselho():
         turma_count=turma_count,
         aluno_count=aluno_count,
         resumo_status=resumo_status,
+        situacao_badges=SITUACAO_FINAL_BADGES,
+        situacao_indefinida=SITUACAO_FINAL_INDEFINIDA,
         conselho_inicio=conselho_inicio,
         conselho_fim=conselho_fim,
+        escopo_turmas=escopo_turmas,
+        cursos_por_turma=cursos_por_turma,
     )

@@ -206,6 +206,12 @@
                                             <button class="btn btn-sm btn-outline-secondary border-0" data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}" title="Editar Usuário">
                                                 <i class="bi bi-pencil-square"></i>
                                             </button>
+
+                                            {% if user.id in alvos_vinculo %}
+                                            <button class="btn btn-sm btn-outline-primary border-0" data-bs-toggle="modal" data-bs-target="#vincularGoogleModal{{ user.id }}" title="Vincular a usuário existente">
+                                                <i class="bi bi-link-45deg"></i>
+                                            </button>
+                                            {% endif %}
                                             
                                             <form action="{{ url_for('auth.resetar_senha', id=user.id) }}" method="POST" style="display:inline;">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -275,6 +281,63 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                {% if user.id in alvos_vinculo %}
+                                <!-- AJ24: vincular pendente Google a usuário existente -->
+                                <div class="modal fade" id="vincularGoogleModal{{ user.id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow">
+                                            <div class="modal-header border-bottom-0 pb-0">
+                                                <h5 class="modal-title fw-bold">Vincular conta Google <span class="text-primary">{{ user.email }}</span></h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            {% if alvos_vinculo[user.id] %}
+                                            <form action="{{ url_for('auth.vincular_conta_google', id=user.id) }}" method="POST">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="origem_email" value="{{ user.email }}">
+                                                <input type="hidden" name="alvo_email" id="alvoEmail{{ user.id }}" value="{{ alvos_vinculo[user.id][0].email }}">
+                                                <div class="modal-body pt-3 text-start">
+                                                    <div class="alert alert-warning small mb-3">
+                                                        <div><strong>Conta Google pendente:</strong> {{ user.email }}</div>
+                                                        <div><strong>Usuário alvo:</strong> <span id="alvoEmailTexto{{ user.id }}">{{ alvos_vinculo[user.id][0].email }}</span></div>
+                                                        <div class="mt-2">A identidade Google será transferida para o alvo e a conta pendente será removida. Nenhum registro do alvo será movido ou alterado.</div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold text-muted small text-uppercase" for="alvoSelect{{ user.id }}">Usuário existente</label>
+                                                        <select class="form-select bg-light" name="alvo_id" id="alvoSelect{{ user.id }}"
+                                                                onchange="var e=this.options[this.selectedIndex].dataset.email;document.getElementById('alvoEmail{{ user.id }}').value=e;document.getElementById('alvoEmailTexto{{ user.id }}').textContent=e;"
+                                                                required>
+                                                            {% for alvo in alvos_vinculo[user.id] %}
+                                                            <option value="{{ alvo.id }}" data-email="{{ alvo.email }}">
+                                                                {{ alvo.name }} — {{ alvo.email }} — {{ alvo.role|capitalize }} — {{ alvo.unidade.nome if alvo.unidade else 'Global' }}
+                                                            </option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" name="confirmar" value="1" id="confirmarVincular{{ user.id }}" required>
+                                                        <label class="form-check-label small" for="confirmarVincular{{ user.id }}">
+                                                            Confirmo a vinculação de <strong>{{ user.email }}</strong> ao usuário alvo acima.
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer border-top-0 pt-0">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                    <button type="submit" class="btn btn-primary px-4">Vincular e remover pendente</button>
+                                                </div>
+                                            </form>
+                                            {% else %}
+                                            <div class="modal-body pt-3">
+                                                <p class="text-muted small mb-0">Nenhum usuário ativo, não pendente e sem vínculo Google está disponível como alvo.</p>
+                                            </div>
+                                            <div class="modal-footer border-top-0 pt-0">
+                                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fechar</button>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
                                 {% else %}
                                 <tr>
                                     <td colspan="4" class="text-center py-5">

@@ -37,10 +37,494 @@
   font-size: 2rem;
 }
 
-/* Impressão */
+/* Elementos exclusivos da impressão (AJ28). Fora do papel não existem. */
+.print-only {
+  display: none;
+}
+
+/* ============================================================
+   IMPRESSÃO — Resumo - Primeira Vista (AJ28)
+
+   Padrão AJ23/AJ26/AJ27:
+     - templates/conselho/fechamento.html + css/conselho/conselho.css
+     - templates/relatorios/resultado_conselho.html +
+       css/relatorios/resultado_conselho.css
+     - js/relatorios/resultado_conselho.js (prepararImpressao + beforeprint)
+
+   Nenhuma regra desta seção vale para a tela. Os seletores usam o ID
+   `#conteudo-impressao` porque `style.css` força `.report-header` e
+   reexibe `.card.shadow-sm` com !important na impressão.
+   ============================================================ */
 @media print {
-  .d-print-none { display: none !important; }
-  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
-  @page { size: A4 portrait; margin: 1.5cm; }
-  body { font-size: 10pt; }
+  /* Uma única declaração de página: A4 paisagem, 1cm (antes era retrato
+     com 1.5cm — decisão registrada no relatório AJ28). */
+  @page {
+    size: A4 landscape;
+    margin: 1cm;
+  }
+
+  /* Só o interativo sai: barra de botões, topbar e sidebar do base.html. */
+  .app-topbar,
+  .app-sidebar,
+  .sidebar-backdrop,
+  nav,
+  .navbar,
+  .sidebar,
+  #sidebarMenu,
+  footer,
+  .btn,
+  .no-print,
+  .d-print-none,
+  .alert,
+  .modal,
+  .modal-backdrop {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #212529 !important;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+  }
+
+  #conteudo-impressao {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    /* Sem quebra forçada: a página 1 começa com o cabeçalho + cards. */
+    break-before: auto !important;
+    page-break-before: auto !important;
+  }
+
+  /* `sidebar.css` reserva ~260px em `.app-main`; sem o reset o conteúdo
+     impresso sai da margem direita da folha. */
+  .app-main,
+  body.sidebar-collapsed .app-main,
+  .app-footer {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Cabeçalho institucional — o ID vence `.report-header` de style.css. */
+  #conteudo-impressao .geral-print-header {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12pt;
+    padding: 0 0 8pt !important;
+    margin: 0 0 10pt !important;
+    border: 0 !important;
+    border-bottom: 2px solid #343a40 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #conteudo-impressao .geral-print-identidade {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 10pt;
+  }
+
+  #conteudo-impressao .report-logo {
+    max-width: 110px;
+    max-height: 45px;
+    object-fit: contain;
+  }
+
+  #conteudo-impressao .geral-print-header h1 {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #212529 !important;
+    margin: 2px 0 0 !important;
+  }
+
+  #conteudo-impressao .geral-print-meta {
+    text-align: right;
+    font-size: 8pt;
+  }
+
+  /* O cabeçalho de tela (título + "Visão consolidada...") já tem seu
+     equivalente institucional no papel: não duplicar o título na impressão.
+     Seletor de irmão adjacente evita mudar UMA classe sequer no HTML da tela. */
+  #conteudo-impressao > header.print-only + div {
+    display: none !important;
+  }
+
+  /* Grade de 3 colunas como na tela (col-lg-4), agora em paisagem. */
+  #conteudo-impressao .row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .row > [class*="col-"] {
+    flex: 0 0 33.3333% !important;
+    width: 33.3333% !important;
+    max-width: 33.3333% !important;
+    padding: 4pt !important;
+    margin: 0 !important;
+  }
+
+  /* Card inteiro junto (style.css reexibe .card.shadow-sm com !important;
+     o ID + !important neutralizam sombra, borda dupla e margem global). */
+  #conteudo-impressao .card {
+    display: block !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    border: 1px solid #dee2e6 !important;
+    border-top: 3px solid #212529 !important;
+    border-radius: 3px !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Cards com lista podem ocupar a folha inteira: a quebra passa a acontecer
+     ENTRE itens, nunca no meio de um item. */
+  #conteudo-impressao .card:has([style*="max-height"]),
+  #conteudo-impressao .card:has(.list-group),
+  #conteudo-impressao .card:has(.progress) {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .card-body {
+    padding: 8pt !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Título permanece com o início do conteúdo na primeira parte da folha. */
+  #conteudo-impressao .card h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+    color: #212529 !important;
+    font-size: 9.5pt !important;
+  }
+
+  #conteudo-impressao .card h3,
+  #conteudo-impressao .card h4 {
+    color: #212529 !important;
+  }
+
+  /* Ícones decorativos não ocupam espaço no papel. */
+  #conteudo-impressao .bi,
+  #conteudo-impressao .rounded-3 {
+    display: none !important;
+  }
+
+  /* As três listas com rolagem inline (180px/250px) imprimem COMPLETAS. */
+  #conteudo-impressao [style*="max-height"],
+  #conteudo-impressao .list-group {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    overflow-y: visible !important;
+    scrollbar-width: none !important;
+  }
+
+  #conteudo-impressao ::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  #conteudo-impressao [style*="max-height"] > div,
+  #conteudo-impressao .list-group > div,
+  #conteudo-impressao .card-body > div.mb-3 {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Item de lista vazia: só aparece no papel (a tela não muda). */
+  #conteudo-impressao .lista-vazia {
+    display: block !important;
+    padding: 6pt 0 !important;
+    text-align: center;
+    color: #6c757d !important;
+  }
+
+  /* Barras de progresso: largura `width: X%` continua inline (servidor).
+     Trilho com borda fina + print-color-adjust para legibilidade em P&B. */
+  #conteudo-impressao .progress,
+  #conteudo-impressao .progress-bar,
+  #conteudo-impressao .badge {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .progress {
+    border: 1px solid #adb5bd !important;
+    background-color: #fff !important;
+    overflow: visible !important;
+  }
+
+  #conteudo-impressao .progress-bar {
+    border-right: 1px solid #212529 !important;
+  }
+
+  /* Badges (≥75% / <75% e médias): borda + texto, sem depender do fundo. */
+  #conteudo-impressao .badge {
+    background: #fff !important;
+    color: #212529 !important;
+    border: 1px solid #212529 !important;
+    font-weight: 700 !important;
+  }
+
+  #conteudo-impressao small,
+  #conteudo-impressao .text-muted {
+    font-size: 7.5pt !important;
+    color: #495057 !important;
+  }
+
+  /* ======================================================================
+     AJ28-B — bloco de impressão PRÓPRIO (não reutiliza os cards da tela)
+
+     Os cards usam `h-100` e esticam até a altura do maior da linha; listas
+     longas abriam molduras vazias entre páginas. No papel entra uma faixa
+     de indicadores + tabelas, sem altura mínima e sem cards. Os números
+     continuam vindo das mesmas variáveis do template — nada é recalculado.
+     ====================================================================== */
+  #conteudo-impressao .geral-print-resumo {
+    display: block !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+    break-before: auto !important;
+    page-break-before: auto !important;
+    font-size: 8.5pt;
+    line-height: 1.25;
+  }
+
+  #conteudo-impressao .geral-print-faixa {
+    display: flex !important;
+    align-items: stretch;
+    gap: 6pt;
+    padding: 5pt 6pt;
+    margin: 0 0 8pt !important;
+    border: 1px solid #343a40 !important;
+    background: #fff !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 5pt;
+    border-right: 1px solid #dee2e6 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi:last-child {
+    border-right: 0 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-label {
+    display: block;
+    font-size: 7pt;
+    line-height: 1.15;
+    text-transform: uppercase;
+    letter-spacing: .3pt;
+    color: #495057 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-valor {
+    display: block;
+    font-size: 13pt;
+    line-height: 1.15;
+    color: #212529 !important;
+  }
+
+  #conteudo-impressao .geral-print-kpi-sexo {
+    flex: 1.15 1 0;
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 1pt 6pt;
+    font-size: 7.5pt;
+  }
+
+  #conteudo-impressao .geral-print-kpi-conselho {
+    flex: 2.1 1 0;
+    font-size: 7.5pt;
+  }
+
+  /* Trilho bordado + barra escura: legível em P&B sem depender da cor. */
+  #conteudo-impressao .geral-print-barra {
+    display: block;
+    width: 100%;
+    height: 4pt;
+    margin: 1pt 0 2pt;
+    border: 1px solid #6c757d !important;
+    background: #fff !important;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-barra > span {
+    display: block;
+    height: 100%;
+    background: #212529 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Duas colunas: a esquerda continua nas páginas seguintes; as tabelas
+     da direita são atômicas (nunca viram moldura vazia). Sem borda no
+     container, não sobra caixa vazia quando uma delas salta de página. */
+  #conteudo-impressao .geral-print-colunas {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-colunas > tbody,
+  #conteudo-impressao .geral-print-colunas > tbody > tr {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-colunas > tbody > tr > td {
+    vertical-align: top !important;
+    padding: 0 !important;
+    border: 0 !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  #conteudo-impressao .geral-print-coluna-esquerda { width: 62% !important; }
+  #conteudo-impressao .geral-print-coluna-direita { width: 38% !important; padding-left: 8pt !important; }
+
+  #conteudo-impressao .geral-print-tabela {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 8.5pt;
+    margin: 0 0 8pt !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* style.css força `page-break-inside: avoid` em `.table`; estas tabelas
+     não usam essa classe e o !important aqui mantém a quebra natural. */
+  #conteudo-impressao .geral-print-tabela-programas,
+  #conteudo-impressao .geral-print-tabela-professores {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela caption {
+    caption-side: top;
+    text-align: left;
+    padding: 0 0 3pt !important;
+    color: #212529 !important;
+    font-size: 9.5pt;
+    font-weight: 800;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela thead {
+    display: table-header-group;
+  }
+
+  #conteudo-impressao .geral-print-tabela thead th {
+    padding: 3pt 4pt !important;
+    border: 1px solid #212529 !important;
+    background: #e9ecef !important;
+    color: #212529 !important;
+    font-size: 7.5pt;
+    font-weight: 800;
+    text-align: left;
+    text-transform: uppercase;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-tabela tbody td {
+    padding: 3pt 4pt !important;
+    border: 1px solid #adb5bd !important;
+    vertical-align: middle !important;
+    overflow-wrap: break-word;
+  }
+
+  #conteudo-impressao .geral-print-tabela tbody tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(1) { width: 38% !important; }
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(2) { width: 24% !important; }
+  #conteudo-impressao .geral-print-tabela-turmas th:nth-child(3) { width: 38% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(1) { width: 48% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(2) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-programas th:nth-child(3) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(1) { width: 50% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(2) { width: 26% !important; }
+  #conteudo-impressao .geral-print-tabela-professores th:nth-child(3) { width: 24% !important; }
+
+  #conteudo-impressao .geral-print-freq {
+    display: flex !important;
+    align-items: center;
+    gap: 4pt;
+  }
+
+  #conteudo-impressao .geral-print-freq .geral-print-barra {
+    flex: 1 1 auto;
+    margin: 0;
+  }
+
+  #conteudo-impressao .geral-print-freq strong {
+    min-width: 32pt;
+    text-align: right;
+    color: #212529 !important;
+  }
+
+  #conteudo-impressao .geral-print-marca {
+    display: inline-block;
+    padding: 0 3pt;
+    border: 1px solid #212529 !important;
+    font-weight: 800;
+    color: #212529 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #conteudo-impressao .geral-print-marca.atende { border-style: solid !important; }
+  #conteudo-impressao .geral-print-marca.abaixo { border-style: dashed !important; }
+
+  #conteudo-impressao .geral-print-legenda {
+    margin-top: 6pt;
+    padding: 5pt 6pt;
+    border: 1px solid #adb5bd !important;
+    font-size: 7.2pt;
+    line-height: 1.3;
+    color: #212529 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #conteudo-impressao .geral-print-legenda div + div { margin-top: 2pt; }
+
+  /* Rodapé de auditoria (versão, emissão, URL) — padrão das AJ recentes. */
+  #conteudo-impressao .print-footer-container {
+    display: block !important;
+    margin-top: 10pt;
+    padding-top: 4pt;
+    border-top: 1px solid #adb5bd !important;
+    font-size: 7.5pt;
+    color: #6c757d !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

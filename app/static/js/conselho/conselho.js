@@ -168,11 +168,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Sincroniza cada select com seu span de impressão em tempo real
 function sincronizarSpans() {
+    // AJ30-B: value="" é ausência; o fallback vem da fonte única da tela
+    // (data-rotulo-ausente), igual ao span renderizado no template.
+    const textoImpressao = sel => {
+        const opcao = sel.options[sel.selectedIndex];
+        const ausente = sel.dataset.rotuloAusente || '';
+        const api = window.autosaveFechamento;
+        return api && api.textoImpressaoSituacao
+            ? api.textoImpressaoSituacao(sel.value, opcao ? opcao.text : '', ausente)
+            : (sel.value ? (opcao ? opcao.text : '') : ausente);
+    };
     document.querySelectorAll('.situacao-select').forEach(sel => {
         const span = sel.closest('td').querySelector('.situacao-texto');
         if (span) {
-            span.innerText = sel.options[sel.selectedIndex].text;
-            sel.addEventListener('change', () => { span.innerText = sel.options[sel.selectedIndex].text; });
+            span.innerText = textoImpressao(sel);
+            sel.addEventListener('change', () => { span.innerText = textoImpressao(sel); });
         }
     });
 
@@ -269,9 +279,14 @@ function ligarNiveisFechamento() {
 
 // Função chamada pelo botão Imprimir
 function prepararImpressao() {
-    sincronizarSpans(); 
+    sincronizarSpans();
     window.print();
 }
+
+// AJ23: Ctrl+P / menu do navegador não passa pelo botão. O beforeprint
+// reaplica os spans com o valor ATUAL dos selects (inclusive escolhas ainda
+// não salvas), sem consultar o legado quando há uma seleção vigente.
+window.addEventListener('beforeprint', sincronizarSpans);
 
 // Função para exportar a tabela para CSV (Excel)
 function exportTableToCSV(filename) {
@@ -306,79 +321,19 @@ function exportTableToCSV(filename) {
     downloadLink.click();
 }
 
-// Token CSRF exposto pelo base.html (mesma fonte dos demais fetch do projeto).
-// Sem ele o POST JSON do fechamento leva 400 do CSRFProtect.
-function tokenCsrf() {
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    return meta ? (meta.getAttribute('content') || '') : '';
-}
-
-// Salvar fechamento via AJAX
-function salvarFechamento() {
-    // D5.2: a tabela do fechamento é #tabelaFechamento (o seletor antigo
-    // #tabelaDados não existia na tela e o POST saía vazio) e o salvamento é
-    // POR OFERTA — a oferta em uso vem de data-oferta-id na própria tabela.
-    const tabela = document.getElementById('tabelaFechamento');
-    if (!tabela) return;
-
-    const ofertaId = tabela.getAttribute('data-oferta-id');
-    if (!ofertaId) {
-        alert("Selecione o curso (oferta) antes de salvar o fechamento.");
-        return;
+// AJ30: confirmação do encerramento do conselho. A contagem de alunos sem
+// situação final vem do servidor (uma consulta em lote, sem N+1) e é exibida
+// ANTES do POST; o gestor pode encerrar mesmo assim.
+function confirmarEncerramento(event, pendentes) {
+    const total = Number(pendentes) || 0;
+    const mensagem = total > 0
+        ? total + ' aluno(s) sem situação final definida. Deseja encerrar o conselho mesmo assim?'
+        : 'Deseja encerrar o conselho desta oferta?';
+    if (!confirm(mensagem)) {
+        if (event) event.preventDefault();
+        return false;
     }
-
-    const rows = tabela.querySelectorAll('tbody tr');
-    const dadosParaSalvar = [];
-
-    rows.forEach(row => {
-        const alunoId = row.getAttribute('data-aluno-id');
-        const selects = row.querySelectorAll('select');
-
-        if (alunoId && selects.length >= 2) {
-            const situacao = selects[0].value;
-            // AJ22-B: 2º select = CURSO de destino (curso.id, não mais a
-            // opção do catálogo legado). Vazio → NULL.
-            const proximoCursoId = selects[1].value;
-            // 3º select = nível de destino (pode estar desabilitado; .value
-            // continua legível). Vazio → "Não se aplica" (NULL).
-            const proximoNivelId = selects[2] ? selects[2].value : '';
-
-            dadosParaSalvar.push({
-                aluno_id: alunoId,
-                situacao: situacao,
-                proximo_curso_id: proximoCursoId || null,
-                proximo_nivel_id: proximoNivelId || null
-            });
-        }
-    });
-
-    fetch(window.location.pathname + "/salvar", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": tokenCsrf(),
-        },
-        body: JSON.stringify({ oferta_id: parseInt(ofertaId, 10), dados: dadosParaSalvar })
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(response.status === 400
-                ? "Sessão expirada ou token de segurança inválido. Recarregue a página e tente novamente."
-                : "Erro HTTP " + response.status);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            alert("✅ Fechamento salvo com sucesso!");
-        } else {
-            alert("❌ Erro ao salvar: " + data.message);
-        }
-    })
-    .catch(error => {
-        console.error("Erro:", error);
-        alert("Erro ao salvar o fechamento: " + error.message);
-    });
+    return true;
 }
 
 

@@ -382,15 +382,19 @@ def test_resultado_2_ofertas_exige_escolha_e_usa_dados_da_oferta(client, app):
     assert resposta.status_code == 200
     body = resposta.data.decode("utf-8")
     assert "Aluno Ana" in body and "Aluno Beto" not in body
-    assert "Curso 1" in body and "Curso 2" not in body
-    assert "100.0%" in body  # frequência da oferta 1 (2 presenças)
+    # AJ26: o filtro lista todos os cursos da turma; a restrição à oferta
+    # escolhida vale para a tabela de resultados.
+    tabela = body.split('id="tabelaResultado"', 1)[1]
+    assert "Curso 1" in tabela and "Curso 2" not in tabela
+    assert "100.0%" in tabela  # frequência da oferta 1 (2 presenças)
 
     resposta = client.get(base + f"&oferta_sel={ids['ofertas'][1]}")
     assert resposta.status_code == 200
     body = resposta.data.decode("utf-8")
     assert "Aluno Beto" in body and "Aluno Ana" not in body
-    assert "Curso 2" in body and "Curso 1" not in body
-    assert "0.0%" in body  # frequência da oferta 2 (2 faltas)
+    tabela = body.split('id="tabelaResultado"', 1)[1]
+    assert "Curso 2" in tabela and "Curso 1" not in tabela
+    assert "0.0%" in tabela  # frequência da oferta 2 (2 faltas)
 
 
 def test_resultado_uma_oferta_usa_direto(client, app):

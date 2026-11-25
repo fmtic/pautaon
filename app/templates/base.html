@@ -20,7 +20,7 @@
     {% block styles %}{% endblock %}
   </head>
 
-  <body>
+  <body{% block body_atributos %}{% endblock %}>
     <!-- TOPBAR -->
     <header class="app-topbar">
       <div class="d-flex align-items-center gap-3">
@@ -244,6 +244,9 @@
       {{ informacao_padrao.nome_instituicao or 'pautaON' }} &middot; pautaON v{{ app_version }}{% if app_stage %} ({{ app_stage }}){% endif %} &middot; &copy; {{ ano_atual }}
     </footer>
 
+    {# AJ29: carregado ANTES dos scripts de página (bloco `scripts` abaixo).
+       Registra apenas os listeners de beforeprint/afterprint do nome do PDF. #}
+    <script src="{{ url_for('static', filename='js/impressao_pdf.js') }}"></script>
     <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 

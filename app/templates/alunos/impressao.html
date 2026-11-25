@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/alunos/impressao.css') }}?v=1" />
 </head>
 
-<body>
+<body data-pdf-nome="Relatorio-Ficha-Inscricao_{data}">
   <div class="no-print text-center py-3">
     <button onclick="window.print()" class="btn btn-primary shadow">
       <i class="bi bi-printer"></i> IMPRIMIR AGORA
@@ -221,6 +221,8 @@
       data_matricula.strftime('%d/%m/%Y %H:%M:%S') }}</div>
   </div>
 
+  {# AJ29: fora do base.html — carregar o módulo do nome do PDF aqui. #}
+  <script src="{{ url_for('static', filename='js/impressao_pdf.js') }}"></script>
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 </body>
 
