@@ -2,47 +2,123 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/resultado_conselho.css') }}?v=1">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/informacoes_gerais_periodo.css') }}">
 {% endblock %}
 
 {% block content %}
+{% set unidade_exibicao = unidade_nome if visao_global or unidade_nome == unidade_sigla else unidade_nome ~ ' (' ~ unidade_sigla ~ ')' %}
+{% set aviso_parcial %}Resultado parcial: {{ dados.pendentes_definicao }} de {{ dados.total_inscritos }} inscrições ainda não têm situação final definida. Os percentuais abaixo consideram apenas os {{ dados.total_avaliados }} alunos com situação já definida.{% endset %}
 <div id="conteudo-impressao" class="container mt-4"
      data-pdf-nome="Informacoes-Gerais-Periodo{% if unidade_sigla %}_{{ unidade_sigla }}{% endif %}{% if periodo and periodo.nome %}_{{ periodo.nome }}{% endif %}_{{ data_emissao_iso }}">
 
-    {# Cabeçalho institucional SÓ da impressão — mesmo padrão do resultado_conselho.html #}
-    <header class="print-only report-header resultado-print-header">
-        <div class="resultado-print-identidade">
-            <div class="d-flex flex-column align-items-center gap-1">
-                <img src="{{ url_for('static', filename='img/logo_irn.png') }}" alt="Logo IRN" class="report-logo">
-                {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
-                <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" class="report-logo">
-                {% endif %}
-            </div>
-            <div>
-                <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
-                <h1 class="h4 mb-1">Informações Gerais do Período</h1>
-                <div class="small text-muted">
-                    Unidade: {{ unidade_nome }}{% if unidade_sigla and unidade_sigla != unidade_nome %} ({{ unidade_sigla }}){% endif %}
+    {# Bloco de papel: uma única linha de escopo, faixa de indicadores, tabela e legenda. #}
+    <section class="print-only info-print">
+        <header class="resultado-print-header">
+            <div class="resultado-print-identidade">
+                <div class="info-print-logos">
+                    <img src="{{ url_for('static', filename='img/logo_irn.png') }}" alt="Logo IRN" class="report-logo">
+                    {% if informacao_padrao and informacao_padrao.logo_secundaria_url %}
+                    <img src="{{ informacao_padrao.logo_secundaria_url }}" alt="Logo institucional" class="report-logo">
+                    {% endif %}
+                </div>
+                <div>
+                    <div class="text-muted small">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</div>
+                    <h1 class="info-print-titulo">Informações Gerais do Período</h1>
+                    <div class="small text-muted info-print-escopo">
+                        Unidade: {{ unidade_exibicao }}
+                        · Período: {{ periodo.nome if periodo else '—' }}
+                        ({{ periodo.data_inicio.strftime('%d/%m/%Y') if periodo and periodo.data_inicio else '—' }} a
+                        {{ periodo.data_fim.strftime('%d/%m/%Y') if periodo and periodo.data_fim else '—' }})
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="resultado-print-meta">
-            {% if periodo %}
-            <div class="fw-bold">{{ periodo.nome }}</div>
-            <div>
-                <strong>Período letivo:</strong>
-                {{ periodo.data_inicio.strftime('%d/%m/%Y') if periodo.data_inicio else '—' }} a
-                {{ periodo.data_fim.strftime('%d/%m/%Y') if periodo.data_fim else '—' }}
+            <div class="resultado-print-meta">
+                <div>Emitido em <span class="resultado-emissao">{{ data_hora_emissao }}</span></div>
+                <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
             </div>
-            {% endif %}
-            <div>Emitido em <span class="resultado-emissao">{{ data_hora_emissao }}</span></div>
-            <div>Colaborador: <strong>{{ current_user.name }}</strong></div>
-        </div>
-    </header>
+        </header>
 
-    <div class="d-flex justify-content-between align-items-center mb-4 no-print d-print-none">
-        <div>
+        <div class="info-print-faixa">
+            <div class="info-print-kpi">
+                <span class="info-print-kpi-label">Inscrições no período</span>
+                <div class="info-print-kpi-valor"><strong>{{ dados.total_inscritos }}</strong></div>
+            </div>
+            <div class="info-print-kpi">
+                <span class="info-print-kpi-label">Com situação final definida</span>
+                <div class="info-print-kpi-valor"><strong>{{ dados.total_avaliados }}</strong></div>
+            </div>
+            <div class="info-print-kpi">
+                <span class="info-print-kpi-label">Sem situação final definida</span>
+                <div class="info-print-kpi-valor"><strong>{{ dados.pendentes_definicao }}</strong></div>
+            </div>
+            <div class="info-print-kpi info-print-kpi-destaque">
+                <span class="info-print-kpi-label">Aproveitamento</span>
+                <div class="info-print-kpi-valor">
+                    {% if dados.aproveitamento.percentual is not none %}
+                        <strong>{{ "%.1f"|format(dados.aproveitamento.percentual)|replace('.', ',') }}%</strong>
+                    {% else %}<strong>—</strong>{% endif %}
+                </div>
+                <span class="info-print-kpi-sub">
+                    {{ dados.aproveitamento.quantidade }} de {{ dados.total_avaliados }} alunos Aprovados ou Participantes
+                </span>
+            </div>
+        </div>
+
+        {% if dados.total_avaliados == 0 %}
+        <div class="info-print-aviso">Nenhuma situação final definida neste período ainda.</div>
+        {% elif dados.pendentes_definicao > 0 %}
+        <div class="info-print-aviso">{{ aviso_parcial }}</div>
+        {% endif %}
+
+        <table class="info-print-tabela">
+            <caption>Distribuição das situações finais</caption>
+            <thead>
+                <tr>
+                    <th>Situação</th>
+                    <th>O que significa</th>
+                    <th class="info-print-num">Alunos</th>
+                    <th class="info-print-num">%</th>
+                    <th>Barra</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in dados.indicadores %}
+                <tr>
+                    <td>{{ item.rotulo }}</td>
+                    <td>{{ item.descricao }}</td>
+                    <td class="info-print-num">{{ item.quantidade }}</td>
+                    <td class="info-print-num">{{ "%.1f"|format(item.percentual)|replace('.', ',') }}%</td>
+                    <td>
+                        <span class="info-print-barra">
+                            <span class="bg-{{ item.cor }}" style="width: {{ item.percentual }}%;"></span>
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr class="info-print-total">
+                    <td>Total com situação definida</td>
+                    <td></td>
+                    <td class="info-print-num">{{ dados.total_avaliados }}</td>
+                    <td class="info-print-num">{{ '100,0%' if dados.total_avaliados else '—' }}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="info-print-legenda">
+            Percentuais calculados sobre os alunos com situação final definida.
+            Aproveitamento = alunos Aprovados ou Participantes ÷ alunos com situação final definida.
+        </div>
+
+        <div class="print-footer-container info-print-rodape">
+            <span>v {{ app_version }}-{{ app_stage }}</span>
+            <span><strong>Data/Hora:</strong> <span id="print-date">{{ data_hora_emissao }}</span></span>
+            <span><strong>URL:</strong> {{ request.url }}</span>
+        </div>
+    </section>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 no-print d-print-none">
+        <div class="min-w-0">
             <h2 class="fw-bold mb-1 text-dark">
                 <i class="bi bi-pie-chart text-primary me-2"></i>Informações Gerais do Período
             </h2>
@@ -50,23 +126,23 @@
                 Indicadores consolidados de aproveitamento e evasão do período letivo.
             </p>
         </div>
-        <div class="d-flex gap-2">
-            <a href="{{ url_for('relatorios.resultado_conselho', periodo_letivo_id=periodo.id) }}" class="btn btn-light border">
+        <div class="d-flex gap-2 flex-shrink-0 d-print-none">
+            <a href="{{ url_for('relatorios.resultado_conselho', periodo_letivo_id=periodo.id) }}"
+               class="btn btn-light border d-print-none">
                 <i class="bi bi-chevron-left me-1"></i> Resultado do Conselho
             </a>
-            <button type="button" class="btn btn-danger" onclick="prepararImpressao()">
+            <button type="button" class="btn btn-danger d-print-none" onclick="prepararImpressao()">
                 <i class="bi bi-printer me-1"></i> Imprimir
             </button>
         </div>
     </div>
 
-    <section class="card card-executivo shadow-sm border-0 mx-auto mb-4">
+    <section class="card card-executivo shadow-sm border-0 mx-auto mb-4 d-print-none">
         <div class="card-body p-4 p-md-5 position-relative">
-            {# Identificação de unidade e vigência: exibida na tela; omitida na impressão pois já consta no cabeçalho. #}
-            <div class="d-flex justify-content-between align-items-start mb-4 d-print-none">
+            <div class="d-flex justify-content-between align-items-start mb-4">
                 <div>
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle mb-2 px-3 py-1">
-                        {{ unidade_nome }}{% if unidade_sigla and unidade_sigla != unidade_nome %} ({{ unidade_sigla }}){% endif %}
+                        {{ unidade_exibicao }}
                     </span>
                     <h3 class="h4 fw-bold text-dark mb-1">
                         Período Letivo {{ periodo.nome }}
@@ -80,23 +156,49 @@
                 </div>
             </div>
 
-            <hr class="my-4 opacity-25 d-print-none">
+            <div class="totais-periodo d-flex flex-wrap gap-3 mb-4 small text-muted">
+                <span>Inscrições no período: <strong class="text-dark">{{ dados.total_inscritos }}</strong></span>
+                <span>Com situação final definida: <strong class="text-dark">{{ dados.total_avaliados }}</strong></span>
+                <span>Sem situação final definida: <strong class="text-dark">{{ dados.pendentes_definicao }}</strong></span>
+            </div>
+
+            <hr class="my-4 opacity-25">
 
             <div class="mb-3">
                 <h4 class="h6 text-uppercase fw-bold text-secondary letter-spacing-1 mb-1">
-                    Síntese de Aproveitamento dos Alunos Inscritos
+                    Distribuição das situações finais
                 </h4>
                 <p class="small text-muted mb-4">
                     {% if dados.total_avaliados > 0 %}
-                        Percentuais calculados sobre <strong>{{ dados.total_avaliados }}</strong> registros com situação final definida
-                        (de um total de <strong>{{ dados.total_inscritos }}</strong> inscrições efetivas no período).
+                        Percentuais calculados sobre os {{ dados.total_avaliados }} alunos com situação final definida
+                        (de {{ dados.total_inscritos }} inscrições no período).
                     {% else %}
-                        Nenhuma situação final registrada para este período até o momento.
+                        Nenhuma situação final definida neste período ainda.
                     {% endif %}
                 </p>
             </div>
 
-            {% if dados.total_avaliados > 0 %}
+            <div class="destaque-aproveitamento p-3 rounded-3 border mb-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+                    <div>
+                        <div class="text-uppercase small fw-bold text-secondary letter-spacing-1">Aproveitamento</div>
+                        <div class="fs-1 fw-bold text-primary valor-aproveitamento">
+                            {% if dados.aproveitamento.percentual is not none %}
+                                {{ "%.1f"|format(dados.aproveitamento.percentual)|replace('.', ',') }}%
+                            {% else %}
+                                —
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="small text-muted text-md-end">
+                        <div class="fw-semibold text-dark">
+                            {{ dados.aproveitamento.quantidade }} de {{ dados.total_avaliados }} alunos Aprovados ou Participantes
+                            (entre os que já têm situação final definida)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="row g-3">
                 {% for item in dados.indicadores %}
                 <div class="col-12 col-md-6">
@@ -104,7 +206,7 @@
                         <div class="d-flex justify-content-between align-items-baseline mb-1">
                             <span class="fw-semibold text-dark">{{ item.rotulo }}</span>
                             <span class="fs-4 fw-bold text-{{ item.cor }}">
-                                {{ "%.2f"|format(item.percentual)|replace('.', ',') }}%
+                                {{ "%.1f"|format(item.percentual)|replace('.', ',') }}%
                             </span>
                         </div>
                         <div class="progress mb-2" style="height: 8px;">
@@ -116,7 +218,7 @@
                                  aria-valuemax="100"></div>
                         </div>
                         <div class="d-flex justify-content-between small text-muted">
-                            <span>{{ item.descricao }}</span>
+                            <span class="legenda-situacao" title="{{ item.descricao }}">{{ item.legenda }}</span>
                             <span><strong>{{ item.quantidade }}</strong> aluno(s)</span>
                         </div>
                     </div>
@@ -126,30 +228,40 @@
 
             {% if dados.pendentes_definicao > 0 %}
             <div class="alert alert-light border mt-4 mb-0 py-2 px-3 small text-muted">
-                <i class="bi bi-info-circle me-1"></i>
-                Existem <strong>{{ dados.pendentes_definicao }}</strong> inscrição(ões) ativa(s) ainda sem situação final definida (<code>—</code>) no Conselho de Classe.
+                <i class="bi bi-info-circle me-1"></i>{{ aviso_parcial }}
             </div>
             {% endif %}
-            {% endif %}
 
-            <div class="pt-4 mt-4 border-top small text-muted d-print-none">
+            <div class="pt-4 mt-4 border-top small text-muted">
                 Emitido em <strong>{{ data_hora_emissao }}</strong> por {{ current_user.name }}
             </div>
         </div>
     </section>
-
-    {# Rodapé de impressão — mesmo padrão do resultado_conselho.html #}
-    <div class="print-footer-container d-none d-print-block mt-3 pt-2 border-top small text-muted">
-        <div class="d-flex justify-content-between">
-            <span>v {{ app_version }}-{{ app_stage }}</span>
-            <span><strong>Data/Hora:</strong> <span id="print-date">{{ data_hora_emissao }}</span></span>
-            <span><strong>URL:</strong> {{ request.url }}</span>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
-<script src="{{ url_for('static', filename='js/relatorios/resultado_conselho.js') }}"></script>
+{# AJ29: impressao_pdf.js já é carregado UMA vez pelo base.html. #}
+<script>
+(function () {
+    'use strict';
+
+    function preencherEmissao() {
+        var agora = new Date().toLocaleString('pt-BR');
+        var campos = document.querySelectorAll(
+            '#conteudo-impressao .resultado-emissao, #conteudo-impressao #print-date'
+        );
+        campos.forEach(function (campo) {
+            campo.textContent = agora;
+        });
+    }
+
+    window.prepararImpressao = function () {
+        preencherEmissao();
+        window.print();
+    };
+    window.addEventListener('beforeprint', preencherEmissao);
+})();
+</script>
 {% endblock %}

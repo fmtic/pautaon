@@ -125,10 +125,11 @@
                             A lista contém apenas turmas ativas do período letivo selecionado.
                         </small>
                     </div>
-                    <div class="col-12 d-flex justify-content-end align-items-center gap-2 pt-3 border-top">
+                    <div class="col-12 d-flex flex-wrap justify-content-end align-items-center gap-2 pt-3 border-top">
                         <a id="btnInfoGeraisPeriodo"
                            href="{{ url_for('relatorios.informacoes_gerais_periodo', periodo_id=selected_periodo_id) if selected_periodo_id else '#' }}"
-                           class="btn btn-outline-primary {{ 'disabled' if not selected_periodo_id }}">
+                           class="btn btn-outline-primary d-print-none {{ 'disabled' if not selected_periodo_id }}"
+                           {% if not selected_periodo_id %}disabled aria-disabled="true" tabindex="-1"{% endif %}>
                             <i class="bi bi-pie-chart me-1"></i> Informações Gerais do Período
                         </a>
                         <button type="submit" class="btn btn-primary px-5">
@@ -336,9 +337,15 @@ document.addEventListener("DOMContentLoaded", function () {
             if (id) {
                 btnInfo.href = baseUrl.replace("/0/", `/${id}/`);
                 btnInfo.classList.remove("disabled");
+                btnInfo.removeAttribute("disabled");
+                btnInfo.removeAttribute("aria-disabled");
+                btnInfo.removeAttribute("tabindex");
             } else {
                 btnInfo.href = "#";
                 btnInfo.classList.add("disabled");
+                btnInfo.setAttribute("disabled", "");
+                btnInfo.setAttribute("aria-disabled", "true");
+                btnInfo.setAttribute("tabindex", "-1");
             }
         });
     }

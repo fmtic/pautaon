@@ -1,7 +1,14 @@
 import importlib
 import pkgutil
+import sys
+from pathlib import Path
 
-import app
+# Permite executar tanto `python scripts/verificar_imports.py` quanto
+# `python -m scripts.verificar_imports`: o diretório raiz precisa entrar no
+# sys.path quando o arquivo é chamado diretamente.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import app  # noqa: E402
 
 falhas = 0
 for m in pkgutil.walk_packages(app.__path__, "app."):
