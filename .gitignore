@@ -67,3 +67,5 @@ tmp*
 
 # Pasta do Nextcloud (arquivos temporários de sincronização)
 .sync_*.db
+
+docs/Relatórios/aj*_evidencias/
