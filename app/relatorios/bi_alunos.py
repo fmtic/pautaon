@@ -19,6 +19,7 @@ from app.models import (
 from app import db
 from app.models.enums import SituacaoFinal, StatusAluno
 from app.services.aluno_status import (
+    TURNOS_CONHECIDOS,
     periodos_de_referencia_bi,
     status_alunos_para_bi,
 )
@@ -1047,6 +1048,91 @@ def inscricoes_por_curso(
     ]
 
 
+"""
+----------------------------------------
+INS-009
+----------------------------------------
+"""
+
+
+def inscricoes_iniciadas_no_periodo(
+    unidade_id=None,
+    periodo_letivo_id=None,
+    turno=None,
+    curso_id=None,
+    turma_id=None,
+    professor_id=None,
+    data_inicio=None,
+    data_fim=None,
+):
+    """Conta inscrições iniciadas dentro do período letivo de referência.
+
+    Sem período explícito, usa o período vigente de cada unidade na data de
+    hoje, no mesmo espírito dos cadastros novos de ALU-004. Curso e professor
+    vêm da oferta da inscrição; o turno é o da oferta, com o turno legado da
+    turma como fallback.
+    """
+    from .bi_filtros import aplicar_filtros_inscricao
+
+    periodos = periodos_de_referencia_bi(
+        periodo_letivo_id=periodo_letivo_id,
+        unidade_id=unidade_id,
+        data_ref=date.today(),
+    )
+    if not periodos:
+        return 0
+
+    intervalos = [
+        (
+            periodo.unidade_id,
+            data_inicio or periodo.data_inicio,
+            data_fim or periodo.data_fim,
+        )
+        for periodo in periodos
+    ]
+    condicoes = [
+        and_(
+            Turma.unidade_id == unidade_id_intervalo,
+            Inscricao.data_inicio >= inicio,
+            Inscricao.data_inicio <= fim,
+        )
+        for unidade_id_intervalo, inicio, fim in intervalos
+        if inicio is not None and fim is not None and inicio <= fim
+    ]
+    if not condicoes:
+        return 0
+
+    query = aplicar_filtros_inscricao(
+        Inscricao.query,
+        {
+            "unidade_id": unidade_id,
+            "curso_id": curso_id,
+            "turma_id": turma_id,
+            "professor_id": professor_id,
+        },
+    ).filter(or_(*condicoes))
+
+    if turno:
+        turno_oferta = (
+            select(TurmaCurso.turno)
+            .where(TurmaCurso.id == Inscricao.turma_curso_id)
+            .correlate_except(TurmaCurso)
+            .scalar_subquery()
+        )
+        turno_efetivo = func.coalesce(turno_oferta, Turma.turno)
+        if turno == "Outros":
+            cond_turno = or_(
+                turno_efetivo.is_(None),
+                turno_efetivo == "",
+                turno_efetivo.notin_(TURNOS_CONHECIDOS),
+            )
+        else:
+            cond_turno = turno_efetivo == turno
+        query = query.filter(cond_turno)
+
+    return query.count()
+
+
 def total_lancamentos_frequencia(
     unidade_id=None,
     periodo_letivo_id=None,
@@ -1590,10 +1676,15 @@ def media_alunos_por_turma(
     data_inicio=None,
     data_fim=None,
 ):
-    """Retorna a média de alunos por turma conforme os filtros informados."""
+    """Média de alunos distintos por turma, com o numerador de ALU-010.
 
-    # Turma desativada (excluída) não entra; numerador só conta enturmados
-    # em oferta ativa (helper da Etapa J2).
+    O denominador continua sendo o de sempre: turmas ativas do escopo, com
+    os filtros de unidade, período, curso legado, turma, professor legado e
+    datas aplicados à própria turma. O numerador é a soma dos valores de
+    ALU-010 pelos mesmos filtros — uma pessoa em duas ofertas da mesma turma
+    conta uma única vez. Turma ativa sem aluno entra no denominador com zero.
+    """
+
     turmas_query = Turma.query.filter(Turma.ativo.is_(True))
 
     if unidade_id:
@@ -1622,13 +1713,19 @@ def media_alunos_por_turma(
     if not turmas:
         return 0.0
 
-    total_alunos = 0
-
-    for turma in turmas:
-        total_alunos += Inscricao.query.filter(
-            Inscricao.turma_id == turma.id,
-            cond_inscricao_enturmada(),
-        ).count()
+    # Fonte única do numerador: a própria distribuição de ALU-010.
+    total_alunos = sum(
+        item["valor"]
+        for item in alunos_por_turma(
+            unidade_id=unidade_id,
+            periodo_letivo_id=periodo_letivo_id,
+            curso_id=curso_id,
+            turma_id=turma_id,
+            professor_id=professor_id,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+        )
+    )
 
     return round(total_alunos / len(turmas), 1)
 

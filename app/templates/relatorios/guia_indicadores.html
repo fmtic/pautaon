@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Guia de Indicadores{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/relatorios/guia_indicadores.css') }}">
+{% endblock %}
+
+{% block content %}
+{% set total_indicadores = categorias.values() | map('length') | sum %}
+<div id="conteudo-impressao" class="container-fluid py-4 guia-indicadores"
+     data-pdf-nome="Guia de Indicadores - pautaON - {data}">
+
+  <section class="print-only guia-capa">
+    <p class="text-muted small mb-1">{{ informacao_padrao.nome_instituicao or 'pautaON' }}</p>
+    <h1 class="h4 mb-1">Guia de Indicadores</h1>
+    <p class="small mb-0">Versão {{ versao_catalogo }} · Última revisão: {{ ultima_revisao }}</p>
+    <p class="small text-muted mb-0">Total de indicadores: {{ total_indicadores }}</p>
+  </section>
+
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4 d-print-none">
+    <div>
+      <h1 class="h3 mb-1">Guia de Indicadores</h1>
+      <p class="text-muted mb-1">
+        O que cada indicador mede, como é calculado e quais filtros podem ser usados.
+      </p>
+      <p class="small text-muted mb-0">
+        Versão {{ versao_catalogo }} · Última revisão: {{ ultima_revisao }} ·
+        {{ total_indicadores }} indicadores
+      </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('relatorios.bi_dashboard') }}" class="btn btn-outline-secondary">
+        Voltar à Central de BI
+      </a>
+      <button type="button" class="btn btn-outline-primary" data-guia-acao="expandir">
+        Expandir tudo
+      </button>
+      <button type="button" class="btn btn-outline-secondary" data-guia-acao="recolher">
+        Recolher tudo
+      </button>
+      <button type="button" class="btn btn-primary" onclick="window.print()">
+        Imprimir / salvar PDF
+      </button>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4 d-print-none">
+    <div class="card-body">
+      <label for="buscaIndicador" class="form-label small text-muted mb-1">
+        Buscar por código, nome, categoria, filtro ou explicação
+      </label>
+      <input type="search" id="buscaIndicador" class="form-control"
+             placeholder="Ex.: ALU-010, frequência, turno, renovados"
+             autocomplete="off">
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span id="contadorBusca" class="small text-muted">{{ total_indicadores }} indicadores</span>
+        <span id="semResultados" class="small text-danger d-none">Nenhum indicador encontrado.</span>
+      </div>
+    </div>
+  </div>
+
+  <section class="card shadow-sm mb-4" aria-labelledby="tituloGlossario">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <strong id="tituloGlossario">Glossário</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary d-print-none"
+              data-guia-toggle="glossario" aria-expanded="true" aria-controls="glossario">
+        Recolher
+      </button>
+    </div>
+    <div class="collapse show" id="glossario">
+      <div class="card-body">
+        <dl class="row mb-0">
+          {% for termo in glossario %}
+          <dt class="col-md-3">{{ termo.termo }}</dt>
+          <dd class="col-md-9">{{ termo.texto }}</dd>
+          {% endfor %}
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <nav class="card shadow-sm mb-4 guia-indice" aria-label="Índice por categoria">
+    <div class="card-body">
+      <strong class="d-block mb-2">Índice por categoria</strong>
+      <div class="d-flex flex-wrap gap-2">
+        {% for categoria, itens in categorias.items() %}
+        <a class="btn btn-sm btn-outline-secondary" href="#cat-{{ categoria|lower|replace(' ', '-') }}">
+          {{ categoria|capitalize }} ({{ itens|length }})
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </nav>
+
+  {% for categoria, itens in categorias.items() %}
+  <section class="mb-4 guia-categoria" data-categoria="{{ categoria }}"
+           id="cat-{{ categoria|lower|replace(' ', '-') }}">
+    <h2 class="h5 mb-3 border-bottom pb-2">{{ categoria|capitalize }}</h2>
+
+    {% for item in itens %}
+    {% set texto_busca = [
+      item.codigo, item.nome, item.categoria, item.tipo, item.unidade,
+      item.mede, item.regra, item.fonte, item.servico,
+      item.filtros|map('string')|join(' '),
+      item.nao_aplicaveis|map('string')|join(' '),
+      item.observacoes|join(' '),
+      item.relacionados|map(attribute=0)|join(' ')
+    ]|join(' ') %}
+    <article id="{{ item.codigo }}" class="card shadow-sm mb-3 guia-item indicador-bloco"
+             data-codigo="{{ item.codigo }}" data-pesquisa="{{ texto_busca|lower }}">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <span class="badge bg-primary me-2">{{ item.codigo }}</span>
+          <strong>{{ item.nome }}</strong>
+          {% if item.alias_de %}
+          <span class="badge bg-warning text-dark ms-2">Substituído por {{ item.alias_de }}</span>
+          {% endif %}
+          {% if not item.disponivel %}
+          <span class="badge bg-secondary ms-2">Indisponível</span>
+          {% endif %}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-print-none"
+                data-guia-toggle="{{ item.codigo }}" aria-expanded="false"
+                aria-controls="detalhes-{{ item.codigo }}">
+          Detalhes
+        </button>
+      </div>
+
+      <div class="collapse" id="detalhes-{{ item.codigo }}">
+        <div class="card-body guia-corpo">
+          <div class="row g-3">
+            <div class="col-lg-6">
+              <h3 class="h6 text-uppercase text-muted">O que mede</h3>
+              <p class="mb-0">{{ item.mede }}</p>
+            </div>
+            <div class="col-lg-6">
+              <h3 class="h6 text-uppercase text-muted">Como é calculado</h3>
+              <p class="mb-0">{{ item.regra }}</p>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <h3 class="h6 text-uppercase text-muted">Unidade de medida</h3>
+              <p class="mb-0">{{ item.unidade }}</p>
+            </div>
+            <div class="col-md-4">
+              <h3 class="h6 text-uppercase text-muted">Tipo de resultado</h3>
+              <p class="mb-0">{{ item.tipo }}</p>
+            </div>
+            <div class="col-md-4">
+              <h3 class="h6 text-uppercase text-muted">Categoria</h3>
+              <p class="mb-0">{{ item.categoria|capitalize }}</p>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <h3 class="h6 text-uppercase text-muted">Filtros aplicáveis</h3>
+              {% if item.filtros %}
+              <p class="mb-0">
+                {% for filtro in item.filtros %}
+                <span class="badge bg-light text-dark border">{{ rotulos_filtros[filtro] }}</span>
+                {% endfor %}
+              </p>
+              {% else %}
+              <p class="mb-0">Nenhum filtro específico.</p>
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <h3 class="h6 text-uppercase text-muted">Filtros que não se aplicam</h3>
+              {% if item.nao_aplicaveis %}
+              <p class="mb-0">
+                {% for filtro in item.nao_aplicaveis %}
+                <span class="badge bg-light text-dark border">{{ rotulos_filtros[filtro] }}</span>
+                {% endfor %}
+              </p>
+              {% else %}
+              <p class="mb-0">Todos os filtros do guia podem ser aplicados.</p>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if item.observacoes %}
+          <div class="mt-3">
+            <h3 class="h6 text-uppercase text-muted">Pegadinhas do glossário</h3>
+            <ul class="mb-0 small">
+              {% for observacao in item.observacoes %}
+              <li>{{ observacao }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          {% if item.relacionados %}
+          <div class="mt-3">
+            <h3 class="h6 text-uppercase text-muted">Indicadores relacionados</h3>
+            <ul class="mb-0 small">
+              {% for codigo_rel, motivo in item.relacionados %}
+              <li>
+                <a href="#{{ codigo_rel }}" data-guia-ancora="{{ codigo_rel }}">{{ codigo_rel }}</a>
+                — {{ motivo }}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <div class="mt-3 small text-muted guia-tecnico">
+            <strong>Detalhes técnicos:</strong>
+            serviço {{ item.servico }} · fonte {{ item.fonte }} ·
+            dimensões {{ item.dimensoes|join(', ') or '—' }} ·
+            presença na Central:
+            {% if item.visivel_na_central %}visível{% else %}oculto{% endif %}.
+            {% if item.alias_de %}
+            Este código é um alias explícito de {{ item.alias_de }}: o resultado é o mesmo.
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/relatorios/guia_indicadores.js') }}"></script>
+{% endblock %}

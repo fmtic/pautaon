@@ -10,7 +10,30 @@
       <p class="text-muted mb-0">Indicadores e relatórios acadêmicos</p>
     </div>
 
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+      <button
+        type="button"
+        id="btnComoLerCentral"
+        class="btn btn-outline-info"
+        data-bs-toggle="modal"
+        data-bs-target="#modalComoLerCentral"
+      >
+        Como ler a Central
+      </button>
+      <a
+        href="{{ url_for('relatorios.bi_guia_indicadores') }}"
+        class="btn btn-outline-primary"
+      >
+        Guia de indicadores
+      </a>
+      <a
+        href="{{ url_for('relatorios.bi_guia_indicadores', imprimir=1) }}"
+        class="btn btn-outline-secondary"
+        target="_blank"
+        rel="noopener"
+      >
+        Baixar guia (PDF)
+      </a>
       <a
         href="{{ url_for('relatorios.relatorio_alunos') }}"
         class="btn btn-outline-secondary"
@@ -75,7 +98,11 @@
             {% for categoria, itens in categorias.items() %}
             <optgroup label="{{ categoria|capitalize }}">
               {% for codigo, indicador in itens %}
-              <option value="{{ codigo }}">
+              <option
+                value="{{ codigo }}"
+                title="{{ metadados_ajuda[codigo].titulo_sigla }}"
+                aria-label="{{ metadados_ajuda[codigo].titulo_sigla }}"
+              >
                 {{ codigo }} — {{ indicador["nome"] }}
               </option>
               {% endfor %}
@@ -84,9 +111,18 @@
           </select>
         </div>
 
-        <div class="col-md-6 d-flex align-items-end">
+        <div class="col-md-6 d-flex align-items-end gap-2 flex-wrap">
           <button type="button" id="btnExecutar" class="btn btn-primary">
             Executar indicador
+          </button>
+          <button
+            type="button"
+            id="btnAjudaIndicador"
+            class="btn btn-outline-info"
+            disabled
+            aria-label="Mostrar ajuda do indicador selecionado"
+          >
+            ⓘ Entender este indicador
           </button>
         </div>
       </div>
@@ -103,7 +139,7 @@
       <div class="row g-3">
         <div class="col-md-3">
           <small class="text-muted d-block">Código</small>
-          <span id="infoCodigo" class="fw-semibold">—</span>
+          <span id="infoCodigo" class="fw-semibold" title="—">—</span>
         </div>
 
         <div class="col-md-3">
@@ -120,6 +156,11 @@
           <small class="text-muted d-block">Fonte</small>
           <span id="infoFonte" class="fw-semibold">—</span>
         </div>
+      </div>
+      <div class="mt-3">
+        <a id="linkComoCalculado" class="btn btn-sm btn-outline-primary" href="{{ url_for('relatorios.bi_guia_indicadores') }}">
+          Como é calculado
+        </a>
       </div>
     </div>
   </div>
@@ -144,6 +185,10 @@
         </select>
 
         <span id="badgeTipoResultado" class="badge bg-secondary"></span>
+
+        <a class="link-guia-calculo btn btn-sm btn-outline-primary" href="{{ url_for('relatorios.bi_guia_indicadores') }}">
+          Como é calculado
+        </a>
 
         <!-- Botões de exportação -->
         <button
@@ -178,6 +223,14 @@
       <!-- Alerta de erro -->
       <div id="resultadoErro" class="alert alert-danger d-none" role="alert"></div>
 
+      <!-- Aviso: filtro visível selecionado que este indicador não aplica -->
+      <div
+        id="avisoFiltroNaoAplicado"
+        class="alert alert-warning small d-none"
+        role="status"
+        aria-live="polite"
+      ></div>
+
       <!-- Exibição Numérica / Escalar -->
       <div id="resultadoNumerico" class="display-4 text-center text-primary py-4 d-none"></div>
 
@@ -209,6 +262,127 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal: como ler a Central -->
+  <div
+    class="modal fade"
+    id="modalComoLerCentral"
+    tabindex="-1"
+    aria-labelledby="tituloModalComoLer"
+    aria-hidden="true"
+  >
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="tituloModalComoLer">Como ler a Central</h2>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+            aria-label="Fechar"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-grid gap-3">
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Siglas e categorias</h3>
+              <div id="ajudaSiglas"></div>
+              <div id="ajudaCategorias" class="mt-2"></div>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Tipos de resultado</h3>
+              <div id="ajudaTipos"></div>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Unidades de medida</h3>
+              <div id="ajudaUnidades"></div>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Filtros</h3>
+              <div id="ajudaFiltrosCentral"></div>
+            </section>
+            <section>
+              <p id="ajudaTextoCompartilhado" class="alert alert-info mb-0"></p>
+            </section>
+          </div>
+        </div>
+        <div class="modal-footer flex-wrap">
+          <a
+            href="{{ url_for('relatorios.bi_guia_indicadores') }}"
+            class="btn btn-outline-primary"
+          >
+            Abrir guia completo
+          </a>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: ajuda do indicador selecionado -->
+  <div
+    class="modal fade"
+    id="modalAjudaIndicador"
+    tabindex="-1"
+    aria-labelledby="tituloModalAjudaIndicador"
+    aria-hidden="true"
+  >
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="tituloModalAjudaIndicador">Ajuda do indicador</h2>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="modal"
+            aria-label="Fechar"
+          ></button>
+        </div>
+        <div class="modal-body">
+          <p id="ajudaIndicadorNome" class="lead mb-3"></p>
+          <div class="d-grid gap-3">
+            <section>
+              <h3 class="h6 text-uppercase text-muted">O que mede</h3>
+              <p id="ajudaIndicadorMede" class="mb-0"></p>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Como é calculado</h3>
+              <p id="ajudaIndicadorRegra" class="mb-0"></p>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Leitura rápida</h3>
+              <div id="ajudaIndicadorResumo" class="row g-2"></div>
+            </section>
+            <section>
+              <h3 class="h6 text-uppercase text-muted">Filtros respeitados e não aplicáveis</h3>
+              <div id="ajudaIndicadorFiltros"></div>
+            </section>
+            <section id="ajudaIndicadorNaoConfundirSection" class="d-none">
+              <h3 class="h6 text-uppercase text-muted">Não confundir com</h3>
+              <ul id="ajudaIndicadorRelacionados" class="mb-0 small"></ul>
+            </section>
+            <section id="ajudaIndicadorObservacoesSection" class="d-none">
+              <h3 class="h6 text-uppercase text-muted">Pegadinhas do glossário</h3>
+              <ul id="ajudaIndicadorObservacoes" class="mb-0 small"></ul>
+            </section>
+          </div>
+        </div>
+        <div class="modal-footer flex-wrap">
+          <a id="ajudaIndicadorLinkGuia" class="btn btn-outline-primary" target="_blank" rel="noopener">
+            Ver no guia
+          </a>
+          <a id="ajudaIndicadorLinkPdf" class="btn btn-outline-secondary" target="_blank" rel="noopener">
+            Imprimir/baixar guia (PDF)
+          </a>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -230,6 +404,14 @@
     const cardResultado    = document.getElementById("resultadoIndicador");
     const btnExportarXlsx  = document.getElementById("btnExportarXlsx");
     const btnExportarPng   = document.getElementById("btnExportarPng");
+    const avisoFiltro      = document.getElementById("avisoFiltroNaoAplicado");
+    const btnAjuda         = document.getElementById("btnAjudaIndicador");
+
+    // Textos e metadados vêm do catálogo; a Central não repete nem reescreve.
+    const ajudaCentral     = {{ ajuda|tojson }};
+    const metadadosAjuda   = {{ metadados_ajuda|tojson }};
+    const filtrosCentral   = {{ filtros_central|tojson }};
+    const urlGuia          = "{{ url_for('relatorios.bi_guia_indicadores') }}";
 
     // Mantém uma referência ao seletorVisualizacao com o nome original
     // para compatibilidade com o restante do código.
@@ -239,6 +421,196 @@
     let graficoAtual = null;
     let dadosGrafico = null;
     let codigoAtual  = null;  // código do indicador exibido
+
+    // ---------------------------------------------------------------- //
+    // Ajuda contextual — todo o texto vem do catálogo                  //
+    // ---------------------------------------------------------------- //
+    function escapar(texto) {
+      return String(texto == null ? "" : texto)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function listaSimples(itens) {
+      if (!itens || itens.length === 0) {
+        return '<p class="mb-0 text-muted">—</p>';
+      }
+      return (
+        '<ul class="mb-0 small">' +
+        itens.map((item) => `<li>${escapar(item)}</li>`).join("") +
+        "</ul>"
+      );
+    }
+
+    function prepararAjudaCentral() {
+      const siglas = document.getElementById("ajudaSiglas");
+      const categoriasAjuda = document.getElementById("ajudaCategorias");
+      const tipos = document.getElementById("ajudaTipos");
+      const unidades = document.getElementById("ajudaUnidades");
+      const filtros = document.getElementById("ajudaFiltrosCentral");
+      const compartilhado = document.getElementById("ajudaTextoCompartilhado");
+
+      if (siglas) {
+        siglas.innerHTML = listaSimples(
+          ajudaCentral.siglas.map((item) => `${item.sigla} — ${item.nome}`)
+        );
+      }
+      if (categoriasAjuda) {
+        categoriasAjuda.innerHTML = listaSimples(
+          ajudaCentral.categorias.map((item) => `${item.nome}: ${item.texto}`)
+        );
+      }
+      if (tipos) {
+        tipos.innerHTML = listaSimples(
+          ajudaCentral.tipos.map((item) => `${item.nome}: ${item.texto}`)
+        );
+      }
+      if (unidades) {
+        unidades.innerHTML = listaSimples(
+          ajudaCentral.unidades.map((item) => `${item.nome}: ${item.texto}`)
+        );
+      }
+      if (filtros) {
+        filtros.innerHTML = listaSimples(
+          ajudaCentral.filtros
+            .filter((item) => filtrosCentral.includes(item.chave))
+            .map((item) => `${item.rotulo}: ${item.texto}`)
+        );
+      }
+      if (compartilhado) {
+        compartilhado.textContent = ajudaCentral.texto_compartilhado;
+      }
+    }
+
+    function prepararAjudaIndicador(codigo) {
+      const meta =
+        metadadosAjuda[codigo] ||
+        metadadosAjuda[selectIndicador.value] ||
+        metadadosAjuda[codigoAtual];
+      if (!meta) {
+        return;
+      }
+
+      const titulo = document.getElementById("tituloModalAjudaIndicador");
+      const nome = document.getElementById("ajudaIndicadorNome");
+      const mede = document.getElementById("ajudaIndicadorMede");
+      const regra = document.getElementById("ajudaIndicadorRegra");
+      const resumo = document.getElementById("ajudaIndicadorResumo");
+      const filtros = document.getElementById("ajudaIndicadorFiltros");
+      const naoConfundir = document.getElementById("ajudaIndicadorNaoConfundirSection");
+      const relacionados = document.getElementById("ajudaIndicadorRelacionados");
+      const observacoesSection = document.getElementById("ajudaIndicadorObservacoesSection");
+      const observacoes = document.getElementById("ajudaIndicadorObservacoes");
+      const linkGuia = document.getElementById("ajudaIndicadorLinkGuia");
+      const linkPdf = document.getElementById("ajudaIndicadorLinkPdf");
+
+      if (titulo) titulo.textContent = `${meta.codigo} — ${meta.nome}`;
+      if (nome) nome.textContent = meta.titulo_sigla || meta.sigla;
+      if (mede) mede.textContent = meta.mede;
+      if (regra) regra.textContent = meta.regra;
+      if (resumo) {
+        const campos = [
+          ["Código", meta.codigo],
+          ["Nome", meta.nome],
+          ["Tipo", meta.tipo],
+          ["Unidade", meta.unidade],
+          ["Fonte", meta.fonte],
+        ];
+        resumo.innerHTML = campos
+          .map(
+            ([rotulo, valor]) => `
+              <div class="col-12 col-sm-6">
+                <small class="text-muted d-block">${escapar(rotulo)}</small>
+                <span class="fw-semibold">${escapar(valor)}</span>
+              </div>
+            `
+          )
+          .join("");
+      }
+      if (filtros) {
+        const rotulos = {
+          aplicavel: "Respeitado",
+          parcial: "Aplicação parcial",
+          nao_aplicavel: "Não aplicável",
+        };
+        filtros.innerHTML = listaSimples(
+          meta.filtros.map(
+            (item) =>
+              `${item.rotulo} (${rotulos[item.situacao] || item.situacao}): ${item.texto}`
+          )
+        );
+      }
+      if (relacionados) {
+        relacionados.innerHTML = meta.relacionados.length
+          ? meta.relacionados
+              .map(
+                (item) => `
+                  <li>
+                    <a href="${urlGuia}#${encodeURIComponent(item.codigo)}"
+                       target="_blank" rel="noopener">${escapar(item.codigo)}</a>
+                    — ${escapar(item.motivo)}
+                  </li>
+                `
+              )
+              .join("")
+          : "";
+      }
+      if (naoConfundir) {
+        naoConfundir.classList.toggle("d-none", meta.relacionados.length === 0);
+      }
+      if (observacoes) {
+        observacoes.innerHTML = listaSimples(meta.observacoes);
+      }
+      if (observacoesSection) {
+        observacoesSection.classList.toggle("d-none", meta.observacoes.length === 0);
+      }
+      if (linkGuia) {
+        linkGuia.href = `${urlGuia}#${encodeURIComponent(meta.codigo)}`;
+      }
+      if (linkPdf) {
+        linkPdf.href = `${urlGuia}?imprimir=1#${encodeURIComponent(meta.codigo)}`;
+      }
+    }
+
+    function avisarFiltrosIgnorados(codigo) {
+      const meta = metadadosAjuda[codigo];
+      const ignorados = (meta && meta.ignorados) || {};
+      const seletores = {
+        unidade: document.getElementById("filtroUnidade"),
+        periodo: document.getElementById("filtroPeriodo"),
+        turno: document.getElementById("filtroTurno"),
+      };
+      const mensagens = new Set();
+      filtrosCentral.forEach((chave) => {
+        const seletor = seletores[chave];
+        if (seletor && seletor.value && ignorados[chave]) {
+          mensagens.add(ignorados[chave]);
+        }
+      });
+      avisoFiltro.classList.toggle("d-none", mensagens.size === 0);
+      avisoFiltro.textContent = Array.from(mensagens).join(" ");
+    }
+
+    if (btnAjuda) {
+      btnAjuda.addEventListener("click", function () {
+        prepararAjudaIndicador(selectIndicador.value || codigoAtual);
+        const modal = document.getElementById("modalAjudaIndicador");
+        if (window.bootstrap && window.bootstrap.Modal && modal) {
+          window.bootstrap.Modal.getOrCreateInstance(modal).show();
+        }
+      });
+    }
+
+    selectIndicador.addEventListener("change", function () {
+      if (btnAjuda) {
+        btnAjuda.disabled = !selectIndicador.value;
+      }
+    });
+
+    prepararAjudaCentral();
 
     // ---------------------------------------------------------------- //
     // Encadeia Unidade -> Período: o seletor de período exibe apenas os
@@ -334,6 +706,8 @@
       divVazio.classList.add("d-none");
       corpoTabela.innerHTML = "";
       badgeTipo.textContent = "";
+      avisoFiltro.classList.add("d-none");
+      avisoFiltro.textContent = "";
       seletorVisualizacao.classList.add("d-none");
       seletorVisualizacao.value = "tabela";
       btnExportarXlsx.classList.add("d-none");
@@ -594,8 +968,24 @@
         // Guarda o código atual para os exportadores
         codigoAtual = body.indicador || codigo;
 
+        // Cada resultado aponta para a explicação daquele código no guia.
+        document.querySelectorAll(".link-guia-calculo").forEach(function (link) {
+          link.href = `/relatorios/bi/indicadores#${encodeURIComponent(codigoAtual)}`;
+        });
+        const linkUnico = document.getElementById("linkComoCalculado");
+        if (linkUnico) {
+          linkUnico.href = `/relatorios/bi/indicadores#${encodeURIComponent(codigoAtual)}`;
+        }
+
         // Preenche informações
-        document.getElementById("infoCodigo").textContent = codigoAtual;
+        const infoCodigo = document.getElementById("infoCodigo");
+        infoCodigo.textContent = codigoAtual;
+        infoCodigo.title =
+          metadadosAjuda[codigoAtual]?.titulo_sigla || codigoAtual;
+        infoCodigo.setAttribute(
+          "aria-label",
+          metadadosAjuda[codigoAtual]?.titulo_sigla || codigoAtual
+        );
         document.getElementById("infoTipo").textContent = tipo || "—";
         document.getElementById("infoUnidade").textContent = unidade || "—";
         document.getElementById("infoFonte").textContent = fonte || "—";
@@ -604,6 +994,7 @@
           .classList.remove("d-none");
 
         badgeTipo.textContent = tipo ? tipo.toUpperCase() : "";
+        avisarFiltrosIgnorados(codigoAtual || codigo);
 
         // Botão XLSX sempre disponível após um resultado
         btnExportarXlsx.classList.remove("d-none");

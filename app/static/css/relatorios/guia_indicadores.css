@@ -1,0 +1,124 @@
+/* Guia de Indicadores — tela e papel. */
+
+.guia-indicadores .guia-item {
+  border-left: 4px solid #4361ee;
+  scroll-margin-top: 5rem;
+}
+
+.guia-indicadores .guia-corpo {
+  background: #ffffff;
+}
+
+.guia-indicadores .guia-corpo h3 {
+  letter-spacing: 0.04em;
+}
+
+.guia-indicadores .guia-indice a {
+  text-decoration: none;
+}
+
+.guia-indicadores .guia-item.is-oculto,
+.guia-indicadores .guia-categoria.is-oculta {
+  display: none !important;
+}
+
+.guia-indicadores .print-only {
+  display: none;
+}
+
+/* Uma única declaração de página: retrato A4, margem 1 cm. */
+@page {
+  size: A4 portrait;
+  margin: 1cm;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #212529 !important;
+    font-size: 9pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .app-topbar,
+  .app-sidebar,
+  .sidebar-backdrop,
+  nav,
+  .navbar,
+  .sidebar,
+  #sidebarMenu,
+  footer,
+  .app-footer,
+  #toggleSidebar,
+  .d-print-none,
+  .guia-indicadores .d-print-none,
+  .guia-indicadores .d-print-none.card.shadow-sm {
+    display: none !important;
+  }
+
+  main,
+  .container-fluid,
+  #conteudo-impressao {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .guia-indicadores .card {
+    border: 1px solid #dee2e6 !important;
+    box-shadow: none !important;
+  }
+
+  .guia-indicadores .print-only {
+    display: block !important;
+  }
+
+  .guia-indicadores .guia-categoria,
+  .guia-indicadores .guia-item,
+  .guia-indicadores .indicador-bloco {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .guia-indicadores h2,
+  .guia-indicadores h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* O conteúdo dos painéis recolhíveis precisa aparecer integralmente no
+     papel, sem depender de clique do usuário. */
+  .guia-indicadores .collapse {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+  }
+
+  .guia-indicadores .guia-item.is-oculto,
+  .guia-indicadores .guia-categoria.is-oculta {
+    display: block !important;
+  }
+
+  .guia-indicadores a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  .guia-indicadores .guia-capa {
+    margin-bottom: 0.8cm;
+    padding-bottom: 0.4cm;
+    border-bottom: 2px solid #4361ee;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .guia-indicadores .card-header {
+    align-items: flex-start !important;
+  }
+
+  .guia-indicadores .guia-corpo .row > div {
+    width: 100%;
+  }
+}

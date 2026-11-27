@@ -7,6 +7,12 @@ do sistema `pautaON`, bem como as funcionalidades de visualização e exportaç�
 Os indicadores estão agrupados por categorias temáticas. Cada item detalha o seu propósito
 funcional, as tabelas/modelos consultados no banco de dados e a estrutura do dado retornado.
 
+A versão legível para usuários ficou em **`/relatorios/bi/indicadores`** (Guia de Indicadores),
+gerada a partir de `app/relatorios/catalogo.py`: cada indicador traz o que mede, como é calculado
+(sem SQL), unidade, filtros aplicáveis e não aplicáveis, pegadinhas e relacionados. Os códigos
+que deixaram de ser oferecidos na Central continuam funcionando na API e no XLSX como aliases
+explícitos, com o mesmo resultado.
+
 ## Glossário do catálogo
 
 Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_AuditoriaBI.md`) e vale para toda a Central:
@@ -30,7 +36,8 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 7. [Categoria: Atendimento](#7-categoria-atendimento)
 8. [Categoria: Indicadores Cruzados (CRU)](#8-categoria-indicadores-cruzados-cru)
 9. [Visualizações e Exportações](#9-visualizações-e-exportações)
-10. [Pendências do catálogo](#10-pendências-do-catálogo-bi-pósrelease--aj12aj14aj15)
+10. [Guia de Indicadores](#10-guia-de-indicadores)
+11. [Pendências do catálogo](#11-pendências-do-catálogo-bi-pósrelease--aj12aj14aj15)
 
 (Além do [Glossário do catálogo](#glossário-do-catálogo), logo após a introdução.)
 
@@ -38,12 +45,12 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 
 ## 1. Categoria: Alunos
 
-### ALU-001: Total de alunos com cadastro ativo no período
+### ALU-001: Alunos ativos no período (enturmados + não enturmados)
 - **O que faz:** Conta alunos com `Aluno.ativo=True` no escopo do período, incluindo Novo, Renovado, Retornante e todas as categorias de não enturmados. Exclui cadastros inativos. ALU-001 deve ser igual a ALU-011 + ALU-012.
 - **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Um número inteiro (`int`) com a contagem total.
 
-### ALU-002: Alunos com cadastro ativo
+### ALU-002: Alunos com cadastro ativo (base cadastral)
 - **O que faz:** Retorna o total de alunos cujo cadastro está ativo (`Aluno.ativo=True`). Esse indicador representa a situação cadastral, não a enturmação no período.
 - **Onde busca os dados:** Tabela/Modelo `Aluno`; filtros de curso/professor resolvem pela OFERTA (`Inscricao.turma_curso_id` → `TurmaCurso`).
 - **O que retorna:** Um número inteiro (`int`).
@@ -53,7 +60,7 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** Tabela/Modelo `Aluno`; filtros de curso/professor resolvem pela OFERTA (`Inscricao.turma_curso_id` → `TurmaCurso`).
 - **O que retorna:** Um número inteiro (`int`).
 
-### ALU-004: Novos cadastros
+### ALU-004: Cadastros novos no intervalo (data de criação)
 - **O que faz:** Conta registros **criados** em `Aluno.created_at` dentro do intervalo selecionado — **cadastro novo**, não "aluno novo no período" (ver Glossário; distinção travada na auditoria AJ12). Com período informado, usa `PeriodoLetivo.data_inicio` e `data_fim`; sem período, usa o período ativo vigente de cada unidade. Não exige enturmação nem `Aluno.ativo=True`; registros com `created_at` nulo não entram. O filtro de turno não se aplica a cadastros.
 - **Onde busca os dados:** Tabela/Modelo `Aluno` (`created_at`).
 - **O que retorna:** Um número inteiro (`int`).
@@ -68,7 +75,7 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`, na ordem das faixas definidas, omitindo faixas com zero alunos.
 
-### ALU-007: Alunos PCD enturmados
+### ALU-007: Alunos PCD enturmados no período (base P)
 - **O que faz:** Conta alunos enturmados em P (Novo + Renovado + Retornante) identificados como PCD, usando `PerfilDiversidade.saude_laudo` ou o fallback legado `Aluno.diversidade_json`. **Base distinta de DIV-001:** ALU-007 restringe à enturmação em P; DIV-001 distribui todos os alunos com perfil PCD (ver DIV-001) — os totais não são comparáveis entre si.
 - **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `Turma`, `PeriodoLetivo` e `PerfilDiversidade`.
 - **O que retorna:** Um número inteiro (`int`).
@@ -82,14 +89,14 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **O que faz:** Agrupa por curso e conta alunos distintos enturmados em P/D (Novo + Renovado + Retornante), com inscrição vigente. O curso vem da OFERTA da inscrição (`TurmaCurso.curso_id`), não da turma. Cada aluno conta uma vez dentro de cada curso, de modo que a soma dos cursos pode exceder o total de alunos distintos da unidade. Sem período explícito, usa o período vigente de cada unidade.
 - **Onde busca os dados:** `app.services.aluno_status`, `Aluno`, `Inscricao`, `TurmaCurso`, `Curso` e `PeriodoLetivo`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
-- **Pendente (BI pós-release, AJ12):** o filtro de **turno** ainda não se aplica a este indicador; decisão registrada no backlog (AJ15).
+- **Filtro de turno:** entra na seleção da coorte via `status_alunos_para_bi`, mas a agregação por curso não restringe as inscrições pelo turno. Decisão registrada em 27/11/2026: manter o cálculo e avisar na Central quando um filtro visível não for integralmente aplicado (pendência futura).
 
 ### ALU-010: Alunos por turma
 - **O que faz:** Agrupa e conta a quantidade de alunos distintos vinculados a cada turma. Cada aluno conta UMA vez por turma, mesmo inscrito em mais de uma oferta; filtros de curso/professor resolvem pela OFERTA (`TurmaCurso`).
 - **Onde busca os dados:** Tabelas `Aluno`, `Inscricao`, `TurmaCurso` e `Turma`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
-### ALU-011: Alunos enturmados no período
+### ALU-011: Alunos enturmados no período (status P)
 - **O que faz:** Conta alunos classificados como Novo, Renovado ou Retornante, isto é, com vínculo vigente em uma turma do período na data de referência.
 - **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Um número inteiro (`int`) de alunos distintos.
@@ -99,7 +106,7 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** `app.services.aluno_status`, a partir de `Aluno`, `Inscricao`, `Turma` e `PeriodoLetivo`.
 - **O que retorna:** Um número inteiro (`int`) de alunos distintos.
 
-### ALU-013: Alunos novos no período
+### ALU-013: Alunos novos no período (sem histórico na unidade)
 - **O que faz:** Conta alunos enturmados em P sem inscrição em qualquer período anterior da mesma unidade.
 - **Onde busca os dados:** `app.services.aluno_status`.
 - **O que retorna:** Um número inteiro (`int`) de alunos distintos.
@@ -150,13 +157,13 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** Tabela/Modelo `Inscricao`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### INS-004: Novas inscrições
-- **O que faz:** Retorna o volume de inscrições com **início** (`Inscricao.data_inicio`) no período informado — "nova" aqui é **início de vigência**, não data de criação do registro (semântica fixada na auditoria AJ12; a alternativa de usar `created_at` ficou pendente de decisão de negócio).
+### INS-004: Inscrições no intervalo (código legado de INS-001)
+- **O que faz:** Retorna o volume de inscrições com **início** (`Inscricao.data_inicio`) no período informado — "nova" aqui é **início de vigência**, não data de criação do registro. A consulta é idêntica à de INS-001, inclusive com intervalo de datas; o código saiu da Central como alias explícito.
 - **Onde busca os dados:** Tabela/Modelo `Inscricao` (`data_inicio`).
 - **O que retorna:** Um número inteiro (`int`).
 
-### INS-005: Desativações
-- **O que faz:** Retorna a contagem de inscrições desativadas.
+### INS-005: Inscrições inativas (código legado de INS-003)
+- **O que faz:** Conta inscrições com `Inscricao.ativo=False` em turmas ativas — exatamente a mesma contagem de INS-003. O código saiu da Central como alias explícito; a API e o XLSX continuam retornando o mesmo resultado.
 - **Onde busca os dados:** Tabela/Modelo `Inscricao`.
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -170,6 +177,11 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **O que faz:** Agrupa e conta o total de inscrições vinculadas a cada curso; o curso vem da OFERTA da inscrição (`Inscricao.turma_curso_id` → `TurmaCurso.curso_id`).
 - **Onde busca os dados:** Tabelas `Inscricao`, `TurmaCurso` e `Curso`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
+
+### INS-009: Inscrições iniciadas no período
+- **O que faz:** Conta inscrições em turmas ativas cuja `Inscricao.data_inicio` está dentro de `PeriodoLetivo.data_inicio..data_fim` (bordas inclusive). Sem período escolhido, usa o período vigente de cada unidade na data atual, como ALU-004. Unidade, curso e professor usam a OFERTA da inscrição; turno vem da oferta, com o turno legado da turma como fallback. Não é estoque de inscrições (INS-001/ alias INS-004) nem cadastro novo (ALU-004/ALU-013).
+- **Onde busca os dados:** Tabelas `Inscricao`, `Turma`, `TurmaCurso`, `Curso`, `PeriodoLetivo` e `User` (professor da oferta).
+- **O que retorna:** Um número inteiro (`int`).
 
 ---
 
@@ -195,7 +207,7 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um número inteiro (`int`).
 
-### FRE-005: Frequência média
+### FRE-005: Frequência média ponderada por lançamentos
 - **O que faz:** Calcula a **taxa global ponderada por lançamento** de frequência — presenças / (presenças + faltas) sobre **todas as linhas** do escopo, desconsiderando faltas justificadas (`J` fora de numerador e denominador). **Não é** a média aritmética dos percentuais por aluno: alunos com mais lançamentos pesam mais (distinção travada na auditoria AJ12). Arredondado a 1 casa, pelo serviço `app/services/frequencia_oferta.py`; curso/professor pela OFERTA da linha (legado segue a regra D2).
 - **Onde busca os dados:** Tabela/Modelo `Frequencia` (e `TurmaCurso` para filtros de curso/professor).
 - **O que retorna:** Um valor percentual arredondado (`float`).
@@ -229,8 +241,8 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 
 ## 4. Categoria: Turmas
 
-### TUR-001: Turmas ativas
-- **O que faz:** Retorna o total de turmas **ativas** (`Turma.ativo=True`) conforme os filtros aplicados — descreve exatamente a implementação (alinado no AJ12; "total geral" com inativas seria mudança de regra, registrada como decisão em aberto na seção de duplicados).
+### TUR-001: Turmas ativas (código legado de TUR-002)
+- **O que faz:** Conta turmas com `Turma.ativo=True`, exatamente como TUR-002. O nome antigo ("Total de turmas") era enganoso: inativas nunca entraram na contagem. O código saiu da Central como alias explícito.
 - **Onde busca os dados:** Tabela/Modelo `Turma`.
 - **O que retorna:** Um número inteiro (`int`).
 
@@ -239,15 +251,16 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** Tabela/Modelo `Turma`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### TUR-003: Alunos por turma
-- **O que faz:** Equivalente a `ALU-010`, mapeando o total de alunos por turma.
+### TUR-003: Alunos por turma (código legado de ALU-010)
+- **O que faz:** Alias explícito de ALU-010: aponta para a mesma função e devolve os mesmos resultados. O código saiu da Central, mas continua resolvendo na API e no XLSX.
 - **Onde busca os dados:** Tabelas `Turma` e `Inscricao`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": int, "nome": str, "valor": int}, ...]`.
 
-### TUR-004: Média de alunos por turma
-- **O que faz:** Calcula a média aritmética de alunos ativos por turma no escopo filtrado.
-- **Onde busca os dados:** Tabelas `Turma` e `Inscricao`.
+### TUR-004: Média de alunos distintos por turma
+- **O que faz:** Soma os alunos distintos apurados por ALU-010 em cada turma e divide pelo número de turmas ativas do escopo, arredondando a uma casa decimal. O denominador continua sendo o histórico (turmas ativas com os filtros aplicados à própria turma); uma pessoa em duas ofertas da mesma turma conta uma vez. Turma ativa sem aluno entra com zero no numerador.
+- **Onde busca os dados:** Tabelas `Turma`, `Aluno`, `Inscricao` e `TurmaCurso`; serviço `app.services.aluno_status`.
 - **O que retorna:** Um valor decimal (`float`).
+- **Antes × depois:** no cenário de `tests/test_bi_turma_desativada.py`, o numerador passou de 5 linhas de inscrição para 4 alunos distintos; o resultado caiu de `5 ÷ 2 = 2,5` para `4 ÷ 2 = 2,0`.
 
 ### TUR-005: Turmas por curso
 - **O que faz:** Agrupa e conta turmas por **curso da OFERTA ativa** (`TurmaCurso.curso_id`), e não pelo curso legado da turma; cada turma conta **uma vez por curso** (implementado no AJ14). Turma sem oferta ativa com curso não entra na distribuição.
@@ -327,7 +340,7 @@ Termos fixados na auditoria do AJ12 (§5 do relatório `docs/Relatórios/AJ12_Au
 - **Onde busca os dados:** Tabelas `Aluno` e `PerfilSocioeconomico`.
 - **O que retorna:** Um número inteiro (`int`).
 
-### DIV-001: Alunos por tipo de deficiência
+### DIV-001: Alunos com perfil PCD por tipo (todos os cadastros)
 - **O que faz:** Distribui os alunos PCD por tipo de deficiência declarada, sobre **todos os alunos com perfil** (não restringe à enturmação em P — **base distinta de ALU-007**, que conta só enturmados em P). Um aluno com **mais de um tipo** declarado é contado **em cada tipo**, por isso a soma das categorias **pode exceder** o total de alunos PCD distintos.
 - **Onde busca os dados:** Tabelas `Aluno` e `PerfilDiversidade`.
 - **O que retorna:** Uma lista de dicionários estruturados: `[{"id": str, "nome": str, "valor": int}, ...]`.
@@ -491,17 +504,49 @@ curso, turma e professor são aceitos pela API/exportação, mas **não possuem 
 
 ---
 
-## 10. Pendências do catálogo (BI pós-release — AJ12/AJ14/AJ15)
+## 10. Guia de Indicadores
 
-Registradas no backlog (entrada de 05/11/2026), sem alteração de código neste documento:
+A página **`/relatorios/bi/indicadores`** é a interface legível deste catálogo. Ela usa
+`INDICADORES`, `GUIA_METADADOS`, `GLOSSARIO_GUIA`, `ALIASES` e `VERSAO_CATALOGO` como fonte
+única: nome/categoria/unidade/tipo vêm do catálogo; "o que mede", "como é calculado", filtros,
+pegadinhas e relacionados vêm dos metadados do guia. Não há SQL nem código de tarefa no texto
+exibido. A Central linka o guia no cabeçalho e cada resultado traz "Como é calculado" apontando
+para a âncora do código.
 
-- **CRU-004** deve apurar o **curso de origem pela OFERTA** da inscrição transferida (hoje resolve por turma/curso legado).
-- **ALU-009** deve passar a aceitar o **filtro de turno** (ver nota no item).
-- **TUR-004** deve contar **aluno distinto** por turma (hoje é média sobre linhas de inscrição).
-- **Consolidar duplicados:** INS-003/INS-005 (mesmo critério de inscrição inativa), TUR-001/TUR-002 (ambos contam turmas ativas), ALU-010/TUR-003 (aliases da mesma função).
-- **Implementar INS-006/INS-007** com critérios aprovados (hoje indisponíveis e ocultos da Central).
-- **DIV-001 vs ALU-007:** bases distintas documentadas; eventual unificação depende de decisão de negócio.
+A ajuda contextual da Central segue a mesma fonte: o botão **Como ler a Central** explica siglas,
+categorias, tipos de resultado, unidades e filtros; o botão **ⓘ Entender este indicador** abre
+código, nome, o que mede, regra, unidade, filtros respeitados/não aplicáveis, "não confundir com"
+e links para o guia e para o PDF. Quando um filtro visível selecionado é ignorado, o mesmo texto
+do catálogo aparece no aviso da Central, no modal e no guia. O botão **Baixar guia (PDF)** abre
+`/relatorios/bi/indicadores?imprimir=1`, que usa o modelo de impressão A4 e o nome padrão já
+existentes — sem biblioteca nova no servidor. Versão atual do catálogo: `1.2`.
+
+Códigos ocultos da Central — `INS-004`, `INS-005`, `TUR-001`, `TUR-003`, `INS-006` e `INS-007` —
+continuam no catálogo. Os quatro primeiros são aliases com resultado idêntico aos canônicos
+(`INS-001`, `INS-003`, `TUR-002` e `ALU-010`, respectivamente); os dois últimos seguem
+indisponíveis, como antes. A prova com múltiplos filtros está em
+`docs/Relatórios/AJ33_GuiaIndicadoresBI.md`.
 
 ---
 
-_Última atualização: 2026-11-05 — glossário e correções da auditoria AJ12 (§5 do relatório) e das correções do AJ14 (INS-006/007 ocultos, TUR-005/008 por oferta, CRU-002 por resposta preenchida, CRU-005 só com `situacao_final`), registradas na tarefa AJ15._
+## 11. Pendências do catálogo (BI pós-release — AJ12/AJ14/AJ15)
+
+Registradas no backlog (entrada de 05/11/2026), sem alteração de cálculo neste documento:
+
+- **CRU-004** deve apurar o **curso de origem pela OFERTA** da inscrição transferida (hoje resolve por turma/curso legado).
+- **ALU-009:** turno seleciona a coorte, mas não restringe a distribuição por curso; decisão mantida e aviso implementado na Central, no modal e no guia.
+- **TUR-004:** passou a contar **aluno distinto** por turma; nome, descrição, fórmula, unidade e observações foram ajustados no catálogo e neste inventário.
+- **Duplicados resolvidos:** INS-003/INS-005, TUR-001/TUR-002 e ALU-010/TUR-003 passaram a alias explícito; INS-001/INS-004 também provou equivalência e recebeu o mesmo tratamento. Nenhum código foi apagado ou reutilizado.
+- **Implementar INS-006/INS-007** com critérios aprovados (hoje indisponíveis e ocultos da Central).
+- **DIV-001 vs ALU-007:** decisão de 27/11/2026 de manter ambos; bases distintas documentadas no guia.
+- **Decisão de 27/11/2026 — manter indicadores parecidos:** ALU-014/ALU-018, INS-008, TUR-004, DIV-001/ALU-007, FRE-005, AUL-007 e CRU-002/CRU-005 têm regras distintas; nomes e guia os diferenciam, sem remoção. A única alteração de cálculo autorizada depois dessa decisão foi a de TUR-004 na AJ34.
+
+### Pendências futuras (registradas em 27/11/2026)
+
+- **Concluída na AJ34:** TUR-004 passou a contar **aluno distinto** por turma; nome, descrição e fórmula atualizados.
+- **Concluída na AJ34:** aviso de filtro não aplicado quando um filtro visível selecionado é ignorado — AUL-006/período e ALU-009/turno.
+- **Concluída na AJ34:** `INS-009` mede inscrições com início no período; `INS-004` permanece apenas como alias de `INS-001` e não foi reutilizado.
+
+---
+
+_Última atualização: 2026-11-27 (AJ34) — ajuda contextual na Central, aviso de filtro ignorado, TUR-004 por aluno distinto e INS-009; guia e catálogo na versão 1.2._

@@ -480,6 +480,8 @@ def test_alu004_conta_cadastros_no_intervalo_sem_exigir_enturmacao(app):
 
 @pytest.mark.parametrize("codigo", ("INS-006", "INS-007"))
 def test_ins_nao_implementado_nao_aparece_na_central(codigo, app):
+    # INS-006/007 continuam indistinguíveis dos aliases ocultos na lista da
+    # Central: a seleção passou a vir de `indicadores_visiveis_na_central()`.
     with app.app_context():
         unidade = Unidade(nome="Unidade BI Central", ativo=True)
         db.session.add(unidade)

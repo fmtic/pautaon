@@ -3,7 +3,7 @@
 """Camada de execução dos indicadores do BI do pautaON."""
 
 from . import bi_alunos
-from .catalogo import obter_indicador
+from .catalogo import obter_indicador, resolver_codigo
 
 INDICADORES_ALUNOS = {
     "ALU-001": bi_alunos.total_alunos,
@@ -32,6 +32,7 @@ INDICADORES_ALUNOS = {
     #INS-006 → motivo da desativação → não implementado, pois não há dados
     #INS-007 → tempo médio de permanência → não implementado, pois não há registros com data_desativacao
     "INS-008": bi_alunos.inscricoes_por_curso,
+    "INS-009": bi_alunos.inscricoes_iniciadas_no_periodo,
     "FRE-001": bi_alunos.total_lancamentos_frequencia,
     "FRE-002": bi_alunos.total_presencas,
     "FRE-003": bi_alunos.total_faltas,
@@ -76,13 +77,18 @@ INDICADORES_STATUS_ALUNO = frozenset(
 
 
 def executar_indicador(codigo, **filtros):
-    """Executa um indicador previamente cadastrado no catálogo."""
+    """Executa um indicador previamente cadastrado no catálogo.
+
+    Códigos legados (aliases explícitos) são resolvidos para o canônico antes
+    da execução: o cálculo, os filtros e o resultado são exatamente os mesmos.
+    """
 
     indicador = obter_indicador(codigo)
 
     if indicador is None:
         raise ValueError(f"Indicador '{codigo}' não existe no catálogo.")
 
+    codigo = resolver_codigo(codigo)
     funcao = INDICADORES_ALUNOS.get(codigo)
 
     if funcao is None:

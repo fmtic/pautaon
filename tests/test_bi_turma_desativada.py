@@ -215,9 +215,10 @@ def test_total_turmas_exclui_desativada_e_coincide_com_turmas_ativas(cenario):
 
 
 def test_media_alunos_por_turma_usa_helper(cenario):
-    # Numerador (inscrições enturmadas): turma1=5 (a1,a2,a4,a6x2), turma2=0;
-    # denominador = 2 turmas ativas. 5 / 2 = 2,5.
-    assert media_alunos_por_turma() == pytest.approx(2.5)
+    # Numerador (alunos distintos de ALU-010): turma1=4 (a1,a2,a4,a6 uma vez),
+    # turma2=0; denominador = 2 turmas ativas. 4 / 2 = 2,0.
+    # Antes da AJ34 eram 5 linhas de inscrição / 2 = 2,5.
+    assert media_alunos_por_turma() == pytest.approx(2.0)
 
 
 def test_alunos_por_unidade_conta_cada_aluno_uma_vez(cenario):

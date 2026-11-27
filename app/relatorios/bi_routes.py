@@ -11,7 +11,28 @@ from app.models import Unidade, PeriodoLetivo
 
 from . import bp_relatorios
 from .bi import executar_indicador
-from .catalogo import DIMENSOES, listar_indicadores
+from .catalogo import (
+    DIMENSOES,
+    FILTROS_AJUDA,
+    FILTROS_CENTRAL,
+    FILTROS_PARCIAIS,
+    FILTROS_POSSIVEIS,
+    GLOSSARIO_GUIA,
+    GUIA_METADADOS,
+    ROTULOS_FILTROS_GUIA,
+    TEXTO_FILTRO_NAO_APLICADO,
+    ULTIMA_REVISAO_CATALOGO,
+    VERSAO_CATALOGO,
+    CODIGOS_OCULTOS_DA_CENTRAL,
+    categorias_para_guia,
+    dados_ajuda_central,
+    indicadores_para_guia,
+    indicadores_visiveis_na_central,
+    listar_indicadores,
+    resolver_codigo,
+    sigla_do_codigo,
+    titulo_sigla,
+)
 from .shared import ROLES_RELATORIOS
 from app.utils.logica import get_unidade_id
 
@@ -19,6 +40,93 @@ from app.utils.logica import get_unidade_id
 # Papéis com visão global (multiunidade) no BI. Os demais papéis autorizados
 # (pedagógico, secretaria) ficam restritos à própria unidade.
 _ROLES_GLOBAIS_BI = ("admin", "gerencia")
+
+
+def _sem_codigos_ocultos(valor):
+    """Remove do texto da Central aliases e indicadores indisponíveis.
+
+    O guia mantém o texto integral; a Central continua sem oferecer nem
+    mencionar códigos que não estão disponíveis nela.
+    """
+    if isinstance(valor, str):
+        if any(codigo in valor for codigo in CODIGOS_OCULTOS_DA_CENTRAL):
+            return None
+        return valor
+    if isinstance(valor, (list, tuple)):
+        limpo = [_sem_codigos_ocultos(item) for item in valor]
+        return [item for item in limpo if item is not None]
+    if isinstance(valor, dict):
+        return {
+            chave: limpo
+            for chave, item in valor.items()
+            if (limpo := _sem_codigos_ocultos(item)) is not None
+        }
+    return valor
+
+
+def _metadados_ajuda_central():
+    """Metadados de ajuda da Central, lidos somente do catálogo.
+
+    Não há SQL, número ou regra de cálculo aqui: a função apenas transforma
+    os textos e a lista de filtros de `catalogo.py` no formato usado pelos
+    modais e pelo aviso de filtro não aplicado.
+    """
+    metadados = {}
+    for codigo, indicador in indicadores_visiveis_na_central().items():
+        canonico = resolver_codigo(codigo)
+        detalhe = GUIA_METADADOS.get(canonico, {})
+        respeitados = set(detalhe.get("filtros", ()))
+        parciais = FILTROS_PARCIAIS.get(canonico, {})
+        ignorados = {}
+
+        filtros = []
+        for chave in FILTROS_POSSIVEIS:
+            rotulo = ROTULOS_FILTROS_GUIA[chave]
+            if chave in parciais:
+                # Turno parcialmente aplicado (ALU-009) aparece como "parcial";
+                # quando o catálogo já marca o filtro como não aplicável
+                # (AUL-006/período), mantém o rótulo de não aplicável e usa o
+                # texto específico do catálogo.
+                situacao = (
+                    "parcial" if chave in respeitados else "nao_aplicavel"
+                )
+                texto = parciais[chave]
+                ignorados[chave] = texto
+            elif chave in respeitados:
+                situacao = "aplicavel"
+                texto = FILTROS_AJUDA.get(chave, "")
+            else:
+                situacao = "nao_aplicavel"
+                texto = TEXTO_FILTRO_NAO_APLICADO.format(rotulo=rotulo)
+                ignorados[chave] = texto
+            filtros.append(
+                {
+                    "chave": chave,
+                    "rotulo": rotulo,
+                    "situacao": situacao,
+                    "texto": texto,
+                }
+            )
+
+        metadados[codigo] = {
+            "codigo": codigo,
+            "nome": indicador["nome"],
+            "sigla": sigla_do_codigo(codigo),
+            "titulo_sigla": titulo_sigla(codigo, indicador.get("categoria")),
+            "tipo": indicador["tipo"],
+            "unidade": indicador["unidade"],
+            "fonte": indicador.get("fonte", "—"),
+            "mede": detalhe.get("mede", ""),
+            "regra": detalhe.get("regra", ""),
+            "observacoes": list(detalhe.get("observacoes", ())),
+            "relacionados": [
+                {"codigo": relacionado, "motivo": motivo}
+                for relacionado, motivo in detalhe.get("relacionados", ())
+            ],
+            "filtros": filtros,
+            "ignorados": ignorados,
+        }
+    return _sem_codigos_ocultos(metadados)
 
 
 def _escopar_unidade(filtros):
@@ -52,12 +160,10 @@ def bi_dashboard():
         abort(403)
 
     # Organiza os indicadores por categoria para exibição no template.
-    indicadores = listar_indicadores()
-
+    # AJ33: a seleção passa a vir do catálogo (aliases e indisponíveis já
+    # filtrados), mantendo a ordem/agrupamento histórico da Central.
     categorias = {}
-    for codigo, indicador in indicadores.items():
-        if codigo in {"INS-006", "INS-007"}:
-            continue
+    for codigo, indicador in indicadores_visiveis_na_central().items():
         categoria = indicador["categoria"]
         categorias.setdefault(categoria, []).append((codigo, indicador))
 
@@ -84,6 +190,26 @@ def bi_dashboard():
         unidades=unidades,
         periodos=periodos,
         turnos=turnos,
+        ajuda=_sem_codigos_ocultos(dados_ajuda_central()),
+        metadados_ajuda=_metadados_ajuda_central(),
+        filtros_central=list(FILTROS_CENTRAL),
+    )
+
+
+@bp_relatorios.route("/bi/indicadores")
+@login_required
+def bi_guia_indicadores():
+    """Guia de Indicadores — mesma porta de entrada da Central de BI."""
+    if current_user.role not in ROLES_RELATORIOS:
+        abort(403)
+
+    return render_template(
+        "relatorios/guia_indicadores.html",
+        categorias=categorias_para_guia(),
+        glossario=GLOSSARIO_GUIA,
+        rotulos_filtros=ROTULOS_FILTROS_GUIA,
+        versao_catalogo=VERSAO_CATALOGO,
+        ultima_revisao=ULTIMA_REVISAO_CATALOGO,
     )
 
 
@@ -126,7 +252,9 @@ def bi_api_dados():
             filtros[chave] = valor
 
     try:
-        funcao = INDICADORES_ALUNOS.get(codigo)
+        # Códigos legados são aliases explícitos: calculam exatamente o mesmo.
+        codigo_calculo = resolver_codigo(codigo)
+        funcao = INDICADORES_ALUNOS.get(codigo_calculo)
         if funcao and filtros:
             parametros_aceitos = inspect.signature(funcao).parameters
             filtros = {
@@ -181,7 +309,8 @@ def bi_exportar_xlsx():
     try:
         from .bi import INDICADORES_ALUNOS
 
-        funcao = INDICADORES_ALUNOS.get(codigo)
+        codigo_calculo = resolver_codigo(codigo)
+        funcao = INDICADORES_ALUNOS.get(codigo_calculo)
         if funcao is None:
             return jsonify({"erro": f"Indicador '{codigo}' não implementado."}), 404
 
@@ -323,7 +452,8 @@ def bi_indicador(codigo):
     try:
         from .bi import INDICADORES_ALUNOS
 
-        funcao = INDICADORES_ALUNOS.get(codigo)
+        codigo_calculo = resolver_codigo(codigo)
+        funcao = INDICADORES_ALUNOS.get(codigo_calculo)
 
         if funcao:
             parametros_aceitos = inspect.signature(funcao).parameters
