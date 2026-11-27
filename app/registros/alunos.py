@@ -331,27 +331,98 @@ def buscar_instituicoes():
     )
 
 
+def _atualizar_nivel_ajax():
+    """AJ32: detecta requisição AJAX/JSON para autosave do nível."""
+    if request.is_json:
+        return True
+    accept = (request.headers.get("Accept") or "")
+    if "application/json" in accept:
+        return True
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _atualizar_nivel_payload():
+    """AJ32: lê payload de form ou JSON, mantendo fallback do form."""
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            data = {}
+        return data
+    return request.form
+
+
+def _atualizar_nivel_resposta(ok, status=200, redirect_url=None, flash_categoria=None,
+                              flash_mensagem=None, **dados):
+    """AJ32: JSON para AJAX, redirect+flash para fallback sem JS."""
+    if _atualizar_nivel_ajax():
+        corpo = {"ok": ok}
+        corpo.update(dados)
+        if "mensagem" not in corpo and "message" in corpo:
+            corpo["mensagem"] = corpo["message"]
+        return jsonify(corpo), status
+    if flash_mensagem:
+        flash(flash_mensagem, flash_categoria or ("success" if ok else "danger"))
+    if redirect_url:
+        return redirect(redirect_url)
+    return redirect(url_for("registros.gerenciar_alunos"))
+
+
 @bp.route("/aluno/<int:aluno_id>/atualizar-nivel", methods=["POST"])
 @login_required
 def atualizar_nivel_aluno(aluno_id):
-    if current_user.role not in (
+    permitido = current_user.role in (
         UserRole.ADMIN,
         UserRole.PEDAGOGICO,
         UserRole.SECRETARIA,
-    ):
+    )
+    if not permitido:
+        if _atualizar_nivel_ajax():
+            return jsonify({"ok": False, "message": "Permissão negada."}), 403
         abort(403)
 
     aluno = db.get_or_404(Aluno, aluno_id)
-    nivel = request.form.get("nivel")
-    turma_id = request.form.get("turma_id")
-    turma_curso_id = request.form.get("turma_curso_id")
+    if _atualizar_nivel_ajax() and aluno.unidade_id != get_unidade_id():
+        # AJAX precisa de JSON 404/403 claro; preserva isolamento por unidade
+        # efetiva do contexto (mesmo critério usado nas leituras da ficha).
+        return jsonify({"ok": False, "message": "Aluno não encontrado."}), 404
+
+    payload = _atualizar_nivel_payload()
+    nivel = payload.get("nivel")
+    turma_id = payload.get("turma_id")
+    turma_curso_id = payload.get("turma_curso_id")
+
+    def _redirect_destino():
+        if turma_id:
+            try:
+                return url_for("registros.ver_turma", id=int(turma_id))
+            except (ValueError, TypeError):
+                pass
+        return url_for("registros.gerenciar_alunos")
+
+    redirect_url = _redirect_destino()
 
     turma_curso = None
-    if turma_curso_id:
+    if turma_curso_id not in (None, ""):
         try:
             turma_curso = db.session.get(TurmaCurso, int(turma_curso_id))
         except (ValueError, TypeError):
             turma_curso = None
+
+    ajax = _atualizar_nivel_ajax()
+    if turma_curso is None:
+        if ajax:
+            msg = "Oferta inválida para atualização de nível."
+            return jsonify({"ok": False, "message": msg}), 400
+        # Fallback sem JS: preserva comportamento antigo (sem turma_curso,
+        # atualiza apenas aluno.nivel com validação legada).
+        turma_curso = None
+    elif turma_curso.unidade_id != get_unidade_id() or aluno.unidade_id != turma_curso.unidade_id:
+        msg = "Aluno ou oferta não encontrado."
+        return _atualizar_nivel_resposta(
+            False, 404, redirect_url=redirect_url,
+            flash_categoria="danger", flash_mensagem=msg,
+            message=msg,
+        )
 
     inscricao = None
     if turma_curso:
@@ -360,6 +431,10 @@ def atualizar_nivel_aluno(aluno_id):
             aluno_id=aluno.id,
             ativo=True,
         ).first()
+        if ajax and inscricao is None:
+            msg = "Inscrição ativa não encontrada para esta oferta."
+            return jsonify({"ok": False, "message": msg}), 404
+
     # AJ22-F: mesmo critério da ficha (`inscricao.nivel or aluno.nivel`) para
     # reconhecer o valor já gravado — um texto livre/de outro curso continua
     # sendo aceito quando o usuário apenas reenvia o select sem mudança.
@@ -367,13 +442,13 @@ def atualizar_nivel_aluno(aluno_id):
         inscricao.nivel if inscricao and inscricao.nivel else None
     ) or aluno.nivel
 
-    if nivel == "Não se aplica":
-        aluno.nivel = None
-    elif nivel:
-        # AJ22-E: se turma_curso_id foi informada, sanitização defensiva
-        # garante que o nível pertence ao curso da oferta correspondente.
-        # AJ22-F: exceção para o valor atual, exibido como "(atual)" na ficha
-        # mesmo fora do catálogo/do curso — salvar sem mudar não apaga o dado.
+    nivel_solicitado = "" if nivel is None else str(nivel)
+    if nivel_solicitado == "Não se aplica":
+        novo_nivel = None
+    elif nivel_solicitado:
+        # AJ22-E: sanitização defensiva garante que o nível pertence ao curso
+        # da oferta. AJ22-F: exceção para o valor atual, exibido como "(atual)"
+        # na ficha mesmo fora do catálogo/do curso — reenviar sem mudar não apaga.
         if turma_curso:
             niveis_validos = {
                 n.nome
@@ -383,28 +458,62 @@ def atualizar_nivel_aluno(aluno_id):
                     Nivel.ativo == True,
                 ).all()
             }
-            if nivel in niveis_validos or nivel == nivel_atual:
-                aluno.nivel = nivel
+            if nivel_solicitado in niveis_validos or nivel_solicitado == nivel_atual:
+                novo_nivel = nivel_solicitado
             else:
-                aluno.nivel = None
+                novo_nivel = None
         else:
-            aluno.nivel = nivel
+            # Legado (form sem turma_curso): aceita o valor enviado, como antes.
+            novo_nivel = nivel_solicitado
+    else:
+        novo_nivel = None
 
+    # AJ32: idempotente — reenviar o mesmo nível efetivo não grava nem gera log.
+    estado_atual_inscricao = inscricao.nivel if inscricao and inscricao.nivel else None
+    estado_atual_aluno = aluno.nivel or None
+    mudou = (estado_atual_aluno != novo_nivel) or (
+        inscricao is not None and estado_atual_inscricao != novo_nivel
+    )
+    if not mudou:
+        msg = "Nível já estava atualizado."
+        return _atualizar_nivel_resposta(
+            True, 200, redirect_url=redirect_url,
+            flash_categoria="success", flash_mensagem=f"Nível do aluno {aluno.nome} atualizado com sucesso!",
+            message=msg,
+            nivel_id=None,
+            nivel_nome=novo_nivel or "Não se aplica",
+            nivel_valor=novo_nivel or "Não se aplica",
+            aluno_id=aluno.id,
+            turma_curso_id=turma_curso.id if turma_curso else None,
+        )
+
+    aluno.nivel = novo_nivel
     if inscricao:
-        inscricao.nivel = aluno.nivel
+        inscricao.nivel = novo_nivel
 
     try:
         db.session.commit()
-        flash(f"Nível do aluno {aluno.nome} atualizado com sucesso!", "success")
     except Exception as exc:
         from app.utils.errors import flash_and_log
 
         db.session.rollback()
+        msg = "Erro ao salvar o nível. Tente novamente."
+        if ajax:
+            return jsonify({"ok": False, "message": msg}), 500
         flash_and_log(exc, location="registros.atualizar_nivel_aluno", hint="db")
+        return redirect(redirect_url)
 
-    if turma_id:
-        return redirect(url_for("registros.ver_turma", id=turma_id))
-    return redirect(url_for("registros.gerenciar_alunos"))
+    sucesso_msg = f"Nível do aluno {aluno.nome} atualizado com sucesso!"
+    return _atualizar_nivel_resposta(
+        True, 200, redirect_url=redirect_url,
+        flash_categoria="success", flash_mensagem=sucesso_msg,
+        message=sucesso_msg,
+        nivel_id=None,
+        nivel_nome=novo_nivel or "Não se aplica",
+        nivel_valor=novo_nivel or "Não se aplica",
+        aluno_id=aluno.id,
+        turma_curso_id=turma_curso.id if turma_curso else None,
+    )
 
 
 # =============================================================================

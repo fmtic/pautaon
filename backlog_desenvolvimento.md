@@ -1,3 +1,13 @@
+### Alterações do dia - 27/11/2026 (AJ32 - enturmação: troca de nível do aluno por autosave)
+
+Branch `nova_feature`, **sem migration/schema**, sem commit/push/merge/deploy.
+
+**AJ32.** Na ficha da turma (`/turma/<id>`), a troca de nível do aluno enturmado passou a salvar automaticamente, sem recarregar a página. O endpoint `POST /aluno/<aluno_id>/atualizar-nivel` mantém o comportamento antigo para POST normal (redirect + flash) e passa a responder JSON em requisições AJAX (`Accept`/`X-Requested-With`/JSON), com `ok`, `nivel_id`, `nivel_nome`, `nivel_valor`, `message/mensagem`, `aluno_id` e `turma_curso_id`. Erros de validação/permissão/isolamento retornam JSON com status adequado (400/403/404; 500 em falha inesperada). CSRF continua obrigatório via token do formulário/meta (`X-CSRFToken` no fetch). Permissão e isolamento por unidade efetiva permanecem os mesmos; não houve ampliação. A operação é idempotente: reenviar o mesmo nível efetivo não altera estado. Não foi adicionado `LogAcao` (o endpoint já não registrava log antes; testes AJ4 de rótulos não cobrem esse endpoint).
+
+Na tela, o select de nível perdeu o submit por `onchange`; novo JS `app/static/js/turmas/nivel_autosave.js` aplica debounce de 300 ms, fila por linha (um envio em voo + último estado pendente), indicador discreto por linha (`Salvando…`, `✓ Salvo` com desaparecimento, erro com texto e reversão ao valor confirmado), `aria-live=\"polite\"`, e aviso `beforeunload` quando há pendência/erro. O salvamento automático é informado por texto discreto na linha; nada é recarregado, filtros/rolagem/posição da página são preservados pelo próprio navegador por não haver reload. A impressão oculta o status de autosave.
+
+Testes novos: `tests/test_aj32_enturmacao_nivel_autosave.py` (JSON sucesso, idempotência, 400/403/404, isolamento, fallback form+redirect+flash, CSRF ausente com CSRF habilitado, sem alteração de outros campos) e `tests/test_aj32_nivel_autosave_js.py` (funções puras node: fila, debounce/tempos, reversão, mensagens). Ajuste esperado: snapshot `tests/snapshots/aj6b6_admin_registros_ver_turma.txt` atualizado por conta do novo markup/JS da ficha. Evidências Playwright/Chromium e relatório em `docs/Relatórios/AJ32_EnturmacaoTrocaNivelAutosave.md`.
+
 ### Alterações do dia — 26/11/2026 (AJ17-C — sinalização de conta Google e desvínculo administrativo)
 
 Branch `nova_feature`, **sem migration** (head do código segue `b8c9d0e1f2a3`), sem commit/push/merge/deploy. Nenhuma rota OAuth nova e nenhuma mudança na lógica de login/vínculo existente.

@@ -1,4 +1,16 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+{% block styles %}
+{{ super() }}
+<style>
+  .nivel-autosave-status { min-height: 1.25rem; line-height: 1.2; }
+  .nivel-autosave-msg { display: inline-block; }
+  .nivel-autosave-wrap .form-select.is-saving { opacity: .75; }
+  @media print {
+    .nivel-autosave-status { display: none !important; }
+  }
+</style>
+{% endblock %}
+{% block content %}
 
 
 
@@ -215,27 +227,37 @@
                        servico_social, permanecem inalterados. #}
                     {% if current_user.role != 'professor' %}
                     {% set nivel_atual = inscricao_aluno.nivel or aluno.nivel %}
-                    <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
-                      style="width: 150px">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                      <input type="hidden" name="turma_id" value="{{ turma.id }}" />
-                      <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}" />
-                      <select name="nivel" class="form-select form-select-sm shadow-sm" onchange="this.form.submit()">
-                        {# AJ22-F: o valor já gravado (texto livre/legado/de outro curso) vem
-                           primeiro e marcado como "(atual)". Reenviar o select sem mudar
-                           não apaga o dado: o POST aceita o valor atual. #}
-                        {% if nivel_atual and nivel_atual != 'Não se aplica' %}
-                        <option value="{{ nivel_atual }}" selected>{{ nivel_atual }} (atual)</option>
-                        {% endif %}
-                        <option value="Não se aplica" {% if not nivel_atual or nivel_atual == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
-                        {# AJ22-E: exibe apenas os níveis do curso desta oferta específica #}
-                        {% for nv in niveis_por_curso_id.get(oferta.curso_id, []) %}
-                        {% if nv.nome != nivel_atual %}
-                        <option value="{{ nv.nome }}">{{ nv.nome }}</option>
-                        {% endif %}
-                        {% endfor %}
-                      </select>
-                    </form>
+                    <div class="nivel-autosave-wrap" style="width: 170px"
+                      data-aluno-id="{{ aluno.id }}"
+                      data-turma-id="{{ turma.id }}"
+                      data-turma-curso-id="{{ oferta.id }}"
+                      data-url="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}">
+                      <form action="{{ url_for('registros.atualizar_nivel_aluno', aluno_id=aluno.id) }}" method="POST"
+                        class="nivel-autosave-form m-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input type="hidden" name="turma_id" value="{{ turma.id }}" />
+                        <input type="hidden" name="turma_curso_id" value="{{ oferta.id }}" />
+                        <select name="nivel" class="form-select form-select-sm shadow-sm js-nivel-autosave"
+                          aria-label="Nível de {{ aluno.nome }}">
+                          {# AJ22-F: o valor já gravado (texto livre/legado/de outro curso) vem
+                             primeiro e marcado como "(atual)". Reenviar o select sem mudar
+                             não apaga o dado: o POST aceita o valor atual. #}
+                          {% if nivel_atual and nivel_atual != 'Não se aplica' %}
+                          <option value="{{ nivel_atual }}" selected>{{ nivel_atual }} (atual)</option>
+                          {% endif %}
+                          <option value="Não se aplica" {% if not nivel_atual or nivel_atual == 'Não se aplica' %}selected{% endif %}>Não se aplica</option>
+                          {# AJ22-E: exibe apenas os níveis do curso desta oferta específica #}
+                          {% for nv in niveis_por_curso_id.get(oferta.curso_id, []) %}
+                          {% if nv.nome != nivel_atual %}
+                          <option value="{{ nv.nome }}">{{ nv.nome }}</option>
+                          {% endif %}
+                          {% endfor %}
+                        </select>
+                      </form>
+                      <div class="nivel-autosave-status small mt-1" aria-live="polite" aria-atomic="true">
+                        <span class="nivel-autosave-msg text-muted">Salvamento automático</span>
+                      </div>
+                    </div>
                     {% endif %}
                   </td>
                   <td class="text-end">
@@ -724,5 +746,6 @@ gera para o painel (origem do professor). Demais perfis voltam à lista. #}
 </div>
 
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/turmas/nivel_autosave.js') }}"></script>
 
 {% endblock %}
