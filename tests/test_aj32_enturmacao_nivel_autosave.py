@@ -51,6 +51,7 @@ DATA_FIM = date(2026, 6, 30)
 
 
 def _seed(app):
+    """Seed com níveis acentuados/legado/vazio e aluno em mais de uma oferta."""
     with app.app_context():
         un = Unidade(nome="Unidade AJ32", ativo=True)
         outra = Unidade(nome="Outra AJ32", ativo=True)
@@ -79,7 +80,8 @@ def _seed(app):
         )
         curso = Curso(nome="Curso AJ32", unidade_id=un.id, ativo=True)
         curso2 = Curso(nome="Curso AJ32 B", unidade_id=un.id, ativo=True)
-        db.session.add_all([admin, prof, admin_outra, periodo, curso, curso2])
+        curso3 = Curso(nome="Curso AJ32 C", unidade_id=un.id, ativo=True)
+        db.session.add_all([admin, prof, admin_outra, periodo, curso, curso2, curso3])
         db.session.flush()
 
         turma = Turma(
@@ -90,16 +92,19 @@ def _seed(app):
         db.session.flush()
         oferta = nova_oferta(turma.id, curso.id, un.id, principal=True)
         oferta2 = nova_oferta(turma.id, curso2.id, un.id, principal=False)
+        oferta3 = nova_oferta(turma.id, curso3.id, un.id, principal=False)
 
-        n1 = Nivel(nome="Basico", curso_id=curso.id, unidade_id=un.id, ativo=True)
-        n2 = Nivel(nome="Avancado", curso_id=curso.id, unidade_id=un.id, ativo=True)
+        n1 = Nivel(nome="Básico", curso_id=curso.id, unidade_id=un.id, ativo=True)
+        n2 = Nivel(nome="Avançado Nível 1", curso_id=curso.id, unidade_id=un.id, ativo=True)
         n_outro = Nivel(nome="Outro Curso", curso_id=curso2.id, unidade_id=un.id, ativo=True)
         aluno = Aluno(nome="Aluno AJ32", unidade_id=un.id, ativo=True)
         aluno_outra = Aluno(nome="Aluno Outra", unidade_id=outra.id, ativo=True)
         db.session.add_all([n1, n2, n_outro, aluno, aluno_outra])
         db.session.flush()
-        nova_inscricao(aluno.id, turma.id, oferta.id, nivel="Basico")
-        aluno.nivel = "Basico"
+        nova_inscricao(aluno.id, turma.id, oferta.id, nivel="Básico")
+        aluno.nivel = "Básico"
+        # aluno em mais de uma oferta, com níveis distintos por oferta
+        nova_inscricao(aluno.id, turma.id, oferta2.id, nivel="Outro Curso")
         db.session.commit()
         return {
             "unidade": un.id,
@@ -110,6 +115,7 @@ def _seed(app):
             "turma": turma.id,
             "oferta": oferta.id,
             "oferta2": oferta2.id,
+            "oferta3": oferta3.id,
             "aluno": aluno.id,
             "aluno_outra": aluno_outra.id,
             "nivel_basico": n1.id,
@@ -134,13 +140,13 @@ def test_ajax_sucesso_retorna_json_e_persiste(client, app):
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
         "turma_curso_id": ids["oferta"],
-        "nivel": "Avancado",
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code == 200
     data = r.get_json()
     assert data["ok"] is True
-    assert data["nivel_valor"] == "Avancado"
-    assert data["nivel_nome"] == "Avancado"
+    assert data["nivel_valor"] == "Avançado Nível 1"
+    assert data["nivel_nome"] == "Avançado Nível 1"
     assert data["aluno_id"] == ids["aluno"]
     assert data["turma_curso_id"] == ids["oferta"]
     assert "message" in data
@@ -148,8 +154,8 @@ def test_ajax_sucesso_retorna_json_e_persiste(client, app):
     with app.app_context():
         aluno = db.session.get(Aluno, ids["aluno"])
         insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
-        assert aluno.nivel == "Avancado"
-        assert insc.nivel == "Avancado"
+        assert aluno.nivel == "Avançado Nível 1"
+        assert insc.nivel == "Avançado Nível 1"
 
 
 def test_ajax_idempotente_nao_gera_erro_e_retorna_ok(client, app):
@@ -158,7 +164,7 @@ def test_ajax_idempotente_nao_gera_erro_e_retorna_ok(client, app):
     payload = {
         "turma_id": ids["turma"],
         "turma_curso_id": ids["oferta"],
-        "nivel": "Basico",
+        "nivel": "Básico",
     }
     r1 = _post_ajax(client, ids["aluno"], payload)
     r2 = _post_ajax(client, ids["aluno"], payload)
@@ -167,8 +173,8 @@ def test_ajax_idempotente_nao_gera_erro_e_retorna_ok(client, app):
     with app.app_context():
         aluno = db.session.get(Aluno, ids["aluno"])
         insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
-        assert aluno.nivel == "Basico"
-        assert insc.nivel == "Basico"
+        assert aluno.nivel == "Básico"
+        assert insc.nivel == "Básico"
 
 
 def test_ajax_400_oferta_invalida(client, app):
@@ -177,7 +183,7 @@ def test_ajax_400_oferta_invalida(client, app):
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
         "turma_curso_id": "",
-        "nivel": "Avancado",
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code == 400
     assert r.get_json()["ok"] is False
@@ -189,8 +195,8 @@ def test_ajax_404_inscricao_inexistente(client, app):
     login_as(client, str(ids["admin"]), ids["unidade"])
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
-        "turma_curso_id": ids["oferta2"],  # aluno não inscrito nessa oferta
-        "nivel": "Avancado",
+        "turma_curso_id": ids["oferta3"],  # aluno não inscrito nesta terceira oferta
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code == 404
     assert r.get_json()["ok"] is False
@@ -202,7 +208,7 @@ def test_ajax_403_sem_permissao(client, app):
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
         "turma_curso_id": ids["oferta"],
-        "nivel": "Avancado",
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code == 403
     assert r.get_json()["ok"] is False
@@ -215,13 +221,13 @@ def test_ajax_404_isolamento_unidade(client, app):
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
         "turma_curso_id": ids["oferta"],
-        "nivel": "Avancado",
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code in (403, 404)
     assert r.get_json()["ok"] is False
     with app.app_context():
         aluno = db.session.get(Aluno, ids["aluno"])
-        assert aluno.nivel == "Basico"
+        assert aluno.nivel == "Básico"
 
 
 def test_fallback_form_sem_js_redirect_e_flash(client, app):
@@ -232,7 +238,7 @@ def test_fallback_form_sem_js_redirect_e_flash(client, app):
         data={
             "turma_id": ids["turma"],
             "turma_curso_id": ids["oferta"],
-            "nivel": "Avancado",
+            "nivel": "Avançado Nível 1",
         },
         follow_redirects=False,
     )
@@ -243,7 +249,7 @@ def test_fallback_form_sem_js_redirect_e_flash(client, app):
     assert any("atualizado com sucesso" in msg.lower() for _, msg in flashes)
     with app.app_context():
         insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
-        assert insc.nivel == "Avancado"
+        assert insc.nivel == "Avançado Nível 1"
 
 
 def test_csrf_ausente_bloqueia_quando_csrf_habilitado(client_csrf, app_csrf):
@@ -254,7 +260,7 @@ def test_csrf_ausente_bloqueia_quando_csrf_habilitado(client_csrf, app_csrf):
         json={
             "turma_id": ids["turma"],
             "turma_curso_id": ids["oferta"],
-            "nivel": "Avancado",
+            "nivel": "Avançado Nível 1",
         },
         headers={"Accept": "application/json"},
     )
@@ -262,7 +268,7 @@ def test_csrf_ausente_bloqueia_quando_csrf_habilitado(client_csrf, app_csrf):
     assert r.status_code in (400, 403)
     with app_csrf.app_context():
         aluno = db.session.get(Aluno, ids["aluno"])
-        assert aluno.nivel == "Basico"
+        assert aluno.nivel == "Básico"
 
 
 def test_ajax_nao_altera_outros_campos(client, app):
@@ -277,7 +283,7 @@ def test_ajax_nao_altera_outros_campos(client, app):
     r = _post_ajax(client, ids["aluno"], {
         "turma_id": ids["turma"],
         "turma_curso_id": ids["oferta"],
-        "nivel": "Avancado",
+        "nivel": "Avançado Nível 1",
     })
     assert r.status_code == 200
     with app.app_context():
@@ -285,4 +291,82 @@ def test_ajax_nao_altera_outros_campos(client, app):
         insc_after = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
         assert (after.nome, after.ativo, after.unidade_id) == snapshot
         assert (insc_after.ativo, insc_after.turma_id, insc_after.turma_curso_id) == insc_snapshot
-        assert insc_after.nivel == "Avancado"
+        assert insc_after.nivel == "Avançado Nível 1"
+
+
+def test_aj32b_ajax_fora_catalogo_rejeita_422_sem_gravar(client, app):
+    ids = _seed(app)
+    login_as(client, str(ids["admin"]), ids["unidade"])
+    r = _post_ajax(client, ids["aluno"], {
+        "turma_id": ids["turma"],
+        "turma_curso_id": ids["oferta"],
+        "nivel": "Nivel Inventado Fora Catalogo",
+    })
+    assert r.status_code == 422
+    data = r.get_json()
+    assert data["ok"] is False
+    assert "inválido" in (data.get("message") or "").lower()
+    with app.app_context():
+        aluno = db.session.get(Aluno, ids["aluno"])
+        insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
+        assert aluno.nivel == "Básico"
+        assert insc.nivel == "Básico"
+
+
+def test_aj32b_ajax_espaco_casefold_equivalente_aceita_canonico(client, app):
+    ids = _seed(app)
+    login_as(client, str(ids["admin"]), ids["unidade"])
+    r = _post_ajax(client, ids["aluno"], {
+        "turma_id": ids["turma"],
+        "turma_curso_id": ids["oferta"],
+        "nivel": "  AVANÇADO NÍVEL 1  ",
+    })
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["nivel_valor"] == "Avançado Nível 1"
+    with app.app_context():
+        insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
+        assert insc.nivel == "Avançado Nível 1"
+
+
+def test_aj32b_ajax_legado_reenviado_sem_mudar_ok_sem_alterar(client, app):
+    ids = _seed(app)
+    with app.app_context():
+        aluno = db.session.get(Aluno, ids["aluno"])
+        insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
+        aluno.nivel = "LEGADO FORA"
+        insc.nivel = "LEGADO FORA"
+        db.session.commit()
+    login_as(client, str(ids["admin"]), ids["unidade"])
+    r = _post_ajax(client, ids["aluno"], {
+        "turma_id": ids["turma"],
+        "turma_curso_id": ids["oferta"],
+        "nivel": "LEGADO FORA",
+    })
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["nivel_valor"] == "LEGADO FORA"
+    with app.app_context():
+        insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
+        assert insc.nivel == "LEGADO FORA"
+
+
+def test_aj32b_ajax_none_vazio_normaliza_nao_se_aplica(client, app):
+    ids = _seed(app)
+    login_as(client, str(ids["admin"]), ids["unidade"])
+    r = _post_ajax(client, ids["aluno"], {
+        "turma_id": ids["turma"],
+        "turma_curso_id": ids["oferta"],
+        "nivel": "",
+    })
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["nivel_valor"] == "Não se aplica"
+    with app.app_context():
+        aluno = db.session.get(Aluno, ids["aluno"])
+        insc = Inscricao.query.filter_by(turma_curso_id=ids["oferta"], aluno_id=ids["aluno"], ativo=True).first()
+        assert aluno.nivel is None
+        assert insc.nivel is None

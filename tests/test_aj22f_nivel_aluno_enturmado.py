@@ -226,16 +226,28 @@ def test_valor_atual_apenas_na_ficha_do_aluno_tambem_e_aceito(client, app):
 # ---------------------------------------------------------------------------
 
 
-def test_post_com_nivel_novo_de_outro_curso_e_sanitizado(client, app):
+def test_post_com_nivel_novo_de_outro_curso_rejeita_sem_gravar(client, app):
+    """AJ32-B: nível fora do catálogo/sanitizado não pode responder ok:true nem gravar."""
     ids = _seed(app)
     with app.app_context():
-        nova_inscricao(ids["aluno"], ids["turma"], ids["oferta_a"])
+        nova_inscricao(ids["aluno"], ids["turma"], ids["oferta_a"], nivel="Iniciante A")
+        aluno = db.session.get(Aluno, ids["aluno"])
+        aluno.nivel = "Iniciante A"
         db.session.commit()
     _login(client, ids)
 
-    resposta = _post_nivel(client, ids, ids["oferta_a"], "Módulo B")
-    assert resposta.status_code == 200
-    assert _niveis_grabados(app, ids, ids["oferta_a"]) == (None, None)
+    resposta = client.post(
+        f"/aluno/{ids['aluno']}/atualizar-nivel",
+        data={
+            "turma_id": ids["turma"],
+            "turma_curso_id": ids["oferta_a"],
+            "nivel": "Módulo B",
+        },
+        follow_redirects=False,
+    )
+    # fallback form: redirect com flash warning, sem gravar
+    assert resposta.status_code in (302, 303)
+    assert _niveis_grabados(app, ids, ids["oferta_a"]) == ("Iniciante A", "Iniciante A")
 
 
 def test_post_com_nivel_valido_do_curso_grava(client, app):

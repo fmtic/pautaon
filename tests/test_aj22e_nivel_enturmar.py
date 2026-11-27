@@ -359,11 +359,13 @@ def test_atualizar_nivel_post_com_nivel_valido_grava_sucesso(client, app):
         assert insc.nivel == "Iniciante A"
 
 
-def test_atualizar_nivel_post_com_nivel_de_outro_curso_sanitiza_para_none(client, app):
-    """POST em atualizar_nivel_aluno com nível de outro curso sanitiza para None."""
+def test_atualizar_nivel_post_com_nivel_de_outro_curso_rejeita_sem_gravar(client, app):
+    """AJ32-B: nível fora do catálogo do curso da oferta é rejeitado, sem gravar."""
     ids = _seed(app)
     with app.app_context():
-        nova_inscricao(ids["aluno"], ids["turma"], ids["oferta_a"])
+        nova_inscricao(ids["aluno"], ids["turma"], ids["oferta_a"], nivel="Iniciante A")
+        aluno = db.session.get(Aluno, ids["aluno"])
+        aluno.nivel = "Iniciante A"
         db.session.commit()
     _login(client, ids)
 
@@ -377,17 +379,18 @@ def test_atualizar_nivel_post_com_nivel_de_outro_curso_sanitiza_para_none(client
         follow_redirects=True,
     )
     assert r.status_code == 200
+    assert "inválido" in r.get_data(as_text=True).lower()
 
     with app.app_context():
         aluno = db.session.get(Aluno, ids["aluno"])
-        assert aluno.nivel is None
+        assert aluno.nivel == "Iniciante A"
         insc = Inscricao.query.filter_by(
             turma_curso_id=ids["oferta_a"],
             aluno_id=ids["aluno"],
             ativo=True,
         ).first()
         assert insc is not None
-        assert insc.nivel is None
+        assert insc.nivel == "Iniciante A"
 
 
 def test_atualizar_nivel_post_nao_se_aplica_limpa_nivel(client, app):

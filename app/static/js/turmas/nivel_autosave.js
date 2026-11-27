@@ -13,44 +13,73 @@
     var DEBOUNCE_MS = 300;
     var MOSTRAR_SALVO_MS = 2000;
 
+    var MAX_TENTATIVAS = 3;
+
     function criarFila() {
-        return { emVoo: {}, pendente: {}, erros: {}, ultimo: {}, confirmado: {} };
+        return {
+            emVoo: {}, pendente: {}, erros: {}, ultimo: {}, confirmado: {},
+            tentativas: {}, divergencia: {}
+        };
     }
 
     function definirConfirmado(fila, chave, valor) {
-        fila.confirmado[chave] = valor == null ? '' : String(valor);
+        fila.confirmado[chave] = normalizarValor(valor);
         if (!(chave in fila.ultimo)) fila.ultimo[chave] = fila.confirmado[chave];
     }
 
     function agendar(fila, chave, valor) {
-        var normalizado = valor == null ? '' : String(valor);
+        var normalizado = normalizarValor(valor);
         fila.ultimo[chave] = normalizado;
+        // Nova intenção do usuário zera a contagem de divergências anteriores.
+        delete fila.tentativas[chave];
+        delete fila.divergencia[chave];
         if (fila.emVoo[chave]) {
             fila.pendente[chave] = normalizado;
+            return null;
+        }
+        if (normalizarValor(fila.confirmado[chave]) === normalizado && !fila.erros[chave]) {
+            delete fila.pendente[chave];
             return null;
         }
         return normalizado;
     }
 
     function iniciar(fila, chave, valor) {
-        fila.emVoo[chave] = valor == null ? (fila.ultimo[chave] || '') : String(valor);
+        fila.emVoo[chave] = normalizarValor(valor == null ? (fila.ultimo[chave] || '') : valor);
         delete fila.pendente[chave];
+    }
+
+    function normalizarValor(valor) {
+        if (valor == null) return '';
+        return String(valor).trim();
     }
 
     function finalizar(fila, chave, sucesso, mensagem, valorConfirmado) {
         delete fila.emVoo[chave];
         if (sucesso) {
             delete fila.erros[chave];
+            // O confirmado só avança quando o chamador fornecer explicitamente
+            // o valor devolvido pelo servidor (evita confirmar com "ultimo"
+            // divergente durante uma correção/canonicalização).
             if (valorConfirmado !== undefined) {
-                fila.confirmado[chave] = valorConfirmado == null ? '' : String(valorConfirmado);
-            } else if (fila.ultimo[chave] !== undefined) {
-                fila.confirmado[chave] = fila.ultimo[chave];
+                fila.confirmado[chave] = normalizarValor(valorConfirmado);
+                var pendenteAtual = fila.pendente[chave];
+                if (pendenteAtual === undefined || normalizarValor(pendenteAtual) === normalizarValor(fila.confirmado[chave])) {
+                    fila.ultimo[chave] = fila.confirmado[chave];
+                }
             }
         } else {
             fila.erros[chave] = mensagem || 'Falha ao salvar.';
+            fila.tentativas[chave] = (fila.tentativas[chave] || 0) + 1;
         }
         var pendente = fila.pendente[chave];
-        return pendente === undefined ? null : pendente;
+        if (pendente === undefined) return null;
+        if (normalizarValor(pendente) === normalizarValor(fila.confirmado[chave])) {
+            delete fila.pendente[chave];
+            fila.ultimo[chave] = fila.confirmado[chave];
+            return null;
+        }
+        return pendente;
     }
 
     function temPendencia(fila) {
@@ -67,7 +96,43 @@
 
     function valorReversao(fila, chave) {
         var confirmado = fila.confirmado[chave];
-        return confirmado == null ? '' : String(confirmado);
+        return confirmado == null ? '' : normalizarValor(confirmado);
+    }
+
+    function podeTentarNovamente(fila, chave) {
+        return (fila.tentativas[chave] || 0) < MAX_TENTATIVAS;
+    }
+
+    function deveReenfileirar(fila, chave, valorServidor) {
+        var confirmado = normalizarValor(fila.confirmado[chave]);
+        var servidor = normalizarValor(valorServidor);
+        var ultimo = normalizarValor(fila.ultimo[chave]);
+        if (servidor !== confirmado) return false;
+        return ultimo !== confirmado;
+    }
+
+    // Analisa uma resposta bem-sucedida sem reenviar por divergência de formato:
+    // - 'confirmado': servidor confirmou (ou canonicalizou) o valor enviado;
+    // - 'reenviar': o usuário mudou depois do envio, ou uma tentativa anterior
+    //   de divergência ainda não foi honrada pelo servidor.
+    function analisarSucesso(fila, chave, valorEnviado, valorServidor) {
+        var enviado = normalizarValor(valorEnviado);
+        var servidor = normalizarValor(valorServidor);
+        var ultimo = normalizarValor(fila.ultimo[chave]);
+        if (ultimo !== enviado) return 'reenviar';
+        if (servidor !== enviado && fila.divergencia[chave]) return 'reenviar';
+        return 'confirmado';
+    }
+
+    function marcarDivergencia(fila, chave) {
+        fila.divergencia[chave] = true;
+        fila.tentativas[chave] = (fila.tentativas[chave] || 0) + 1;
+        return podeTentarNovamente(fila, chave);
+    }
+
+    function limparDivergencia(fila, chave) {
+        delete fila.divergencia[chave];
+        delete fila.tentativas[chave];
     }
 
     function estadoIndicador(estado, mensagem) {
@@ -108,7 +173,7 @@
             aluno_id: String(dados.alunoId == null ? '' : dados.alunoId),
             turma_id: String(dados.turmaId == null ? '' : dados.turmaId),
             turma_curso_id: String(dados.turmaCursoId == null ? '' : dados.turmaCursoId),
-            nivel: dados.nivel == null ? '' : String(dados.nivel)
+            nivel: normalizarValor(dados.nivel)
         };
     }
 
@@ -131,6 +196,8 @@
     var api = {
         DEBOUNCE_MS: DEBOUNCE_MS,
         MOSTRAR_SALVO_MS: MOSTRAR_SALVO_MS,
+        MAX_TENTATIVAS: MAX_TENTATIVAS,
+        normalizarValor: normalizarValor,
         criarFila: criarFila,
         definirConfirmado: definirConfirmado,
         agendar: agendar,
@@ -140,6 +207,11 @@
         temErro: temErro,
         erroDaLinha: erroDaLinha,
         valorReversao: valorReversao,
+        podeTentarNovamente: podeTentarNovamente,
+        deveReenfileirar: deveReenfileirar,
+        analisarSucesso: analisarSucesso,
+        marcarDivergencia: marcarDivergencia,
+        limparDivergencia: limparDivergencia,
         estadoIndicador: estadoIndicador,
         payloadNivel: payloadNivel,
         mensagemErro: mensagemErro,
@@ -199,12 +271,35 @@
         };
     }
 
+    function valorParaSelect(select, valor) {
+        var normalizado = normalizarValor(valor);
+        if (!select) return normalizado;
+        for (var i = 0; i < select.options.length; i += 1) {
+            if (normalizarValor(select.options[i].value) === normalizado) {
+                return select.options[i].value;
+            }
+        }
+        return normalizado;
+    }
+
+    function aplicarConfirmadoNoSelect(chave, valorServidor) {
+        var wrap = wrapDaChave(chave);
+        if (!wrap) return;
+        var select = wrap.querySelector('select.js-nivel-autosave');
+        if (!select) return;
+        var valor = valorParaSelect(select, valorServidor);
+        if (normalizarValor(select.value) !== normalizarValor(valor)) {
+            select.value = valor;
+        }
+    }
+
     function enviar(chave) {
         var wrap = wrapDaChave(chave);
         if (!wrap) return;
         var dados = lerWrap(wrap);
         var valor = fila.ultimo[chave];
-        if (valor === undefined) valor = dados.nivel;
+        if (valor === undefined) valor = normalizarValor(dados.nivel);
+        valor = normalizarValor(valor);
         var payload = payloadNivel({
             alunoId: dados.alunoId,
             turmaId: dados.turmaId,
@@ -236,42 +331,77 @@
             .then(function (resultado) {
                 var ok = resultado.status >= 200 && resultado.status < 300 && resultado.json && resultado.json.ok === true;
                 var mensagem = ok ? '' : mensagemErro(resultado.json.message, resultado.status);
-                var valorServidor = resultado.json && resultado.json.nivel_valor;
-                var proximo = finalizar(fila, chave, ok, mensagem, ok ? (valorServidor !== undefined ? valorServidor : valor) : undefined);
+                var valorServidor = resultado.json && resultado.json.nivel_valor !== undefined
+                    ? resultado.json.nivel_valor
+                    : (resultado.json && resultado.json.nivel_nome !== undefined ? resultado.json.nivel_nome : valor);
+                var confirmadoAnterior = valorReversao(fila, chave);
+                // Não passa valorConfirmado aqui: a confirmação só é promovida
+                // depois de analisar se o usuário mudou durante o envio.
+                var proximo = finalizar(fila, chave, ok, mensagem, undefined);
                 if (ok) {
-                    var select = wrap.querySelector('select.js-nivel-autosave');
-                    if (select && valorServidor !== undefined && fila.pendente[chave] === undefined) {
-                        select.value = String(valorServidor);
+                    var analise = analisarSucesso(fila, chave, valor, valorServidor);
+                    // Usuário voltou ao valor já confirmado durante o envio:
+                    // nada mais a enviar.
+                    if (analise === 'reenviar' && proximo === null
+                        && normalizarValor(fila.ultimo[chave]) === normalizarValor(confirmadoAnterior)) {
+                        analise = 'confirmado';
+                        valorServidor = confirmadoAnterior;
                     }
+                    if (analise === 'reenviar') {
+                        if (!marcarDivergencia(fila, chave)) {
+                            fila.erros[chave] = 'Divergência persistente do nível confirmado.';
+                            fila.confirmado[chave] = confirmadoAnterior;
+                            fila.ultimo[chave] = confirmadoAnterior;
+                            delete fila.pendente[chave];
+                            aplicarConfirmadoNoSelect(chave, confirmadoAnterior);
+                            pintar(chave, 'erro', 'O servidor não confirmou a alteração de nível após várias tentativas. O valor foi revertido.');
+                            return;
+                        }
+                        enviar(chave);
+                        return;
+                    }
+                    // Servidor confirmou (inclusive canonicalizando acento/caixa):
+                    // promove o valor devolvido e alinha o select sem disparar change.
+                    limparDivergencia(fila, chave);
+                    fila.confirmado[chave] = normalizarValor(valorServidor);
+                    fila.ultimo[chave] = normalizarValor(fila.confirmado[chave]);
+                    delete fila.pendente[chave];
+                    aplicarConfirmadoNoSelect(chave, fila.confirmado[chave]);
                     pintar(chave, 'salvo');
                     salvoTimers[chave] = setTimeout(function () {
                         if (!fila.emVoo[chave] && !fila.pendente[chave] && !fila.erros[chave]) pintar(chave, '');
                         delete salvoTimers[chave];
                     }, MOSTRAR_SALVO_MS);
-                } else {
-                    var selectErro = wrap.querySelector('select.js-nivel-autosave');
-                    var reversao = valorReversao(fila, chave);
-                    if (selectErro && fila.pendente[chave] === undefined) {
-                        selectErro.value = reversao;
-                        fila.ultimo[chave] = reversao;
-                    }
-                    pintar(chave, 'erro', mensagem);
+                    return;
                 }
-                if (proximo !== undefined) {
-                    enviar(chave);
+                // Erro não dispara nova tentativa automática: só uma nova
+                // alteração do usuário agenda reenvio (com contador zerado).
+                if (fila.pendente[chave] === undefined) {
+                    fila.ultimo[chave] = valorReversao(fila, chave);
+                    aplicarConfirmadoNoSelect(chave, fila.confirmado[chave]);
                 }
+                delete fila.pendente[chave];
+                pintar(chave, 'erro', mensagem);
+                return;
             })
             .catch(function (erro) {
                 var mensagem = mensagemErro('', 0) + (erro && erro.message ? ' (' + erro.message + ')' : '');
-                var proximo = finalizar(fila, chave, false, mensagem);
-                var selectErro = wrap.querySelector('select.js-nivel-autosave');
-                var reversao = valorReversao(fila, chave);
-                if (selectErro && proximo === undefined) {
-                    selectErro.value = reversao;
-                    fila.ultimo[chave] = reversao;
+                finalizar(fila, chave, false, mensagem);
+                if (!podeTentarNovamente(fila, chave)) {
+                    fila.ultimo[chave] = valorReversao(fila, chave);
+                    delete fila.pendente[chave];
+                    aplicarConfirmadoNoSelect(chave, fila.confirmado[chave]);
+                    pintar(chave, 'erro', 'Não foi possível salvar o nível após várias tentativas. O valor foi revertido.');
+                    return;
                 }
+                if (fila.pendente[chave] === undefined) {
+                    fila.ultimo[chave] = valorReversao(fila, chave);
+                    aplicarConfirmadoNoSelect(chave, fila.confirmado[chave]);
+                }
+                // Falha de rede não gera retry automático; nova alteração do
+                // usuário limpa o contador e agenda uma nova tentativa.
+                delete fila.pendente[chave];
                 pintar(chave, 'erro', mensagem);
-                if (proximo !== undefined) enviar(chave);
             });
     }
 
@@ -282,8 +412,12 @@
             pintar(chave, 'salvando');
             timers[chave] = setTimeout(function () {
                 delete timers[chave];
+                if (fila.emVoo[chave]) return;
+                if (normalizarValor(fila.ultimo[chave]) === normalizarValor(fila.confirmado[chave])) return;
                 enviar(chave);
             }, DEBOUNCE_MS);
+        } else if (!fila.emVoo[chave] && normalizarValor(fila.ultimo[chave]) === normalizarValor(fila.confirmado[chave]) && !fila.erros[chave]) {
+            pintar(chave, '');
         }
     }
 

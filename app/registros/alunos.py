@@ -438,39 +438,58 @@ def atualizar_nivel_aluno(aluno_id):
     # AJ22-F: mesmo critério da ficha (`inscricao.nivel or aluno.nivel`) para
     # reconhecer o valor já gravado — um texto livre/de outro curso continua
     # sendo aceito quando o usuário apenas reenvia o select sem mudança.
-    nivel_atual = (
+    nivel_atual_raw = (
         inscricao.nivel if inscricao and inscricao.nivel else None
     ) or aluno.nivel
+    nivel_atual = None if nivel_atual_raw is None else str(nivel_atual_raw).strip() or None
 
-    nivel_solicitado = "" if nivel is None else str(nivel)
-    if nivel_solicitado == "Não se aplica":
+    nivel_solicitado_raw = "" if nivel is None else str(nivel)
+    nivel_solicitado = nivel_solicitado_raw.strip()
+    # Normalização única: "Não se aplica" e vazio são ausência de nível.
+    if nivel_solicitado.casefold() == "não se aplica".casefold():
+        nivel_solicitado = ""
+
+    if not nivel_solicitado:
         novo_nivel = None
-    elif nivel_solicitado:
+    elif turma_curso:
         # AJ22-E: sanitização defensiva garante que o nível pertence ao curso
         # da oferta. AJ22-F: exceção para o valor atual, exibido como "(atual)"
         # na ficha mesmo fora do catálogo/do curso — reenviar sem mudar não apaga.
-        if turma_curso:
-            niveis_validos = {
-                n.nome
-                for n in Nivel.query.filter(
-                    Nivel.curso_id == turma_curso.curso_id,
-                    (Nivel.unidade_id == aluno.unidade_id) | (Nivel.unidade_id == None),
-                    Nivel.ativo == True,
-                ).all()
-            }
-            if nivel_solicitado in niveis_validos or nivel_solicitado == nivel_atual:
-                novo_nivel = nivel_solicitado
-            else:
-                novo_nivel = None
+        niveis_validos = {
+            str(n.nome).strip()
+            for n in Nivel.query.filter(
+                Nivel.curso_id == turma_curso.curso_id,
+                (Nivel.unidade_id == aluno.unidade_id) | (Nivel.unidade_id == None),
+                Nivel.ativo == True,
+            ).all()
+            if n.nome is not None and str(n.nome).strip()
+        }
+        # Compara de forma normalizada (trim/casefold) mas preserva o valor canônico do catálogo.
+        mapa_validos = {v.casefold(): v for v in niveis_validos}
+        atual_norm = nivel_atual.casefold() if nivel_atual else None
+        solicitado_norm = nivel_solicitado.casefold()
+
+        if solicitado_norm in mapa_validos:
+            novo_nivel = mapa_validos[solicitado_norm]
+        elif atual_norm and solicitado_norm == atual_norm:
+            # AJ22-F: reenviar valor atual legado não apaga/não erra.
+            novo_nivel = nivel_atual
         else:
-            # Legado (form sem turma_curso): aceita o valor enviado, como antes.
-            novo_nivel = nivel_solicitado
+            # AJ32-B: nível fora do catálogo/sanitizado recusado NÃO pode retornar ok:true.
+            msg = "Nível inválido para o curso desta oferta. Selecione um nível disponível."
+            if ajax:
+                return jsonify({"ok": False, "message": msg, "nivel_valor": nivel_atual or "Não se aplica"}), 422
+            flash(msg, "warning")
+            return redirect(redirect_url)
     else:
-        novo_nivel = None
+        # Legado (form sem turma_curso): aceita o valor enviado, como antes.
+        novo_nivel = nivel_solicitado
 
     # AJ32: idempotente — reenviar o mesmo nível efetivo não grava nem gera log.
-    estado_atual_inscricao = inscricao.nivel if inscricao and inscricao.nivel else None
-    estado_atual_aluno = aluno.nivel or None
+    estado_atual_inscricao = (
+        str(inscricao.nivel).strip() if inscricao and inscricao.nivel else None
+    )
+    estado_atual_aluno = str(aluno.nivel).strip() if aluno.nivel else None
     mudou = (estado_atual_aluno != novo_nivel) or (
         inscricao is not None and estado_atual_inscricao != novo_nivel
     )
