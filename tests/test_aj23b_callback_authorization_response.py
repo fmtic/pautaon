@@ -122,7 +122,7 @@ def test_state_divergente_continua_recusado_sem_chamar_fetch_token(
     )
 
     assert resposta.status_code == 200
-    assert "Falha de segurança na verificação do estado OAuth" in resposta.data.decode(
+    assert "Não foi possível validar o acesso com Google" in resposta.data.decode(
         "utf-8"
     )
     assert capturado == {}
@@ -148,7 +148,7 @@ def test_excecao_no_callback_continua_logada_com_tipo_mensagem_e_flash(
 
     assert resposta.status_code == 200
     html = resposta.data.decode("utf-8")
-    assert "Não foi possível concluir a autenticação com o Google." in html
+    assert "Não foi possível concluir o acesso com Google." in html
     registrado = caplog.records[0]
     mensagem = registrado.getMessage()
     assert "Falha no callback OAuth Google: RuntimeError:" in mensagem

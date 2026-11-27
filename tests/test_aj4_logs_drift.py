@@ -97,6 +97,7 @@ ROTULOS_SEM_LINHA = frozenset(
         "Alteração da data de entrada na oferta",
         "Cadastro Período Letivo",
         "Desbloqueio de login",
+        "Desvincular conta Google",
         "Enturmação de aluno na oferta",
         "Gestão de Unidade",
         "Lançamento de frequência ignorado (entrada futura)",
@@ -157,6 +158,7 @@ CATEGORIA_ESPERADA = {
     "Criar TurmaCurso": "criacao",
     "DESENTURMADO": "outras",
     "Desbloqueio de login": "login",
+    "Desvincular conta Google": "outras",
     "Enturmação de aluno na oferta": "outras",
     "Disparo de E-mail": "outras",
     "Editar aluno": "edicao",
@@ -212,6 +214,7 @@ ROTULOS_RESOLVIDOS_ESPERADOS = frozenset(
         "Cadastro Local",
         "Cadastro Período Letivo",
         "Desbloqueio de login",
+        "Desvincular conta Google",
         "Disparo de E-mail",
         "Editar aluno",
         "Erro E-mail",
@@ -505,7 +508,7 @@ def test_listas_congeladas_sem_sobreposicao():
                 "[AJ4-A] rótulo em duas listas congeladas ao mesmo tempo: "
                 f"{sorted(a & b)}."
             )
-    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 11
+    assert len(CENSO_REAL) == 31 and len(ROTULOS_SEM_LINHA) == 12
     assert len(LITERAIS_NAO_EMITIDOS) == 3
 
 

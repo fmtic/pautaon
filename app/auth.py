@@ -24,6 +24,7 @@ from flask import (
 )
 from flask_login import logout_user, login_required, current_user
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import ipaddress
 import json
@@ -46,6 +47,10 @@ from app.services.auth_service import (
 from app.services.vinculo_google_admin import (
     VinculoGoogleAdminError,
     vincular_conta_google_pendente,
+)
+from app.services.desvincular_google_admin import (
+    DesvinculoGoogleAdminError,
+    desvincular_conta_google as desvincular_conta_google_servico,
 )
 from app.utils.logging_seguro import mascarar_para_log
 
@@ -502,7 +507,10 @@ def google_login():
     redirect_uri = current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
 
     if not client_id or not redirect_uri:
-        flash("Login com Google não está configurado neste servidor.", "warning")
+        flash(
+            "O acesso com Google não está disponível aqui. Use seu usuário e senha.",
+            "warning",
+        )
         return redirect(url_for("auth.login"))
 
     # State anti-CSRF: valor aleatório que o Google devolve no callback e que
@@ -541,7 +549,7 @@ def google_login():
     except Exception:
         current_app.logger.exception("Falha ao iniciar fluxo OAuth Google.")
         flash(
-            "Não foi possível iniciar o login com Google. Tente outra forma de acesso.",
+            "Não foi possível abrir o acesso com Google. Tente novamente ou use seu usuário e senha.",
             "danger",
         )
         return redirect(url_for("auth.login"))
@@ -573,7 +581,7 @@ def google_callback():
     if not state_esperado or state_retornado != state_esperado:
         session.pop("google_oauth_state", None)
         flash(
-            "Falha de segurança na verificação do estado OAuth. Tente novamente.",
+            "Não foi possível validar o acesso com Google. Inicie o login novamente.",
             "danger",
         )
         return redirect(url_for("auth.login"))
@@ -582,7 +590,12 @@ def google_callback():
     # Erro explícito do Google (usuário cancelou ou conta bloqueada)
     error = request.args.get("error")
     if error:
-        flash(f"Acesso Google recusado: {error}", "warning")
+        # Detalhe técnico fica só no log; a tela recebe um próximo passo claro.
+        current_app.logger.info("Acesso Google recusado: %s", mascarar_para_log(error))
+        flash(
+            "O acesso com Google foi cancelado. Tente novamente ou use seu usuário e senha.",
+            "warning",
+        )
         return redirect(url_for("auth.login"))
 
     client_id = current_app.config.get("GOOGLE_OAUTH_CLIENT_ID")
@@ -636,7 +649,10 @@ def google_callback():
             type(exc).__name__,
             mascarar_para_log(exc),
         )
-        flash("Não foi possível concluir a autenticação com o Google.", "danger")
+        flash(
+            "Não foi possível concluir o acesso com Google. Tente novamente ou use seu usuário e senha.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
     google_id = userinfo.get("sub")
@@ -644,14 +660,18 @@ def google_callback():
     google_name = userinfo.get("name") or google_email.split("@")[0]
 
     if not google_id:
-        flash("O Google não retornou um identificador de conta válido.", "danger")
+        flash(
+            "Não foi possível identificar sua conta Google. Tente novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
     if current_app.config.get(
         "GOOGLE_OAUTH_REQUIRE_EMAIL_VERIFIED", True
     ) and not userinfo.get("email_verified"):
         flash(
-            "A conta Google precisa ter o e-mail verificado para continuar.", "danger"
+            "Confirme o e-mail da sua conta Google antes de entrar novamente.",
+            "danger",
         )
         return redirect(url_for("auth.login"))
 
@@ -659,7 +679,10 @@ def google_callback():
     if allowed_domains:
         domain = google_email.rsplit("@", 1)[1].lower() if "@" in google_email else ""
         if domain not in {item.lower() for item in allowed_domains}:
-            flash("Este e-mail não está autorizado para acesso ao sistema.", "danger")
+            flash(
+                "Este acesso não está liberado para o sistema. Procure o administrador.",
+                "danger",
+            )
             return redirect(url_for("auth.login"))
 
     # --- 3. Localiza ou cria o perfil local ---
@@ -714,12 +737,16 @@ def google_callback():
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao persistir identidade Google OAuth.")
-        flash("Erro interno ao registrar sua conta Google. Tente novamente.", "danger")
+        flash(
+            "Não foi possível registrar sua conta Google. Tente novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
     if not user.is_active:
         flash(
-            "Sua conta está desativada. Entre em contato com o administrador.", "danger"
+            "Sua conta está desativada. Procure o administrador para liberar o acesso.",
+            "danger",
         )
         return redirect(url_for("auth.login"))
 
@@ -736,7 +763,7 @@ def google_callback():
 
     if user.role == UserRole.PENDENTE:
         flash(
-            "Conta Google reconhecida. Aguarde a aprovação do administrador para acessar o sistema.",
+            "Conta Google reconhecida. Aguarde a liberação do administrador para entrar.",
             "info",
         )
         return redirect(url_for("auth.aguardando_aprovacao"))
@@ -760,7 +787,22 @@ def painel_admin():
     # Nota técnica: o painel administrativo só deve expor dados de usuários e unidades
     # para o perfil de administrador, preservando o modelo RBAC atual.
 
-    usuarios = db.session.execute(select(User).order_by(User.name)).scalars().all()
+    # AJ17-C: escopo de escrita por unidade. Admin vinculado a uma unidade só
+    # altera contas dessa unidade; admin Global (sem unidade na sessão) altera
+    # contas de qualquer unidade — o badge Google acompanha a mesma regra.
+    from app.utils.logica import get_unidade_id
+
+    unidade_contexto_admin = get_unidade_id()
+
+    # AJ17-C: carregar a unidade junto evita uma consulta por linha ao mostrar
+    # o selo Google/botão de desvínculo (AJ24 também usa `alvo.unidade`).
+    usuarios = (
+        db.session.execute(
+            select(User).options(selectinload(User.unidade)).order_by(User.name)
+        )
+        .scalars()
+        .all()
+    )
 
     # AJ24: só pendentes com identidade Google ganham a ação de unificação. Os
     # alvos elegíveis são calculados aqui e revalidados no serviço no POST.
@@ -774,6 +816,7 @@ def painel_admin():
         elegiveis = (
             db.session.execute(
                 select(User)
+                .options(selectinload(User.unidade))
                 .where(User.is_active.is_(True))
                 .where(User.role != UserRole.PENDENTE.value)
                 .where(User.google_id.is_(None))
@@ -819,6 +862,7 @@ def painel_admin():
         bloqueios_ativos=bloqueios_ativos,
         agora=agora,
         alvos_vinculo=alvos_vinculo,
+        unidade_contexto_admin=unidade_contexto_admin,
     )
 
 
@@ -1140,7 +1184,10 @@ def vincular_conta_google(id):
         or origem.role != UserRole.PENDENTE.value
         or not origem.google_id
     ):
-        flash("Conta pendente com identidade Google não encontrada.", "danger")
+        flash(
+            "Não foi possível localizar a conta pendente. Atualize a página e tente novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.painel_admin"))
 
     # Confirmação explícita: o modal mostra os dois e-mails e o servidor
@@ -1149,17 +1196,20 @@ def vincular_conta_google(id):
         flash("Confirme a vinculação antes de continuar.", "danger")
         return redirect(url_for("auth.painel_admin"))
     if request.form.get("origem_email") != origem.email:
-        flash("A confirmação não corresponde à conta pendente.", "danger")
+        flash(
+            "Os dados da conta pendente mudaram. Atualize a página e tente novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.painel_admin"))
 
     alvo_id = request.form.get("alvo_id", type=int)
     alvo = db.session.get(User, alvo_id) if alvo_id else None
     if alvo is None or request.form.get("alvo_email") != alvo.email:
-        flash("Selecione novamente o usuário alvo.", "danger")
+        flash("Selecione novamente o usuário alvo e confirme.", "danger")
         return redirect(url_for("auth.painel_admin"))
 
     try:
-        resultado = vincular_conta_google_pendente(
+        vincular_conta_google_pendente(
             origem.id, alvo.id, admin_id=current_user.id
         )
     except VinculoGoogleAdminError as exc:
@@ -1167,16 +1217,72 @@ def vincular_conta_google(id):
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Falha ao vincular conta Google pendente.")
-        flash("Não foi possível vincular a conta Google agora.", "danger")
+        flash("Não foi possível vincular a conta Google agora. Tente novamente.", "danger")
     else:
         flash(
-            "Conta Google de "
-            + resultado.google_email
-            + " vinculada a "
-            + resultado.alvo_email
-            + ". A conta pendente foi removida; nenhum registro do alvo foi alterado.",
+            "Conta Google vinculada ao usuário escolhido. A conta pendente foi "
+            "removida e os demais dados foram preservados.",
             "success",
         )
+
+    return redirect(url_for("auth.painel_admin"))
+
+
+@bp.route("/usuarios/desvincular-google/<int:id>", methods=["POST"])
+@login_required
+def desvincular_conta_google(id):
+    """AJ17-C — admin remove o vínculo Google de um usuário autorizado.
+
+    Mesmo perfil da vinculação (AJ24: somente ADMIN). Admin de uma unidade só
+    atua nas contas dela; admin Global (sem contexto na sessão) atua em
+    qualquer unidade. Alvo inexistente ou sem confirmação é recusado. Não
+    encerra sessão; idempotente quando a conta já não tem vínculo.
+    """
+    if current_user.role != UserRole.ADMIN:
+        abort(403)
+
+    from app.utils.logica import get_unidade_id
+
+    unidade_contexto = get_unidade_id()
+    usuario = db.session.get(User, id)
+    if usuario is None or (
+        unidade_contexto is not None and usuario.unidade_id != unidade_contexto
+    ):
+        abort(403)
+
+    # Confirmação explícita e revalidação do e-mail visto na tela (AJ24 usa
+    # a mesma defesa para a vinculação).
+    if request.form.get("confirmar") != "1":
+        flash("Confirme a desvinculação antes de continuar.", "danger")
+        return redirect(url_for("auth.painel_admin"))
+    if request.form.get("usuario_email") != usuario.email:
+        flash(
+            "Os dados da conta mudaram. Atualize a página e tente novamente.",
+            "danger",
+        )
+        return redirect(url_for("auth.painel_admin"))
+
+    try:
+        resultado = desvincular_conta_google_servico(
+            usuario.id, admin_id=current_user.id
+        )
+    except DesvinculoGoogleAdminError as exc:
+        flash(str(exc), "warning")
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao desvincular conta Google.")
+        flash("Não foi possível desvincular agora. Tente novamente.", "danger")
+    else:
+        if resultado.alterado:
+            flash(
+                "Conta Google desvinculada. O usuário entra com senha ou acesso corporativo.",
+                "success",
+            )
+        else:
+            flash(
+                "Esta conta já não estava vinculada ao Google. Nada foi alterado.",
+                "info",
+            )
 
     return redirect(url_for("auth.painel_admin"))
 
@@ -1480,7 +1586,7 @@ def google_confirmar_vinculo():
     ):
         session.pop("google_link_pending", None)
         flash(
-            "A confirmação do vínculo expirou. Inicie novamente o login Google.",
+            "A confirmação expirou. Inicie o acesso com Google novamente.",
             "warning",
         )
         return redirect(url_for("auth.login"))
@@ -1488,7 +1594,10 @@ def google_confirmar_vinculo():
     user = db.session.get(User, pending.get("user_id"))
     if not user or not user.is_active or user.google_id:
         session.pop("google_link_pending", None)
-        flash("Não foi possível confirmar o vínculo desta conta.", "danger")
+        flash(
+            "Não foi possível confirmar esta conta Google. Inicie o acesso novamente.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
     if request.method == "POST":
@@ -1496,7 +1605,7 @@ def google_confirmar_vinculo():
         if action == "recusar":
             session.pop("google_link_pending", None)
             flash(
-                "Vínculo cancelado. Você pode entrar com suas credenciais normais.",
+                "Vínculo cancelado. Entre com seu usuário e senha.",
                 "info",
             )
             return redirect(url_for("auth.login"))
@@ -1505,7 +1614,7 @@ def google_confirmar_vinculo():
 
         password = request.form.get("senha_atual", "")
         if user.password and (not password or not user.check_password(password)):
-            flash("Senha local incorreta. O vínculo não foi realizado.", "danger")
+            flash("Senha incorreta. Tente novamente para vincular.", "danger")
             return redirect(url_for("auth.google_confirmar_vinculo"))
 
         user.google_id = pending["google_id"]
@@ -1515,7 +1624,10 @@ def google_confirmar_vinculo():
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Falha ao confirmar vínculo Google.")
-            flash("Não foi possível vincular a conta agora. Tente novamente.", "danger")
+            flash(
+                "Não foi possível vincular a conta Google agora. Tente novamente.",
+                "danger",
+            )
             return redirect(url_for("auth.login"))
 
         session.pop("google_link_pending", None)
@@ -1545,7 +1657,7 @@ def google_confirmar_vinculo():
 def trocar_senha():
     if current_user.is_ad_user:
         flash(
-            "Usuários federados pelo LDAP não precisam alterar uma senha local no banco.",
+            "Sua conta usa o acesso corporativo e não tem senha local para alterar.",
             "info",
         )
         return redirect(url_for("main.painel"))
@@ -1598,4 +1710,13 @@ def trocar_senha():
             current_app.logger.exception("Falha ao trocar senha do usuário atual.")
             flash("Erro ao salvar a nova senha. Tente novamente.", "warning")
 
-    return render_template("trocar_senha.html", first_login=current_user.first_login)
+    # AJ17-C: bloco somente leitura na tela da própria conta. Nenhum dado de
+    # outro usuário entra no contexto — a template recebe só o e-mail do
+    # usuário autenticado quando há google_id.
+    return render_template(
+        "trocar_senha.html",
+        first_login=current_user.first_login,
+        conta_google_email=(
+            current_user.google_email if current_user.google_id else None
+        ),
+    )

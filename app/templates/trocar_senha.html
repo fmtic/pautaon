@@ -60,6 +60,16 @@
           {% endwith %}
         {% endif %}
 
+        {# AJ17-C: status somente leitura da conta do próprio usuário. #}
+        <div class="alert alert-light border small mb-3" id="contaGoogleStatus">
+          <i class="bi bi-google me-1 text-primary"></i>
+          {% if conta_google_email %}
+            Conta Google: vinculada ({{ conta_google_email }})
+          {% else %}
+            Conta Google: não vinculada
+          {% endif %}
+        </div>
+
         <form action="{{ url_for('auth.trocar_senha') if url_for is defined else '#' }}" method="POST" id="formSenha" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
 

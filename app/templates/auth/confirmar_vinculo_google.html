@@ -107,8 +107,8 @@
 
       {# ── Explicação contextual ── #}
       <p class="text-muted small mb-3">
-        Sua conta Google usa o mesmo endereço de e-mail de uma conta já cadastrada
-        neste sistema. Confirme que as duas contas são suas para vinculá-las.
+        Sua conta Google usa o mesmo e-mail de uma conta já cadastrada no sistema.
+        Confirme que as duas contas são suas para continuar.
       </p>
 
       {# ── Bloco visual de fusão ── #}
@@ -157,7 +157,7 @@
               <div class="text-muted" style="font-size:0.78rem;">{{ user.email }}</div>
             </div>
             {% if user.is_ad_user %}
-              <span class="badge bg-secondary badge-origem">AD / LDAP</span>
+              <span class="badge bg-secondary badge-origem">Acesso corporativo</span>
             {% else %}
               <span class="badge bg-light text-dark border badge-origem">Local</span>
             {% endif %}
@@ -169,8 +169,8 @@
       {# ── Aviso de segurança ── #}
       <div class="alert alert-warning py-2 small border-0 shadow-sm mb-4" role="alert">
         <i class="bi bi-shield-exclamation me-1"></i>
-        Somente confirme se reconhecer <strong>ambas as contas</strong> como suas.
-        Após o vínculo, futuros logins com Google acessarão diretamente este perfil.
+        Confirme apenas se <strong>ambas as contas</strong> são suas. Depois do
+        vínculo, você poderá entrar com o Google neste perfil.
       </div>
 
       {# ── Formulários de ação ── #}
@@ -185,15 +185,15 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="acao" value="confirmar">
           {% if user.password %}
-            <label for="senhaAtual" class="form-label small fw-semibold">Confirme sua senha local</label>
+            <label for="senhaAtual" class="form-label small fw-semibold">Confirme sua senha</label>
             <input type="password" name="senha_atual" id="senhaAtual" class="form-control mb-3"
                    autocomplete="current-password" required>
           {% else %}
-            <p class="small text-muted">Sua conta não possui senha local. A confirmação explícita acima autoriza o vínculo.</p>
+            <p class="small text-muted">Sua conta usa o acesso corporativo. A confirmação acima autoriza o vínculo.</p>
           {% endif %}
           <button type="submit" class="btn btn-primary w-100 fw-bold">
             <i class="bi bi-link-45deg me-1"></i>
-            Sim, vincular minha conta Google
+            Sim, vincular minha conta
           </button>
         </form>
 
@@ -203,7 +203,7 @@
           <input type="hidden" name="acao" value="recusar">
           <button type="submit" class="btn btn-outline-secondary w-100">
             <i class="bi bi-x-circle me-1"></i>
-            Não, usar minhas credenciais normais
+            Não, usar meu usuário e senha
           </button>
         </form>
 

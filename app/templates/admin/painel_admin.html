@@ -174,6 +174,23 @@
                                         <!-- A classe .nome-usuario é usada pelo JS para extrair o texto para a ordenação -->
                                         <div class="fw-bold text-dark nome-usuario">{{ user.name }}</div>
                                         <div class="text-muted small">{{ user.email }}</div>
+                                        {# AJ17-C: selo discreto; pendente tem visual próprio. #}
+                                        {% if user.google_id %}
+                                            {% if user.role == "pendente" %}
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small mt-1" title="Aguardando aprovação">
+                                                    <i class="bi bi-google me-1"></i>Google · Pendente
+                                                </span>
+                                            {% elif unidade_contexto_admin is none or user.unidade_id == unidade_contexto_admin %}
+                                                {# AJ17-C: o próprio badge abre o modal de desvínculo. #}
+                                                <button type="button" class="badge bg-light text-secondary border small mt-1" style="cursor: pointer" data-bs-toggle="modal" data-bs-target="#desvincularGoogleModal{{ user.id }}" title="Desvincular Google">
+                                                    <i class="bi bi-google me-1"></i>Google
+                                                </button>
+                                            {% else %}
+                                                <span class="badge bg-light text-secondary border small mt-1" title="Conta Google vinculada">
+                                                    <i class="bi bi-google me-1"></i>Google
+                                                </span>
+                                            {% endif %}
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {% if user.role == "admin" %}
@@ -203,7 +220,7 @@
                                     </td>
                                     <td class="text-center pe-4">
                                         <div class="d-flex justify-content-center gap-1">
-                                            <button class="btn btn-sm btn-outline-secondary border-0" data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}" title="Editar Usuário">
+                                            <button class="btn btn-sm btn-outline-secondary border-0" data-bs-toggle="modal" data-bs-target="#editModal{{ user.id }}" title="Editar Usuário Local">
                                                 <i class="bi bi-pencil-square"></i>
                                             </button>
 
@@ -212,7 +229,7 @@
                                                 <i class="bi bi-link-45deg"></i>
                                             </button>
                                             {% endif %}
-                                            
+
                                             <form action="{{ url_for('auth.resetar_senha', id=user.id) }}" method="POST" style="display:inline;">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <button type="submit" class="btn btn-sm btn-outline-warning border-0 text-dark" title="Resetar Senha" onclick="return confirm('Tem certeza que deseja resetar a senha de {{ user.name }}?')">
@@ -334,6 +351,40 @@
                                                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fechar</button>
                                             </div>
                                             {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+
+                                {% if user.google_id and user.role != "pendente" and (unidade_contexto_admin is none or user.unidade_id == unidade_contexto_admin) %}
+                                <!-- AJ17-C: desvínculo com confirmação explícita, aberto pelo badge Google -->
+                                <div class="modal fade" id="desvincularGoogleModal{{ user.id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow">
+                                            <div class="modal-header border-bottom-0 pb-0">
+                                                <h5 class="modal-title fw-bold">Desvincular Google <span class="text-primary">{{ user.name }}</span></h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form action="{{ url_for('auth.desvincular_conta_google', id=user.id) }}" method="POST">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="usuario_email" value="{{ user.email }}">
+                                                <div class="modal-body pt-3 text-start">
+                                                    <div class="alert alert-warning small mb-3">
+                                                        <div><strong>Conta:</strong> {{ user.email }}</div>
+                                                        <div class="mt-2">Somente o vínculo Google será removido. A conta, a senha, o perfil e a unidade ficam como estão; a sessão aberta continua ativa.</div>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" name="confirmar" value="1" id="confirmarDesvincular{{ user.id }}" required>
+                                                        <label class="form-check-label small" for="confirmarDesvincular{{ user.id }}">
+                                                            Confirmo a desvinculação do Google desta conta.
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer border-top-0 pt-0">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                                                    <button type="submit" class="btn btn-outline-danger px-4">Desvincular Google</button>
+                                                </div>
+                                            </form>
                                         </div>
                                     </div>
                                 </div>

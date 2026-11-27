@@ -316,7 +316,7 @@ def test_unificacao_preserva_registros_e_identidade_do_alvo(app, client):
     login_as(client, ids[0])
     resposta = _post_vinculo(client, ids[2], ids[1], ORIGEM_EMAIL, ALVO_EMAIL)
     assert resposta.status_code == 200
-    assert "vinculada a" in resposta.data.decode("utf-8")
+    assert "Conta Google vinculada ao usuário escolhido." in resposta.data.decode("utf-8")
 
     with app.app_context():
         assert db.session.get(User, ids[2]) is None
